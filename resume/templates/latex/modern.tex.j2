@@ -1,0 +1,42 @@
+%% name: Modern
+%% description: 左对齐大标题、强调色分节、细分隔线。风格接近原 CV.tex
+((* include "_preamble.tex.j2" *))
+\titleformat{\section}{\large\bfseries\color{accent}}{}{0em}{}[\vspace{-2pt}{\color{accent!35}\titlerule[0.6pt]}]
+\titlespacing*{\section}{0pt}{((( layout.section_sep|num )))pt}{4pt}
+
+\begin{document}
+\normalsize
+{\Huge\bfseries\color{accent} ((( profile.name|tex )))}\par
+((* if profile.headline *))
+\vspace{4pt}((( profile.headline|tex )))\par
+((* endif *))
+((* if profile.contacts *))
+\vspace{2pt}{\small\color{black!70}((* for c in profile.contacts *))((* if not loop.first *)) \enspace{}\textbullet{}\enspace{} ((* endif *))((* if c.url *))\href{((( c.url|url )))}{((( (c.value or (c.url|bare))|tex )))}((* else *))((( c.value|tex )))((* endif *))((* endfor *))}\par
+((* endif *))
+((* for s in sections *))
+
+\section{((( s.title|tex )))}
+((* if s.kind == 'list' *))
+((* for e in s.entries *))
+{\color{accent}\textbf{((( e.title|tex )))}}((* if e.tech or e.bullets *))\enspace{} ((( (e.tech + e.bullets)|map('tex')|join(' · ') )))((* endif *))\par
+((* endfor *))
+((* else *))
+((* for e in s.entries *))
+\textbf{((( e.title|tex )))}((* if e.subtitle *))\enspace{}{\color{black!65}((( e.subtitle|tex )))}((* endif *))\hfill{\small\color{accent}((( e.dates|tex )))}\par
+((* if e.location or e.tech or e.link *))
+{\small\color{black!60}((( e.tech|map('tex')|join(' · ') )))((* if e.link *))((* if e.tech *))\enspace{}\textbullet{}\enspace{}((* endif *))\href{((( e.link|url )))}{((( (e.link|bare)|tex )))}((* endif *))\hfill ((( e.location|tex )))}\par
+((* endif *))
+((* if e.bullets *))
+\begin{itemize}
+((* for b in e.bullets *))
+  \item ((( b|tex )))
+((* endfor *))
+\end{itemize}
+((* endif *))
+((* if not loop.last *))
+\entrysep
+((* endif *))
+((* endfor *))
+((* endif *))
+((* endfor *))
+\end{document}

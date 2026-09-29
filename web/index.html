@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Resume Studio</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="top">
+    <strong class="brand">Resume Studio</strong>
+    <span id="datapath" class="muted mono"></span>
+    <span class="spacer"></span>
+    <span id="save-status" class="muted"></span>
+    <span id="conn" class="pill">连接中…</span>
+  </header>
+
+  <main id="main">
+    <aside id="left" aria-label="经历库"></aside>
+    <section id="middle" aria-label="编辑"></section>
+    <section id="right" aria-label="预览">
+      <div id="controls"></div>
+      <div id="preview-bar"></div>
+      <div id="preview">
+        <iframe id="pdfA" title="PDF 预览"></iframe>
+        <iframe id="pdfB" title="PDF 预览" class="hidden"></iframe>
+        <div id="preview-empty" class="muted">选择一个版本后在这里预览</div>
+      </div>
+    </section>
+  </main>
+
+  <footer id="claude" class="collapsed">
+    <div id="claude-head">
+      <button id="claude-toggle" class="ghost" title="展开 / 收起">Claude</button>
+      <span id="claude-status" class="muted"></span>
+      <input id="claude-input" placeholder="让 Claude 做点什么，比如：把当前版本压到一页，或：根据 notes 给 EXP-002 补一条要点">
+      <button id="claude-send">发送</button>
+      <button id="claude-cancel" class="ghost hidden">停止</button>
+    </div>
+    <div id="claude-log"></div>
+  </footer>
+
+  <div id="toast" role="status"></div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+%% name: Timeline
+%% description: 左侧固定日期栏、右侧正文，类似 moderncv
+((* include "_preamble.tex.j2" *))
+\newlength{\datecol}\setlength{\datecol}{((( (layout.font_size|float * 0.32)|num )))cm}
+\newlength{\bodycol}
+\AtBeginDocument{\setlength{\bodycol}{\dimexpr\textwidth-\datecol-0.4cm\relax}}
+\titleformat{\section}{\large\bfseries\color{accent}}{\makebox[\datecol][r]{\color{accent}\rule[0.2ex]{0.8\datecol}{2pt}}\hspace{0.4cm}}{0em}{}
+\titlespacing*{\section}{0pt}{((( layout.section_sep|num )))pt}{4pt}
+\newcommand{\row}[2]{\noindent\parbox[t]{\datecol}{\raggedleft\small\leavevmode\color{black!65}#1}\hspace{0.4cm}\parbox[t]{\bodycol}{#2}\par}
+
+\begin{document}
+\normalsize
+\noindent\hspace*{\dimexpr\datecol+0.4cm\relax}\parbox[t]{\bodycol}{%
+{\Huge ((( profile.name|tex )))}\par
+((* if profile.headline *))
+\vspace{3pt}{\large\color{black!65}((( profile.headline|tex )))}\par
+((* endif *))
+((* if profile.contacts *))
+\vspace{3pt}{\small((* for c in profile.contacts *))((* if not loop.first *)) \enspace{}|\enspace{} ((* endif *))((* if c.url *))\href{((( c.url|url )))}{((( (c.value or (c.url|bare))|tex )))}((* else *))((( c.value|tex )))((* endif *))((* endfor *))}\par
+((* endif *))
+}\par
+((* for s in sections *))
+
+\section{((( s.title|tex )))}
+((* for e in s.entries *))
+((* if s.kind == 'list' *))
+\row{((( e.title|tex )))}{((( (e.tech + e.bullets)|map('tex')|join(', ') )))}
+((* else *))
+\row{((( e.dates|tex )))}{%
+\textbf{((( e.title|tex )))}((* if e.subtitle *)), \textit{((( e.subtitle|tex )))}((* endif *))((* if e.location *))\hfill{\small ((( e.location|tex )))}((* endif *))\par
+((* if e.tech or e.link *))
+{\small\color{black!60}((( e.tech|map('tex')|join(', ') )))((* if e.link *))((* if e.tech *))\enspace{}|\enspace{}((* endif *))\href{((( e.link|url )))}{((( (e.link|bare)|tex )))}((* endif *))}\par
+((* endif *))
+((* if e.bullets *))
+\begin{itemize}
+((* for b in e.bullets *))
+  \item ((( b|tex )))
+((* endfor *))
+\end{itemize}
+((* endif *))
+}
+((* endif *))
+((* if not loop.last *))
+\entrysep
+((* endif *))
+((* endfor *))
+((* endfor *))
+\end{document}

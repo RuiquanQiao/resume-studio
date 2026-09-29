@@ -1,0 +1,44 @@
+%% name: Classic
+%% description: 居中标题、分节横线、单栏。接近 Jake's Resume / sb2nov，ATS 友好
+((* include "_preamble.tex.j2" *))
+\titleformat{\section}{\large\scshape\raggedright\color{accent}}{}{0em}{}[\vspace{-3pt}{\color{accent}\titlerule}]
+\titlespacing*{\section}{0pt}{((( layout.section_sep|num )))pt}{4pt}
+
+\begin{document}
+\normalsize
+\begin{center}
+  {\Huge\bfseries ((( profile.name|tex )))}\par
+((* if profile.headline *))
+  \vspace{3pt}{\small ((( profile.headline|tex )))}\par
+((* endif *))
+((* if profile.contacts *))
+  \vspace{2pt}{\small ((* for c in profile.contacts *))((* if not loop.first *)) \enspace{}|\enspace{} ((* endif *))((* if c.url *))\href{((( c.url|url )))}{((( (c.value or (c.url|bare))|tex )))}((* else *))((( c.value|tex )))((* endif *))((* endfor *))}\par
+((* endif *))
+\end{center}
+((* for s in sections *))
+
+\section{((( s.title|tex )))}
+((* if s.kind == 'list' *))
+((* for e in s.entries *))
+\textbf{((( e.title|tex )))}((* if e.tech or e.bullets *)): ((( (e.tech + e.bullets)|map('tex')|join(', ') )))((* endif *))\par
+((* endfor *))
+((* else *))
+((* for e in s.entries *))
+\textbf{((( e.title|tex )))}((* if e.link *)) {\small\enspace{}\href{((( e.link|url )))}{((( (e.link|bare)|tex )))}}((* endif *))\hfill{\small ((( e.dates|tex )))}\par
+((* if e.subtitle or e.location or e.tech *))
+{\small\textit{((( e.subtitle|tex )))}((* if e.tech *))((* if e.subtitle *))\enspace{}|\enspace{}((* endif *))((( e.tech|map('tex')|join(', ') )))((* endif *))\hfill\textit{((( e.location|tex )))}}\par
+((* endif *))
+((* if e.bullets *))
+\begin{itemize}
+((* for b in e.bullets *))
+  \item ((( b|tex )))
+((* endfor *))
+\end{itemize}
+((* endif *))
+((* if not loop.last *))
+\entrysep
+((* endif *))
+((* endfor *))
+((* endif *))
+((* endfor *))
+\end{document}

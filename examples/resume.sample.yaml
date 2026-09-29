@@ -1,0 +1,76 @@
+# Resume Studio sample data. Everything under `notes` / `evidence` is the fact
+# layer: it is never rendered, it exists so the AI knows the real story.
+schema_version: 1
+settings:
+  languages: [en, zh]
+  export_dir: exports
+profile:
+  name: {en: Alex Chen, zh: 陈亚历}
+  headline: {en: 'MSc Computing student · ML & full-stack', zh: 计算机硕士在读 · 机器学习与全栈开发}
+  contacts:
+    - {label: email, value: alex@example.com, url: 'mailto:alex@example.com'}
+    - {label: github, value: github.com/alexchen, url: 'https://github.com/alexchen'}
+    - {label: phone, value: '+61 400 000 000'}
+  notes: 求职方向是 ML 工程和全栈实习，可接受远程。
+sections:
+  - {id: education, title: {en: Education, zh: 教育背景}, kind: timeline}
+  - {id: experience, title: {en: Experience, zh: 工作经历}, kind: timeline}
+  - {id: projects, title: {en: Projects, zh: 项目经历}, kind: timeline}
+  - {id: skills, title: {en: Skills, zh: 专业技能}, kind: list}
+entries:
+  - id: EXP-001
+    section: education
+    title: {en: Australian National University, zh: 澳大利亚国立大学}
+    subtitle: {en: Master of Computing, zh: 计算机硕士}
+    location: {en: 'Canberra, AU', zh: 堪培拉}
+    start: 2025-07
+    end: 2027-06
+    bullets:
+      - {en: 'Coursework: Statistical ML, Deep Learning, Computer Vision, Software Engineering', zh: 主修课程：统计机器学习、深度学习、计算机视觉、软件工程}
+    notes: 成绩中上，没有奖学金，别写 GPA。
+  - id: EXP-002
+    section: projects
+    title: Paper2Exam
+    subtitle: {en: Solo developer, zh: 独立开发}
+    tech: [Next.js, Prisma, SQLite]
+    start: 2025-08
+    end: present
+    link: https://github.com/alexchen/paper2exam
+    bullets:
+      - {en: 'Built a **multi-stage LLM pipeline** that turns research papers into reading-comprehension exams', zh: 搭建**多阶段大模型流水线**，把学术论文自动转成英语阅读理解题}
+      - {en: 'Designed a review UI so teachers can edit every generated question before export', zh: 设计审阅界面，教师可在导出前逐题修改生成内容}
+    notes: |
+      大部分前端代码是 AI 写的，我负责流程设计和 prompt 拆分。
+      "教师" 其实只有两个朋友试用过，没有真实学校用户。
+    evidence: []
+  - id: EXP-003
+    section: projects
+    title: {en: EuroSAT Transfer Learning, zh: EuroSAT 遥感图像迁移学习}
+    subtitle: {en: Course project, zh: 课程项目}
+    tech: [PyTorch]
+    start: 2025-09
+    end: 2025-10
+    bullets:
+      - {en: 'Compared 5 transfer strategies; full fine-tuning reached **98.21%** test accuracy', zh: 对比 5 种迁移策略，全量微调测试准确率 **98.21%**}
+    notes: 数字是真实跑出来的，代码在课程仓库里。
+  - id: EXP-004
+    section: skills
+    title: {en: Languages, zh: 编程语言}
+    tech: [Python, TypeScript, Java, C]
+  - id: EXP-005
+    section: skills
+    title: {en: Frameworks, zh: 框架工具}
+    tech: [PyTorch, scikit-learn, React, Next.js, Git]
+versions:
+  - id: RES-TECH-EN
+    label: Tech, English
+    lang: en
+    template: classic
+    entries: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005]
+    layout: {}
+  - id: RES-TECH-ZH
+    label: 技术岗 中文
+    lang: zh
+    template: modern
+    entries: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005]
+    layout: {font_size: 10.5}
