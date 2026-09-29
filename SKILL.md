@@ -11,23 +11,27 @@ Skill 根目录记为 `<skill>`，也就是这份 SKILL.md 所在的目录。
 
 ## 被调用时先做什么
 
-- **`/resume-studio` 不带参数**，或用户说「打开简历界面」：不要先提问，直接启动界面（见下一节），把终端打印的地址告诉用户，然后停下来等用户下一步。
+- **`/resume-studio` 不带参数**，或用户说「打开简历界面」：不要先提问，直接打开窗口（见下一节），告诉用户窗口已经打开，然后停下来等用户下一步。
 - **`/resume-studio <任务>`**，比如 `/resume-studio 润色 EXP-002` 或 `/resume-studio 把 RES-TECH-EN 压到一页`：直接按下面的编辑规则去改 `resume.yaml`。界面如果开着，会自动刷新；没开也不用特意去开。
 - 数据文件路径：用户指定了就用用户的；否则用当前工作目录下的 `resume.yaml`。
 
 ## 打开界面
 
-用 Bash 工具以 `run_in_background: true` 运行（它是常驻服务，不会自己退出，不要前台等待）：
+用户平时双击 `<skill>/Resume Studio.pyw` 打开独立窗口。你替用户打开时，用 Bash 工具以 `run_in_background: true` 运行：
 
 ```bash
-python <skill>/scripts/studio.py --data <数据文件路径>
+python "<skill>/scripts/studio.py" --window --data <数据文件的绝对路径>
 ```
 
-- 同一个数据文件的界面已经在运行时，脚本会直接在浏览器里打开现有的界面，然后退出，不会再起第二个服务。所以重复调用是安全的。
-- 数据文件不存在时会自动创建一个空骨架。
-- 不写 `--data` 时，依次尝试 `$RESUME_STUDIO_DATA` 和当前目录下的 `./resume.yaml`。
-- 默认端口是 8765，被占用时自动换下一个。启动后会打开浏览器，并打印 `UI running at http://...`。
-- 依赖只有 `jinja2`、`ruamel.yaml`（缺了会自动 `pip install --user`），以及用于 LaTeX 编译的 `xelatex`。
+- 窗口是独立进程，不依附于当前会话：会话结束、用户切换账号，窗口都还在。
+- 同一个数据文件的窗口已经开着时，脚本只会把它调到前面，不会再开第二个。重复调用是安全的。
+- 数据文件不存在时会自动创建一个空骨架。`--data` 会被记住，下次双击 `.pyw` 就打开这个文件。
+- 没有图形界面的环境（或用户要求用浏览器）去掉 `--window`，会改为在浏览器里打开，并打印 `UI running at http://...`。
+- 所有依赖都装在 `<skill>/.venv`，pip 缓存在 `<skill>/.cache`；第一次运行会自动创建，不碰全局环境。LaTeX 编译需要系统里有 `xelatex`（TeX Live 或 MiKTeX）。
+
+## 窗口里的对话就是 Claude Code
+
+窗口左栏的「对话」页签，每段对话都是一个真正的 Claude Code 会话：`claude -p --resume <session>`，在数据文件所在目录运行，加载用户的 CLAUDE.md 和已装的 Skill，没有替换系统提示词，也不指定回复语言。窗口只通过 `--append-system-prompt-file` 附上一段说明：用户正在看哪个版本、哪个条目，以及数据文件和这份 SKILL.md 的位置。所以在窗口里被调用时，照常按下面的规则工作即可。
 
 ## 不开界面时自己检查结果
 
@@ -104,7 +108,9 @@ versions:                    # 一次导出的配置，只引用条目，不复�
 
 ## 目录结构
 
-- `core/`：和简历无关的「Skill + 界面」公共层，包括 YAML 存储、文件监听、SSE 推送、HTTP 服务、`claude -p` 调用。
-- `resume/`：简历业务，包括数据模型、渲染器（`render/`，目前是 LaTeX，接口上预留了 Typst）、模板（`templates/latex/*.tex.j2`）、API。
+- `Resume Studio.pyw`：双击打开窗口。
+- `core/`：和简历无关的「Skill + 界面」公共层，包括 YAML 存储、文件监听、SSE 推送、HTTP 服务、Claude Code 会话（`chat.py`）。
+- `resume/`：简历业务，包括数据模型、渲染器（`render/`，目前是 LaTeX，接口上预留了 Typst）、模板（`templates/latex/*.tex.j2`）、API、服务组装（`app.py`）。
 - `web/`：无需构建的前端。
-- `scripts/`：`studio.py`（启动界面）、`render.py`（命令行渲染）。
+- `scripts/`：`studio.py`（启动，`--window` 为独立窗口）、`render.py`（命令行渲染）。
+- `tests/` 与 `TESTING.md`：自动化测试和试用清单。改代码后按 TESTING.md 跑一遍再交付。

@@ -183,17 +183,64 @@ class App:
 
         return _H
 
-    def serve(self, host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True,
-              on_ready: Callable[[str], None] | None = None, on_exit: Callable[[], None] | None = None) -> None:
+    def bind(self, host: str = "127.0.0.1", port: int = 8765) -> tuple[ThreadingHTTPServer, str]:
         port = find_free_port(host, port)
 
         class _Server(ThreadingHTTPServer):
             # on Windows SO_REUSEADDR lets two servers share a port; never want that
             allow_reuse_address = os.name != "nt"
 
+            def __init__(self, *a, **kw):
+                super().__init__(*a, **kw)
+                self.live: set = set()
+                self.live_lock = threading.Lock()
+
+            def process_request(self, request, client_address):
+                with self.live_lock:
+                    self.live.add(request)
+                super().process_request(request, client_address)
+
+            def shutdown_request(self, request):
+                with self.live_lock:
+                    self.live.discard(request)
+                super().shutdown_request(request)
+
+            def stop(self):
+                """Stop accepting AND drop keep-alive connections (shutdown() alone leaves them serving)."""
+                self.shutdown()
+                self.server_close()
+                with self.live_lock:
+                    conns = list(self.live)
+                for sock in conns:
+                    try:
+                        sock.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+                    try:
+                        sock.close()
+                    except OSError:
+                        pass
+
+            def handle_error(self, request, client_address):
+                # a tab reloading mid-request is normal; don't spray tracebacks for it
+                import sys
+                if isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError)):
+                    return
+                super().handle_error(request, client_address)
+
         httpd = _Server((host, port), self._make_handler())
         httpd.daemon_threads = True
-        url = f"http://{host}:{port}/"
+        return httpd, f"http://{host}:{port}/"
+
+    def start_background(self, host: str = "127.0.0.1", port: int = 8765) -> tuple[ThreadingHTTPServer, str]:
+        """Serve from a daemon thread (for native-window mode); call httpd.shutdown() to stop."""
+        httpd, url = self.bind(host, port)
+        threading.Thread(target=httpd.serve_forever, name="http", daemon=True).start()
+        return httpd, url
+
+    def serve(self, host: str = "127.0.0.1", port: int = 8765, open_browser: bool = True,
+              on_ready: Callable[[str], None] | None = None, on_exit: Callable[[], None] | None = None) -> None:
+        httpd, url = self.bind(host, port)
         print(f"  UI running at {url}  (Ctrl+C to stop)", flush=True)
         if on_ready:
             on_ready(url)

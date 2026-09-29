@@ -1,46 +1,42 @@
-"""Prompts the UI hands to Claude Code. Claude does the work by editing resume.yaml."""
+"""What the UI adds on top of a normal Claude Code session.
+
+Kept short on purpose: Claude Code's own system prompt, the user's CLAUDE.md
+and the installed skills do the heavy lifting. This only says where Claude is
+and what the user is looking at. No language is forced.
+"""
 from __future__ import annotations
 
 from pathlib import Path
 
-SKILL_MD = Path(__file__).resolve().parent.parent / "SKILL.md"
+SKILL_ROOT = Path(__file__).resolve().parent.parent
+SKILL_MD = SKILL_ROOT / "SKILL.md"
 
 
-def _header(data_path: str) -> str:
-    return (
-        "你正在通过 Resume Studio 的界面协助用户编辑简历。\n"
-        f"- 数据文件：{data_path}\n"
-        f"- 数据格式和编辑规则：先阅读 {SKILL_MD}（resume-studio skill），严格遵守其中的「事实边界」。\n"
-        "- 直接用 Edit 工具修改数据文件；只改任务涉及的部分，保留其他内容、字段顺序和注释。\n"
-        "- 不需要编译 PDF，界面会自动检测文件变化并重新渲染。\n"
-        "- 如果本机装有 offer-toolkit-skill 或 resume-tailoring 等简历写作 skill，可以借鉴它们的写作规则。\n"
-    )
+def ui_context(data_path: str, version: dict | None, entry: dict | None) -> str:
+    lines = [
+        "# Resume Studio",
+        "",
+        "The user is talking to you from the Resume Studio window (a resume editor built on Claude Code),",
+        "not from a terminal. They can see a form editor and a live PDF preview next to this chat.",
+        "",
+        f"- Resume data file: `{data_path}`. The window watches it: after you edit it, the form and preview",
+        "  refresh by themselves, so there is no need to compile or tell the user to reload.",
+        f"- Data format and the fact-boundary editing rules: `{SKILL_MD}` (the resume-studio skill). Read it",
+        "  before your first edit of the data file in this conversation.",
+        f"- To check page count yourself: `python \"{SKILL_ROOT / 'scripts' / 'render.py'}\" <VERSION-ID> --data \"{data_path}\"`.",
+    ]
+    if version:
+        lines.append(f"- The user is currently looking at resume version `{version.get('id')}`"
+                     f" ({version.get('label') or ''}, language `{version.get('lang')}`,"
+                     f" template `{version.get('template')}`).")
+    if entry:
+        lines.append(f"- The entry open in the editor is `{entry.get('id')}` (section `{entry.get('section')}`).")
+    return "\n".join(lines) + "\n"
 
 
-def polish_entry(data_path: str, entry_id: str, langs: list[str], instruction: str) -> str:
-    lang_text = "、".join(langs) if langs else "现有语言"
-    return (
-        _header(data_path)
-        + f"\n任务：润色经历条目 {entry_id} 的展示层（title、subtitle、tech、bullets 等），语言：{lang_text}。\n"
-        "依据：这一条的 notes（事实层）以及 evidence 里列出的本地路径（需要时去读代码、README、提交记录）。\n"
-        "要求：\n"
-        "1. 不得写出 notes/evidence 无法支撑的事实、数字、职责或规模；拿不准就不写，或保守表述。\n"
-        f"2. 只修改 {entry_id} 这一个条目；不要改它的 id、section、notes、evidence。\n"
-        "3. 要点用动词开头，突出本人实际做的决策和结果，每条尽量一行。\n"
-        + (f"\n用户的补充要求：{instruction}\n" if instruction.strip() else "")
-        + "\n完成后用一两句话告诉用户你改了什么、为什么。"
-    )
-
-
-def free_task(data_path: str, version_id: str | None, entry_id: str | None, instruction: str) -> str:
-    ctx = []
-    if version_id:
-        ctx.append(f"用户当前正在看的简历版本：{version_id}（versions 里的这一项）。")
-    if entry_id:
-        ctx.append(f"用户当前选中的经历条目：{entry_id}。")
-    return (
-        _header(data_path)
-        + ("\n" + "\n".join(ctx) + "\n" if ctx else "")
-        + f"\n用户的要求：{instruction}\n"
-        "\n除非用户明确要求，不要修改任何条目的 notes 和 evidence。完成后用一两句话说明你改了什么。"
-    )
+def polish_message(entry_id: str, instruction: str) -> str:
+    """What the 'polish with Claude' button says on the user's behalf."""
+    msg = f"请根据事实层（notes 和 evidence）润色经历 {entry_id} 的展示层。只改这一条，不要改 notes 和 evidence。"
+    if instruction.strip():
+        msg += f"\n补充要求：{instruction.strip()}"
+    return msg

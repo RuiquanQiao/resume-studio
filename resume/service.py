@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from core.store import YamlStore, fingerprint, merge_into, to_plain
 
 from . import model
 from .render import all_templates, get_renderer
+from .render.raster import rasterize
 
 
 class Conflict(Exception):
@@ -146,11 +148,21 @@ class Studio:
             raise KeyError(f"版本 {version_id} 不存在")
         view = model.build_view(doc, to_plain(version))
         engine = str(version.get("engine") or "latex")
-        result = get_renderer(engine).render(view, self.build_root / self._safe(version_id))
-        return {**result.to_json(), "version": version_id, "digest": digest}
+        build_dir = self.build_root / self._safe(version_id)
+        result = get_renderer(engine).render(view, build_dir)
+        images = rasterize(result.pdf, build_dir) if result.ok and result.pdf else []
+        return {**result.to_json(), "version": version_id, "digest": digest,
+                "images": len(images), "stamp": int(time.time() * 1000)}
 
     def pdf_path(self, version_id: str) -> Path:
         return self.build_root / self._safe(version_id) / "main.pdf"
+
+    def page_image(self, version_id: str, page: int) -> Path | None:
+        build_dir = self.build_root / self._safe(version_id)
+        for p in build_dir.glob("page-*.png"):
+            if int(p.stem.split("-")[-1]) == page:
+                return p
+        return None
 
     def export(self, version_id: str) -> dict:
         result = self.render(version_id)

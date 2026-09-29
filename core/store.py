@@ -58,14 +58,16 @@ def merge_into(target: Any, new: Any) -> Any:
                 target[key] = value
         return target
     if isinstance(target, list) and isinstance(new, list):
-        merged = []
+        # update in place, position by position: comments attached to items survive
         for i, value in enumerate(new):
-            if i < len(target) and isinstance(target[i], dict) and isinstance(value, dict):
-                merged.append(merge_into(target[i], value))
-            else:
-                merged.append(value)
-        del target[:]
-        target.extend(merged)
+            if i >= len(target):
+                target.append(value)
+            elif isinstance(target[i], dict) and isinstance(value, dict):
+                merge_into(target[i], value)
+            elif target[i] != value:
+                target[i] = value
+        while len(target) > len(new):
+            del target[-1]
         return target
     return new
 

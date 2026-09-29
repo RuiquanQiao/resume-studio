@@ -1,4 +1,13 @@
 __pycache__/
 *.pyc
+.venv/
+.cache/
+.pytest_cache/
+.local/
+tests/artifacts/
 .studio/
 examples/exports/
+
+# personal resume data must never land in the public skill repo
+resume.yaml
+exports/

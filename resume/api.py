@@ -4,16 +4,16 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from core.claude import ClaudeRunner
+from core.chat import ChatRunner
 from core.server import App, FileResponse, HttpError, Request
 
 from . import model, prompts
 from .service import Conflict, Studio
 
 
-def register(app: App, studio: Studio, runner: ClaudeRunner) -> None:
+def register(app: App, studio: Studio, chats: ChatRunner) -> None:
     render_lock = threading.Lock()
-    studio.extra_state = lambda: {"claude": {"available": runner.available(), "running": runner.running()}}
+    studio.extra_state = lambda: {"claude": {"available": chats.available(), "running": chats.running()}}
 
     def body(req: Request) -> dict:
         data = req.json()
@@ -21,6 +21,7 @@ def register(app: App, studio: Studio, runner: ClaudeRunner) -> None:
             raise HttpError(400, "body must be a JSON object")
         return data
 
+    # ---- data ------------------------------------------------------------
     @app.route("GET", "/api/state")
     def state(req: Request):
         return studio.state()
@@ -58,6 +59,7 @@ def register(app: App, studio: Studio, runner: ClaudeRunner) -> None:
     def del_version(req: Request):
         return studio.delete_version(req.params["vid"])
 
+    # ---- rendering -------------------------------------------------------
     @app.route("POST", "/api/versions/{vid}/render")
     def render(req: Request):
         with render_lock:
@@ -73,39 +75,77 @@ def register(app: App, studio: Studio, runner: ClaudeRunner) -> None:
             raise HttpError(404, "还没有渲染过")
         return FileResponse(path, "application/pdf")
 
+    @app.route("GET", "/api/versions/{vid}/page/{n}")
+    def page(req: Request):
+        try:
+            n = int(req.params["n"])
+        except ValueError:
+            raise HttpError(400, "bad page")
+        path = studio.page_image(req.params["vid"], n)
+        if path is None:
+            raise HttpError(404, "no such page")
+        return FileResponse(path, "image/png")
+
     @app.route("POST", "/api/versions/{vid}/export")
     def export(req: Request):
         with render_lock:
             return studio.export(req.params["vid"])
 
-    @app.route("POST", "/api/claude")
-    def claude(req: Request):
-        b = body(req)
-        instruction = str(b.get("instruction") or "")
-        entry_id = b.get("entry_id")
-        doc, _ = studio.store.load()
-        add_dirs: list[str] = []
-        if b.get("mode") == "polish" and entry_id:
-            entry = model.get_item(doc, "entry", entry_id)
-            if entry is None:
-                raise HttpError(404, f"{entry_id} 不存在")
-            add_dirs = [str(p) for p in entry.get("evidence") or []]
-            langs = [str(x) for x in (doc.get("settings") or {}).get("languages") or []]
-            prompt = prompts.polish_entry(str(studio.store.path), entry_id, langs, instruction)
-        else:
-            if not instruction.strip():
-                raise HttpError(400, "请写下要 Claude 做什么")
-            prompt = prompts.free_task(str(studio.store.path), b.get("version_id"), entry_id, instruction)
-        # evidence may be a file; give Claude its folder
-        add_dirs = [str(Path(p).parent if Path(p).is_file() else Path(p)) for p in add_dirs]
-        try:
-            job = runner.start(prompt, meta={"mode": b.get("mode") or "free", "entry_id": entry_id},
-                               add_dirs=add_dirs)
-        except RuntimeError as e:
-            raise HttpError(400, str(e))
-        return {"job": job}
+    # ---- chat (real Claude Code sessions) --------------------------------
+    @app.route("GET", "/api/chats")
+    def list_chats(req: Request):
+        return {"chats": chats.store.list(), "running": chats.running(), "available": chats.available()}
 
-    @app.route("POST", "/api/claude/{job}/cancel")
+    @app.route("POST", "/api/chats")
+    def new_chat(req: Request):
+        return chats.store.create()
+
+    @app.route("GET", "/api/chats/{cid}")
+    def get_chat(req: Request):
+        meta = chats.store.meta(req.params["cid"])
+        if meta is None:
+            raise HttpError(404, "对话不存在")
+        return {"chat": meta, "messages": chats.store.messages(meta["id"]), "running": chats.busy(meta["id"])}
+
+    @app.route("DELETE", "/api/chats/{cid}")
+    def delete_chat(req: Request):
+        if chats.busy(req.params["cid"]):
+            raise HttpError(409, "这段对话还在回复中")
+        chats.store.delete(req.params["cid"])
+        return {"chats": chats.store.list()}
+
+    @app.route("POST", "/api/chats/{cid}/send")
+    def send(req: Request):
+        b = body(req)
+        cid = req.params["cid"]
+        doc, _ = studio.store.load()
+        version = model.get_item(doc, "version", b.get("version_id")) if b.get("version_id") else None
+        entry = model.get_item(doc, "entry", b.get("entry_id")) if b.get("entry_id") else None
+
+        if b.get("polish"):
+            if entry is None:
+                raise HttpError(404, f"{b.get('entry_id')} 不存在")
+            text = prompts.polish_message(str(entry.get("id")), str(b.get("text") or ""))
+        else:
+            text = str(b.get("text") or "").strip()
+            if not text:
+                raise HttpError(400, "消息是空的")
+        add_dirs = []
+        if entry is not None:  # let Claude read this entry's evidence folders
+            for p in entry.get("evidence") or []:
+                path = Path(str(p))
+                add_dirs.append(str(path.parent if path.is_file() else path))
+        context = prompts.ui_context(str(studio.store.path), version, entry)
+        try:
+            chats.send(cid, text, context=context, add_dirs=add_dirs,
+                       meta={"polish": bool(b.get("polish")), "entry_id": b.get("entry_id")})
+        except KeyError:
+            raise HttpError(404, "对话不存在")
+        except RuntimeError as e:
+            raise HttpError(409, str(e))
+        return {"ok": True, "text": text}
+
+    @app.route("POST", "/api/chats/{cid}/cancel")
     def cancel(req: Request):
-        runner.cancel(req.params["job"])
+        chats.cancel(req.params["cid"])
         return {"ok": True}

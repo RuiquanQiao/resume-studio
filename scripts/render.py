@@ -13,9 +13,9 @@ import argparse
 import json
 import sys
 
-from _bootstrap import ensure_deps, resolve_data
+from _bootstrap import reexec_in_venv, resolve_data
 
-ensure_deps()
+reexec_in_venv()
 
 from resume import model  # noqa: E402
 from resume.service import Studio  # noqa: E402
