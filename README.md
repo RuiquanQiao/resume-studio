@@ -26,9 +26,11 @@ with the C# compiler that ships with Windows.
 
 - **Experience library** with a fact layer (`notes`, `evidence`) that templates never render —
   it exists so Claude knows the real story and never overclaims.
-- **Versions**: tick which entries go in, reorder, pick template (Classic / Modern / Timeline),
-  language, and every layout knob (font size, spacing, margins, colour, paper, font).
-- **Live preview** as page images; a second page is flagged as overflow.
+- **ALL and job targets**: `ALL` shows the full set. Each job target (AI agent engineer,
+  HPC, management trainee…) is a subset: tick which entries go in, reorder, give it its own
+  headline, hide contacts, pick template (Classic / Modern / Timeline), language, and every
+  layout knob (font size, spacing, margins, colour, paper, font).
+- **Live preview** as page images; in a job target a second page is flagged as overflow.
 - **Chat with Claude Code** in the left sidebar: streamed replies, tool steps, resumable sessions.
   "Polish with Claude" on an entry sends the request there and shows a before/after diff with undo.
 - **Safe co-editing**: Claude's edits refresh the form and preview; editing the same item from

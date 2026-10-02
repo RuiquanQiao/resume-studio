@@ -6,7 +6,6 @@ settings:
   export_dir: exports
 profile:
   name: {en: Alex Chen, zh: 陈亚历}
-  headline: {en: 'MSc Computing student · ML & full-stack', zh: 计算机硕士在读 · 机器学习与全栈开发}
   contacts:
     - {label: email, value: alex@example.com, url: 'mailto:alex@example.com'}
     - {label: github, value: github.com/alexchen, url: 'https://github.com/alexchen'}
@@ -62,15 +61,26 @@ entries:
     title: {en: Frameworks, zh: 框架工具}
     tech: [PyTorch, scikit-learn, React, Next.js, Git]
 versions:
-  - id: RES-TECH-EN
-    label: Tech, English
+  # ALL is the full set: every entry, every contact, in library order (no `entries` list).
+  - id: ALL
+    label: 全部经历
     lang: en
     template: classic
+    headline: {en: 'MSc Computing student', zh: 计算机硕士在读}
+    layout: {}
+  # Every other version is one job target: a subset of the library.
+  - id: RES-TECH-EN
+    label: ML 工程（英文）
+    lang: en
+    template: classic
+    headline: {en: 'MSc Computing student · ML & full-stack', zh: 计算机硕士在读 · 机器学习与全栈开发}
     entries: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005]
     layout: {}
   - id: RES-TECH-ZH
-    label: 技术岗 中文
+    label: ML 工程（中文）
     lang: zh
     template: modern
+    headline: {en: 'MSc Computing student · ML & full-stack', zh: 计算机硕士在读 · 机器学习与全栈开发}
+    hide_contacts: [phone]
     entries: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005]
     layout: {font_size: 10.5}

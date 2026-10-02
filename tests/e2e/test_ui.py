@@ -35,7 +35,17 @@ def browser_ctx():
 
 
 @pytest.fixture
-def page(browser_ctx, server):
+def page(page_all):
+    """Most tests work on one job target (岗位)."""
+    page_all.select_option("#version-select", "RES-TECH-EN")
+    page_all.wait_for_selector(".lib-hint.job")
+    wait_rendered(page_all)
+    return page_all
+
+
+@pytest.fixture
+def page_all(browser_ctx, server):
+    """A fresh window: it opens on ALL."""
     pg = browser_ctx.new_page()
     errors: list[str] = []
     pg.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
@@ -59,7 +69,7 @@ def page(browser_ctx, server):
 
 def wait_rendered(pg, timeout=40000):
     pg.wait_for_function("""() => { const b = document.querySelector('#page-badge');
-        return b && !b.classList.contains('busy') && (b.classList.contains('ok') || b.classList.contains('bad')); }""", timeout=timeout)
+        return b && !b.classList.contains('busy') && ['ok', 'bad', 'info'].some((c) => b.classList.contains(c)); }""", timeout=timeout)
 
 
 def wait_until(fn, timeout=8.0, msg="condition"):
@@ -84,7 +94,8 @@ def version(server, vid="RES-TECH-EN"):
 
 def open_entry(pg, eid):
     pg.click(f".entry[data-id='{eid}'] .e-main")
-    pg.wait_for_selector(f".ed-head .id:text('{eid}')")
+    pg.wait_for_selector(f".entry.on[data-id='{eid}']")
+    pg.wait_for_function(f"() => !!document.querySelector('#editor .ed-head')")
 
 
 def page_src(pg):
@@ -92,6 +103,20 @@ def page_src(pg):
 
 
 # ---------------------------------------------------------------- tests
+@needs_tex
+def test_opens_on_all_the_full_set(page_all, server):
+    pg = page_all
+    assert pg.input_value("#version-select") == "ALL"
+    assert pg.locator("#version-select option").first.inner_text() == "ALL · 全部经历"
+    assert pg.locator(".entry .check").count() == 0                  # nothing to tick in the full set
+    assert pg.locator("#page-badge").inner_text().strip().startswith("全部经历")
+    assert pg.locator("#pages .page.overflow").count() == 0
+    pg.hover(".entry[data-id='EXP-003']")
+    pg.click(".entry[data-id='EXP-003'] .e-tools button[title='上移']")   # arrows reorder the library
+    wait_until(lambda: [e["id"] for e in state(server)["doc"]["entries"]].index("EXP-003")
+               < [e["id"] for e in state(server)["doc"]["entries"]].index("EXP-002"), msg="library reordered")
+
+
 @needs_tex
 def test_first_load_and_preview_fits(page, server):
     assert page.locator(".entry").count() == 5
@@ -166,7 +191,8 @@ def test_conflict_banner_when_both_edit(page, server, data_file):
 
 def test_add_and_delete_entry(page, server, data_file):
     page.click(".lib-section:has(.t:text('Projects')) .lib-head button")
-    page.wait_for_selector(".ed-head .id:text('EXP-006')")
+    page.wait_for_selector(".entry.on[data-id='EXP-006']")
+    page.wait_for_selector(".ed-head .id:text('Projects #3')")
     assert page.evaluate("document.activeElement.dataset.key") == "title"
     page.keyboard.type("New Project")
     wait_until(lambda: "New Project" in data_file.read_text(encoding="utf-8"), msg="title saved")
@@ -190,17 +216,54 @@ def test_profile_contacts_and_sections(page, server, data_file):
     wait_until(lambda: any(s["id"].startswith("section-") for s in state(server)["doc"]["sections"]), msg="section added")
 
 
-def test_versions_create_switch_delete(page, server):
+def test_jobs_create_switch_delete(page, server):
     page.click("#version-menu-btn")
-    page.click("#version-menu button:text('新建空白版本')")
-    page.fill(".modal input", "RES-E2E")
+    page.click("#version-menu button:has-text('新建岗位（空白')")
+    page.fill(".modal input", "管培生")
     page.click(".modal button:text('创建')")
-    wait_until(lambda: page.input_value("#version-select") == "RES-E2E", msg="switched to new version")
-    assert page.locator(".entry.out").count() == 5                    # empty version: nothing checked
+    wait_until(lambda: page.input_value("#version-select") == "JOB-001", msg="switched to new job")
+    assert page.locator("#version-select option:checked").inner_text() == "管培生"
+    assert page.locator(".entry.out").count() == 5                    # blank job: nothing ticked
     page.click("#version-menu-btn")
-    page.click("#version-menu button:text('删除当前版本')")
+    page.click("#version-menu button:text('删除当前岗位')")
     page.click(".modal button:text('删除')")
-    wait_until(lambda: all(v["id"] != "RES-E2E" for v in state(server)["doc"]["versions"]), msg="version deleted")
+    wait_until(lambda: all(v["id"] != "JOB-001" for v in state(server)["doc"]["versions"]), msg="job deleted")
+    wait_until(lambda: page.input_value("#version-select") == "ALL", msg="back on ALL")
+
+
+def test_job_from_all_starts_full_and_has_own_headline(page_all, server):
+    pg = page_all
+    pg.click("#version-menu-btn")
+    pg.click("#version-menu button:has-text('先勾上全部经历')")
+    pg.fill(".modal input", "AI Agent 工程师")
+    pg.click(".modal button:text('创建')")
+    wait_until(lambda: pg.input_value("#version-select") == "JOB-001", msg="new job")
+    assert pg.locator(".entry.out").count() == 0
+    pg.click("#version-menu-btn")
+    pg.click("#version-menu button:has-text('岗位设置')")
+    pg.fill("#editor input[data-key=headline]", "AI Agent Engineer")
+    wait_until(lambda: version(server, "JOB-001").get("headline") in ("AI Agent Engineer", {"en": "AI Agent Engineer"}), msg="headline saved")
+    assert "headline" not in state(server)["doc"]["profile"]
+
+
+def test_contacts_can_be_hidden_per_job(page, server):
+    page.click(".nav-row:text('个人信息')")
+    rows = page.locator(".card:has(h3:text('联系方式')) .lr")
+    rows.nth(2).locator(".check").click()                             # phone
+    wait_until(lambda: version(server).get("hide_contacts") == ["phone"], msg="hidden in this job")
+    page.wait_for_selector(".card:has(h3:text('联系方式')) .lr >> nth=2 >> .check:not(.on)")
+
+
+def test_numbers_are_per_section_and_ids_stay_hidden(page_all):
+    pg = page_all
+    nos = lambda sec: pg.locator(f".lib-section:has(.t:text('{sec}')) .e-no").all_inner_texts()
+    assert nos("Education") == ["1"] and nos("Projects") == ["1", "2"] and nos("Skills") == ["1", "2"]
+    open_entry(pg, "EXP-003")
+    assert pg.inner_text(".ed-head .id") == "Projects #2"
+    assert "EXP-" not in pg.inner_text("#library") + pg.inner_text("#editor")
+    pg.select_option("#editor select", "experience")                  # moving section keeps the entry
+    pg.wait_for_selector(".lib-section:has(.t:text('Experience')) .entry[data-id='EXP-003']")
+    assert nos("Experience") == ["1"] and nos("Projects") == ["1"]
 
 
 def test_chat_streams_markdown_tools_and_resumes(page, server, fake_claude):
@@ -230,7 +293,7 @@ def test_polish_shows_diff_and_undo_restores(page, server, data_file, fake_claud
     page.fill("#polish-box input", "更简洁")
     page.click("#polish-box button")
     page.wait_for_selector(".tab.on:text('对话')")
-    page.wait_for_selector(".msg-user:has-text('EXP-002')")
+    page.wait_for_selector(".msg-user:has-text('Paper2Exam')")
     page.wait_for_selector(".card.diff h3:text('Claude 改了这一条')", timeout=15000)
     assert "Solo developer (polished)" in page.inner_text(".card.diff")
     page.click(".card.diff button:text('撤销，恢复到润色前')")
@@ -279,6 +342,13 @@ def test_screenshots_for_review(page, server, fake_claude, scheme, size):
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     tag = f"{scheme}-{size[0]}"
     page.screenshot(path=str(ART / f"editor-{tag}.png"))
+    page.select_option("#version-select", "ALL")
+    page.wait_for_selector(".lib-hint:not(.job)")
+    wait_rendered(page)
+    page.screenshot(path=str(ART / f"all-{tag}.png"))
+    page.select_option("#version-select", "RES-TECH-EN")
+    page.wait_for_selector(".lib-hint.job")
+    wait_rendered(page)
     page.click("#layout-toggle")
     page.screenshot(path=str(ART / f"layout-{tag}.png"))
     page.click("#layout-toggle")

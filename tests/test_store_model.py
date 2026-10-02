@@ -39,11 +39,11 @@ def test_rename_entry_updates_versions(data_file):
     st = Studio(data_file)
     doc, _ = st.store.load()
     e = to_plain(model.get_item(doc, "entry", "EXP-003"))
-    e["id"] = "EXP-900"
+    e["id"] = "MY-OWN-ID"
     st.update_item("entry", "EXP-003", e, None)
     doc, _ = st.store.load()
-    for v in doc["versions"]:
-        assert "EXP-003" not in v["entries"] and "EXP-900" in v["entries"]
+    for v in doc["versions"][1:]:
+        assert "EXP-003" not in v["entries"] and "MY-OWN-ID" in v["entries"]
 
 
 def test_delete_entry_removes_references(data_file):
@@ -51,7 +51,7 @@ def test_delete_entry_removes_references(data_file):
     st.delete_entry("EXP-002")
     doc, _ = st.store.load()
     assert model.get_item(doc, "entry", "EXP-002") is None
-    assert all("EXP-002" not in v["entries"] for v in doc["versions"])
+    assert all("EXP-002" not in v.get("entries", []) for v in doc["versions"])
 
 
 def test_merge_into_list_reuses_maps():
@@ -104,6 +104,77 @@ def test_validate_and_ids(data_file):
     st = Studio(data_file)
     doc, _ = st.store.load()
     assert model.validate(doc) == []
-    assert model.next_entry_id(doc) == "EXP-006"
-    doc["versions"][0]["entries"].append("EXP-404")
+    assert model.next_entry_id(doc) == "EXP-006"                      # one counter, whatever the section
+    model.get_item(doc, "version", "RES-TECH-EN")["entries"].append("EXP-404")
     assert any("EXP-404" in w for w in model.validate(doc))
+
+
+def test_moving_section_keeps_the_id(data_file):
+    st = Studio(data_file)
+    doc, _ = st.store.load()
+    e = to_plain(model.get_item(doc, "entry", "EXP-003"))
+    e["section"] = "experience"
+    st.update_item("entry", "EXP-003", e, None)
+    doc, _ = st.store.load()
+    assert model.get_item(doc, "entry", "EXP-003")["section"] == "experience"
+
+
+def test_all_is_the_full_set(data_file):
+    st = Studio(data_file)
+    doc, _ = st.store.load()
+    all_view = model.build_view(doc, to_plain(model.get_version(doc, "ALL")))
+    ids = [e["id"] for sec in all_view["sections"] for e in sec["entries"]]
+    assert sorted(ids) == sorted(str(e["id"]) for e in doc["entries"])
+    assert all_view["profile"]["headline"] == "MSc Computing student"
+    assert len(all_view["profile"]["contacts"]) == 3
+    zh = model.build_view(doc, to_plain(model.get_version(doc, "RES-TECH-ZH")))
+    assert [c["label"] for c in zh["profile"]["contacts"]] == ["email", "github"]   # hide_contacts
+    assert zh["profile"]["headline"].startswith("计算机硕士在读 · ")
+
+
+def test_all_is_reserved(data_file):
+    st = Studio(data_file)
+    with pytest.raises(ValueError):
+        st.delete_version("ALL")
+    v = to_plain(model.get_item(st.store.load()[0], "version", "RES-TECH-EN"))
+    v["id"] = "ALL"
+    with pytest.raises(ValueError):
+        st.update_item("version", "RES-TECH-EN", v, None)
+    vid, s = st.create_version("ALL", None, "AI Agent 工程师")
+    v = next(x for x in s["doc"]["versions"] if x["id"] == vid)
+    assert vid == "JOB-001" and v["label"] == "AI Agent 工程师"
+    assert v["entries"] == [e["id"] for e in s["doc"]["entries"]]   # starts with everything ticked
+    assert v["headline"] == ""                                        # but not ALL's headline
+    vid, s = st.create_version(None, None, "管培生")
+    assert vid == "JOB-002" and next(x for x in s["doc"]["versions"] if x["id"] == vid)["entries"] == []
+
+
+def test_files_without_all_still_get_it(tmp_path):
+    f = tmp_path / "resume.yaml"
+    f.write_text("schema_version: 1\n"
+                 "profile: {name: X, headline: Old}\n"
+                 "entries: []\n"
+                 "versions:\n"
+                 "  - {id: RES-A, label: A, entries: []}\n", encoding="utf-8")
+    st = Studio(f)
+    s = st.state()
+    assert [v["id"] for v in s["doc"]["versions"]] == ["ALL", "RES-A"]
+    assert "ALL" not in f.read_text(encoding="utf-8")                  # reading never writes
+    doc, _ = st.store.load()
+    assert model.build_view(doc, to_plain(model.get_item(doc, "version", "RES-A")))["profile"]["headline"] == "Old"
+    st.update_item("version", "ALL", {"id": "ALL", "template": "modern"}, None)
+    assert model.get_item(st.store.load()[0], "version", "ALL")["template"] == "modern"
+
+
+def test_skeleton_starts_with_all_only():
+    sk = model.skeleton()
+    assert [v["id"] for v in sk["versions"]] == ["ALL"] and "headline" not in sk["profile"]
+
+
+def test_move_entry_reorders_library_within_section(data_file):
+    st = Studio(data_file)
+    s = st.move_entry("EXP-003", -1)
+    order = [e["id"] for e in s["doc"]["entries"]]
+    assert order.index("EXP-003") < order.index("EXP-002")
+    s = st.move_entry("EXP-003", -1)                                    # EXP-001 is another section
+    assert [e["id"] for e in s["doc"]["entries"]] == order

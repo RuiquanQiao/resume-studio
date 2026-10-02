@@ -33,9 +33,15 @@ def test_entries_and_versions_lifecycle(server):
     v = next(x for x in r["doc"]["versions"] if x["id"] == "RES-X")
     assert v["entries"] and v["template"] == "classic"
     code, r = server.req("DELETE", "/api/entries/EXP-002")
-    assert all("EXP-002" not in x["entries"] for x in r["doc"]["versions"])
+    assert all("EXP-002" not in x.get("entries", []) for x in r["doc"]["versions"])
     code, r = server.req("DELETE", "/api/versions/RES-X")
     assert all(x["id"] != "RES-X" for x in r["doc"]["versions"])
+    code, r = server.req("DELETE", "/api/versions/ALL")
+    assert code == 400                                                  # ALL can't be deleted
+    code, r = server.req("POST", "/api/entries/EXP-003/move", {"dir": 1})
+    assert code == 200
+    code, r = server.req("POST", "/api/versions/ALL/render")
+    assert code == 200 and r["version"] == "ALL"
 
 
 @needs_tex
@@ -118,7 +124,7 @@ def test_polish_request_and_data_edit(server, data_file, fake_claude, monkeypatc
     monkeypatch.setenv("FAKE_CLAUDE_EDIT", json.dumps({"file": str(data_file), "from": "Solo developer", "to": "Solo developer (polished)"}))
     code, chat = server.req("POST", "/api/chats")
     code, r = _send(server, chat["id"], "更简洁", polish=True, entry_id="EXP-002")
-    assert "EXP-002" in r["text"] and "更简洁" in r["text"]
+    assert "Paper2Exam" in r["text"] and "更简洁" in r["text"] and "EXP-002" not in r["text"]
     server.wait_idle(chat["id"])
     assert "Solo developer (polished)" in data_file.read_text(encoding="utf-8")
     code, s = server.req("GET", "/api/state")

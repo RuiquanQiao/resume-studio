@@ -39,8 +39,10 @@ class Studio:
     # ---- reading -------------------------------------------------------
     def state(self) -> dict:
         doc, digest = self.store.load()
+        plain = to_plain(doc)
+        plain["versions"] = model.with_all(plain.get("versions") or [])
         return {
-            "doc": to_plain(doc),
+            "doc": plain,
             "digest": digest,
             "hashes": model.hashes(doc),
             "warnings": model.validate(doc),
@@ -55,6 +57,8 @@ class Studio:
         with self.store.lock:
             doc, _ = self.store.load()
             current = model.get_item(doc, kind, item_id)
+            if current is None and kind == "version" and str(item_id) == model.ALL_ID:
+                current = self._add_all_version(doc)
             if current is None and kind in ("entry", "version"):
                 raise KeyError(f"{kind} {item_id} 不存在")
             if base and current is not None and fingerprint(current) != base:
@@ -62,6 +66,8 @@ class Studio:
             if kind in ("entry", "version"):
                 data = dict(data)
                 new_id = str(data.get("id") or item_id)
+                if kind == "version" and model.ALL_ID in (str(item_id), new_id) and new_id != str(item_id):
+                    raise ValueError("ALL 是保留的 ID（全部经历），不能改名，也不能给岗位使用")
                 if new_id != str(item_id) and model.get_item(doc, kind, new_id) is not None:
                     raise ValueError(f"ID {new_id} 已存在")
                 data["id"] = new_id
@@ -79,6 +85,13 @@ class Studio:
             self.store.save(doc)
         return self.state()
 
+    @staticmethod
+    def _add_all_version(doc: Any) -> Any:
+        if doc.get("versions") is None:
+            doc["versions"] = []
+        doc["versions"].insert(0, model.default_all_version())
+        return doc["versions"][0]
+
     def create_entry(self, section: str, after: str | None = None) -> tuple[str, dict]:
         with self.store.lock:
             doc, _ = self.store.load()
@@ -90,6 +103,25 @@ class Studio:
             doc["entries"].append(entry)
             self.store.save(doc)
         return new_id, self.state()
+
+    def move_entry(self, entry_id: str, direction: int) -> dict:
+        """Reorder the library itself (what ALL shows): swap with the neighbour in the same section."""
+        with self.store.lock:
+            doc, _ = self.store.load()
+            entries = doc.get("entries") or []
+            idx = next((i for i, e in enumerate(entries) if str(e.get("id")) == entry_id), None)
+            if idx is None:
+                raise KeyError(f"经历 {entry_id} 不存在")
+            sec = str(entries[idx].get("section"))
+            same = [i for i, e in enumerate(entries) if str(e.get("section")) == sec]
+            k = same.index(idx) + (1 if direction > 0 else -1)
+            if 0 <= k < len(same):
+                j = same[k]
+                a, b = entries[idx], entries[j]
+                entries[idx] = b
+                entries[j] = a
+                self.store.save(doc)
+        return self.state()
 
     def delete_entry(self, entry_id: str) -> dict:
         with self.store.lock:
@@ -106,28 +138,38 @@ class Studio:
             self.store.save(doc)
         return self.state()
 
-    def create_version(self, copy_from: str | None, new_id: str | None) -> tuple[str, dict]:
+    def create_version(self, copy_from: str | None, new_id: str | None, label: str | None = None) -> tuple[str, dict]:
+        """A new job target. Copying ALL starts it with every entry ticked."""
         with self.store.lock:
             doc, _ = self.store.load()
-            versions = doc.get("versions")
-            if versions is None:
-                doc["versions"] = versions = []
+            if not any(model.is_all(v) for v in doc.get("versions") or []):
+                self._add_all_version(doc)
+            versions = doc["versions"]
             existing = {str(v.get("id")) for v in versions}
-            base_id = new_id or (f"{copy_from}-COPY" if copy_from else "RES-NEW")
+            base_id = (new_id or "").strip() or model.next_version_id(doc)
+            if base_id == model.ALL_ID:
+                raise ValueError("ALL 是保留的 ID（全部经历）")
             vid, n = base_id, 2
             while vid in existing:
                 vid, n = f"{base_id}-{n}", n + 1
-            src = model.get_item(doc, "version", copy_from) if copy_from else None
+            src = model.get_version(doc, copy_from) if copy_from else None
             if src is not None:
                 v = to_plain(src)
-                v["id"], v["label"] = vid, f"{v.get('label') or copy_from} (copy)"
+                v["id"] = vid
+                v["label"] = label or f"{v.get('label') or copy_from} (copy)"
+                if model.is_all(src):  # every entry ticked; the job writes its own headline
+                    v["entries"] = [str(e.get("id")) for e in doc.get("entries") or []]
+                    v["headline"] = ""
             else:
-                v = {"id": vid, "label": vid, "lang": "en", "template": "classic", "entries": [], "layout": {}}
+                v = {"id": vid, "label": label or vid, "lang": "en", "template": "classic", "headline": "",
+                     "entries": [], "layout": {}}
             versions.append(v)
             self.store.save(doc)
         return vid, self.state()
 
     def delete_version(self, version_id: str) -> dict:
+        if version_id == model.ALL_ID:
+            raise ValueError("ALL（全部经历）不能删除")
         with self.store.lock:
             doc, _ = self.store.load()
             versions = doc.get("versions") or []
@@ -143,9 +185,9 @@ class Studio:
 
     def render(self, version_id: str) -> dict:
         doc, digest = self.store.load()
-        version = model.get_item(doc, "version", version_id)
+        version = model.get_version(doc, version_id)
         if version is None:
-            raise KeyError(f"版本 {version_id} 不存在")
+            raise KeyError(f"岗位 {version_id} 不存在")
         view = model.build_view(doc, to_plain(version))
         engine = str(version.get("engine") or "latex")
         build_dir = self.build_root / self._safe(version_id)

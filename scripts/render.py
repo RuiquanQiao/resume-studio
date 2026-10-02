@@ -52,7 +52,10 @@ def main() -> int:
             for e in r["errors"]:
                 print(f"    {e}")
             continue
-        flag = "OK" if r["pages"] == 1 else f"OVER ONE PAGE ({r['pages']} pages)"
+        if vid == model.ALL_ID:
+            flag = f"full set, {r['pages']} page(s)"
+        else:
+            flag = "OK" if r["pages"] == 1 else f"OVER ONE PAGE ({r['pages']} pages)"
         print(f"{vid}: {flag}  {r['seconds']}s  {r['pdf']}")
         if r.get("exported"):
             for k, p in r["exported"].items():

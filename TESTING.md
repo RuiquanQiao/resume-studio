@@ -28,7 +28,7 @@ Notes
 ## 2. Visual review
 
 `tests/e2e` writes screenshots to `tests/artifacts/`:
-editor, layout panel, empty chat and chat, each at 1280×800 and 1920×1080, light and dark.
+editor (a job), ALL, layout panel, empty chat and chat, each at 1280×800 and 1920×1080, light and dark.
 Open them and check:
 
 - [ ] nothing overlaps, wraps into a column of single characters, or is cut off

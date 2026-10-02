@@ -92,10 +92,10 @@ function store(key, val) {
 }
 
 // promise-based dialogs (prettier than prompt/confirm and they work in every webview)
-function modal({ title, message = "", input = null, ok = "确定", danger = false }) {
+function modal({ title, message = "", input = null, placeholder = "", ok = "确定", danger = false }) {
   return new Promise((resolve) => {
     const root = $("#modal-root");
-    const field = input !== null ? h("input", { value: input, spellcheck: "false" }) : null;
+    const field = input !== null ? h("input", { value: input, placeholder, spellcheck: "false" }) : null;
     const close = (val) => { root.replaceChildren(); document.removeEventListener("keydown", onKey, true); resolve(val); };
     const done = () => close(field ? field.value.trim() || null : true);
     const onKey = (e) => {
@@ -197,7 +197,17 @@ const sections = () => doc().sections || [];
 const entries = () => doc().entries || [];
 const versions = () => doc().versions || [];
 const version = () => versions().find((v) => v.id === ui.versionId) || null;
+const ALL = "ALL";
+const isAll = () => ui.versionId === ALL;
+const jobName = (v) => (v && v.id === ALL ? "全部经历" : (v && (v.label || v.id)) || "");
 const entryById = (id) => entries().find((e) => e.id === id) || null;
+// what people see: the entry's number inside its own section (library order); ids stay internal
+function localNo(e) { return entries().filter((x) => x.section === e.section).findIndex((x) => x.id === e.id) + 1; }
+function entryLabel(e) {
+  if (!e) return "";
+  const sec = sectionById(e.section);
+  return `${(sec && display(sec.title)) || e.section || "未归类"} #${localNo(e)}`;
+}
 const sectionById = (id) => sections().find((s) => s.id === id) || null;
 
 function itemHash(kind, id) {
@@ -254,7 +264,7 @@ function applyState(s) {
   $("#datapath").title = "数据文件：" + s.data_path;
   if (!versions().some((v) => v.id === ui.versionId)) {
     const saved = store("version");
-    ui.versionId = versions().some((v) => v.id === saved) ? saved : (versions()[0] || {}).id || null;
+    ui.versionId = versions().some((v) => v.id === saved) ? saved : ALL;
   }
   if (!ui.editLang || !langs().includes(ui.editLang)) {
     ui.editLang = (version() && langs().includes(version().lang) && version().lang) || langs()[0];
@@ -340,9 +350,13 @@ async function mutateVersion(fn) {
 // ================================================================ top bar
 function renderTopbar() {
   const sel = $("#version-select");
-  sel.replaceChildren(...versions().map((v) => h("option", { value: v.id, selected: v.id === ui.versionId }, v.label ? `${v.label} · ${v.id}` : v.id)));
-  if (!versions().length) sel.append(h("option", { value: "" }, "还没有版本"));
-  sel.disabled = !versions().length;
+  const jobs = versions().filter((v) => v.id !== ALL);
+  const opt = (v, text) => h("option", { value: v.id, selected: v.id === ui.versionId }, text);
+  const all = versions().find((v) => v.id === ALL);
+  sel.replaceChildren(
+    all && opt(all, "ALL · 全部经历"),
+    jobs.length ? h("optgroup", { label: "岗位" }, jobs.map((v) => opt(v, v.label || v.id))) : h("option", { disabled: true, value: "" }, "还没有岗位：点右边 ··· 新建"),
+  );
 }
 
 function openVersionMenu() {
@@ -350,14 +364,15 @@ function openVersionMenu() {
   if (!menu.classList.contains("hidden")) { menu.classList.add("hidden"); return; }
   const v = version();
   const item = (label, ic, fn, cls = "") => h("button", { class: cls, role: "menuitem", onclick: () => { menu.classList.add("hidden"); fn(); } }, icon(ic), label);
+  const job = v && v.id !== ALL;
   menu.replaceChildren(
-    v && item("版本设置（名称、板块顺序）", "settings", () => select("version", ui.versionId)),
-    item("新建空白版本", "plus", () => newVersion(null)),
-    v && item("复制当前版本", "copy", () => newVersion(ui.versionId)),
+    v && item(job ? "岗位设置（名称、求职方向、板块）" : "ALL 设置（求职方向、板块顺序）", "settings", () => select("version", ui.versionId)),
+    item("新建岗位（空白，自己勾选经历）", "plus", () => newVersion(null)),
+    v && item(job ? "复制当前岗位" : "新建岗位（先勾上全部经历）", "copy", () => newVersion(ui.versionId)),
     h("hr"),
     item("打开导出文件夹", "folder", revealExports),
-    v && h("hr"),
-    v && item("删除当前版本", "trash", deleteVersion, "danger"),
+    job && h("hr"),
+    job && item("删除当前岗位", "trash", deleteVersion, "danger"),
   );
   menu.classList.remove("hidden");
 }
@@ -378,18 +393,23 @@ async function switchVersion(id) {
 }
 
 async function newVersion(copyFrom) {
-  const id = await modal({ title: copyFrom ? "复制版本" : "新建版本", message: "版本 ID 会用作导出文件名，比如 RES-AI-EN。", input: copyFrom ? copyFrom + "-2" : "RES-NEW", ok: "创建" });
-  if (!id) return;
+  const fromAll = copyFrom === ALL;
+  const label = await modal({
+    title: copyFrom && !fromAll ? "复制岗位" : "新建岗位",
+    message: fromAll ? "先勾上全部经历，再去掉这个岗位用不上的。" : copyFrom ? "复制当前岗位的经历选择、求职方向和版面。" : "从空白开始，在左侧勾选要放进这个岗位的经历。",
+    input: copyFrom && !fromAll ? `${jobName(version())}（副本）` : "", placeholder: "岗位名称，比如：AI Agent 工程师", ok: "创建",
+  });
+  if (!label || !label.trim()) return;
   try {
-    const r = await api("POST", "/api/versions", { id, copy_from: copyFrom });
+    const r = await api("POST", "/api/versions", { label: label.trim(), copy_from: copyFrom });
     applyState(r);
     switchVersion(r.id);
-    toast(`已创建版本 ${r.id}${copyFrom ? "" : "，在左侧勾选要放进去的经历"}`);
+    toast(`已创建岗位「${label.trim()}」${fromAll || copyFrom ? "" : "，在左侧勾选要放进去的经历"}`);
   } catch (e) { toast(e.message); }
 }
 
 async function deleteVersion() {
-  if (!(await modal({ title: `删除版本 ${ui.versionId}？`, message: "只删除这个版本的配置（选了哪些经历、模板和版面），经历库本身不受影响。", ok: "删除", danger: true }))) return;
+  if (!(await modal({ title: `删除岗位「${jobName(version())}」？`, message: "只删除这个岗位的配置（选了哪些经历、求职方向、模板和版面），经历库本身不受影响。", ok: "删除", danger: true }))) return;
   applyState(await api("DELETE", "/api/versions/" + encodeURIComponent(ui.versionId)));
   ui.versionId = null;
   applyState(S);
@@ -421,21 +441,25 @@ function renderLibrary() {
   const v = version();
   const nav = (kind, label, ic) => h("button", { class: "nav-row" + (ui.sel.kind === kind ? " on" : ""), onclick: () => select(kind) }, icon(ic), label);
   lib.append(nav("profile", "个人信息", "user"), nav("sections", "板块与设置", "grid"));
+  const job = v && v.id !== ALL;
+  lib.append(h("div", { class: "lib-hint" + (job ? " job" : "") }, job
+    ? [h("b", null, jobName(v)), "：勾选 = 放进这个岗位的简历"]
+    : [h("b", null, "ALL"), "：全部经历都在这里。新建岗位后，从中勾选一部分"]));
 
-  const included = new Set(v ? v.entries || [] : []);
-  const order = v ? v.entries || [] : [];
+  const included = new Set(job ? v.entries || [] : entries().map((e) => e.id));
+  const order = job ? v.entries || [] : entries().map((e) => e.id);
   for (const sec of sections()) {
     const mine = entries().filter((e) => e.section === sec.id);
     const inV = order.map(entryById).filter((e) => e && e.section === sec.id);
     const outV = mine.filter((e) => !included.has(e.id));
     lib.append(h("div", { class: "lib-section" },
       h("div", { class: "lib-head" },
-        h("span", null, h("span", { class: "t" }, display(sec.title) || sec.id), mine.length ? h("span", { class: "n" }, v ? `${inV.length}/${mine.length}` : mine.length) : null),
+        h("span", null, h("span", { class: "t" }, display(sec.title) || sec.id), mine.length ? h("span", { class: "n" }, job ? `${inV.length}/${mine.length}` : mine.length) : null),
         h("button", { class: "btn icon sm ghost", title: `在「${display(sec.title) || sec.id}」新增一条`, onclick: () => newEntry(sec.id) }, icon("plus"))),
-      [...inV, ...outV].map((e, i) => entryRow(e, included.has(e.id), i, inV.length, !!v))));
+      [...inV, ...outV].map((e, i) => entryRow(e, included.has(e.id), i, inV.length, job))));
   }
   const orphans = entries().filter((e) => !sectionById(e.section));
-  if (orphans.length) lib.append(h("div", { class: "lib-section" }, h("div", { class: "lib-head" }, h("span", { class: "t" }, "未归类")), orphans.map((e) => entryRow(e, included.has(e.id), 0, 0, !!v))));
+  if (orphans.length) lib.append(h("div", { class: "lib-section" }, h("div", { class: "lib-head" }, h("span", { class: "t" }, "未归类")), orphans.map((e) => entryRow(e, included.has(e.id), 0, 0, job))));
 
   if (!entries().length) {
     lib.append(h("div", { class: "empty" },
@@ -451,17 +475,18 @@ function renderLibrary() {
 
 function entryRow(e, isIn, idx, nIn, hasVersion) {
   const active = ui.sel.kind === "entry" && ui.sel.id === e.id;
-  const meta = [entryMeta(e), e.id].filter(Boolean).join(" · ");
+  const meta = entryMeta(e);
   return h("div", { class: "entry" + (isIn ? "" : " out") + (active ? " on" : ""), "data-id": e.id, onclick: () => select("entry", e.id) },
     hasVersion && h("button", {
       class: "check" + (isIn ? " on" : ""), role: "checkbox", "aria-checked": String(isIn),
-      title: isIn ? "从当前版本移除" : "加入当前版本",
+      title: isIn ? "从这个岗位移除" : "放进这个岗位",
       onclick: (ev) => { ev.stopPropagation(); toggleInclude(e.id, !isIn); },
     }),
-    h("span", { class: "e-main" }, h("span", { class: "e-title" }, display(e.title) || "（未命名）"), h("span", { class: "e-meta" }, meta)),
+    h("span", { class: "e-no" }, localNo(e)),
+    h("span", { class: "e-main" }, h("span", { class: "e-title" }, display(e.title) || "（未命名）"), meta && h("span", { class: "e-meta" }, meta)),
     isIn && h("span", { class: "e-tools" },
-      h("button", { class: "btn icon sm ghost", title: "上移", disabled: idx === 0, onclick: (ev) => { ev.stopPropagation(); moveInVersion(e.id, -1); } }, icon("up")),
-      h("button", { class: "btn icon sm ghost", title: "下移", disabled: idx >= nIn - 1, onclick: (ev) => { ev.stopPropagation(); moveInVersion(e.id, 1); } }, icon("down"))));
+      h("button", { class: "btn icon sm ghost", title: "上移", disabled: idx === 0, onclick: (ev) => { ev.stopPropagation(); hasVersion ? moveInVersion(e.id, -1) : moveInLibrary(e.id, -1); } }, icon("up")),
+      h("button", { class: "btn icon sm ghost", title: "下移", disabled: idx >= nIn - 1, onclick: (ev) => { ev.stopPropagation(); hasVersion ? moveInVersion(e.id, 1) : moveInLibrary(e.id, 1); } }, icon("down"))));
 }
 
 function toggleInclude(id, on) {
@@ -484,11 +509,17 @@ function moveInVersion(id, dir) {
   });
 }
 
+// in ALL, the arrows reorder the library itself
+async function moveInLibrary(id, dir) {
+  try { applyState(await api("POST", `/api/entries/${encodeURIComponent(id)}/move`, { dir })); scheduleRender(200); }
+  catch (e) { toast("移动失败：" + e.message); }
+}
+
 async function newEntry(section) {
   await saveDraft();
   const r = await api("POST", "/api/entries", { section });
   applyState(r);
-  if (version()) await mutateVersion((v) => { v.entries = [...(v.entries || []), r.id]; });
+  if (version() && !isAll()) await mutateVersion((v) => { v.entries = [...(v.entries || []), r.id]; });
   select("entry", r.id);
   setTimeout(() => { const f = $("#editor input[data-key=title]"); if (f) f.focus(); }, 30);
 }
@@ -574,14 +605,12 @@ function entryForm() {
 
   if (ui.polish && ui.polish.entryId === e.id && ui.polish.done) out.push(aiDiff());
 
-  out.push(h("div", { class: "ed-head" }, h("h1", null, display(e.title) || "（未命名）"), h("span", { class: "id" }, e.id), h("span", { class: "spacer" }), langSwitch()));
+  out.push(h("div", { class: "ed-head" }, h("h1", null, display(e.title) || "（未命名）"), h("span", { class: "id" }, entryLabel(entryById(e.id) || e)), h("span", { class: "spacer" }), langSwitch()));
 
   const basics = [
-    h("div", { class: "grid2" },
-      h("div", { class: "field" }, h("label", null, "板块"),
-        h("select", { onchange: (ev) => { e.section = ev.target.value; touch(); buildEditorKeepDraft(); } },
-          sections().map((s) => h("option", { value: s.id, selected: s.id === e.section }, display(s.title) || s.id)))),
-      tfield("ID", e, "id", { placeholder: "EXP-001", hint: "版本靠它引用" })),
+    h("div", { class: "field" }, h("label", null, "板块"),
+      h("select", { onchange: (ev) => { e.section = ev.target.value; touch(); buildEditorKeepDraft(); } },
+        sections().map((s) => h("option", { value: s.id, selected: s.id === e.section }, display(s.title) || s.id)))),
     tfield(isList ? "类别名" : "名称", e, "title", { i18n: true, placeholder: isList ? "比如：编程语言" : "公司 / 学校 / 项目名" }),
   ];
   if (!isList) {
@@ -635,7 +664,7 @@ function bulletsEditor(e) {
 }
 
 async function deleteEntry(id) {
-  if (!(await modal({ title: `删除 ${id}？`, message: "它会从经历库和所有版本里移除。需要时可以从 git 或 .studio/history 找回。", ok: "删除", danger: true }))) return;
+  if (!(await modal({ title: `删除「${display((entryById(id) || {}).title) || entryLabel(entryById(id))}」？`, message: "它会从经历库和所有岗位里移除。需要时可以从 .studio/history 找回。", ok: "删除", danger: true }))) return;
   ui.dirty = false;
   applyState(await api("DELETE", "/api/entries/" + encodeURIComponent(id)));
   select("profile");
@@ -646,8 +675,20 @@ function profileForm() {
   const p = ui.draft;
   p.contacts = p.contacts || [];
   const rows = h("div", { class: "list-rows" });
+  const v = version();
+  const job = v && v.id !== ALL;
+  const hiddenC = new Set(job ? v.hide_contacts || [] : []);
   p.contacts.forEach((c, i) => {
-    rows.append(h("div", { class: "lr", style: "grid-template-columns: 96px 1fr 1fr 30px" },
+    const shown = !hiddenC.has(c.label || "");
+    rows.append(h("div", { class: "lr", style: `grid-template-columns: ${job ? "22px " : ""}96px 1fr 1fr 30px` },
+      job && h("button", { class: "check" + (shown ? " on" : ""), role: "checkbox", "aria-checked": String(shown),
+        title: shown ? `在「${jobName(v)}」里隐藏` : `在「${jobName(v)}」里显示`,
+        onclick: () => mutateVersion((x) => {
+          const set = new Set(x.hide_contacts || []);
+          if (shown) set.add(c.label || ""); else set.delete(c.label || "");
+          x.hide_contacts = [...set];
+          if (!x.hide_contacts.length) delete x.hide_contacts;
+        }).then(buildEditorKeepDraft) }),
       h("input", { value: c.label ?? "", placeholder: "email", spellcheck: "false", oninput: (ev) => { c.label = ev.target.value; touch(); } }),
       h("input", { value: getT(c.value, ui.editLang), placeholder: "显示的文字", spellcheck: "false", oninput: (ev) => { c.value = ev.target.value; touch(); } }),
       h("input", { value: c.url ?? "", placeholder: "链接（可选）mailto: / https://", spellcheck: "false", oninput: (ev) => { c.url = ev.target.value; touch(); } }),
@@ -656,8 +697,14 @@ function profileForm() {
   rows.append(h("button", { class: "btn sm", onclick: () => { p.contacts.push({ label: "", value: "", url: "" }); touch(); buildEditorKeepDraft(); } }, icon("plus"), "添加联系方式"));
   return [
     h("div", { class: "ed-head" }, h("h1", null, "个人信息"), h("span", { class: "spacer" }), langSwitch()),
-    card("基本信息", null, [tfield("姓名", p, "name", { i18n: true }), tfield("一句话介绍 / 求职方向", p, "headline", { i18n: true })]),
-    card("联系方式", "按顺序显示在姓名下面", rows),
+    card("基本信息", null, [
+      tfield("姓名", p, "name", { i18n: true }),
+      h("div", { class: "field" }, h("label", null, "一句话介绍 / 求职方向"),
+        h("div", { class: "row wrap" },
+          h("span", { class: "muted", style: "font-size:12.5px;flex:1;min-width:200px" }, "每个岗位写自己的一句，在 ALL 和各岗位的设置里填。"),
+          h("button", { class: "btn sm", onclick: () => select("version", ui.versionId) }, icon("settings"), `编辑「${job ? jobName(v) : "ALL"}」的这一句`))),
+    ]),
+    card("联系方式", job ? `按顺序显示在姓名下面；左边的勾 = 在「${jobName(v)}」里显示` : "按顺序显示在姓名下面；切到某个岗位后可以隐藏其中几项", rows),
     card("事实层", "只给 Claude 看", tfield("求职背景、限制、偏好", p, "notes", { multiline: true, rows: 5 }), { cls: "fact" }),
   ];
 }
@@ -695,7 +742,7 @@ function sectionsForm() {
     } }, LANG_NAMES[l])));
   return [
     h("div", { class: "ed-head" }, h("h1", null, "板块与设置"), h("span", { class: "spacer" }), langSwitch()),
-    card("板块", "默认顺序；每个版本还能单独调整", [
+    card("板块", "默认顺序；每个岗位还能单独调整", [
       h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, "时间线 = 标题 + 日期 + 要点；列表 = 「类别：条目」一行一个，适合技能。"), rows]),
     card("设置", null, [
       h("div", { class: "field" }, h("label", null, "内容语言", h("span", { class: "hint" }, "选两种时，文字按语言分开保存，编辑区会出现语言切换")), h("div", null, langToggle)),
@@ -714,7 +761,7 @@ function versionForm() {
   const rows = h("div", { class: "list-rows" });
   order.forEach((sid, i) => {
     rows.append(h("div", { class: "lr", style: "grid-template-columns: 22px 1fr 26px 26px" },
-      h("button", { class: "check" + (hidden.has(sid) ? "" : " on"), title: "在这个版本里显示", onclick: () => {
+      h("button", { class: "check" + (hidden.has(sid) ? "" : " on"), title: "在这里显示", onclick: () => {
         const set = new Set(v.hide_sections || []);
         if (set.has(sid)) set.delete(sid); else set.add(sid);
         v.hide_sections = [...set];
@@ -727,9 +774,16 @@ function versionForm() {
   });
   if (v.sections && v.sections.length) rows.append(h("button", { class: "btn sm", onclick: () => { delete v.sections; touch(); buildEditorKeepDraft(); } }, icon("undo"), "恢复默认顺序"));
   return [
-    h("div", { class: "ed-head" }, h("h1", null, "版本设置"), h("span", { class: "id" }, v.id)),
-    card("版本信息", "模板、语言和版面在右侧预览上方调整；选哪些经历在左侧勾选", h("div", { class: "grid2" }, tfield("版本 ID", v, "id", { hint: "也是导出文件名" }), tfield("名称", v, "label"))),
-    card("板块顺序与显示", "只影响这个版本", rows),
+    v.id === ALL
+      ? h("div", { class: "ed-head" }, h("h1", null, "ALL 设置"), h("span", { class: "id" }, "全部经历"), h("span", { class: "spacer" }), langSwitch())
+      : h("div", { class: "ed-head" }, h("h1", null, "岗位设置"), h("span", { class: "id" }, v.id), h("span", { class: "spacer" }), langSwitch()),
+    v.id === ALL
+      ? card("ALL", "全集预览：全部经历、全部联系方式，不受一页限制；模板、语言和版面在右侧预览上方调整", tfield("一句话介绍 / 求职方向", v, "headline", { i18n: true, placeholder: "可以留空" }))
+      : card("岗位信息", "模板、语言和版面在右侧预览上方调整；选哪些经历在左侧勾选", [
+        h("div", { class: "grid2" }, tfield("名称", v, "label", { placeholder: "AI Agent 工程师" }), tfield("ID", v, "id", { hint: "也是导出文件名" })),
+        tfield("一句话介绍 / 求职方向", v, "headline", { i18n: true, placeholder: "比如：AI Agent Engineer · LLM tooling & full-stack" }),
+      ]),
+    card("板块顺序与显示", v.id === ALL ? "只影响 ALL" : "只影响这个岗位", rows),
   ];
 }
 
@@ -860,8 +914,8 @@ function renderChat() {
   if (!ui.chat.messages.length && !ui.chat.running) {
     const suggest = [
       "帮我录入一段新经历，一次只问我一个问题",
-      "检查当前版本里有没有超出事实层的说法",
-      "把当前版本压到一页，先调版面再精简措辞",
+      "检查当前岗位里有没有超出事实层的说法",
+      "把当前岗位压到一页，先调版面再精简措辞",
       "根据事实层给当前打开的条目起草要点",
     ];
     log.append(h("div", { class: "chat-welcome" },
@@ -919,8 +973,8 @@ function renderComposerState() {
   $("#chat-send").disabled = !ui.chat.available;
   $("#chat-input").disabled = !ui.chat.available;
   const parts = [];
-  if (ui.versionId) parts.push(`版本 ${ui.versionId}`);
-  if (ui.sel.kind === "entry" && ui.sel.id) parts.push(`条目 ${ui.sel.id}`);
+  if (ui.versionId) parts.push(isAll() ? "ALL（全部经历）" : `岗位「${jobName(version())}」`);
+  if (ui.sel.kind === "entry" && entryById(ui.sel.id)) parts.push(`「${display(entryById(ui.sel.id).title) || entryLabel(entryById(ui.sel.id))}」`);
   $("#chat-context").textContent = parts.length ? `Claude 知道你正在看：${parts.join(" · ")}` : "";
   $("#chat-dot").classList.toggle("hidden", !running);
 }
@@ -952,7 +1006,7 @@ async function sendChat(text, { polish = false, entryId = null } = {}) {
   const body = { text, version_id: ui.versionId, entry_id: entryId || (ui.sel.kind === "entry" ? ui.sel.id : null), polish };
   ui.chat.running = true;
   ui.chat.live = { blocks: [] };
-  ui.chat.messages.push({ role: "user", text: polish ? `润色 ${entryId}${text ? "：" + text : ""}` : text, meta: { polish } });
+  ui.chat.messages.push({ role: "user", text: polish ? `润色「${display((entryById(entryId) || {}).title) || entryLabel(entryById(entryId))}」${text ? "：" + text : ""}` : text, meta: { polish } });
   renderChat();
   renderComposerState();
   try {
@@ -996,7 +1050,7 @@ async function onChatEvent(type, ev) {
     if (ui.polish && ui.polish.chat === ev.chat) {
       ui.polish.done = true;
       if (ui.sel.kind === "entry" && ui.sel.id === ui.polish.entryId && !ui.dirty) buildEditor();
-      else if (ui.sel.kind !== "entry" || ui.sel.id !== ui.polish.entryId) toast(`Claude 改完了 ${ui.polish.entryId}`, { action: { label: "查看", fn: () => select("entry", ui.polish.entryId) } });
+      else if (ui.sel.kind !== "entry" || ui.sel.id !== ui.polish.entryId) toast(`Claude 改完了「${display((entryById(ui.polish.entryId) || {}).title) || entryLabel(entryById(ui.polish.entryId))}」`, { action: { label: "查看", fn: () => select("entry", ui.polish.entryId) } });
     }
     if (ev.error && ui.tab !== "chat") toast("Claude 出错了，详见对话");
   }
@@ -1114,11 +1168,15 @@ function setBadge(res) {
   errs.classList.add("hidden");
   if (!res) { b.className = "badge"; b.textContent = ""; return; }
   if (res.busy) { b.className = "badge busy"; b.textContent = "渲染中"; return; }
-  if (res.ok) {
+  if (res.ok && res.version === ALL) {
+    b.className = "badge info";
+    b.replaceChildren(`全部经历 · ${res.pages} 页`);
+    b.title = "ALL 不受一页限制；投递用的简历请在岗位里做";
+  } else if (res.ok) {
     const one = res.pages === 1;
     b.className = "badge " + (one ? "ok" : "bad");
     b.replaceChildren(icon(one ? "check" : "alert"), one ? "1 页" : `${res.pages} 页 · 超出一页`);
-    b.title = one ? `渲染用时 ${res.seconds}s` : "试试在「版面」里减小字号、边距、间距，或少选一条经历";
+    b.title = one ? `渲染用时 ${res.seconds}s` : "试试在「版面」里减小字号、边距、间距，或在这个岗位里少选一条经历";
   } else {
     b.className = "badge bad";
     b.replaceChildren(icon("alert"), "渲染失败");
@@ -1169,8 +1227,9 @@ async function showPages(res) {
     img.src = `/api/versions/${vid}/page/${i + 1}?t=${res.stamp}`;
   })));
   const w = pageWidth();
-  box.replaceChildren(...imgs.map((img, i) => h("div", { class: "page" + (i > 0 ? " overflow" : ""), style: `width:${w}px` },
-    res.images > 1 ? h("span", { class: "plabel" }, i === 0 ? "第 1 页" : `第 ${i + 1} 页 · 超出一页`) : null, img)));
+  const all = res.version === ALL;
+  box.replaceChildren(...imgs.map((img, i) => h("div", { class: "page" + (i > 0 && !all ? " overflow" : ""), style: `width:${w}px` },
+    res.images > 1 ? h("span", { class: "plabel" }, i === 0 || all ? `第 ${i + 1} 页` : `第 ${i + 1} 页 · 超出一页`) : null, img)));
 }
 
 async function exportPdf() {

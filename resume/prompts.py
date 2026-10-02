@@ -25,18 +25,25 @@ def ui_context(data_path: str, version: dict | None, entry: dict | None) -> str:
         "  before your first edit of the data file in this conversation.",
         f"- To check page count yourself: `python \"{SKILL_ROOT / 'scripts' / 'render.py'}\" <VERSION-ID> --data \"{data_path}\"`.",
     ]
-    if version:
-        lines.append(f"- The user is currently looking at resume version `{version.get('id')}`"
+    if version and str(version.get("id")) == "ALL":
+        lines.append(f"- The user is looking at `ALL`, the full set: every entry in the library"
+                     f" (language `{version.get('lang')}`, template `{version.get('template')}`)."
+                     " Job targets are the other `versions`; each one is a subset.")
+    elif version:
+        lines.append(f"- The user is currently looking at the job target (version) `{version.get('id')}`"
                      f" ({version.get('label') or ''}, language `{version.get('lang')}`,"
                      f" template `{version.get('template')}`).")
     if entry:
-        lines.append(f"- The entry open in the editor is `{entry.get('id')}` (section `{entry.get('section')}`).")
+        lines.append(f"- The entry open in the editor is `{entry.get('id')}` (section `{entry.get('section')}`)."
+                     " Entry ids are internal: the user never sees them, so in replies call entries by"
+                     " their title (or section and number, e.g. \"Projects #2\").")
     return "\n".join(lines) + "\n"
 
 
-def polish_message(entry_id: str, instruction: str) -> str:
-    """What the 'polish with Claude' button says on the user's behalf."""
-    msg = f"请根据事实层（notes 和 evidence）润色经历 {entry_id} 的展示层。只改这一条，不要改 notes 和 evidence。"
+def polish_message(name: str, instruction: str) -> str:
+    """What the 'polish with Claude' button says on the user's behalf. The entry's internal id
+    reaches Claude through ui_context, so the visible message can use the name people know."""
+    msg = f"请根据事实层（notes 和 evidence）润色「{name}」这条经历的展示层。只改这一条，不要改 notes 和 evidence。"
     if instruction.strip():
         msg += f"\n补充要求：{instruction.strip()}"
     return msg

@@ -3,7 +3,9 @@
 See SKILL.md for the documented schema. Principles:
   - `entries` is the experience library: append-only in spirit, never limited to one page.
   - Every entry has a fact layer (`notes`, `evidence`) that no template ever renders.
-  - A `version` only references entry ids plus template/layout choices; it never copies content.
+  - A `version` is one job target (岗位): it references entry ids plus its own headline,
+    template and layout; it never copies content. The reserved version `ALL` is the full
+    set: every entry and every contact, in library order (its `entries` are ignored).
   - Any text field may be a plain string or a per-language map like {en: ..., zh: ...}.
 """
 from __future__ import annotations
@@ -23,6 +25,17 @@ DEFAULT_SECTIONS = [
     {"id": "skills", "title": {"en": "Skills", "zh": "专业技能"}, "kind": "list"},
     {"id": "awards", "title": {"en": "Awards", "zh": "荣誉奖项"}, "kind": "timeline"},
 ]
+
+
+ALL_ID = "ALL"
+
+
+def default_all_version() -> dict:
+    return {"id": ALL_ID, "label": "全部经历", "lang": "en", "template": "classic", "headline": "", "layout": {}}
+
+
+def is_all(version: Any) -> bool:
+    return bool(version) and str(version.get("id")) == ALL_ID
 
 
 def default_cjk_font() -> str:
@@ -52,13 +65,10 @@ def skeleton() -> dict:
     return {
         "schema_version": SCHEMA_VERSION,
         "settings": {"languages": ["en"], "export_dir": "exports"},
-        "profile": {"name": "Your Name", "headline": "", "contacts": [], "notes": ""},
+        "profile": {"name": "Your Name", "contacts": [], "notes": ""},
         "sections": [dict(s) for s in DEFAULT_SECTIONS],
         "entries": [],
-        "versions": [{
-            "id": "RES-MAIN", "label": "Main", "lang": "en", "template": "classic",
-            "entries": [], "layout": {},
-        }],
+        "versions": [default_all_version()],
     }
 
 
@@ -119,6 +129,21 @@ def get_item(doc: Any, kind: str, item_id: str | None = None) -> Any:
     return None
 
 
+def get_version(doc: Any, version_id: str) -> Any:
+    """Like get_item, but ALL always exists (a file may not have saved it yet)."""
+    v = get_item(doc, "version", version_id)
+    if v is None and version_id == ALL_ID:
+        return default_all_version()
+    return v
+
+
+def with_all(versions: list) -> list:
+    """Versions as the UI sees them: ALL first, then the job targets."""
+    rest = [v for v in versions if not is_all(v)]
+    found = next((v for v in versions if is_all(v)), None)
+    return [found if found is not None else default_all_version(), *rest]
+
+
 def hashes(doc: Any) -> dict:
     return {
         "profile": fingerprint(doc.get("profile")),
@@ -130,9 +155,17 @@ def hashes(doc: Any) -> dict:
 
 
 def next_entry_id(doc: Any) -> str:
+    """Internal, stable, section-independent id. The UI never shows it: the sidebar numbers
+    entries within their own section instead, so renaming or moving sections changes nothing."""
     nums = [int(m.group(1)) for e in doc.get("entries") or []
-            if (m := re.fullmatch(r"EXP-(\d+)", str(e.get("id", ""))))]
+            if (m := re.fullmatch(r"EXP-(\d+)", str(e.get("id", "")), re.IGNORECASE))]
     return f"EXP-{(max(nums) + 1) if nums else 1:03d}"
+
+
+def next_version_id(doc: Any) -> str:
+    nums = [int(m.group(1)) for v in doc.get("versions") or []
+            if (m := re.fullmatch(r"JOB-(\d+)", str(v.get("id", ""))))]
+    return f"JOB-{(max(nums) + 1) if nums else 1:03d}"
 
 
 def validate(doc: Any) -> list[str]:
@@ -147,9 +180,11 @@ def validate(doc: Any) -> list[str]:
             warn.append(f"{e.get('id')} 的 section「{e.get('section')}」不在 sections 列表里")
     known = set(ids)
     for v in doc.get("versions") or []:
+        if is_all(v):
+            continue
         for ref in v.get("entries") or []:
             if str(ref) not in known:
-                warn.append(f"版本 {v.get('id')} 引用了不存在的经历 {ref}")
+                warn.append(f"岗位 {v.get('id')} 引用了不存在的经历 {ref}")
     return warn
 
 
@@ -171,8 +206,12 @@ def build_view(doc: Any, version: dict) -> dict:
     if layout.get("paper") not in ("a4", "letter"):
         layout["paper"] = "a4"
 
+    everything = is_all(version)
     by_id = {str(e.get("id")): e for e in doc.get("entries") or []}
-    chosen = [by_id[str(i)] for i in version.get("entries") or [] if str(i) in by_id]
+    if everything:
+        chosen = list(doc.get("entries") or [])
+    else:
+        chosen = [by_id[str(i)] for i in version.get("entries") or [] if str(i) in by_id]
 
     sections = list(doc.get("sections") or [])
     order = [str(s) for s in version.get("sections") or []]
@@ -182,11 +221,14 @@ def build_view(doc: Any, version: dict) -> dict:
     hidden = {str(s) for s in version.get("hide_sections") or []}
 
     p = doc.get("profile") or {}
+    hidden_contacts = set() if everything else {str(c) for c in version.get("hide_contacts") or []}
+    headline = version.get("headline") if "headline" in version else p.get("headline")  # older files
     profile = {
         "name": tr(p.get("name"), lang),
-        "headline": tr(p.get("headline"), lang),
+        "headline": tr(headline, lang),
         "contacts": [{"label": tr(c.get("label"), lang), "value": tr(c.get("value"), lang),
-                      "url": tr(c.get("url"), lang)} for c in p.get("contacts") or []],
+                      "url": tr(c.get("url"), lang)} for c in p.get("contacts") or []
+                     if str(c.get("label") or "") not in hidden_contacts],
     }
 
     out_sections = []

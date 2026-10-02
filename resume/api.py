@@ -45,6 +45,13 @@ def register(app: App, studio: Studio, chats: ChatRunner) -> None:
         new_id, s = studio.create_entry(str(b.get("section") or "projects"))
         return {"id": new_id, **s}
 
+    @app.route("POST", "/api/entries/{entry_id}/move")
+    def move_entry(req: Request):
+        try:
+            return studio.move_entry(req.params["entry_id"], int(body(req).get("dir") or 0))
+        except KeyError as e:
+            raise HttpError(404, str(e))
+
     @app.route("DELETE", "/api/entries/{entry_id}")
     def del_entry(req: Request):
         return studio.delete_entry(req.params["entry_id"])
@@ -52,12 +59,18 @@ def register(app: App, studio: Studio, chats: ChatRunner) -> None:
     @app.route("POST", "/api/versions")
     def new_version(req: Request):
         b = body(req)
-        vid, s = studio.create_version(b.get("copy_from"), b.get("id"))
+        try:
+            vid, s = studio.create_version(b.get("copy_from"), b.get("id"), b.get("label"))
+        except ValueError as e:
+            raise HttpError(400, str(e))
         return {"id": vid, **s}
 
     @app.route("DELETE", "/api/versions/{vid}")
     def del_version(req: Request):
-        return studio.delete_version(req.params["vid"])
+        try:
+            return studio.delete_version(req.params["vid"])
+        except ValueError as e:
+            raise HttpError(400, str(e))
 
     # ---- rendering -------------------------------------------------------
     @app.route("POST", "/api/versions/{vid}/render")
@@ -119,13 +132,14 @@ def register(app: App, studio: Studio, chats: ChatRunner) -> None:
         b = body(req)
         cid = req.params["cid"]
         doc, _ = studio.store.load()
-        version = model.get_item(doc, "version", b.get("version_id")) if b.get("version_id") else None
+        version = model.get_version(doc, b.get("version_id")) if b.get("version_id") else None
         entry = model.get_item(doc, "entry", b.get("entry_id")) if b.get("entry_id") else None
 
         if b.get("polish"):
             if entry is None:
                 raise HttpError(404, f"{b.get('entry_id')} 不存在")
-            text = prompts.polish_message(str(entry.get("id")), str(b.get("text") or ""))
+            lang = str((version or {}).get("lang") or "en")
+            text = prompts.polish_message(model.tr(entry.get("title"), lang) or "这条经历", str(b.get("text") or ""))
         else:
             text = str(b.get("text") or "").strip()
             if not text:
