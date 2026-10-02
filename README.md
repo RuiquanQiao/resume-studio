@@ -9,13 +9,18 @@ It is also a first attempt at "skills with a UI": `core/` knows nothing about re
 
 ## Use
 
-- **Double-click `Resume Studio.pyw`.** The first run builds `.venv` (about a minute) and
-  asks where your `resume.yaml` is (or should be created).
+- **Double-click `Resume Studio.exe`** (right-click → Pin to Start, if you like). The first
+  run builds `.venv` (about a minute, with a small progress note).
 - Or, inside Claude Code: `/resume-studio`.
-- Or from a shell: `python scripts/studio.py --data path/to/resume.yaml [--window]`.
+- Or from a shell: `python scripts/studio.py [--window] [--data other/resume.yaml]`.
+
+Your data lives in this folder: `resume.yaml`, plus `.studio/` (chats, history) and `exports/`.
+All three are git-ignored, so pulling updates never touches them.
 
 Needs Python 3.10+, `xelatex` (TeX Live / MiKTeX) and a logged-in Claude Code for the chat.
 Everything is installed into this folder (`.venv`, `.cache`); nothing global.
+The exe is a 16 KB launcher built from `launcher/Launcher.cs` by `scripts/build_launcher.py`
+with the C# compiler that ships with Windows.
 
 ## What it does
 

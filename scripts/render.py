@@ -5,7 +5,7 @@
     python scripts/render.py RES-TECH-EN --export # also copy PDF + .tex to the export dir
     python scripts/render.py --check              # only validate resume.yaml
 
-Options: --data PATH (default: $RESUME_STUDIO_DATA or ./resume.yaml)
+Options: --data PATH (default: $RESUME_STUDIO_DATA or <skill>/resume.yaml)
 """
 from __future__ import annotations
 

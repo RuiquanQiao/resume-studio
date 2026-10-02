@@ -1,9 +1,10 @@
 """Launch Resume Studio.
 
-    python scripts/studio.py --data E:/Resume/resume.yaml            # in the browser
-    python scripts/studio.py --window                                 # native window (what the .pyw does)
-    python scripts/studio.py --data ... --port 9000 --no-browser
+    python scripts/studio.py --window                                 # native window (what Resume Studio.exe does)
+    python scripts/studio.py                                          # in the browser
+    python scripts/studio.py --data path/to/resume.yaml --port 9000 --no-browser
 
+The data file defaults to <skill>/resume.yaml (git-ignored).
 Only one UI runs per data file: launching again brings the existing one to front.
 """
 from __future__ import annotations
@@ -14,11 +15,10 @@ import os
 import sys
 import urllib.request
 import webbrowser
-from pathlib import Path
 
-from _bootstrap import LOCAL, reexec_in_venv, resolve_data
+from _bootstrap import LOCAL, ROOT, reexec_in_venv, resolve_data
 
-APP_CONFIG = LOCAL / "app.json"
+ICON = ROOT / "assets" / "icon.ico"
 
 
 def parse_args() -> argparse.Namespace:
@@ -30,34 +30,24 @@ def parse_args() -> argparse.Namespace:
     return ap.parse_args()
 
 
-def window_data_path(arg: str | None) -> Path | None:
-    """The window has no working directory to go by: remember the file, ask once."""
-    if arg:
-        path = Path(arg).expanduser().resolve()
-    else:
-        try:
-            path = Path(json.loads(APP_CONFIG.read_text(encoding="utf-8"))["data"])
-        except (OSError, ValueError, KeyError):
-            path = ask_data_file()
-            if path is None:
-                return None
-    LOCAL.mkdir(parents=True, exist_ok=True)
-    APP_CONFIG.write_text(json.dumps({"data": str(path)}, ensure_ascii=False, indent=1), encoding="utf-8")
-    return path
-
-
-def ask_data_file() -> Path | None:
+def show_startup_error(exc: BaseException) -> None:
+    """Window launches have no console: show the error instead of vanishing."""
+    import traceback
     import tkinter as tk
-    from tkinter import filedialog, messagebox
+    from tkinter import messagebox
 
-    root = tk.Tk()
-    root.withdraw()
-    messagebox.showinfo("Resume Studio", "选择你的简历数据文件 resume.yaml。\n还没有的话，选一个文件夹并输入文件名，会自动新建。")
-    name = filedialog.asksaveasfilename(title="选择或新建 resume.yaml", defaultextension=".yaml",
-                                        initialfile="resume.yaml", confirmoverwrite=False,
-                                        filetypes=[("YAML", "*.yaml *.yml")])
-    root.destroy()
-    return Path(name).resolve() if name else None
+    log = LOCAL / "last-error.txt"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("".join(traceback.format_exception(exc)), encoding="utf-8")
+    tk.Tk().withdraw()
+    messagebox.showerror("Resume Studio", f"启动失败：{exc}\n\n详细信息：{log}")
+
+
+def set_app_id() -> None:
+    """Own taskbar button and icon, instead of being grouped under pythonw.exe."""
+    if os.name == "nt":
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("RuiquanQiao.ResumeStudio")
 
 
 def focus_existing(url: str) -> None:
@@ -77,9 +67,7 @@ def main() -> None:
     from resume.app import create_app
     from resume.service import Studio
 
-    data = window_data_path(args.data) if args.window else resolve_data(args.data)
-    if data is None:
-        return
+    data = resolve_data(args.data)
     probe = Studio(data)
     state_file = probe.store.state_dir / "server.json"
     url = running_instance(state_file, {"app": "resume-studio", "data": str(probe.store.path)})
@@ -114,6 +102,7 @@ def main() -> None:
 
     import webview
 
+    set_app_id()
     httpd, url = inst.app.start_background(port=args.port)
     write_state(url)
     window = webview.create_window("Resume Studio", url, width=1480, height=920, min_size=(1100, 680),
@@ -128,12 +117,18 @@ def main() -> None:
     inst.focus["fn"] = bring_to_front
     try:
         # keep WebView2's profile (localStorage etc.) inside the skill folder, not in AppData
-        webview.start(private_mode=False, storage_path=str(LOCAL / "webview"))
+        webview.start(private_mode=False, storage_path=str(LOCAL / "webview"), icon=str(ICON))
     finally:
         httpd.stop()
         cleanup()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        if "--window" not in sys.argv:
+            raise
+        show_startup_error(exc)
+        sys.exit(1)
     sys.exit(0)

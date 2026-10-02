@@ -13,19 +13,19 @@ Skill 根目录记为 `<skill>`，也就是这份 SKILL.md 所在的目录。
 
 - **`/resume-studio` 不带参数**，或用户说「打开简历界面」：不要先提问，直接打开窗口（见下一节），告诉用户窗口已经打开，然后停下来等用户下一步。
 - **`/resume-studio <任务>`**，比如 `/resume-studio 润色 EXP-002` 或 `/resume-studio 把 RES-TECH-EN 压到一页`：直接按下面的编辑规则去改 `resume.yaml`。界面如果开着，会自动刷新；没开也不用特意去开。
-- 数据文件路径：用户指定了就用用户的；否则用当前工作目录下的 `resume.yaml`。
+- 数据文件路径：用户明确指定了就用用户的（加 `--data`）；否则一律用 `<skill>/resume.yaml`（已被 git 忽略）。不要因为当前工作目录里碰巧有个 `resume.yaml` 就去改它。
 
 ## 打开界面
 
-用户平时双击 `<skill>/Resume Studio.pyw` 打开独立窗口。你替用户打开时，用 Bash 工具以 `run_in_background: true` 运行：
+用户平时双击 `<skill>/Resume Studio.exe`（或固定到「开始」的它）打开独立窗口。你替用户打开时，用 Bash 工具以 `run_in_background: true` 运行：
 
 ```bash
-python "<skill>/scripts/studio.py" --window --data <数据文件的绝对路径>
+python "<skill>/scripts/studio.py" --window
 ```
 
 - 窗口是独立进程，不依附于当前会话：会话结束、用户切换账号，窗口都还在。
 - 同一个数据文件的窗口已经开着时，脚本只会把它调到前面，不会再开第二个。重复调用是安全的。
-- 数据文件不存在时会自动创建一个空骨架。`--data` 会被记住，下次双击 `.pyw` 就打开这个文件。
+- 数据文件不存在时会自动创建一个空骨架。用户指定了别的文件时，加 `--data <绝对路径>`；这只对这一次生效，不会被记住。
 - 没有图形界面的环境（或用户要求用浏览器）去掉 `--window`，会改为在浏览器里打开，并打印 `UI running at http://...`。
 - 所有依赖都装在 `<skill>/.venv`，pip 缓存在 `<skill>/.cache`；第一次运行会自动创建，不碰全局环境。LaTeX 编译需要系统里有 `xelatex`（TeX Live 或 MiKTeX）。
 
@@ -93,7 +93,7 @@ versions:                    # 一次导出的配置，只引用条目，不复�
 
 ## 编辑规则（Claude 必须遵守）
 
-1. **直接改 resume.yaml**，只动任务相关的部分。保留其他条目、注释、字段顺序和写法风格（行内 `{}` 或块状都行）。改动靠 git 兜底，另外界面每次保存前会把上一版存到 `.studio/history/`。
+1. **直接改 resume.yaml**，只动任务相关的部分。保留其他条目、注释、字段顺序和写法风格（行内 `{}` 或块状都行）。每次保存前，上一版会存到数据文件旁边的 `.studio/history/`，需要回退时从那里找。
 2. **事实边界**：展示层（title、subtitle、bullets……）写出的任何事实、数字、职责、规模，都必须能被 `notes` 或 `evidence` 支撑。拿不准就不写，或者保守表述，并在回复里告诉用户缺什么信息。这是用户对「律师」说的实话，拿来包装，但不编造。
 3. **不要改事实层**：除非用户明确要求，不改 `notes` 和 `evidence`；也永远不要把 notes 的内容原样搬进 bullets。
 4. **ID 要稳定**：不要改已有条目的 `id`。新增条目时用下一个 `EXP-xxx`。删除或改名时，要同步更新 `versions[].entries`。
@@ -108,7 +108,8 @@ versions:                    # 一次导出的配置，只引用条目，不复�
 
 ## 目录结构
 
-- `Resume Studio.pyw`：双击打开窗口。
+- `Resume Studio.exe`：双击打开窗口（源码在 `launcher/`，图标在 `assets/`，用 `scripts/build_launcher.py` 重新生成）。
+- `resume.yaml`、`.studio/`、`exports/`：用户自己的数据、对话记录和历史版本、导出的 PDF，都被 git 忽略。
 - `core/`：和简历无关的「Skill + 界面」公共层，包括 YAML 存储、文件监听、SSE 推送、HTTP 服务、Claude Code 会话（`chat.py`）。
 - `resume/`：简历业务，包括数据模型、渲染器（`render/`，目前是 LaTeX，接口上预留了 Typst）、模板（`templates/latex/*.tex.j2`）、API、服务组装（`app.py`）。
 - `web/`：无需构建的前端。

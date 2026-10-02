@@ -9,5 +9,8 @@ tests/artifacts/
 examples/exports/
 
 # personal resume data must never land in the public skill repo
-resume.yaml
-exports/
+/resume.yaml
+/exports/
+
+# shortcuts people make to Resume Studio.exe
+*.lnk

@@ -47,7 +47,9 @@ copy of `examples/resume.sample.yaml` (never on real data):
       data file and `SKILL.md` with tools, and respects "don't change anything yet"
 - [ ] follow up ("按你说的改") → same session (it remembers), edits the file, form and
       preview refresh by themselves; `git diff --no-index` shows only the intended line
-- [ ] launch `Resume Studio.pyw` with system `pythonw` → a window titled "Resume Studio"
-      appears and renders; launching again does not open a second window; closing it
-      (`CloseMainWindow`) frees the port and removes `.studio/server.json`
-- [ ] afterwards point `.local/app.json` back at the real data file
+- [ ] launch `Resume Studio.exe` → a window titled "Resume Studio" with the app icon
+      appears and renders `<skill>/resume.yaml`; launching again does not open a second
+      window; closing it (`CloseMainWindow`) frees the port and removes `.studio/server.json`
+- [ ] first run: copy the repo without `.venv` into `.cache/fresh/` and launch its exe →
+      the setup note shows, `.venv` is built there, then the window opens
+- [ ] launcher errors: an exe copied away from the repo explains where it belongs
