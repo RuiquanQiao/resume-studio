@@ -29,7 +29,7 @@
 ((* if e.bullets *))
 \begin{itemize}
 ((* for b in e.bullets *))
-  \item ((( b|tex )))
+  \rsitem{((( e.ref ))).((( e.bidx[loop.index0] )))}{((( b|tex )))}
 ((* endfor *))
 \end{itemize}
 ((* endif *))

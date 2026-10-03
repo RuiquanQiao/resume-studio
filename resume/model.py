@@ -88,6 +88,34 @@ def tr(value: Any, lang: str) -> str:
     return str(value)
 
 
+def bullet_text(value: Any, lang: str) -> str:
+    """One bullet in one language. Unlike tr(), an explicit empty value hides the bullet in that
+    language ({en: '...', zh: ''} = not on the Chinese resume), so each language can keep its own
+    number of bullets. Only a missing key falls back to another language."""
+    if isinstance(value, dict) and lang in value:
+        return str(value.get(lang) or "")
+    return tr(value, lang)
+
+
+_CJK_RE = re.compile(r"[㐀-鿿]")
+
+
+def _lacks(value: Any, lang: str, bullet: bool = False) -> bool:
+    if isinstance(value, dict):
+        others = any(v for k, v in value.items() if k != lang)
+        return others and (lang not in value if bullet else not value.get(lang))
+    if bullet and value:  # one plain string for every language: flag it where it is the wrong script
+        return (lang == "zh") != bool(_CJK_RE.search(str(value)))
+    return False
+
+
+def missing_text(entry: Any, lang: str) -> dict:
+    """What this entry still lacks in `lang` (it would fall back to another language)."""
+    fields = [k for k in ("title", "subtitle", "location", "date") if _lacks(entry.get(k), lang)]
+    bullets = [i for i, b in enumerate(entry.get("bullets") or []) if _lacks(b, lang, bullet=True)]
+    return {"fields": fields, "bullets": bullets} if fields or bullets else {}
+
+
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 _PRESENT = {"present", "now", "current", "至今", "今"}
 
@@ -232,6 +260,7 @@ def build_view(doc: Any, version: dict) -> dict:
     }
 
     out_sections = []
+    ref = 0
     for s in sections:
         sid = str(s.get("id"))
         if sid in hidden:
@@ -240,19 +269,32 @@ def build_view(doc: Any, version: dict) -> dict:
         for e in chosen:
             if str(e.get("section")) != sid:
                 continue
+            kept = [(i, bullet_text(b, lang)) for i, b in enumerate(e.get("bullets") or [])]
+            kept = [(i, t) for i, t in kept if t.strip()]
             items.append({
                 "id": str(e.get("id")),
+                "ref": ref,                       # renderers report per-bullet line counts as ref.index
                 "title": tr(e.get("title"), lang),
                 "subtitle": tr(e.get("subtitle"), lang),
                 "location": tr(e.get("location"), lang),
                 "dates": date_range(e, lang),
                 "link": tr(e.get("link"), lang),
                 "tech": [tr(t, lang) for t in e.get("tech") or [] if tr(t, lang)],
-                "bullets": [tr(b, lang) for b in e.get("bullets") or [] if tr(b, lang)],
+                "bullets": [t for _, t in kept],
+                "bidx": [i for i, _ in kept],     # each shown bullet's index in the entry's list
             })
+            ref += 1
         if items:
             out_sections.append({"id": sid, "title": tr(s.get("title"), lang),
                                  "kind": str(s.get("kind") or "timeline"), "entries": items})
 
+    missing = []
+    for e in chosen:
+        if str(e.get("section")) in hidden or not any(str(s.get("id")) == str(e.get("section")) for s in sections):
+            continue
+        gap = missing_text(e, lang)
+        if gap:
+            missing.append({"id": str(e.get("id")), **gap})
+
     return {"lang": lang, "profile": profile, "sections": out_sections, "layout": layout,
-            "template": str(version.get("template") or "classic")}
+            "template": str(version.get("template") or "classic"), "missing": missing}

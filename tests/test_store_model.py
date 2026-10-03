@@ -178,3 +178,13 @@ def test_move_entry_reorders_library_within_section(data_file):
     assert order.index("EXP-003") < order.index("EXP-002")
     s = st.move_entry("EXP-003", -1)                                    # EXP-001 is another section
     assert [e["id"] for e in s["doc"]["entries"]] == order
+
+
+def test_bullets_per_language():
+    assert model.bullet_text({"en": "A", "zh": ""}, "zh") == ""          # '' hides it in Chinese
+    assert model.bullet_text({"en": "A"}, "zh") == "A"                   # missing key falls back
+    assert model.bullet_text("plain", "zh") == "plain"
+    e = {"title": {"en": "Proj"}, "bullets": [{"en": "A", "zh": "甲"}, {"en": "B"}, {"en": "C", "zh": ""}, "Built it"]}
+    assert model.missing_text(e, "zh") == {"fields": ["title"], "bullets": [1, 3]}   # plain English text counts too
+    assert model.missing_text(e, "en") == {}
+    assert model.missing_text({"title": "Paper2Exam", "bullets": []}, "zh") == {}    # a shared name is fine

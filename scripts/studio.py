@@ -115,6 +115,13 @@ def main() -> None:
         window.on_top = False
 
     inst.focus["fn"] = bring_to_front
+
+    def pick(kind: str, start: str):
+        # Windows uses `directory` only until the user has picked once; then it reopens at the last folder
+        dialog = webview.FileDialog.FOLDER if kind == "folder" else webview.FileDialog.OPEN
+        return window.create_file_dialog(dialog, directory=os.path.normpath(start), allow_multiple=kind == "files") or []
+
+    inst.dialog["fn"] = pick
     try:
         # keep WebView2's profile (localStorage etc.) inside the skill folder, not in AppData
         webview.start(private_mode=False, storage_path=str(LOCAL / "webview"), icon=str(ICON))

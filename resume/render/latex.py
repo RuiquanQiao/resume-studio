@@ -134,4 +134,21 @@ class LatexRenderer(Renderer):
                           if ln.startswith("!") or re.match(r".*main\.tex:\d+:", ln)][:8] \
                     or ["xelatex 编译失败，详见 main.log"]
             return RenderResult(ok=not errors, pages=pages, pdf=pdf if pdf.exists() else None,
-                                source=src, seconds=time.time() - t0, errors=errors)
+                                source=src, seconds=time.time() - t0, errors=errors,
+                                lines=_bullet_lines(log, view))
+
+
+_RSLINE_RE = re.compile(r"^RSLINE (\d+)\.(\d+) (\d+) ([\d.]+)pt ([\d.]+)pt", re.M)
+
+
+def _bullet_lines(log: str, view: dict) -> dict:
+    """Read what \\rsitem wrote to the log: lines per bullet and how full the text is."""
+    ids = {e["ref"]: e["id"] for s in view.get("sections", []) for e in s.get("entries", [])}
+    out: dict = {}
+    for m in _RSLINE_RE.finditer(log):
+        eid = ids.get(int(m.group(1)))
+        if eid is None:
+            continue
+        width, line = float(m.group(4)), float(m.group(5))
+        out.setdefault(eid, {})[m.group(2)] = {"n": int(m.group(3)), "fill": round(width / line, 3) if line else 0}
+    return out

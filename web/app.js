@@ -4,58 +4,10 @@
 "use strict";
 
 // ================================================================ helpers
-const $ = (s, root = document) => root.querySelector(s);
 const clone = (x) => JSON.parse(JSON.stringify(x ?? null));
 const LANG_NAMES = { en: "EN", zh: "中文" };
 
-function h(tag, attrs, ...kids) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs || {})) {
-    if (v == null || v === false) continue;
-    if (k === "class") el.className = v;
-    else if (k === "html") el.innerHTML = v;
-    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
-    else if (k === "value") el.value = v;
-    else if (k === "checked") el.checked = v;
-    else el.setAttribute(k, v === true ? "" : v);
-  }
-  for (const kid of kids.flat(Infinity)) {
-    if (kid == null || kid === false || kid === true) continue;
-    el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
-  }
-  return el;
-}
-
-const ICONS = {
-  plus: '<path d="M12 5v14M5 12h14"/>',
-  more: '<path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3.2"/>',
-  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
-  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
-  up: '<path d="m6 15 6-6 6 6"/>',
-  down: '<path d="m6 9 6 6 6-6"/>',
-  x: '<path d="M6 6l12 12M18 6 6 18"/>',
-  send: '<path d="M12 19V5M6 11l6-6 6 6"/>',
-  stop: '<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/>',
-  sparkle: '<path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9z"/><path d="M19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z"/>',
-  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
-  grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
-  zoomIn: '<circle cx="11" cy="11" r="7"/><path d="M11 8v6M8 11h6M20 20l-4-4"/>',
-  zoomOut: '<circle cx="11" cy="11" r="7"/><path d="M8 11h6M20 20l-4-4"/>',
-  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
-  alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/>',
-  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
-  settings: '<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/>',
-  file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
-  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
-  chat: '<path d="M4 5h16v11H9l-5 4z"/>',
-};
-function icon(name) {
-  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  s.setAttribute("viewBox", "0 0 24 24");
-  s.setAttribute("class", "i");
-  s.innerHTML = ICONS[name] || "";
-  return s;
-}
+// h(), icon(), $ and the custom controls live in ui.js
 
 async function api(method, url, body) {
   const r = await fetch(url, {
@@ -187,8 +139,15 @@ const ui = {
   render: { timer: null, busy: false, again: false, last: null },
   zoom: "fit",
   layoutOpen: false,
-  polish: null, // {chat, entryId, snapshot, done}
-  chat: { list: [], id: null, meta: null, messages: [], running: false, live: null, liveEl: null, available: false },
+  ai: {},        // entryId -> {chat, action, snapshot, done}: what Claude was asked to change, for the diff + undo
+  lines: {},     // lang -> {entryId: {bulletIndex: {n, fill}}}: measured by the last render in that language
+  linesFor: {},  // lang -> version id the measurement belongs to
+  missing: [],   // entries lacking text in the previewed language (from the last render)
+  evidence: {},  // entryId -> {state, paths: [...]}: have the project folders changed since Claude read them
+  chat: { list: [], id: null, meta: null, messages: [], running: false, live: null, liveEl: null, available: false,
+          queue: [], files: [], waiting: new Set(), thinking: 0 },
+  claude: { info: null, limits: {}, modes: [] },   // what the user's Claude Code offers (GET /api/claude)
+  w: {},         // custom controls created once: version, chat, tpl
 };
 
 const doc = () => S.doc;
@@ -261,7 +220,7 @@ async function refresh() {
 function applyState(s) {
   S = s;
   $("#datapath").textContent = s.data_path;
-  $("#datapath").title = "数据文件：" + s.data_path;
+  setTip($("#datapath"), "数据文件：" + s.data_path);
   if (!versions().some((v) => v.id === ui.versionId)) {
     const saved = store("version");
     ui.versionId = versions().some((v) => v.id === saved) ? saved : ALL;
@@ -270,6 +229,10 @@ function applyState(s) {
     ui.editLang = (version() && langs().includes(version().lang) && version().lang) || langs()[0];
   }
   ui.chat.available = !!(s.claude && s.claude.available);
+  // evidence paths changed (picked here, typed, or edited by Claude): look at the folders again
+  const evSig = JSON.stringify(entries().map((e) => [e.id, e.evidence || []]));
+  if (ui.evSig !== undefined && evSig !== ui.evSig) checkEvidence(true);
+  ui.evSig = evSig;
   renderTopbar();
   renderLibrary();
   renderPreviewToolbar();
@@ -348,33 +311,40 @@ async function mutateVersion(fn) {
 }
 
 // ================================================================ top bar
+const TEMPLATE_NAMES = (id) => ((S.templates || []).find((t) => t.id === id) || {}).name || id;
+
 function renderTopbar() {
-  const sel = $("#version-select");
   const jobs = versions().filter((v) => v.id !== ALL);
-  const opt = (v, text) => h("option", { value: v.id, selected: v.id === ui.versionId }, text);
-  const all = versions().find((v) => v.id === ALL);
-  sel.replaceChildren(
-    all && opt(all, "ALL · 全部经历"),
-    jobs.length ? h("optgroup", { label: "岗位" }, jobs.map((v) => opt(v, v.label || v.id))) : h("option", { disabled: true, value: "" }, "还没有岗位：点右边 ··· 新建"),
-  );
+  const opts = [{ value: ALL, label: "ALL · 全部经历", short: "ALL · 全部经历", desc: "经历库全集，不限一页" }];
+  for (const v of jobs) opts.push({ value: v.id, label: v.label || v.id, group: "岗位", hint: `${LANG_NAMES[v.lang] || v.lang} · ${TEMPLATE_NAMES(v.template)}` });
+  if (!jobs.length) opts.push({ value: "__none", label: "还没有岗位", desc: "点右边的 ··· 新建一个", group: "岗位", disabled: true });
+  ui.w.version.setOptions(opts, ui.versionId);
 }
 
 function openVersionMenu() {
-  const menu = $("#version-menu");
-  if (!menu.classList.contains("hidden")) { menu.classList.add("hidden"); return; }
   const v = version();
-  const item = (label, ic, fn, cls = "") => h("button", { class: cls, role: "menuitem", onclick: () => { menu.classList.add("hidden"); fn(); } }, icon(ic), label);
   const job = v && v.id !== ALL;
-  menu.replaceChildren(
-    v && item(job ? "岗位设置（名称、求职方向、板块）" : "ALL 设置（求职方向、板块顺序）", "settings", () => select("version", ui.versionId)),
-    item("新建岗位（空白，自己勾选经历）", "plus", () => newVersion(null)),
-    v && item(job ? "复制当前岗位" : "新建岗位（先勾上全部经历）", "copy", () => newVersion(ui.versionId)),
-    h("hr"),
-    item("打开导出文件夹", "folder", revealExports),
-    job && h("hr"),
-    job && item("删除当前岗位", "trash", deleteVersion, "danger"),
-  );
-  menu.classList.remove("hidden");
+  const bilingual = langs().length > 1;
+  const inV = job ? (v.entries || []).map(entryById).filter(Boolean) : entries();
+  const lacking = (l) => inV.filter((e) => missingIn(e, l)).length;
+  const long = longBullets().length;
+  openMenu($("#version-menu-btn"), [
+    v && { label: job ? "岗位设置" : "ALL 设置", hint: job ? "名称、求职方向、板块" : "求职方向、板块顺序", icon: "settings", onClick: () => select("version", ui.versionId) },
+    { label: "新建岗位", hint: "空白，自己勾选", icon: "plus", onClick: () => newVersion(null) },
+    v && { label: job ? "复制当前岗位" : "新建岗位（先勾上全部经历）", icon: "copy", onClick: () => newVersion(ui.versionId) },
+    "sep",
+    { header: `让 Claude 处理${job ? "这个岗位" : "全部经历"}` },
+    bilingual && { label: "补齐中文版", hint: lacking("zh") ? `${lacking("zh")} 条缺中文` : "都有了", icon: "translate", disabled: !ui.chat.available || !lacking("zh"),
+      onClick: () => aiBatch("batch_translate", { target: "zh" }) },
+    bilingual && { label: "补齐英文版", hint: lacking("en") ? `${lacking("en")} 条缺英文` : "都有了", icon: "translate", disabled: !ui.chat.available || !lacking("en"),
+      onClick: () => aiBatch("batch_translate", { target: "en" }) },
+    { label: "把超过一行的要点压成一行", hint: long ? `${long} 条` : "都是一行", icon: "compress", disabled: !ui.chat.available || !long,
+      onClick: () => aiBatch("batch_fit") },
+    "sep",
+    { label: "打开导出文件夹", icon: "folder", onClick: revealExports },
+    job && "sep",
+    job && { label: "删除当前岗位", icon: "trash", danger: true, onClick: deleteVersion },
+  ], { align: "start", focusFirst: false });
 }
 
 async function switchVersion(id) {
@@ -383,6 +353,7 @@ async function switchVersion(id) {
   store("version", id);
   const v = version();
   if (v && langs().includes(v.lang)) ui.editLang = v.lang;
+  ui.missing = [];
   renderTopbar();
   renderLibrary();
   renderPreviewToolbar();
@@ -445,6 +416,17 @@ function renderLibrary() {
   lib.append(h("div", { class: "lib-hint" + (job ? " job" : "") }, job
     ? [h("b", null, jobName(v)), "：勾选 = 放进这个岗位的简历"]
     : [h("b", null, "ALL"), "：全部经历都在这里。新建岗位后，从中勾选一部分"]));
+  const changed = entries().filter((e) => (ui.evidence[e.id] || {}).state === "changed");
+  if (changed.length) {
+    lib.append(h("div", { class: "lib-update" },
+      icon("refresh"),
+      h("span", { class: "lu-text" }, changed.length === 1
+        ? ["「", display(changed[0].title) || entryLabel(changed[0]), "」的项目有新进展"]
+        : `${changed.length} 个项目自上次同步后有新进展`),
+      changed.length === 1
+        ? h("button", { class: "btn sm", onclick: () => select("entry", changed[0].id) }, "查看")
+        : h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => aiBatch("batch_sync") }, icon("sparkle"), "逐个更新")));
+  }
 
   const included = new Set(job ? v.entries || [] : entries().map((e) => e.id));
   const order = job ? v.entries || [] : entries().map((e) => e.id);
@@ -476,6 +458,8 @@ function renderLibrary() {
 function entryRow(e, isIn, idx, nIn, hasVersion) {
   const active = ui.sel.kind === "entry" && ui.sel.id === e.id;
   const meta = entryMeta(e);
+  const ev = (ui.evidence[e.id] || {}).state;
+  const gaps = langs().length > 1 ? langs().filter((l) => missingIn(e, l)) : [];
   return h("div", { class: "entry" + (isIn ? "" : " out") + (active ? " on" : ""), "data-id": e.id, onclick: () => select("entry", e.id) },
     hasVersion && h("button", {
       class: "check" + (isIn ? " on" : ""), role: "checkbox", "aria-checked": String(isIn),
@@ -483,7 +467,12 @@ function entryRow(e, isIn, idx, nIn, hasVersion) {
       onclick: (ev) => { ev.stopPropagation(); toggleInclude(e.id, !isIn); },
     }),
     h("span", { class: "e-no" }, localNo(e)),
-    h("span", { class: "e-main" }, h("span", { class: "e-title" }, display(e.title) || "（未命名）"), meta && h("span", { class: "e-meta" }, meta)),
+    h("span", { class: "e-main" },
+      h("span", { class: "e-title" }, display(e.title) || "（未命名）",
+        ev === "changed" && h("span", { class: "e-dot", title: "项目文件夹自上次同步后有更新" }),
+        ev === "missing" && h("span", { class: "e-dot bad", title: "找不到证据文件夹" })),
+      (meta || gaps.length > 0) && h("span", { class: "e-meta" }, meta,
+        gaps.map((l) => h("span", { class: "e-gap", title: `有些文字还没有${l === "zh" ? "中文" : "英文"}，${l === "zh" ? "中文" : "英文"}简历里会暂时显示另一种语言` }, `缺${l === "zh" ? "中文" : "英文"}`)))),
     isIn && h("span", { class: "e-tools" },
       h("button", { class: "btn icon sm ghost", title: "上移", disabled: idx === 0, onclick: (ev) => { ev.stopPropagation(); hasVersion ? moveInVersion(e.id, -1) : moveInLibrary(e.id, -1); } }, icon("up")),
       h("button", { class: "btn icon sm ghost", title: "下移", disabled: idx >= nIn - 1, onclick: (ev) => { ev.stopPropagation(); hasVersion ? moveInVersion(e.id, 1) : moveInLibrary(e.id, 1); } }, icon("down"))));
@@ -571,8 +560,13 @@ function conflictBanner() {
 
 function langSwitch() {
   if (langs().length <= 1) return null;
-  return h("div", { class: "seg", title: "编辑哪种语言的文字" }, langs().map((l) =>
-    h("button", { class: l === ui.editLang ? "on" : "", onclick: () => { ui.editLang = l; buildEditorKeepDraft(); } }, LANG_NAMES[l] || l)));
+  return h("div", { class: "seg", title: "编辑哪种语言的文字（右侧预览的语言在预览上方切换）" }, langs().map((l) =>
+    h("button", { class: l === ui.editLang ? "on" : "", "aria-pressed": String(l === ui.editLang), onclick: () => {
+      if (l === ui.editLang) return;
+      ui.editLang = l;
+      buildEditorKeepDraft();
+      if (ui.linesFor[l] !== ui.versionId && !ui.render.busy) measureEditLang(ui.versionId);
+    } }, LANG_NAMES[l] || l)));
 }
 
 function card(title, sub, body, { cls = "", actions = null } = {}) {
@@ -603,14 +597,19 @@ function entryForm() {
   e.evidence = e.evidence || [];
   const out = [];
 
-  if (ui.polish && ui.polish.entryId === e.id && ui.polish.done) out.push(aiDiff());
+  const ai = ui.ai[e.id];
+  if (ai && ai.done) out.push(aiDiff(e.id));
 
   out.push(h("div", { class: "ed-head" }, h("h1", null, display(e.title) || "（未命名）"), h("span", { class: "id" }, entryLabel(entryById(e.id) || e)), h("span", { class: "spacer" }), langSwitch()));
 
+  const secSel = uiSelect({
+    options: sections().map((s) => ({ value: s.id, label: display(s.title) || s.id, hint: s.kind === "list" ? "列表" : "时间线" })),
+    value: e.section, cls: "field-select", label: "板块",
+    onChange: (v) => { e.section = v; touch(); buildEditorKeepDraft(); },
+  });
+  secSel.el.setAttribute("data-key", "section");
   const basics = [
-    h("div", { class: "field" }, h("label", null, "板块"),
-      h("select", { onchange: (ev) => { e.section = ev.target.value; touch(); buildEditorKeepDraft(); } },
-        sections().map((s) => h("option", { value: s.id, selected: s.id === e.section }, display(s.title) || s.id)))),
+    h("div", { class: "field" }, h("label", null, "板块"), secSel.el),
     tfield(isList ? "类别名" : "名称", e, "title", { i18n: true, placeholder: isList ? "比如：编程语言" : "公司 / 学校 / 项目名" }),
   ];
   if (!isList) {
@@ -621,46 +620,282 @@ function entryForm() {
       tfield("链接", e, "link", { placeholder: "https://…" }));
   }
   basics.push(h("div", { class: "field" }, h("label", null, isList ? "条目" : "技术 / 关键词", h("span", { class: "hint" }, "用逗号分隔")),
-    h("input", { value: e.tech.map((t) => display(t)).join(", "), spellcheck: "false",
+    h("input", { value: e.tech.map((t) => display(t)).join(", "), spellcheck: "false", "data-key": "tech",
       oninput: (ev) => { e.tech = ev.target.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean); touch(); } })));
   out.push(card("基本信息", null, basics));
 
-  if (!isList) out.push(card("要点", langs().length > 1 ? `正在编辑 ${LANG_NAMES[ui.editLang]}` : null, bulletsEditor(e),
-    { actions: h("button", { class: "btn sm ghost", onclick: () => $("#polish-box").classList.toggle("hidden"), disabled: !ui.chat.available, title: ui.chat.available ? "" : "没有找到 claude 命令" }, icon("sparkle"), "让 Claude 润色") }));
+  if (!isList) out.push(bulletsCard(e));
 
   out.push(card("事实层", "只给 Claude 看，永远不会出现在简历上", [
     h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, "写真实情况：哪些是你做的、哪些是 AI 写的、数字怎么来的、不好意思写进简历的实情。Claude 润色时只在这里能支撑的范围内包装。"),
     tfield("实际情况 / 原始想法", e, "notes", { multiline: true, rows: 6 }),
-    h("div", { class: "field" }, h("label", null, "证据路径", h("span", { class: "hint" }, "每行一个文件夹或文件，Claude 需要时会去读")),
-      h("textarea", { rows: 2, placeholder: "E:/Forge/Paper2Exam", spellcheck: "false",
-        oninput: (ev) => { e.evidence = ev.target.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean); touch(); } }, e.evidence.join("\n"))),
+    evidenceEditor(e),
   ], { cls: "fact" }));
 
   out.push(h("div", { class: "danger-zone" }, h("button", { class: "btn sm ghost danger", onclick: () => deleteEntry(e.id) }, icon("trash"), "删除这条经历")));
   return out;
 }
 
+// ---------------------------------------------------------------- bullets
+const LANG_LONG = { en: "英文", zh: "中文" };
+const otherLang = (l) => langs().find((x) => x !== l) || (l === "zh" ? "en" : "zh");
+
+function bulletsCard(e) {
+  const L = ui.editLang;
+  const aiBtn = h("button", { class: "btn sm ghost ai-btn", "aria-haspopup": "menu", disabled: !ui.chat.available,
+    title: ui.chat.available ? "" : "没有找到 claude 命令", onclick: (ev) => openAiMenu(ev.currentTarget, e) }, icon("sparkle"), "让 Claude…", icon("chev"));
+  return card("要点", langs().length > 1 ? `正在编辑${LANG_LONG[L] || L}` : null,
+    [h("div", { id: "bullet-notes" }, bulletNotes(e)), bulletsEditor(e)], { actions: aiBtn, cls: "bullets-card" });
+}
+
+// what the line measurement and the bilingual check say about this entry, with one-click fixes
+function bulletNotes(e) {
+  const L = ui.editLang;
+  const out = [];
+  if (langs().length > 1 && missingIn(e, L)) {
+    out.push(noteBar("translate", `还有内容没有${LANG_LONG[L]}`,
+      ui.chat.available && h("button", { class: "btn sm", onclick: () => aiEntry("translate", e.id, { target: L }) }, icon("sparkle"), `让 Claude 写${LANG_LONG[L]}版`)));
+  }
+  const m = measuredFor(e.id, L);
+  // only bullets written in this language: an untranslated one is flagged as 缺 instead
+  const long = m ? Object.entries(m).filter(([i, x]) => x.n > 1 && bulletState(e.bullets[i], L) === "ok").length : 0;
+  if (long) {
+    out.push(noteBar("compress", `${long} 条要点超过一行`,
+      ui.chat.available && h("button", { class: "btn sm", onclick: () => aiEntry("fit", e.id, { lang: L }) }, icon("sparkle"), "让 Claude 压成一行"), "warn"));
+  } else if (m === null && e.bullets.some((b) => getT(b, L))) {
+    out.push(h("div", { class: "note-line" }, icon("alert"), isAll() ? "这一条所在的板块被隐藏了，预览里没有它，量不出行数。" : `这一条没有勾进「${jobName(version())}」，预览里没有它，量不出行数。`));
+  }
+  return out;
+}
+
+const NOTE_TIPS = {
+  translate: "缺的部分在这个语言的简历里会暂时显示另一种语言；写好后每条要点后面会显示它占几行",
+  compress: "按右侧预览的模板、字号和边距实测；改字或调版面后会自动重新测",
+};
+function noteBar(ic, text, action, tone = "") {
+  return h("div", { class: "note-bar " + tone }, icon(ic), h("span", { class: "nb-text", title: NOTE_TIPS[ic] }, text), action);
+}
+
+function bulletState(b, L) {
+  if (langs().length < 2 || !(b && typeof b === "object")) return "ok";
+  const others = Object.entries(b).some(([k, x]) => k !== L && x);
+  if (!(L in b)) return others ? "missing" : "ok";
+  return b[L] === "" && others ? "hidden" : "ok";
+}
+
+function lineChip(i, m, st) {
+  if (st === "missing") return h("span", { class: "line-chip gap", "data-line": i, title: `还没有${LANG_LONG[ui.editLang]}，简历里暂时显示${LANG_LONG[otherLang(ui.editLang)]}` }, `缺${LANG_LONG[ui.editLang]}`);
+  if (st === "hidden") return h("span", { class: "line-chip off", "data-line": i, title: `这条只出现在${LANG_LONG[otherLang(ui.editLang)]}简历里` }, "不显示");
+  const x = m && m[i];
+  if (!x) return h("span", { class: "line-chip none", "data-line": i });
+  const pct = Math.round(x.fill * 100);
+  if (x.n > 1) return h("span", { class: "line-chip long", "data-line": i, title: `占了 ${x.n} 行：文字是一行的 ${pct}%，大约要删掉 ${Math.max(1, pct - 98)}%` }, `${x.n} 行`);
+  return h("span", { class: "line-chip ok" + (x.fill > 0.93 ? " tight" : ""), "data-line": i, title: `一行，用了这一行的 ${pct}%` }, x.fill > 0.93 ? "满行" : "1 行");
+}
+
 function bulletsEditor(e) {
+  const L = ui.editLang, O = otherLang(L);
   const box = h("div", { id: "bullets" });
-  const redraw = () => { const nb = bulletsEditor(e); box.replaceWith(nb); };
+  const redraw = () => { box.replaceWith(bulletsEditor(e)); };
+  const m = measuredFor(e.id, L);
   e.bullets.forEach((b, i) => {
-    box.append(h("div", { class: "bullet" }, h("span", { class: "dot" }),
-      h("textarea", { rows: 2, spellcheck: "false", "data-bullet": i, oninput: (ev) => { e.bullets[i] = setT(e.bullets[i], ui.editLang, ev.target.value); touch(); } }, getT(b, ui.editLang)),
+    const st = bulletState(b, L);
+    const otherText = b && typeof b === "object" ? b[O] || "" : "";
+    const ph = st === "missing" ? `${LANG_NAMES[O]}：${otherText}` : st === "hidden" ? `${LANG_LONG[L]}简历里不显示这一条（${LANG_NAMES[O]}：${otherText}）` : "";
+    const ta = h("textarea", { rows: 1, spellcheck: "false", "data-bullet": i, placeholder: ph, class: st !== "ok" ? "is-" + st : null,
+      oninput: (ev) => { e.bullets[i] = setT(e.bullets[i], L, ev.target.value); touch(); } }, getT(b, L));
+    const bilingual = langs().length > 1 && b && typeof b === "object";
+    box.append(h("div", { class: "bullet" + (st !== "ok" ? " " + st : "") }, h("span", { class: "dot" }), ta, lineChip(i, m, st),
       h("div", { class: "b-tools" },
+        bilingual && (st === "hidden"
+          ? h("button", { class: "btn icon sm ghost", title: `放回${LANG_LONG[L]}简历`, onclick: () => { delete e.bullets[i][L]; touch(); redraw(); } }, icon("undo"))
+          : h("button", { class: "btn icon sm ghost", title: `${LANG_LONG[L]}简历不要这一条（${LANG_LONG[O]}版照常显示）`, onclick: () => { e.bullets[i] = { ...e.bullets[i], [L]: "" }; touch(); redraw(); } }, icon("x"))),
         h("button", { class: "btn icon sm ghost", title: "上移", disabled: i === 0, onclick: () => { [e.bullets[i - 1], e.bullets[i]] = [e.bullets[i], e.bullets[i - 1]]; touch(); redraw(); } }, icon("up")),
         h("button", { class: "btn icon sm ghost", title: "下移", disabled: i === e.bullets.length - 1, onclick: () => { [e.bullets[i + 1], e.bullets[i]] = [e.bullets[i], e.bullets[i + 1]]; touch(); redraw(); } }, icon("down")),
-        h("button", { class: "btn icon sm ghost danger", title: "删除这条要点（所有语言）", onclick: () => { e.bullets.splice(i, 1); touch(); redraw(); } }, icon("x")))));
+        h("button", { class: "btn icon sm ghost danger", title: langs().length > 1 ? "删除这条要点（中英文都删）" : "删除这条要点", onclick: () => { e.bullets.splice(i, 1); touch(); redraw(); } }, icon("trash")))));
   });
-  if (!e.bullets.length) box.append(h("p", { class: "muted", style: "margin:0 0 8px" }, "还没有要点。可以自己写，也可以先在事实层写清楚真实情况，再让 Claude 起草。"));
+  if (!e.bullets.length) {
+    const hasEvidence = (e.evidence || []).length;
+    box.append(h("p", { class: "muted", style: "margin:0 0 8px" }, hasEvidence
+      ? "还没有要点。已经关联了项目文件夹，可以让 Claude 先读项目再起草。"
+      : "还没有要点。可以自己写；也可以在下面的事实层写清真实情况、关联项目文件夹，再让 Claude 起草。"));
+  }
   const instr = h("input", { placeholder: "补充要求（可选），比如：更突出架构设计；第二条太夸张了", spellcheck: "false",
-    onkeydown: (ev) => { if (ev.key === "Enter" && !ev.isComposing) polish(e.id, instr.value); } });
+    onkeydown: (ev) => { if (ev.key === "Enter" && !ev.isComposing) aiEntry("polish", e.id, { text: instr.value, lang: L }); } });
   box.append(
     h("div", { class: "row wrap" },
-      h("button", { class: "btn sm", onclick: () => { e.bullets.push(""); touch(); redraw(); setTimeout(() => { const t = document.querySelectorAll("#bullets textarea"); if (t.length) t[t.length - 1].focus(); }, 0); } }, icon("plus"), "添加要点"),
+      h("button", { class: "btn sm", onclick: () => { e.bullets.push(langs().length > 1 ? { [L]: "" } : ""); /* the other language shows as 缺 until written */ touch(); redraw(); setTimeout(() => { const t = document.querySelectorAll("#bullets textarea"); if (t.length) t[t.length - 1].focus(); }, 0); } }, icon("plus"), "添加要点"),
       h("span", { class: "muted", style: "font-size:12px" }, "支持 **加粗**、*斜体*、[文字](链接)")),
     h("div", { id: "polish-box", class: "polish-box hidden" }, instr,
-      h("button", { class: "btn primary sm", onclick: () => polish(e.id, instr.value) }, icon("sparkle"), "开始润色")));
+      h("button", { class: "btn primary sm", onclick: () => aiEntry("polish", e.id, { text: instr.value, lang: L }) }, icon("sparkle"), "开始润色")));
   return box;
+}
+
+function openAiMenu(anchor, e) {
+  const L = ui.editLang, bilingual = langs().length > 1;
+  const m = measuredFor(e.id, L);
+  const long = m ? Object.entries(m).filter(([i, x]) => x.n > 1 && bulletState(e.bullets[i], L) === "ok").length : 0;
+  const ev = ui.evidence[e.id] || {};
+  const changed = ev.state === "changed" || ev.state === "new";
+  const empty = !e.bullets.some((b) => getT(b, L));
+  openMenu(anchor, [
+    { label: empty ? "起草要点" : `润色${bilingual ? LANG_LONG[L] : ""}要点`, hint: "可加补充要求", icon: "sparkle",
+      onClick: () => { const box = $("#polish-box"); box.classList.remove("hidden"); $("input", box).focus(); } },
+    bilingual && { label: "写中文版", hint: "按中文习惯重写", icon: "translate", onClick: () => aiEntry("translate", e.id, { target: "zh" }) },
+    bilingual && { label: "写英文版", hint: "按英文习惯重写", icon: "translate", onClick: () => aiEntry("translate", e.id, { target: "en" }) },
+    { label: "把超过一行的要点压成一行", hint: long ? `${long} 条` : "都是一行", icon: "compress", disabled: !long, onClick: () => aiEntry("fit", e.id, { lang: L }) },
+    "sep",
+    { label: "按项目新进展更新", hint: ev.state === "changed" ? "有更新" : ev.state === "new" ? "还没读过" : (e.evidence || []).length ? "没有变化" : "没关联文件夹",
+      icon: "refresh", disabled: !changed, onClick: () => aiEntry("sync", e.id) },
+  ], { align: "end", focusFirst: true });
+}
+
+// ---------------------------------------------------------------- evidence: project folders
+function pickStart(e) {
+  const last = (e.evidence || []).slice(-1)[0] || entries().flatMap((x) => x.evidence || []).slice(-1)[0];
+  if (last) return last.replace(/[\\/][^\\/]*[\\/]?$/, "") || last;
+  return ((doc().settings || {}).project_roots || [])[0] || "";
+}
+
+async function addEvidence(e, kind, replaceIndex = null) {
+  let r;
+  try { r = await api("POST", "/api/pick", { kind, initial: replaceIndex != null ? e.evidence[replaceIndex] : pickStart(e) }); }
+  catch (err) { toast(err.message); return; }
+  if (!r.paths.length) return;
+  if (ui.sel.kind !== "entry" || ui.draft !== e) return; // the user moved on while the dialog was open
+  if (replaceIndex != null) e.evidence.splice(replaceIndex, 1, r.paths[0]);
+  else for (const p of r.paths) if (!e.evidence.includes(p)) e.evidence.push(p);
+  touch();
+  buildEditorKeepDraft();
+  await saveDraft();
+  checkEvidence(true);
+}
+
+async function typeEvidence(e) {
+  const p = await modal({ title: "输入路径", message: "文件夹或文件的完整路径。一般直接用「选择项目文件夹」更省事。", input: "", placeholder: "E:/Forge/Paper2Exam", ok: "添加" });
+  if (!p) return;
+  const clean = p.trim().replace(/^["']|["']$/g, "");
+  if (!e.evidence.includes(clean)) e.evidence.push(clean);
+  touch();
+  buildEditorKeepDraft();
+  await saveDraft();
+  checkEvidence(true);
+}
+
+function changeSummary(c) {
+  if (!c) return "有改动";
+  const parts = [];
+  if (c.commits) parts.push(`${c.commits} 个新提交`);
+  if (c.rewritten) parts.push("git 历史有变化");
+  if (c.uncommitted) parts.push(`${c.uncommitted} 个文件未提交`);
+  if (c.counts) { const n = c.counts.reduce((a, b) => a + b, 0); if (n) parts.push(`${n} 个文件有改动`); }
+  return parts.join("，") || "有改动";
+}
+
+function evidenceRow(e, p, i, row) {
+  const name = p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p;
+  const st = row ? row.state : "checking";
+  const kind = row && row.kind;
+  const chip = {
+    checking: h("span", { class: "ev-chip" }, "检查中…"),
+    same: h("span", { class: "ev-chip ok", title: row && row.synced_at ? `Claude 上次读它：${relTime(row.synced_at)}` : "" }, icon("check"), "已同步"),
+    new: h("span", { class: "ev-chip", title: "加进来之后 Claude 还没读过它" }, "Claude 还没读过"),
+    changed: h("span", { class: "ev-chip new" }, icon("refresh"), changeSummary(row && row.changes)),
+    missing: h("span", { class: "ev-chip bad" }, icon("alert"), "找不到这个路径"),
+  }[st];
+  const detail = st === "changed" && row.changes ? changeDetail(row.changes) : null;
+  const toggle = detail && h("button", { class: "ev-more", "aria-expanded": "false", onclick: (ev) => {
+    const open = detail.classList.toggle("hidden") === false;
+    ev.currentTarget.setAttribute("aria-expanded", String(open));
+    ev.currentTarget.lastChild.textContent = open ? "收起" : "看看改了什么";
+  } }, icon("chev"), "看看改了什么");
+  return h("div", { class: "ev-row " + st, "data-path": p },
+    h("span", { class: "ev-ic" }, icon(kind === "git" ? "git" : kind === "file" ? "file" : "folder")),
+    h("div", { class: "ev-main" },
+      h("div", { class: "ev-name" }, h("b", null, name), chip),
+      h("div", { class: "ev-path", title: p }, p),
+      h("div", { class: "ev-meta" }, row && row.mtime ? `最近改动 ${relTime(row.mtime)}` : null, toggle),
+      detail),
+    h("div", { class: "ev-tools" },
+      h("button", { class: "btn icon sm ghost", title: "在资源管理器里打开", disabled: st === "missing", onclick: () => api("POST", "/api/reveal-any", { path: p }) }, icon("external")),
+      h("button", { class: "btn icon sm ghost", title: st === "missing" ? "重新选择这个文件夹" : "换成别的文件夹", onclick: () => addEvidence(e, kind === "file" ? "files" : "folder", i) }, icon("folderOpen")),
+      h("button", { class: "btn icon sm ghost danger", title: "移除（不会删除文件）", onclick: () => { e.evidence.splice(i, 1); touch(); buildEditorKeepDraft(); } }, icon("x"))));
+}
+
+function changeDetail(c) {
+  const lines = [];
+  if (c.log && c.log.length) lines.push(h("div", { class: "cd-head" }, "新提交"), ...c.log.slice(0, 12).map((l) => h("div", { class: "cd-line" }, l)));
+  if (c.log && c.log.length > 12) lines.push(h("div", { class: "cd-line muted" }, `…还有 ${c.log.length - 12} 个`));
+  for (const [k, label] of [["added", "新增"], ["modified", "修改"], ["removed", "删除"]]) {
+    if (c[k] && c[k].length) lines.push(h("div", { class: "cd-head" }, label), ...c[k].slice(0, 8).map((l) => h("div", { class: "cd-line" }, l)));
+  }
+  if (c.uncommitted) lines.push(h("div", { class: "cd-line muted" }, `另有 ${c.uncommitted} 个文件有未提交的改动`));
+  return h("div", { class: "change-detail hidden" }, lines);
+}
+
+function evidenceEditor(e) {
+  const st = ui.evidence[e.id] || { paths: [] };
+  const rows = Object.fromEntries((st.paths || []).map((r) => [r.path, r]));
+  const box = h("div", { class: "evidence", id: "evidence" });
+  box.append(h("div", { class: "ev-head" }, h("span", { class: "ev-title" }, "项目文件夹与证据"),
+    h("span", { class: "hint" }, "Claude 会读里面的代码、README 和提交记录")));
+  const pending = e.evidence.map((p) => rows[p]).filter((r) => r && (r.state === "changed" || r.state === "new"));
+  if (pending.length) {
+    const changed = pending.some((r) => r.state === "changed");
+    const empty = !e.bullets.some((b) => getT(b, ui.editLang));
+    box.append(h("div", { class: "sync-bar" + (changed ? " changed" : "") }, icon(changed ? "refresh" : "folderOpen"),
+      h("span", { class: "nb-text" }, changed ? "项目有新进展" : "Claude 还没读过这个项目"),
+      ui.chat.available && h("button", { class: "btn sm primary", onclick: () => aiEntry(empty && !changed ? "polish" : "sync", e.id, { lang: ui.editLang }) }, icon("sparkle"),
+        changed ? "让 Claude 按新进展更新" : empty ? "让 Claude 读项目写要点" : "让 Claude 读一遍"),
+      h("button", { class: "btn sm ghost", title: "现在的要点已经反映了项目的样子，不用 Claude 再读；项目以后再有改动才会提醒", onclick: () => markSynced(e.id) }, "标记为已同步")));
+  }
+  const list = h("div", { class: "ev-list" });
+  e.evidence.forEach((p, i) => list.append(evidenceRow(e, p, i, rows[p])));
+  if (!e.evidence.length) list.append(h("div", { class: "ev-empty" }, "还没有关联项目。选一个文件夹，Claude 写要点时会去读；项目以后有更新，这里和左边的经历库都会提醒你。"));
+  box.append(list, h("div", { class: "ev-actions" },
+    h("button", { class: "btn sm", onclick: () => addEvidence(e, "folder") }, icon("folder"), "选择项目文件夹"),
+    h("button", { class: "btn sm ghost", onclick: () => addEvidence(e, "files") }, icon("file"), "添加文件"),
+    h("button", { class: "btn sm ghost", onclick: () => typeEvidence(e) }, icon("pen"), "输入路径"),
+    h("span", { class: "spacer" }),
+    e.evidence.length ? h("button", { class: "btn sm ghost", title: "现在就检查这些文件夹有没有变化（平时切回窗口时会自动检查）", onclick: () => checkEvidence(true).then(() => toast("检查完了")) }, icon("refresh"), "检查更新") : null));
+  return box;
+}
+
+async function markSynced(id) {
+  await saveDraft();
+  try {
+    const r = await api("POST", `/api/evidence/${encodeURIComponent(id)}/synced`);
+    Object.assign(ui.evidence, r.status);
+    paintEvidence();
+    renderLibrary();
+  } catch (err) { toast(err.message); }
+}
+
+// One check at a time; a request that arrives meanwhile (e.g. right after picking a folder)
+// runs once the current one is done, so it always sees the latest data.
+let evidenceBusy = null, evidenceAgain = null;
+async function checkEvidence(force = false) {
+  if (evidenceBusy) {
+    evidenceAgain = evidenceAgain === null ? force : evidenceAgain || force;
+    return evidenceBusy;
+  }
+  evidenceBusy = (async () => {
+    try {
+      const r = await api("GET", "/api/evidence" + (force ? "?force=1" : ""));
+      const before = JSON.stringify(ui.evidence);
+      ui.evidence = r.status;
+      if (JSON.stringify(ui.evidence) !== before) { paintEvidence(); renderLibrary(); }
+    } catch (_) { /* offline: keep the last known state */ }
+    finally { evidenceBusy = null; }
+    if (evidenceAgain !== null) { const f = evidenceAgain; evidenceAgain = null; await checkEvidence(f); }
+  })();
+  return evidenceBusy;
+}
+
+// refresh just the evidence block, so typing elsewhere in the form is not interrupted
+function paintEvidence() {
+  const old = $("#evidence");
+  if (old && ui.sel.kind === "entry" && ui.draft) old.replaceWith(evidenceEditor(ui.draft));
 }
 
 async function deleteEntry(id) {
@@ -715,11 +950,11 @@ function sectionsForm() {
   const rows = h("div", { class: "list-rows" });
   list.forEach((s, i) => {
     const used = entries().some((e) => e.section === s.id);
-    rows.append(h("div", { class: "lr", style: "grid-template-columns: 120px 1fr 110px 26px 26px 26px" },
+    rows.append(h("div", { class: "lr", style: "grid-template-columns: 120px 1fr auto 26px 26px 26px" },
       h("input", { value: s.id, title: "板块 ID（经历里的 section 字段）", spellcheck: "false", oninput: (ev) => { s.id = ev.target.value; touch(); } }),
       h("input", { value: getT(s.title, ui.editLang), placeholder: "显示标题", oninput: (ev) => { s.title = setT(s.title, ui.editLang, ev.target.value); touch(); } }),
-      h("select", { onchange: (ev) => { s.kind = ev.target.value; touch(); } },
-        [["timeline", "时间线"], ["list", "列表"]].map(([k, n]) => h("option", { value: k, selected: (s.kind || "timeline") === k }, n))),
+      uiSeg([{ value: "timeline", label: "时间线", tip: "标题 + 日期 + 要点" }, { value: "list", label: "列表", tip: "「类别：条目」一行一个，适合技能" }],
+        s.kind || "timeline", (k) => { s.kind = k; touch(); buildEditorKeepDraft(); }, { cls: "sm", label: "板块类型" }),
       h("button", { class: "btn icon sm ghost", title: "上移", disabled: i === 0, onclick: () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; touch(); buildEditorKeepDraft(); } }, icon("up")),
       h("button", { class: "btn icon sm ghost", title: "下移", disabled: i === list.length - 1, onclick: () => { [list[i + 1], list[i]] = [list[i], list[i + 1]]; touch(); buildEditorKeepDraft(); } }, icon("down")),
       h("button", { class: "btn icon sm ghost danger", disabled: used, title: used ? "还有经历在这个板块里" : "删除板块", onclick: () => { list.splice(i, 1); touch(); buildEditorKeepDraft(); } }, icon("x"))));
@@ -731,8 +966,8 @@ function sectionsForm() {
     try { applyState(await api("PUT", "/api/item", { kind: "settings", data: st, base: itemHash("settings") })); buildEditorKeepDraft(); scheduleRender(); }
     catch (e) { toast("保存失败：" + e.message); }
   };
-  const langToggle = h("div", { class: "seg" }, ["en", "zh"].map((l) => h("button", {
-    class: (st.languages || []).includes(l) ? "on" : "",
+  const langToggle = h("div", { class: "seg", role: "group", "aria-label": "内容语言" }, ["en", "zh"].map((l) => h("button", {
+    class: (st.languages || []).includes(l) ? "on" : "", "aria-pressed": String((st.languages || []).includes(l)),
     onclick: () => {
       const set = new Set(st.languages || []);
       if (set.has(l)) set.delete(l); else set.add(l);
@@ -740,6 +975,21 @@ function sectionsForm() {
       if (!st.languages.length) st.languages = ["en"];
       saveSettings();
     } }, LANG_NAMES[l])));
+  const roots = st.project_roots || [];
+  const addRoot = async () => {
+    let r;
+    try { r = await api("POST", "/api/pick", { kind: "folder", initial: roots[0] || "" }); } catch (err) { toast(err.message); return; }
+    const fresh = r.paths.filter((p) => !roots.includes(p));
+    if (!fresh.length) return;
+    st.project_roots = [...roots, ...fresh];
+    saveSettings();
+  };
+  const rootRows = h("div", { class: "ev-list" }, roots.map((p, i) => h("div", { class: "ev-row same" },
+    h("span", { class: "ev-ic" }, icon("folder")),
+    h("div", { class: "ev-main" }, h("div", { class: "ev-name" }, h("b", null, p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p)), h("div", { class: "ev-path" }, p)),
+    h("div", { class: "ev-tools", style: "opacity:1" },
+      h("button", { class: "btn icon sm ghost", title: "在资源管理器里打开", onclick: () => api("POST", "/api/reveal-any", { path: p }) }, icon("external")),
+      h("button", { class: "btn icon sm ghost danger", title: "移除（不会删除文件）", onclick: () => { st.project_roots = roots.filter((_, j) => j !== i); if (!st.project_roots.length) delete st.project_roots; saveSettings(); } }, icon("x"))))));
   return [
     h("div", { class: "ed-head" }, h("h1", null, "板块与设置"), h("span", { class: "spacer" }), langSwitch()),
     card("板块", "默认顺序；每个岗位还能单独调整", [
@@ -748,6 +998,12 @@ function sectionsForm() {
       h("div", { class: "field" }, h("label", null, "内容语言", h("span", { class: "hint" }, "选两种时，文字按语言分开保存，编辑区会出现语言切换")), h("div", null, langToggle)),
       h("div", { class: "field" }, h("label", null, "导出目录", h("span", { class: "hint" }, "相对于 resume.yaml")),
         h("input", { value: st.export_dir || "exports", spellcheck: "false", onchange: (ev) => { st.export_dir = ev.target.value.trim() || "exports"; saveSettings(); } })),
+    ]),
+    card("我的项目文件夹", "放个人项目的地方，比如 E:/Forge", [
+      h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, "Claude 会知道你的项目都在这里：可以让它在对话里帮你挑出值得写进简历的项目；给经历选文件夹时也会从这里开始找。"),
+      rootRows,
+      h("div", { class: "ev-actions" }, h("button", { class: "btn sm", onclick: addRoot }, icon("folder"), "选择文件夹"),
+        roots.length && ui.chat.available ? h("button", { class: "btn sm ghost", onclick: () => sendChat(`看看我的项目文件夹（${roots.join("、")}），挑出最值得写进简历的几个项目，说说理由。先别改 resume.yaml，等我确认后再一个一个录入。`) }, icon("sparkle"), "让 Claude 挑项目") : null),
     ]),
   ];
 }
@@ -788,273 +1044,133 @@ function versionForm() {
 }
 
 // ================================================================ AI polish (runs in the chat)
-function aiDiff() {
-  const before = ui.polish.snapshot;
-  const after = entryById(before.id) || {};
+const AI_LABELS = { polish: "润色", translate: "写另一种语言", fit: "压成一行", sync: "按项目更新", batch_translate: "补齐另一种语言", batch_fit: "压成一行", batch_sync: "按项目更新" };
+
+function aiDiff(id) {
+  const a = ui.ai[id];
+  const before = a.snapshot;
+  const after = entryById(id) || {};
   const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])]
     .filter((k) => JSON.stringify(before[k] ?? null) !== JSON.stringify(after[k] ?? null));
   const fmt = (v) => {
-    const one = (x) => (x && typeof x === "object" ? Object.entries(x).map(([l, t]) => `[${l}] ${t}`).join("\n   ") : String(x ?? ""));
+    const one = (x) => (x && typeof x === "object" ? Object.entries(x).map(([l, t]) => `[${l}] ${t === "" ? "（不显示）" : t}`).join("\n   ") : String(x ?? ""));
     if (Array.isArray(v)) return v.map((x) => "• " + one(x)).join("\n");
     return one(v);
   };
   const names = { title: "名称", subtitle: "副标题", bullets: "要点", tech: "技术", location: "地点", start: "开始", end: "结束", date: "日期", link: "链接", notes: "事实层", evidence: "证据路径" };
-  return card(keys.length ? "Claude 改了这一条" : "Claude 没有改动这一条", "对话里有它的说明", [
+  const close = () => { delete ui.ai[id]; buildEditor(); };
+  return card(keys.length ? "Claude 改了这一条" : "Claude 没有改动这一条", `${AI_LABELS[a.action] || ""} · 对话里有它的说明`, [
     keys.map((k) => [h("div", { class: "k" }, names[k] || k), h("div", { class: "before" }, fmt(before[k])), h("div", { class: "after" }, fmt(after[k]))]),
     h("div", { class: "row", style: "margin-top:12px" },
-      h("button", { class: "btn sm", onclick: () => { ui.polish = null; buildEditor(); } }, icon("check"), "保留"),
-      keys.length && h("button", { class: "btn sm danger-soft", onclick: undoPolish }, icon("undo"), "撤销，恢复到润色前")),
+      h("button", { class: "btn sm", onclick: close }, icon("check"), keys.length ? "保留" : "知道了"),
+      keys.length && h("button", { class: "btn sm danger-soft", onclick: () => undoAi(id) }, icon("undo"), "撤销，恢复到改动前"),
+      h("button", { class: "btn sm ghost", onclick: () => setTab("chat") }, icon("chat"), "看对话")),
   ], { cls: "diff" });
 }
 
-async function undoPolish() {
-  const snap = ui.polish.snapshot;
+async function undoAi(id) {
+  const snap = ui.ai[id].snapshot;
   try {
     const s = await api("PUT", "/api/item", { kind: "entry", id: snap.id, data: snap, base: itemHash("entry", snap.id) });
-    ui.polish = null;
+    delete ui.ai[id];
     applyState(s);
     buildEditor({ flash: true });
     scheduleRender();
-    toast("已恢复到润色前");
+    toast("已恢复到改动前");
   } catch (e) { toast("撤销失败：" + e.message); }
 }
 
-async function polish(id, instruction) {
+// one entry: snapshot it first so the result can be compared and undone
+async function aiEntry(action, entryId, extra = {}) {
   await saveDraft();
-  const snapshot = clone(entryById(id));
-  const ok = await sendChat(instruction || "", { polish: true, entryId: id });
-  if (ok) ui.polish = { chat: ui.chat.id, entryId: id, snapshot, done: false };
+  const snapshot = clone(entryById(entryId));
+  delete ui.ai[entryId];
+  const ok = await sendChat(extra.text || "", { action, entryId, target: extra.target, lang: extra.lang });
+  if (ok) ui.ai[entryId] = { chat: ui.chat.id, action, snapshot, done: false };
 }
 
-// ================================================================ chat
-const TOOL_NAMES = { Read: "读取", Edit: "修改", MultiEdit: "修改", Write: "写入", Glob: "查找文件", Grep: "搜索内容", Bash: "运行命令", Skill: "使用技能", WebFetch: "打开网页", WebSearch: "搜索网页", TodoWrite: "列计划", Task: "子任务", Agent: "子任务" };
-function shortHint(hint) {
-  if (!hint) return "";
-  if (/^[a-zA-Z]:[\\/]|^\//.test(hint)) { const parts = hint.split(/[\\/]/); return parts.slice(-2).join("/"); }
-  return hint;
-}
-
-async function loadChats() {
-  const r = await api("GET", "/api/chats");
-  ui.chat.available = r.available;
-  if (ui.chat.id) { // the user already started a chat while the list was loading: keep it
-    ui.chat.list = [...ui.chat.list, ...r.chats.filter((c) => !ui.chat.list.some((x) => x.id === c.id))];
-    renderChatSelect();
-    return;
-  }
-  ui.chat.list = r.chats;
-  const saved = store("chat");
-  const id = ui.chat.list.some((c) => c.id === saved) ? saved : (ui.chat.list[0] || {}).id || null;
-  if (id) await openChat(id, { quiet: true });
-  else { ui.chat.id = null; ui.chat.messages = []; renderChatSelect(); renderChat(); }
-  if (r.running.length) $("#chat-dot").classList.remove("hidden");
-}
-
-async function openChat(id, { quiet = false } = {}) {
-  let r;
-  try { r = await api("GET", "/api/chats/" + id); }
-  catch (e) { // deleted elsewhere: fall back to whatever is left
-    store("chat", null);
-    const list = await api("GET", "/api/chats");
-    ui.chat.list = list.chats;
-    if (list.chats.length && list.chats[0].id !== id) return openChat(list.chats[0].id, { quiet });
-    ui.chat.id = null; ui.chat.messages = []; ui.chat.running = false;
-    renderChatSelect(); renderChat(); renderComposerState();
-    return;
-  }
-  ui.chat.id = id;
-  ui.chat.meta = r.chat;
-  ui.chat.messages = r.messages;
-  ui.chat.running = r.running;
-  ui.chat.live = r.running ? { blocks: [] } : null;
-  store("chat", id);
-  renderChatSelect();
-  if (!quiet || ui.tab === "chat") renderChat();
-  renderComposerState();
-  $("#chat-model").textContent = r.chat.model ? `模型 ${r.chat.model}` : "";
-}
-
-async function newChat() {
-  const c = await api("POST", "/api/chats");
-  ui.chat.list = [c, ...ui.chat.list];
-  await openChat(c.id);
-  $("#chat-input").focus();
-}
-
-async function deleteChat() {
-  if (!ui.chat.id) return;
-  if (!(await modal({ title: "删除这段对话？", message: "只删除界面里的记录，不影响简历数据。", ok: "删除", danger: true }))) return;
-  try {
-    const r = await api("DELETE", "/api/chats/" + ui.chat.id);
-    ui.chat.list = r.chats;
-    const next = ui.chat.list[0];
-    if (next) await openChat(next.id); else { ui.chat.id = null; ui.chat.messages = []; store("chat", null); renderChatSelect(); renderChat(); }
-  } catch (e) { toast(e.message); }
-}
-
-function relTime(t) {
-  const d = (Date.now() / 1000 - t) / 60;
-  if (d < 1) return "刚刚";
-  if (d < 60) return `${Math.floor(d)} 分钟前`;
-  if (d < 60 * 24) return `${Math.floor(d / 60)} 小时前`;
-  return new Date(t * 1000).toLocaleDateString();
-}
-
-function renderChatSelect() {
-  const sel = $("#chat-select");
-  if (!ui.chat.list.length) { sel.replaceChildren(h("option", null, "还没有对话")); sel.disabled = true; return; }
-  sel.disabled = false;
-  sel.replaceChildren(...ui.chat.list.map((c) => h("option", { value: c.id, selected: c.id === ui.chat.id }, `${c.title || "新对话"} · ${relTime(c.updated)}`)));
-}
-
-function renderChat() {
-  const log = $("#chat-log");
-  log.replaceChildren();
-  ui.chat.liveEl = null;
-  if (!ui.chat.messages.length && !ui.chat.running) {
-    const suggest = [
-      "帮我录入一段新经历，一次只问我一个问题",
-      "检查当前岗位里有没有超出事实层的说法",
-      "把当前岗位压到一页，先调版面再精简措辞",
-      "根据事实层给当前打开的条目起草要点",
-    ];
-    log.append(h("div", { class: "chat-welcome" },
-      h("div", { class: "t" }, "和 Claude 一起改简历"),
-      h("div", null, ui.chat.available ? "这里就是 Claude Code：它能读写你的简历数据、使用你装的技能，改完右边会自动刷新。" : "没有找到 claude 命令。请先安装并登录 Claude Code。"),
-      ui.chat.available && h("div", { class: "suggest" }, suggest.map((s) => h("button", { onclick: () => sendChat(s) }, s)))));
-    return;
-  }
-  for (const m of ui.chat.messages) log.append(messageEl(m));
-  if (ui.chat.running) { ui.chat.liveEl = messageEl({ role: "assistant", blocks: (ui.chat.live || {}).blocks || [], live: true }); log.append(ui.chat.liveEl); }
-  log.scrollTop = log.scrollHeight;
-}
-
-function messageEl(m) {
-  if (m.role === "user") {
-    return h("div", { class: "msg-user" }, m.meta && m.meta.polish ? h("div", { class: "msg-note", style: "margin-bottom:2px" }, "✦ 润色请求") : null, m.text);
-  }
-  const el = h("div", { class: "msg-ai" });
-  for (const b of m.blocks || []) {
-    if (b.type === "text") el.append(h("div", { class: "md", html: md(b.text) }));
-    else if (b.type === "tool") el.append(toolEl(b));
-  }
-  if (m.live && !(m.blocks || []).length) el.append(h("div", { class: "thinking", "aria-label": "Claude 正在思考" }, h("i"), h("i"), h("i")));
-  if (m.error) el.append(h("div", { class: "msg-error" }, m.error));
-  if (m.cancelled) el.append(h("div", { class: "msg-note" }, "已停止"));
-  return el;
-}
-
-function toolEl(t) {
-  const st = t.status === "running" ? h("span", { class: "st running" }) : t.status === "error" ? h("span", { class: "st error" }, icon("x")) : h("span", { class: "st done" }, icon("check"));
-  return h("details", { class: "tool" },
-    h("summary", null, st, h("span", { class: "tn" }, TOOL_NAMES[t.name] || t.name), h("span", { class: "th", title: t.hint || "" }, shortHint(t.hint))),
-    t.result && h("pre", null, t.result));
-}
-
-let liveFrame = 0;
-function renderLive() {
-  if (liveFrame) return;
-  liveFrame = requestAnimationFrame(() => {
-    liveFrame = 0;
-    const log = $("#chat-log");
-    if (ui.tab !== "chat" || !ui.chat.running) return;
-    const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
-    const el = messageEl({ role: "assistant", blocks: ui.chat.live.blocks, live: true });
-    if (ui.chat.liveEl && ui.chat.liveEl.isConnected) ui.chat.liveEl.replaceWith(el); else log.append(el);
-    ui.chat.liveEl = el;
-    if (nearBottom) log.scrollTop = log.scrollHeight;
-  });
-}
-
-function renderComposerState() {
-  const running = ui.chat.running;
-  $("#chat-send").classList.toggle("hidden", running);
-  $("#chat-stop").classList.toggle("hidden", !running);
-  $("#chat-send").disabled = !ui.chat.available;
-  $("#chat-input").disabled = !ui.chat.available;
-  const parts = [];
-  if (ui.versionId) parts.push(isAll() ? "ALL（全部经历）" : `岗位「${jobName(version())}」`);
-  if (ui.sel.kind === "entry" && entryById(ui.sel.id)) parts.push(`「${display(entryById(ui.sel.id).title) || entryLabel(entryById(ui.sel.id))}」`);
-  $("#chat-context").textContent = parts.length ? `Claude 知道你正在看：${parts.join(" · ")}` : "";
-  $("#chat-dot").classList.toggle("hidden", !running);
-}
-
-function autosize(t) { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 180) + "px"; }
-
-function startChatWith(text) {
-  setTab("chat");
-  const t = $("#chat-input");
-  t.value = text;
-  autosize(t);
-  t.focus();
-  t.setSelectionRange(t.value.length, t.value.length);
-}
-
-async function sendChat(text, { polish = false, entryId = null } = {}) {
-  if (!ui.chat.available) { toast("没有找到 claude 命令"); return false; }
-  if (!polish && !text.trim()) return false;
-  if (ui.chat.running) { toast("Claude 还在回复上一条，稍等或先停止"); return false; }
+// a whole version: snapshot every entry; each one Claude touches gets its own diff + undo
+async function aiBatch(action, extra = {}) {
   await saveDraft();
-  if (!ui.chat.id) {
-    const c = await api("POST", "/api/chats");
-    ui.chat.list = [c, ...ui.chat.list];
-    ui.chat.id = c.id; ui.chat.meta = c; ui.chat.messages = [];
-    store("chat", c.id);
-    renderChatSelect();
-  }
-  setTab("chat");
-  const body = { text, version_id: ui.versionId, entry_id: entryId || (ui.sel.kind === "entry" ? ui.sel.id : null), polish };
-  ui.chat.running = true;
-  ui.chat.live = { blocks: [] };
-  ui.chat.messages.push({ role: "user", text: polish ? `润色「${display((entryById(entryId) || {}).title) || entryLabel(entryById(entryId))}」${text ? "：" + text : ""}` : text, meta: { polish } });
-  renderChat();
-  renderComposerState();
-  try {
-    const r = await api("POST", `/api/chats/${ui.chat.id}/send`, body);
-    ui.chat.messages[ui.chat.messages.length - 1].text = r.text;
-    return true;
-  } catch (e) {
-    ui.chat.running = false;
-    ui.chat.live = null;
-    ui.chat.messages.push({ role: "assistant", blocks: [], error: e.message });
-    renderChat();
-    renderComposerState();
-    return false;
-  }
+  const snaps = Object.fromEntries(entries().map((e) => [e.id, clone(e)]));
+  const ok = await sendChat("", { action, target: extra.target, lang: extra.lang });
+  if (ok) ui.batch = { chat: ui.chat.id, action, snaps };
 }
 
-async function onChatEvent(type, ev) {
-  if (type === "chat.start") { $("#chat-dot").classList.remove("hidden"); return; }
-  if (ev.chat !== ui.chat.id) {
-    if (type === "chat.done") { const r = await api("GET", "/api/chats"); ui.chat.list = r.chats; renderChatSelect(); if (!r.running.length) $("#chat-dot").classList.add("hidden"); }
-    return;
-  }
-  const live = ui.chat.live || (ui.chat.live = { blocks: [] });
-  if (type === "chat.init") { if (ev.model) $("#chat-model").textContent = `模型 ${ev.model}`; return; }
-  if (type === "chat.delta") {
-    const last = live.blocks[live.blocks.length - 1];
-    if (last && last.type === "text") last.text += ev.text; else live.blocks.push({ type: "text", text: ev.text });
-    renderLive();
-  } else if (type === "chat.tool") {
-    const i = live.blocks.findIndex((b) => b.type === "tool" && b.id === ev.tool.id);
-    if (i >= 0) live.blocks[i] = ev.tool; else live.blocks.push(ev.tool);
-    renderLive();
-  } else if (type === "chat.done") {
-    ui.chat.running = false;
-    await openChat(ui.chat.id, { quiet: ui.tab !== "chat" });
-    const r = await api("GET", "/api/chats");
-    ui.chat.list = r.chats;
-    renderChatSelect();
-    renderComposerState();
-    await refresh();
-    if (ui.polish && ui.polish.chat === ev.chat) {
-      ui.polish.done = true;
-      if (ui.sel.kind === "entry" && ui.sel.id === ui.polish.entryId && !ui.dirty) buildEditor();
-      else if (ui.sel.kind !== "entry" || ui.sel.id !== ui.polish.entryId) toast(`Claude 改完了「${display((entryById(ui.polish.entryId) || {}).title) || entryLabel(entryById(ui.polish.entryId))}」`, { action: { label: "查看", fn: () => select("entry", ui.polish.entryId) } });
+function finishAi(chatId) {
+  const touched = [];
+  for (const [id, a] of Object.entries(ui.ai)) if (a.chat === chatId && !a.done) { a.done = true; touched.push(id); }
+  if (ui.batch && ui.batch.chat === chatId) {
+    const { snaps, action } = ui.batch;
+    ui.batch = null;
+    for (const e of entries()) {
+      const before = snaps[e.id];
+      if (before && JSON.stringify(before) !== JSON.stringify(e)) { ui.ai[e.id] = { chat: chatId, action, snapshot: before, done: true }; touched.push(e.id); }
     }
-    if (ev.error && ui.tab !== "chat") toast("Claude 出错了，详见对话");
+    if (!touched.length) { toast("Claude 这次没有改动任何经历，详见对话"); return; }
+  }
+  if (!touched.length) return;
+  const open = ui.sel.kind === "entry" && touched.includes(ui.sel.id);
+  if (open && !ui.dirty) buildEditor();
+  const first = touched.find((id) => id !== ui.sel.id) || touched[0];
+  if (!open || touched.length > 1) {
+    const name = display((entryById(first) || {}).title) || entryLabel(entryById(first));
+    toast(touched.length > 1 ? `Claude 改了 ${touched.length} 条经历，打开每一条都能看到改了什么、可以撤销` : `Claude 改完了「${name}」`,
+      { ms: 6000, action: { label: "查看", fn: () => select("entry", first) } });
   }
 }
+
+// ---- bilingual checks (mirror resume/model.py missing_text) ----
+const CJK = /[㐀-鿿]/;
+function lacks(v, lang, bullet = false) {
+  if (v && typeof v === "object") {
+    const others = Object.entries(v).some(([k, x]) => k !== lang && x);
+    return others && (bullet ? !(lang in v) : !v[lang]);
+  }
+  if (bullet && v) return (lang === "zh") !== CJK.test(String(v));
+  return false;
+}
+function missingIn(e, lang) {
+  return ["title", "subtitle", "location", "date"].some((k) => lacks(e[k], lang)) || (e.bullets || []).some((b) => lacks(b, lang, true));
+}
+
+// ---- line measurement ----
+function inPreview(id) {
+  const v = version();
+  if (!v) return false;
+  const e = entryById(id);
+  if (!e || (v.hide_sections || []).includes(e.section)) return false;
+  return v.id === ALL || (v.entries || []).includes(id);
+}
+// {bulletIndex: {n, fill}}; undefined = not measured yet; null = not in the preview, cannot be measured
+function measuredFor(id, lang) {
+  if (ui.linesFor[lang] !== ui.versionId) return undefined;
+  if (!inPreview(id)) return null;
+  return (ui.lines[lang] || {})[id] || {};
+}
+function longBullets(lang = (version() || {}).lang) {
+  if (ui.linesFor[lang] !== ui.versionId) return [];
+  const out = [];
+  for (const [id, by] of Object.entries(ui.lines[lang] || {})) {
+    for (const [i, x] of Object.entries(by)) if (x.n > 1) out.push({ id, index: +i, ...x });
+  }
+  return out;
+}
+
+// the measurement changed: update chips and notes in place (never rebuild the form under the cursor)
+function paintLines() {
+  renderIssues();
+  if (ui.sel.kind !== "entry" || !ui.draft) return;
+  const e = ui.draft, L = ui.editLang, m = measuredFor(e.id, L);
+  for (const chip of document.querySelectorAll("#bullets .line-chip")) {
+    const i = +chip.dataset.line;
+    chip.replaceWith(lineChip(i, m, bulletState(e.bullets[i], L)));
+  }
+  const notes = $("#bullet-notes");
+  if (notes) notes.replaceChildren(...bulletNotes(e));
+}
+
+// ================================================================ chat: see chat.js
 
 // ================================================================ right: preview
 const SLIDERS = [
@@ -1076,11 +1192,10 @@ function layoutValue(key) {
 let layoutBuiltFor = null;
 function renderPreviewToolbar() {
   const v = version();
-  const tpl = $("#tpl-select");
-  tpl.replaceChildren(...S.templates.map((t) => h("option", { value: t.id, title: t.description, selected: v && t.id === v.template }, t.name)));
-  tpl.disabled = !v;
-  tpl.title = v ? (S.templates.find((t) => t.id === v.template) || {}).description || "模板" : "模板";
-  $("#lang-seg").replaceChildren(...["en", "zh"].map((l) => h("button", { class: v && v.lang === l ? "on" : "", disabled: !v, onclick: () => mutateVersion((x) => { x.lang = l; }) }, LANG_NAMES[l])));
+  ui.w.tpl.setOptions((S.templates || []).map((t) => ({ value: t.id, label: t.name, desc: t.description })), v ? v.template : null);
+  ui.w.tpl.disabled = !v;
+  $("#lang-seg").replaceChildren(...["en", "zh"].map((l) => h("button", { class: v && v.lang === l ? "on" : "", disabled: !v,
+    title: v ? `预览和导出用${LANG_LONG[l]}` : "", onclick: () => mutateVersion((x) => { x.lang = l; }) }, LANG_NAMES[l])));
   $("#layout-toggle").classList.toggle("on", ui.layoutOpen);
   $("#layout-toggle").disabled = !v;
   $("#export-btn").disabled = !v;
@@ -1088,11 +1203,16 @@ function renderPreviewToolbar() {
   if (!v) { layoutBuiltFor = null; return; }
   if (layoutBuiltFor !== v.id) buildLayoutPanel();
   updateLayoutPanel();
+  renderIssues();
 }
 
 function buildLayoutPanel() {
   layoutBuiltFor = ui.versionId;
-  const reset = (key) => h("button", { class: "btn icon sm ghost", title: "恢复默认", onclick: () => queueLayout(key, undefined, 0) }, icon("undo"));
+  const reset = (key) => h("button", { class: "btn icon sm ghost", title: "恢复默认", "data-reset": key, onclick: () => queueLayout(key, undefined, 0) }, icon("undo"));
+  ui.w.accent = colorField({
+    value: layoutValue("accent"), onChange: (c) => queueLayout("accent", c, 0), onReset: () => queueLayout("accent", undefined, 0),
+    isDefault: () => !((version() || {}).layout || {}).accent,
+  });
   $("#layout-panel").replaceChildren(
     ...SLIDERS.map(([key, label, min, max, step, unit]) => {
       const val = h("span", { class: "val" });
@@ -1100,9 +1220,8 @@ function buildLayoutPanel() {
         oninput: (ev) => { val.textContent = ev.target.value + unit; queueLayout(key, parseFloat(ev.target.value)); } });
       return h("div", { class: "ctl" }, h("span", null, label), input, val, reset(key));
     }),
-    h("div", { class: "ctl" }, h("span", null, "强调色"), h("input", { type: "color", id: "ctl-accent", onchange: (ev) => queueLayout("accent", ev.target.value.slice(1).toUpperCase(), 0) }), h("span"), reset("accent")),
-    h("div", { class: "ctl" }, h("span", null, "纸张"),
-      h("select", { id: "ctl-paper", onchange: (ev) => queueLayout("paper", ev.target.value, 0) }, h("option", { value: "a4" }, "A4"), h("option", { value: "letter" }, "Letter")), h("span"), reset("paper")),
+    h("div", { class: "ctl" }, h("span", null, "强调色"), ui.w.accent.el, h("span"), reset("accent")),
+    h("div", { class: "ctl" }, h("span", null, "纸张"), h("div", { id: "ctl-paper" }), h("span"), reset("paper")),
     h("div", { class: "ctl wide" }, h("span", null, "正文字体"),
       h("input", { type: "text", id: "ctl-font", placeholder: "留空用模板默认，比如 TeX Gyre Heros / Times New Roman / Arial", spellcheck: "false",
         onchange: (ev) => queueLayout("font", ev.target.value.trim() || undefined, 0) })));
@@ -1113,15 +1232,19 @@ function updateLayoutPanel() {
   if (!v) return;
   const active = document.activeElement;
   const set = (el, value) => { if (el && el !== active) el.value = value; };
-  set($("#ctl-paper"), layoutValue("paper"));
+  const paper = layoutValue("paper");
+  $("#ctl-paper").replaceChildren(uiSeg([{ value: "a4", label: "A4", tip: "21 × 29.7 cm，澳洲和中国常用" }, { value: "letter", label: "Letter", tip: "8.5 × 11 in，北美常用" }],
+    paper, (p) => queueLayout("paper", p, 0), { label: "纸张" }));
   set($("#ctl-font"), (v.layout || {}).font || "");
-  set($("#ctl-accent"), "#" + String(layoutValue("accent")).replace("#", ""));
+  if (ui.w.accent) ui.w.accent.value = layoutValue("accent");
   for (const [key, , , , , unit] of SLIDERS) {
     const input = document.querySelector(`#layout-panel input[data-key="${key}"]`);
     if (!input) continue;
     set(input, layoutValue(key));
+    syncRange(input);
     input.nextSibling.textContent = (input === active ? input.value : layoutValue(key)) + unit;
   }
+  for (const b of document.querySelectorAll("#layout-panel [data-reset]")) b.disabled = !((v.layout || {})[b.dataset.reset] !== undefined);
 }
 
 const pendingLayout = {};
@@ -1153,13 +1276,68 @@ async function doRender() {
   setBadge({ busy: true });
   try {
     const res = await api("POST", `/api/versions/${encodeURIComponent(vid)}/render`);
-    if (vid === ui.versionId) { r.last = res; await showPages(res); setBadge(res); }
+    if (vid === ui.versionId) {
+      r.last = res;
+      if (res.ok) { ui.lines[res.lang] = res.lines || {}; ui.linesFor[res.lang] = vid; ui.missing = res.missing || []; }
+      await showPages(res);
+      setBadge(res);
+      paintLines();
+    }
+    await measureEditLang(vid);
   } catch (e) {
     setBadge({ ok: false, errors: [e.message] });
   } finally {
     r.busy = false;
     if (r.again) { r.again = false; doRender(); }
   }
+}
+
+// The preview shows one language; when the form edits the other one, measure that too
+// (same template and layout, no images), so every bullet's line count matches what is typed.
+async function measureEditLang(vid) {
+  const v = version();
+  const L = ui.editLang;
+  if (!v || v.id !== vid || langs().length < 2 || L === v.lang) return;
+  try {
+    const res = await api("POST", `/api/versions/${encodeURIComponent(vid)}/measure`, { lang: L });
+    if (vid === ui.versionId && res.ok) { ui.lines[L] = res.lines || {}; ui.linesFor[L] = vid; paintLines(); }
+  } catch (_) { /* the preview's own errors are shown already */ }
+}
+
+// The strip under the toolbar: what still needs attention in this version, each with a fix.
+function renderIssues() {
+  const box = $("#issues");
+  const v = version();
+  if (!v || !S) { box.classList.add("hidden"); return; }
+  const lang = v.lang;
+  const long = longBullets(lang);
+  const missing = (ui.missing || []).filter((m) => entryById(m.id));
+  const items = [];
+  if (long.length) {
+    items.push(h("button", { class: "issue warn", "aria-haspopup": "menu", onclick: (ev) => openMenu(ev.currentTarget, [
+      { header: `${LANG_LONG[lang]}要点超过一行` },
+      ...long.map((b) => { const e = entryById(b.id); return { label: `${display(e.title) || entryLabel(e)} · 第 ${b.index + 1} 条`, hint: `${b.n} 行 · ${Math.round(b.fill * 100)}%`, icon: "compress", onClick: () => jumpToBullet(b.id, b.index, lang) }; }),
+      "sep",
+      { label: "让 Claude 全部压成一行", icon: "sparkle", disabled: !ui.chat.available, onClick: () => aiBatch("batch_fit") },
+    ], { minWidth: 280 }) }, icon("compress"), `${long.length} 条要点超过一行`));
+  }
+  if (missing.length && langs().length > 1) {
+    items.push(h("button", { class: "issue", "aria-haspopup": "menu", onclick: (ev) => openMenu(ev.currentTarget, [
+      { header: `这些经历还缺${LANG_LONG[lang]}，暂时显示另一种语言` },
+      ...missing.map((m) => { const e = entryById(m.id); return { label: display(e.title) || entryLabel(e), hint: m.bullets && m.bullets.length ? `${m.bullets.length} 条要点` : "标题等", icon: "translate", onClick: () => { ui.editLang = lang; select("entry", m.id); } }; }),
+      "sep",
+      { label: `让 Claude 补齐${LANG_LONG[lang]}版`, icon: "sparkle", disabled: !ui.chat.available, onClick: () => aiBatch("batch_translate", { target: lang }) },
+    ], { minWidth: 280 }) }, icon("translate"), `${missing.length} 条经历缺${LANG_LONG[lang]}`));
+  }
+  box.replaceChildren(...items);
+  box.classList.toggle("hidden", !items.length);
+}
+
+async function jumpToBullet(id, index, lang) {
+  if (langs().includes(lang)) ui.editLang = lang;
+  await select("entry", id);
+  const t = document.querySelector(`#bullets textarea[data-bullet="${index}"]`);
+  if (t) { t.scrollIntoView({ block: "center", behavior: "smooth" }); t.focus(); t.closest(".bullet").classList.add("pulse"); }
 }
 
 function setBadge(res) {
@@ -1171,12 +1349,12 @@ function setBadge(res) {
   if (res.ok && res.version === ALL) {
     b.className = "badge info";
     b.replaceChildren(`全部经历 · ${res.pages} 页`);
-    b.title = "ALL 不受一页限制；投递用的简历请在岗位里做";
+    setTip(b, "ALL 不受一页限制；投递用的简历请在岗位里做");
   } else if (res.ok) {
     const one = res.pages === 1;
     b.className = "badge " + (one ? "ok" : "bad");
     b.replaceChildren(icon(one ? "check" : "alert"), one ? "1 页" : `${res.pages} 页 · 超出一页`);
-    b.title = one ? `渲染用时 ${res.seconds}s` : "试试在「版面」里减小字号、边距、间距，或在这个岗位里少选一条经历";
+    setTip(b, one ? `渲染用时 ${res.seconds}s` : "试试在「版面」里减小字号、边距、间距，或在这个岗位里少选一条经历");
   } else {
     b.className = "badge bad";
     b.replaceChildren(icon("alert"), "渲染失败");
@@ -1284,20 +1462,26 @@ function initGutters() {
 function connect() {
   const es = new EventSource("/api/events");
   const conn = $("#conn");
-  es.onopen = () => { conn.className = "conn ok"; conn.title = "已连接"; if (S) refresh(); };
-  es.onerror = () => { conn.className = "conn bad"; conn.title = "连接断开，正在重连…"; };
+  es.onopen = () => { conn.className = "conn ok"; setTip(conn, "已连接"); if (S) { refresh(); checkEvidence(); } };
+  es.onerror = () => { conn.className = "conn bad"; setTip(conn, "连接断开，正在重连…"); };
   es.addEventListener("file", (m) => { const d = JSON.parse(m.data); if (S && d.digest === S.digest) return; refresh(); });
-  for (const t of ["chat.start", "chat.init", "chat.delta", "chat.tool", "chat.done"]) es.addEventListener(t, (m) => onChatEvent(t, JSON.parse(m.data)));
+  es.addEventListener("evidence", () => checkEvidence(true));
+  listenChat(es);
 }
 
 function wire() {
+  initTips();
+  initContextMenu();
   for (const b of document.querySelectorAll(".tab")) b.onclick = () => setTab(b.dataset.tab);
-  $("#version-select").onchange = (e) => switchVersion(e.target.value);
-  $("#version-menu-btn").append(icon("more"));
-  $("#version-menu-btn").onclick = (e) => { e.stopPropagation(); openVersionMenu(); };
-  document.addEventListener("click", (e) => { if (!e.target.closest("#version-menu")) $("#version-menu").classList.add("hidden"); });
 
-  $("#tpl-select").onchange = (e) => mutateVersion((x) => { x.template = e.target.value; });
+  ui.w.version = uiSelect({ id: "version-select", cls: "version", label: "ALL 或岗位", menuWidth: 300,
+    title: "ALL = 全部经历；其余是各个岗位的简历", onChange: (v) => switchVersion(v) });
+  $("#version-slot").replaceWith(ui.w.version.el);
+  $("#version-menu-btn").append(icon("more"));
+  $("#version-menu-btn").onclick = openVersionMenu;
+
+  ui.w.tpl = uiSelect({ id: "tpl-select", label: "模板", menuWidth: 300, onChange: (t) => mutateVersion((x) => { x.template = t; }) });
+  $("#tpl-slot").replaceWith(ui.w.tpl.el);
   $("#layout-toggle").prepend(icon("settings"));
   $("#layout-toggle").onclick = () => { ui.layoutOpen = !ui.layoutOpen; store("layoutOpen", ui.layoutOpen ? "1" : "0"); renderPreviewToolbar(); };
   $("#zoom-in").append(icon("zoomIn"));
@@ -1307,29 +1491,17 @@ function wire() {
   $("#zoom-fit").onclick = () => setZoom(ui.zoom === "fit" ? 1 : "fit");
   $("#export-btn").onclick = exportPdf;
 
-  $("#chat-new").append(icon("plus"));
-  $("#chat-delete").append(icon("trash"));
-  $("#chat-send").append(icon("send"));
-  $("#chat-stop").append(icon("stop"));
-  $("#chat-new").onclick = newChat;
-  $("#chat-delete").onclick = deleteChat;
-  $("#chat-select").onchange = (e) => openChat(e.target.value);
-  const input = $("#chat-input");
-  const send = async () => { const text = input.value.trim(); if (!text) return; if (await sendChat(text)) { input.value = ""; autosize(input); } };
-  $("#chat-send").onclick = send;
-  $("#chat-stop").onclick = () => ui.chat.id && api("POST", `/api/chats/${ui.chat.id}/cancel`);
-  input.addEventListener("input", () => autosize(input));
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
-  $("#chat-log").addEventListener("click", (e) => {
-    const a = e.target.closest("a[data-ext]");
-    if (a) { e.preventDefault(); api("POST", "/api/open", { url: a.getAttribute("href") }).catch(() => window.open(a.href, "_blank")); }
-  });
+  wireChat();
 
   document.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveDraft(); }
-    if (e.key === "Escape") { $("#version-menu").classList.add("hidden"); if (ui.layoutOpen) { ui.layoutOpen = false; renderPreviewToolbar(); } }
+    if (e.key === "Escape" && !Float.cur && ui.layoutOpen) { ui.layoutOpen = false; renderPreviewToolbar(); }
   });
   window.addEventListener("beforeunload", () => { if (ui.dirty) saveDraft(); });
+  // projects change while the window is in the background: look again when the user comes back
+  window.addEventListener("focus", () => checkEvidence(true));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) checkEvidence(true); });
+  setInterval(() => { if (!document.hidden) checkEvidence(); }, 5 * 60 * 1000);
 }
 
 (async function main() {
@@ -1342,5 +1514,7 @@ function wire() {
   setTab(store("tab") === "chat" ? "chat" : "library");
   connect();
   loadChats().catch(() => {});
+  loadClaudeInfo();
+  checkEvidence();
   scheduleRender(0);
 })();

@@ -33,16 +33,21 @@ python "<skill>/scripts/studio.py" --window
 
 窗口左栏的「对话」页签，每段对话都是一个真正的 Claude Code 会话：`claude -p --resume <session>`，在数据文件所在目录运行，加载用户的 CLAUDE.md 和已装的 Skill，没有替换系统提示词，也不指定回复语言。窗口只通过 `--append-system-prompt-file` 附上一段说明：用户正在看 ALL 还是哪个岗位、哪个条目，以及数据文件和这份 SKILL.md 的位置。所以在窗口里被调用时，照常按下面的规则工作即可。
 
+窗口和 Claude Code 之间走的是 SDK 的 stream-json 双向通道（`--input-format stream-json --permission-prompt-tool stdio`），所以终端里有的交互窗口里都有：需要授权的操作会在对话里弹出允许 / 拒绝卡片；AskUserQuestion 显示成选项卡片；计划模式下 ExitPlanMode 显示成「批准 / 继续修改」卡片；用户可以随时停止（真正的 interrupt）、发图片和文件、用 `/` 调用命令和技能、选模型、推理强度和权限模式。需要用户拍板时，直接用 AskUserQuestion 提问即可，不必改成在文字里列选项。
+
 ## 不开界面时自己检查结果
 
 ```bash
 python <skill>/scripts/render.py --data <path>                 # 渲染 ALL 和所有岗位，报告页数
 python <skill>/scripts/render.py JOB-001 --data <path>         # 只渲染一个岗位
+python <skill>/scripts/render.py JOB-001 --lang zh --data <path>   # 同一个岗位的模板和版面，换成中文渲染
 python <skill>/scripts/render.py JOB-001 --export              # 同时把 PDF 和 .tex 复制到导出目录
 python <skill>/scripts/render.py --check                       # 只校验数据
 ```
 
-输出里 `OVER ONE PAGE` 表示超过一页。改完内容想确认能放进一页时，就用这个命令。
+- `OVER ONE PAGE` 表示超过一页。
+- 每次渲染都会列出**占了不止一行的要点**：`EXP-002 "Paper2Exam" bullet 2: 2 lines, text is 117% of one line`。这是 LaTeX 实际排版测出来的（不是按字数估算），117% 就是大约要删掉 15% 的字。
+- `missing zh text` 列出缺中文、会暂时显示英文的经历。
 
 ## 数据格式（resume.yaml）
 
@@ -53,6 +58,7 @@ schema_version: 1
 settings:
   languages: [en, zh]        # 内容语言；多于一种时，文本字段按语言分开写
   export_dir: exports        # 导出目录，相对于 resume.yaml
+  project_roots: [E:/Forge]  # 可选：用户放个人项目的文件夹
 profile:
   name: {en: Alex Chen, zh: 陈亚历}
   contacts:                  # 全部联系方式；岗位可以隐藏其中几项
@@ -73,9 +79,10 @@ entries:                     # 经历库：全部真实经历，不受一页纸�
     tech: [Next.js, Prisma]  # list 板块里是具体条目
     bullets:
       - {en: 'Built a **multi-stage** pipeline ...', zh: 搭建**多阶段**流水线……}
+      - {en: 'Wrote the onboarding docs', zh: ''}    # '' = 中文版不放这一条
     notes: |                 # 事实层：真实情况，永远不会渲染
       ...
-    evidence: [E:/Forge/Paper2Exam]   # 事实层：可以去读的本地路径
+    evidence: [E:/Forge/Paper2Exam]   # 事实层：可以去读的本地路径（用户在界面里点「选择项目文件夹」添加）
 versions:
   - id: ALL                  # 保留项：全集预览，固定排第一，不能删、不能改 ID
     label: 全部经历
@@ -98,6 +105,10 @@ versions:
 ```
 
 - **文本字段**可以是普通字符串（所有语言通用），也可以是 `{en: ..., zh: ...}`。只改用户要求的那种语言，其他语言原样保留。
+- **要点（bullets）按语言的规则**：每条要点是一个 `{en: ..., zh: ...}`，按位置对应。
+  - 缺某个键（比如只有 `en`）= 还没翻译：那个语言的简历会暂时显示另一种语言，界面标「缺中文」。
+  - 键存在但值是空字符串（`zh: ''`）= 这条**不出现在**中文简历里。中文版可以因此比英文版少几条，反过来英文版写 `en: ''` 也一样。
+- `settings.project_roots`：用户放个人项目的文件夹（比如 `E:/Forge`）。用户说「看看我的项目」时去这里找。
 - **行内标记**：`**加粗**`、`*斜体*`、`[文字](链接)`。其他字符按字面输出，LaTeX 转义由渲染器负责，不要在 YAML 里写 LaTeX 命令。
 
 ## 编辑规则（Claude 必须遵守）
@@ -109,11 +120,15 @@ versions:
 5. **全集与子集**：新经历只进经历库（`ALL` 自动包含）；要不要放进某个岗位，由用户决定。不要给 `ALL` 写 `entries`，也不要把求职方向写进 `profile`，它属于各岗位的 `headline`。
 6. **一页纸**只针对岗位：用户要求压到一页时，先调岗位的 `layout`（字号、间距、边距），再精简 bullets 的措辞，最后才建议少选条目。选哪些条目由用户决定，不要擅自从岗位的 `entries` 里删掉经历。`ALL` 多页是正常的。
 7. 通过界面触发的任务，不需要自己编译 PDF，界面会自动重新渲染。在终端里工作时，可以用 `render.py` 检查页数。
+8. **每条要点一行**：用户的硬要求。写完或改完要点，用 `render.py <岗位> --lang <语言>` 检查，输出里列出的超过一行的要点继续精简，直到全部一行。精简的顺序：删修饰词和重复信息 → 换更短的说法 → 拆掉次要信息，不改事实。
+9. **中英双语不是翻译**：写中文版时按中文简历习惯重写（动词开头、不写「我」、去掉冠词和从句、技术名词和数字原样保留、信息密度高）；写英文版时用强动词开头的过去式、能量化就量化。两种语言的要点数量可以不同（见上面 `''` 的用法）。只改目标语言，另一种语言原样保留。
 
 ## 常见任务
 
 - **录入新经历**：按「一次只问一个问题」的访谈方式，先问清真实情况，写进 `notes`，再根据 notes 起草 bullets。可以借鉴本机已装的 offer-toolkit-skill、resume-tailoring 里的追问方法和写作规则。
-- **润色某一条**：读这一条的 notes 和 evidence（需要时去读代码仓库和 README），改写 bullets。要点用动词开头，突出本人做的决策和结果，每条尽量一行。
+- **润色某一条**：读这一条的 notes 和 evidence（需要时去读代码仓库和 README），改写 bullets。要点用动词开头，突出本人做的决策和结果，每条一行（用 render.py 核对）。
+- **项目有更新**：界面会记录 Claude 上次读某个证据文件夹时它的状态（git HEAD + 未提交改动，或文件列表，存在 `.studio/evidence.json`），项目变了会提醒用户。用户点「按项目新进展更新」时，消息里会附上新提交和改动的文件；去看这些变化，值得写的才写进展示层，两种语言都更新。
+- **写另一种语言**：按上面第 9 条。界面的按钮会把要求和检查命令一起发过来。
 - **做一个新岗位**：在 `versions` 末尾追加一项，ID 用下一个 `JOB-xxx`，写好 `label` 和 `headline`，`entries` 列出要选的条目 ID。
 
 ## 目录结构

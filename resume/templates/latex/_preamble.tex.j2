@@ -35,3 +35,10 @@
 \linespread{((( L.line_spread|num )))}
 \setlist[itemize]{leftmargin=1.1em, labelsep=0.4em, itemsep=((( L.item_sep|num )))pt, parsep=0pt, topsep=1pt, partopsep=0pt}
 \newcommand{\entrysep}{\par\vspace{((( L.entry_sep|num )))pt}}
+% \rsitem{ref}{text}: a bullet that reports how many lines it took and its natural width,
+% so the editor can say "2 lines, 12% too long" for every bullet.
+\newsavebox{\rsbox}
+\makeatletter
+% (the group keeps TeX's end-of-paragraph \parshape reset local, exactly like LaTeX's own list \par)
+\newcommand{\rsitem}[2]{\item #2{\@@par\xdef\rs@n{\the\prevgraf}}\sbox{\rsbox}{#2}\typeout{RSLINE #1 \rs@n\space\the\wd\rsbox\space\the\linewidth}}
+\makeatother

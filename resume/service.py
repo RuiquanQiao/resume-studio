@@ -183,18 +183,38 @@ class Studio:
     def _safe(self, name: str) -> str:
         return re.sub(r"[^A-Za-z0-9._-]+", "_", name) or "version"
 
-    def render(self, version_id: str) -> dict:
+    def render(self, version_id: str, lang: str | None = None, images: bool = True) -> dict:
+        """Render one version. `lang` renders it in another language (same template and layout),
+        e.g. to check that the Chinese bullets fit on one line; that build goes to its own folder."""
         doc, digest = self.store.load()
         version = model.get_version(doc, version_id)
         if version is None:
             raise KeyError(f"岗位 {version_id} 不存在")
-        view = model.build_view(doc, to_plain(version))
+        v = to_plain(version)
+        if lang:
+            v["lang"] = lang
+        view = model.build_view(doc, v)
         engine = str(version.get("engine") or "latex")
-        build_dir = self.build_root / self._safe(version_id)
+        build_dir = self.build_root / (self._safe(version_id) + (f"@{self._safe(lang)}" if lang else ""))
         result = get_renderer(engine).render(view, build_dir)
-        images = rasterize(result.pdf, build_dir) if result.ok and result.pdf else []
-        return {**result.to_json(), "version": version_id, "digest": digest,
-                "images": len(images), "stamp": int(time.time() * 1000)}
+        pngs = rasterize(result.pdf, build_dir) if images and result.ok and result.pdf else []
+        return {**result.to_json(), "version": version_id, "lang": view["lang"], "digest": digest,
+                "missing": view["missing"], "images": len(pngs), "stamp": int(time.time() * 1000)}
+
+    def bullet_report(self, result: dict) -> list[dict]:
+        """Bullets that take more than one line, with the text, for people and for Claude."""
+        doc, _ = self.store.load()
+        out = []
+        for eid, by_idx in (result.get("lines") or {}).items():
+            e = model.get_item(doc, "entry", eid)
+            if e is None:
+                continue
+            for idx, m in sorted(by_idx.items(), key=lambda kv: int(kv[0])):
+                if m["n"] > 1:
+                    b = (e.get("bullets") or [])[int(idx)]
+                    out.append({"id": eid, "title": model.tr(e.get("title"), result["lang"]), "index": int(idx),
+                                "lines": m["n"], "fill": m["fill"], "text": model.bullet_text(b, result["lang"])})
+        return out
 
     def pdf_path(self, version_id: str) -> Path:
         return self.build_root / self._safe(version_id) / "main.pdf"
