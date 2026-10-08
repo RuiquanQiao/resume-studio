@@ -200,10 +200,8 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         except KeyError:
             raise HttpError(409, "这个请求已经结束了")
 
-    @app.route("POST", "/api/chats/{cid}/fork")
-    def fork(req: Request):
-        """A new chat that continues from just before message `index` (that message can be rewritten)."""
-        cid = req.params["cid"]
+    def cut_point(cid: str, req: Request, verb: str) -> tuple[dict, list, int, dict | None]:
+        """Where a fork / rewind starts: just before user message `index`, as a Claude Code resume point."""
         meta = chats.store.meta(cid)
         if meta is None:
             raise HttpError(404, "对话不存在")
@@ -213,16 +211,36 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         except (TypeError, ValueError):
             raise HttpError(400, "index 必须是数字")
         if not 0 <= index < len(msgs) or msgs[index].get("role") != "user":
-            raise HttpError(400, "只能从你发的消息处分叉")
+            raise HttpError(400, f"只能从你发的消息处{verb}")
         before = msgs[:index]
         at = next((m.get("uuid") for m in reversed(before) if m.get("role") == "assistant"), None)
         if before and not at:
-            raise HttpError(409, "这段对话是旧版本记录的，没法从中间分叉；可以从第一条开始")
+            raise HttpError(409, f"这段对话是旧版本记录的，没法从中间{verb}；可以从第一条开始")
+        # a chat that was itself forked and has not replied since still points at its source session
+        sid = meta.get("session_id") or (meta.get("fork") or {}).get("session_id")
+        return meta, msgs, index, ({"session_id": sid, "at": at} if before and sid else None)
+
+    @app.route("POST", "/api/chats/{cid}/fork")
+    def fork(req: Request):
+        """A new chat that continues from just before message `index` (that message can be rewritten)."""
+        meta, msgs, index, point = cut_point(req.params["cid"], req, "分叉")
         new = chats.store.create(title=f"{meta.get('title') or '对话'}（分叉）", model_choice=meta.get("model_choice"),
-                                 effort=meta.get("effort"), mode=meta.get("mode"), tasks=None,
-                                 fork={"session_id": meta.get("session_id"), "at": at} if before else None)
-        chats.store.save_messages(new["id"], before)
-        return {"chat": new, "text": msgs[index].get("text") or ""}
+                                 effort=meta.get("effort"), mode=meta.get("mode"), tasks=None, fork=point)
+        chats.store.save_messages(new["id"], msgs[:index])
+        return {"chat": new, "text": msgs[index].get("text") or "", "files": msgs[index].get("files") or []}
+
+    @app.route("POST", "/api/chats/{cid}/rewind")
+    def rewind(req: Request):
+        """Go back to just before message `index` in this same chat; later messages are dropped.
+        Claude Code continues from that point (`--fork-session --resume-session-at`)."""
+        cid = req.params["cid"]
+        if chats.busy(cid):
+            raise HttpError(409, "这段对话还在回复中，先停止再回退")
+        meta, msgs, index, point = cut_point(cid, req, "回退")
+        chats.store.save_messages(cid, msgs[:index])
+        chat = chats.store.update_meta(cid, session_id=None, fork=point, tasks=None, context=None)
+        return {"chat": chat, "text": msgs[index].get("text") or "", "files": msgs[index].get("files") or [],
+                "dropped": len(msgs) - index}
 
     @app.route("DELETE", "/api/chats/{cid}/queue/{qid}")
     def unqueue(req: Request):

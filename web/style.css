@@ -302,6 +302,9 @@ body.resizing iframe, body.resizing img { pointer-events: none; }
 .ctl.wide { grid-column: 1 / -1; grid-template-columns: 66px 1fr; }
 .ctl .val { font: 12px var(--mono); text-align: right; color: var(--text); }
 .ctl input[type=range] { width: 100%; }
+.font-pick { grid-column: span 2; display: flex; gap: 6px; min-width: 0; }
+.font-pick > .select { flex: 1; min-width: 0; }
+.font-pick > input { flex: 1; min-width: 0; }
 .ctl input[type=text] { height: 28px; border: 1px solid var(--line-strong); border-radius: 5px; padding: 0 8px; background: var(--panel); width: 100%; }
 .render-errors { flex: none; margin: 0; padding: 10px 14px; background: var(--bad-soft); color: var(--bad); font: 12px/1.45 var(--mono); white-space: pre-wrap; max-height: 140px; overflow: auto; }
 .canvas { flex: 1; min-height: 0; overflow: auto; }

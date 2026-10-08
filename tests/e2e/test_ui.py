@@ -204,7 +204,7 @@ def test_add_and_delete_entry(page, server, data_file):
     page.click(".lib-section:has(.t:text('Projects')) .lib-head button")
     page.wait_for_selector(".entry.on[data-id='EXP-006']")
     page.wait_for_selector(".ed-head .id:text('Projects #3')")
-    assert page.evaluate("document.activeElement.dataset.key") == "title"
+    page.wait_for_function("() => document.activeElement.dataset.key === 'title'")   # ready to type the name
     page.keyboard.type("New Project")
     wait_until(lambda: "New Project" in data_file.read_text(encoding="utf-8"), msg="title saved")
     assert "EXP-006" in version(server)["entries"]                    # new entries join the current version
@@ -689,11 +689,27 @@ def test_queue_stop_tasks_and_fork(page, server, fake_claude):
 
     n = page.locator(".msg-user-wrap").count()
     target = page.locator(".msg-user-wrap").nth(n - 2)                         # "排队的第二条"
+    tools = target.locator(".msg-tools")                                      # under the message, like Claude Code
+    assert tools.locator(".mt-time").inner_text() == "刚刚"
+    assert tools.bounding_box()["y"] > target.locator(".msg-user").bounding_box()["y"]
     target.hover()
-    target.locator("button[aria-label^='从这里分叉']").click()
+    tools.locator("button[aria-label^='分叉']").click()
     page.wait_for_selector("#chat-select .sel-label:text-matches('（分叉）')")
     assert page.input_value("#chat-input") == "排队的第二条"                   # ready to rewrite and resend
     assert page.locator(".msg-user-wrap").count() == n - 2
+
+    # rewind inside this chat: back to before "PERM 第一条"
+    first = page.locator(".msg-user-wrap").nth(1)
+    first.hover()
+    first.locator("button[aria-label^='回到这条消息之前']").click()
+    page.click(".modal button:has-text('回退')")
+    page.wait_for_function("() => document.querySelectorAll('.msg-user-wrap').length === 1")
+    assert page.input_value("#chat-input") == "PERM 第一条"
+    page.fill("#chat-input", "重来一次")
+    page.keyboard.press("Enter")
+    wait_until(lambda: calls(fake_claude)[-1]["stdin"] == "重来一次", msg="resent")
+    assert "--resume-session-at" in calls(fake_claude)[-1]["argv"]
+    page.wait_for_function("() => document.querySelectorAll('.msg-user-wrap').length === 2")
 
 
 def test_slash_commands_and_attachments(page, server, fake_claude, monkeypatch):

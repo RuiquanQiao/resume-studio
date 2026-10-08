@@ -5,13 +5,23 @@
 \documentclass{article}
 \usepackage[((( L.paper )))paper, top=((( L.margin_y|num )))cm, bottom=((( L.margin_y|num )))cm, left=((( L.margin_x|num )))cm, right=((( L.margin_x|num )))cm]{geometry}
 \usepackage{fontspec}
-((* if L.font *))
-\setmainfont{((( L.font )))}
+((= fonts come from render/fonts.py: the user's pick, or for a Chinese resume a Song + matching serif =))
+((* if fonts.main *))
+\setmainfont{((( fonts.main.name )))}[((( fonts.main.opts )))]
+((* endif *))
+% \rsit: secondary text (subtitle, location). Chinese has no italic, so a CJK resume keeps it upright.
+((* if has_cjk *))
+\newcommand{\rsit}[1]{#1}
+((* else *))
+\newcommand{\rsit}[1]{\textit{#1}}
 ((* endif *))
 ((* if has_cjk *))
-\usepackage{xeCJK}
-\setCJKmainfont{((( L.cjk_font )))}
-\setCJKsansfont{((( L.cjk_font )))}
+\usepackage((* if fonts.cjk_fallback *))[AutoFallBack=true]((* endif *)){xeCJK}
+\setCJKmainfont{((( fonts.cjk.name )))}[((( fonts.cjk.opts )))]
+\setCJKsansfont{((( fonts.cjk.name )))}[((( fonts.cjk.opts )))]
+((* if fonts.cjk_fallback *))
+\setCJKfallbackfamilyfont{\CJKrmdefault}{((( fonts.cjk_fallback )))}[AutoFakeBold=2]
+((* endif *))
 % keep en dash and middle dot Western so spacing around them survives in Chinese text
 \xeCJKDeclareCharClass{Default}{"00B7, "2013}
 ((* endif *))
@@ -19,6 +29,9 @@
 \usepackage{enumitem}
 \usepackage{titlesec}
 \usepackage[hidelinks]{hyperref}
+\usepackage{fontawesome5}
+% contact icon: accent-coloured, a thin gap before the text it labels
+\newcommand{\contacticon}[1]{{\color{accent}\faIcon{#1}}\,\,}
 \pagestyle{empty}
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0pt}

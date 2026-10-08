@@ -11,6 +11,7 @@ from core.store import YamlStore, fingerprint, merge_into, to_plain
 
 from . import model
 from .render import all_templates, get_renderer
+from .render.fonts import catalog as font_catalog
 from .render.raster import rasterize
 
 
@@ -47,6 +48,7 @@ class Studio:
             "hashes": model.hashes(doc),
             "warnings": model.validate(doc),
             "templates": all_templates(),
+            "fonts": font_catalog(),
             "layout_defaults": model.DEFAULT_LAYOUT,
             "data_path": str(self.store.path),
             **self.extra_state(),

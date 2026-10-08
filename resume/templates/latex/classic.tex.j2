@@ -12,7 +12,7 @@
   \vspace{3pt}{\small ((( profile.headline|tex )))}\par
 ((* endif *))
 ((* if profile.contacts *))
-  \vspace{2pt}{\small ((* for c in profile.contacts *))((* if not loop.first *)) \enspace{}|\enspace{} ((* endif *))((* if c.url *))\href{((( c.url|url )))}{((( (c.value or (c.url|bare))|tex )))}((* else *))((( c.value|tex )))((* endif *))((* endfor *))}\par
+  \vspace{2pt}{\small ((* for c in profile.contacts *))((* if not loop.first *))\hspace{1.2em}((* endif *))((* if c.icon is defined and c.icon *))\contacticon{((( c.icon )))}((* endif *))((* if c.url *))\href{((( c.url|url )))}{((( (c.value or (c.url|bare))|tex )))}((* else *))((( c.value|tex )))((* endif *))((* endfor *))}\par
 ((* endif *))
 \end{center}
 ((* for s in sections *))
@@ -26,7 +26,7 @@
 ((* for e in s.entries *))
 \textbf{((( e.title|tex )))}((* if e.link *)) {\small\enspace{}\href{((( e.link|url )))}{((( (e.link|bare)|tex )))}}((* endif *))\hfill{\small ((( e.dates|tex )))}\par
 ((* if e.subtitle or e.location or e.tech *))
-{\small\textit{((( e.subtitle|tex )))}((* if e.tech *))((* if e.subtitle *))\enspace{}|\enspace{}((* endif *))((( e.tech|map('tex')|join(', ') )))((* endif *))\hfill\textit{((( e.location|tex )))}}\par
+{\small\rsit{((( e.subtitle|tex )))}((* if e.tech *))((* if e.subtitle *))\enspace{}|\enspace{}((* endif *))((( e.tech|map('tex')|join(', ') )))((* endif *))\hfill\rsit{((( e.location|tex )))}}\par
 ((* endif *))
 ((* if e.bullets *))
 \begin{itemize}

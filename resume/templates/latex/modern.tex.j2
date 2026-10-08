@@ -11,7 +11,7 @@
 \vspace{4pt}((( profile.headline|tex )))\par
 ((* endif *))
 ((* if profile.contacts *))
-\vspace{2pt}{\small\color{black!70}((* for c in profile.contacts *))((* if not loop.first *)) \enspace{}\textbullet{}\enspace{} ((* endif *))((* if c.url *))\href{((( c.url|url )))}{((( (c.value or (c.url|bare))|tex )))}((* else *))((( c.value|tex )))((* endif *))((* endfor *))}\par
+\vspace{2pt}{\small\color{black!70}((* for c in profile.contacts *))((* if not loop.first *))\hspace{1.2em}((* endif *))((* if c.icon is defined and c.icon *))\contacticon{((( c.icon )))}((* endif *))((* if c.url *))\href{((( c.url|url )))}{((( (c.value or (c.url|bare))|tex )))}((* else *))((( c.value|tex )))((* endif *))((* endfor *))}\par
 ((* endif *))
 ((* for s in sections *))
 

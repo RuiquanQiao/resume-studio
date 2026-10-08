@@ -510,7 +510,8 @@ async function newEntry(section) {
   applyState(r);
   if (version() && !isAll()) await mutateVersion((v) => { v.entries = [...(v.entries || []), r.id]; });
   select("entry", r.id);
-  setTimeout(() => { const f = $("#editor input[data-key=title]"); if (f) f.focus(); }, 30);
+  const title = () => $("#editor input[data-key=title]");
+  if (title()) title().focus(); else setTimeout(() => title() && title().focus(), 30);
 }
 
 // ================================================================ middle: editor
@@ -1222,9 +1223,46 @@ function buildLayoutPanel() {
     }),
     h("div", { class: "ctl" }, h("span", null, "强调色"), ui.w.accent.el, h("span"), reset("accent")),
     h("div", { class: "ctl" }, h("span", null, "纸张"), h("div", { id: "ctl-paper" }), h("span"), reset("paper")),
-    h("div", { class: "ctl wide" }, h("span", null, "正文字体"),
-      h("input", { type: "text", id: "ctl-font", placeholder: "留空用模板默认，比如 TeX Gyre Heros / Times New Roman / Arial", spellcheck: "false",
-        onchange: (ev) => queueLayout("font", ev.target.value.trim() || undefined, 0) })));
+    fontControl("font", "英文字体", reset),
+    fontControl("cjk_font", "中文字体", reset));
+}
+
+// ---- font pickers: installed fonts from the server, plus "自定义…" for any other font name
+const CUSTOM_FONT = "\u0000custom";
+const FONT_GROUPS = { serif: "衬线 / 宋体", sans: "无衬线 / 黑体", kai: "楷体 / 仿宋", fang: "楷体 / 仿宋" };
+ui.fontPick = {};
+function fontControl(key, label, reset) {
+  const input = h("input", { type: "text", class: "hidden", id: `ctl-${key}-custom`, spellcheck: "false", "aria-label": `${label}（自定义）`,
+    placeholder: "输入已安装字体的名字", onchange: (ev) => { ev.target.classList.add("hidden"); queueLayout(key, ev.target.value.trim() || undefined, 0); } });
+  const sel = uiSelect({ id: `ctl-${key}`, label, menuWidth: 320,
+    onChange: (v) => {
+      if (v === CUSTOM_FONT) { input.classList.remove("hidden"); input.value = ""; input.focus(); return; }
+      input.classList.add("hidden");
+      queueLayout(key, v || undefined, 0);
+    } });
+  ui.fontPick[key] = { sel, input };
+  return h("div", { class: "ctl" }, h("span", null, label), h("div", { class: "font-pick" }, sel.el, input), reset(key));
+}
+
+function updateFontControls(v) {
+  const F = S.fonts || { latin: [], cjk: [] };
+  const zh = v.lang === "zh";
+  const defaults = {
+    font: zh ? `默认：${F.default_latin_cjk}` : "默认：Latin Modern Roman",
+    cjk_font: `默认：${(F.cjk.find((f) => f.name === F.default_cjk) || { label: F.default_cjk }).label}`,
+  };
+  for (const [key, list] of [["font", F.latin], ["cjk_font", F.cjk]]) {
+    const pick = ui.fontPick[key];
+    if (!pick) continue;
+    const cur = (v.layout || {})[key] || null;
+    const known = list.some((f) => f.name === cur);
+    const opts = [{ value: null, label: defaults[key], desc: zh ? "中文简历：宋体 + 粗细相近的衬线英文" : "跟随模板" },
+      ...list.map((f) => ({ value: f.name, label: f.label, hint: f.label !== f.name ? f.name : "", desc: f.desc, group: FONT_GROUPS[f.kind] }))];
+    if (cur && !known) opts.push({ value: cur, label: cur, desc: "自定义字体", group: "自定义" });
+    opts.push({ value: CUSTOM_FONT, label: "自定义…", desc: "输入电脑上任意已安装字体的名字", group: "自定义" });
+    pick.sel.setOptions(opts, cur);
+    if (document.activeElement !== pick.input) pick.input.classList.add("hidden");
+  }
 }
 
 function updateLayoutPanel() {
@@ -1235,7 +1273,7 @@ function updateLayoutPanel() {
   const paper = layoutValue("paper");
   $("#ctl-paper").replaceChildren(uiSeg([{ value: "a4", label: "A4", tip: "21 × 29.7 cm，澳洲和中国常用" }, { value: "letter", label: "Letter", tip: "8.5 × 11 in，北美常用" }],
     paper, (p) => queueLayout("paper", p, 0), { label: "纸张" }));
-  set($("#ctl-font"), (v.layout || {}).font || "");
+  updateFontControls(v);
   if (ui.w.accent) ui.w.accent.value = layoutValue("accent");
   for (const [key, , , , , unit] of SLIDERS) {
     const input = document.querySelector(`#layout-panel input[data-key="${key}"]`);

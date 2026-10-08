@@ -314,6 +314,17 @@ def test_fork_tasks_context_and_slash_command(server, fake_claude):
     assert meta["session_id"] != sid and not meta.get("fork")                # its own session from now on
     assert server.req("POST", f"/api/chats/{cid}/fork", {"index": 1})[0] == 400   # not from Claude's message
 
+    # rewind: same chat, back to just before "second"; Claude Code continues from there
+    code, r = server.req("POST", f"/api/chats/{cid}/rewind", {"index": 2})
+    assert code == 200 and r["text"] == "second" and r["dropped"] == 2
+    assert len(server.req("GET", f"/api/chats/{cid}")[1]["messages"]) == 2
+    _send(server, cid, "second, again")
+    server.wait_idle(cid)
+    argv = calls(fake_claude)[-1]["argv"]
+    assert argv[argv.index("--resume") + 1] == sid and argv[argv.index("--resume-session-at") + 1] == msgs[1]["uuid"]
+    sid = server.req("GET", f"/api/chats/{cid}")[1]["chat"]["session_id"]
+    assert sid and sid != argv[argv.index("--resume") + 1]                     # continues as its own session
+
     _send(server, cid, "/context")
     server.wait_idle(cid)
     last = server.req("GET", f"/api/chats/{cid}")[1]["messages"][-1]

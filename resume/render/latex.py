@@ -10,6 +10,7 @@ from pathlib import Path
 
 import jinja2
 
+from . import fonts
 from .base import Renderer, RenderResult
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates" / "latex"
@@ -105,7 +106,8 @@ class LatexRenderer(Renderer):
             except jinja2.TemplateNotFound:
                 return RenderResult(False, errors=[f"找不到模板：{view['template']}"])
             try:
-                tex = tpl.render(**view, has_cjk=_has_cjk(view))
+                cjk = _has_cjk(view)
+                tex = tpl.render(**view, has_cjk=cjk, fonts=fonts.resolve(view["layout"], cjk))
             except jinja2.TemplateError as e:
                 return RenderResult(False, errors=[f"模板错误：{e}"])
             src = build_dir / "main.tex"

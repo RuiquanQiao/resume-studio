@@ -11,7 +11,6 @@ See SKILL.md for the documented schema. Principles:
 from __future__ import annotations
 
 import re
-import sys
 from typing import Any
 
 from core.store import fingerprint, to_plain
@@ -38,14 +37,6 @@ def is_all(version: Any) -> bool:
     return bool(version) and str(version.get("id")) == ALL_ID
 
 
-def default_cjk_font() -> str:
-    if sys.platform.startswith("win"):
-        return "Microsoft YaHei"
-    if sys.platform == "darwin":
-        return "PingFang SC"
-    return "Noto Sans CJK SC"
-
-
 DEFAULT_LAYOUT = {
     "paper": "a4",          # a4 | letter
     "font_size": 10.0,      # pt, any value
@@ -56,8 +47,8 @@ DEFAULT_LAYOUT = {
     "entry_sep": 3.0,       # pt between entries
     "item_sep": 1.0,        # pt between bullets
     "accent": "1F4E79",     # hex, no '#'
-    "font": "",             # main font name; empty = template default
-    "cjk_font": "",         # empty = platform default
+    "font": "",             # Latin font name; empty = default (see render/fonts.py)
+    "cjk_font": "",         # Chinese font name; empty = default (FandolSong)
 }
 
 
@@ -73,6 +64,30 @@ def skeleton() -> dict:
 
 
 # ---- text helpers --------------------------------------------------------
+# Font Awesome 5 icon for a contact, chosen from its label first, then from its link.
+CONTACT_ICONS = [
+    (("email", "mail"), ("mailto:",), "envelope"),
+    (("phone", "mobile", "tel"), ("tel:",), "mobile-alt"),
+    (("linkedin",), ("linkedin.com",), "linkedin"),
+    (("github",), ("github.com",), "github"),
+    (("wechat", "weixin"), (), "weixin"),
+    (("location", "address", "city"), (), "map-marker-alt"),
+    (("website", "site", "homepage", "portfolio", "blog"), ("http",), "globe"),
+]
+
+
+def contact_icon(label: str, url: str) -> str:
+    """Icon name for a contact, or '' when nothing fits."""
+    label, url = label.lower(), url.lower()
+    for words, _, icon in CONTACT_ICONS:
+        if any(w in label for w in words):
+            return icon
+    for _, prefixes, icon in CONTACT_ICONS:
+        if any(p in url for p in prefixes):
+            return icon
+    return ""
+
+
 def tr(value: Any, lang: str) -> str:
     """Resolve a plain-or-per-language text value for one language."""
     if value is None:
@@ -227,8 +242,6 @@ def build_view(doc: Any, version: dict) -> dict:
     lang = str(version.get("lang") or "en")
     layout = dict(DEFAULT_LAYOUT)
     layout.update(to_plain(version.get("layout") or {}))
-    if not layout.get("cjk_font"):
-        layout["cjk_font"] = default_cjk_font()
     accent = str(layout.get("accent") or "").lstrip("#").upper()
     layout["accent"] = accent if re.fullmatch(r"[0-9A-F]{6}", accent) else DEFAULT_LAYOUT["accent"]
     if layout.get("paper") not in ("a4", "letter"):
@@ -255,7 +268,9 @@ def build_view(doc: Any, version: dict) -> dict:
         "name": tr(p.get("name"), lang),
         "headline": tr(headline, lang),
         "contacts": [{"label": tr(c.get("label"), lang), "value": tr(c.get("value"), lang),
-                      "url": tr(c.get("url"), lang)} for c in p.get("contacts") or []
+                      "url": tr(c.get("url"), lang),
+                      "icon": contact_icon(tr(c.get("label"), lang), tr(c.get("url"), lang))}
+                     for c in p.get("contacts") or []
                      if str(c.get("label") or "") not in hidden_contacts],
     }
 

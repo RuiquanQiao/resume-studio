@@ -438,9 +438,12 @@ function openImage(src, name) {
 function messageEl(m, index) {
   if (m.role === "user") {
     const action = m.meta && (m.meta.action || (m.meta.polish && "polish"));
-    const tools = index != null && !action && h("div", { class: "msg-tools" },
+    // under the message, like Claude Code: time · copy · rewind · fork
+    const tools = index != null && h("div", { class: "msg-tools" },
+      m.at && h("span", { class: "mt-time", title: new Date(m.at * 1000).toLocaleString() }, relTime(m.at)),
       h("button", { type: "button", class: "btn icon sm ghost", title: "复制", onclick: () => copyText(m.text) }, icon("copy")),
-      h("button", { type: "button", class: "btn icon sm ghost", title: "从这里分叉：开一个新对话，停在这条消息之前，可以改写后重发", onclick: () => forkAt(index) }, icon("fork")));
+      h("button", { type: "button", class: "btn icon sm ghost", title: "回到这条消息之前（rewind）：移除这条和之后的消息，改了再发", onclick: () => rewindAt(index) }, icon("rewind")),
+      h("button", { type: "button", class: "btn icon sm ghost", title: "分叉：开一个新对话停在这条消息之前，原对话保持不变", onclick: () => forkAt(index) }, icon("fork")));
     return h("div", { class: "msg-user-wrap" + (action ? " is-action" : "") },
       h("div", { class: "msg-user" + (action ? " is-action" : "") }, action ? h("div", { class: "msg-action" }, icon("sparkle"), AI_LABELS[action] || action) : null,
         filesEl(m.files), m.text ? h("div", { class: "msg-text" }, m.text) : null),
@@ -477,14 +480,36 @@ async function copyText(text) {
   catch (_) { toast("复制失败"); }
 }
 
+// the message comes back into the composer (text and attachments) so it can be rewritten
+function restoreDraft(r) {
+  ui.chat.files = (r.files || []).map((f) => ({ name: f.name, path: f.path, preview: null }));
+  renderPendingFiles();
+  startChatWith(r.text);
+}
+
 async function forkAt(index) {
   if (!ui.chat.id) return;
   try {
     const r = await api("POST", `/api/chats/${ui.chat.id}/fork`, { index });
     ui.chat.list = [r.chat, ...ui.chat.list];
     await openChat(r.chat.id);
-    startChatWith(r.text);
+    restoreDraft(r);
     toast("已分叉：改写这条消息后发送，原对话保持不变");
+  } catch (e) { toast(e.message); }
+}
+
+async function rewindAt(index) {
+  if (!ui.chat.id) return;
+  if (ui.chat.running) { toast("Claude 还在回复，先停止再回退"); return; }
+  const later = ui.chat.messages.length - index;
+  const ok = await modal({ title: "回到这条消息之前？", ok: "回退",
+    message: `这条和之后的 ${later} 条消息会从这段对话里移除，Claude 也会忘掉它们；这条消息放回输入框，可以改了再发。` +
+      "简历数据不会跟着还原（Claude 改过的条目可以在条目里撤销）。想保留原对话请用「分叉」。" });
+  if (!ok) return;
+  try {
+    const r = await api("POST", `/api/chats/${ui.chat.id}/rewind`, { index });
+    await openChat(ui.chat.id);
+    restoreDraft(r);
   } catch (e) { toast(e.message); }
 }
 
