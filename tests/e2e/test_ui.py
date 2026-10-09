@@ -765,6 +765,15 @@ def test_context_ring_and_limits(page, server, fake_claude):
     text = pop.inner_text()
     assert "40.1k / 200k" in text and "5 小时内" in text and "12%" in text and "34%" in text and "Claude Pro" in text
 
+    pop.locator("button", has_text="压缩上下文").click()                  # the path from the screenshot
+    page.wait_for_function("() => (document.querySelector('#chat-ctx-btn').dataset.tip || '').includes('已压缩')")
+    assert "NaN" not in page.inner_html("#chat-ctx-btn")
+    page.click("#chat-ctx-btn")
+    pop.wait_for()
+    text = pop.inner_text()
+    assert "已压缩" in text and "undefined" not in text and "NaN" not in text
+    assert pop.locator(".cx-bar i").first.evaluate("e => e.style.width") == "0%"
+
 
 def shot_float(pg, name):
     pg.wait_for_selector(".float.in")

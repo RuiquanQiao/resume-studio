@@ -144,6 +144,12 @@ def handle(prompt, content):
              "message": {"model": "<synthetic>", "content": [{"type": "text", "text": text}], "usage": {"input_tokens": 0, "output_tokens": 0}}})
         out({"type": "result", "subtype": "success", "is_error": False, "result": text, "session_id": sid})
         return True
+    if prompt.strip() == "/compact":   # like Claude Code: only the size before compacting, no assistant usage
+        out({"type": "system", "subtype": "compact_boundary", "session_id": sid,
+             "compact_metadata": {"trigger": "manual", "pre_tokens": 40130}})
+        out({"type": "result", "subtype": "success", "is_error": False, "result": "", "session_id": sid,
+             "modelUsage": {model: {"contextWindow": 200000}}})
+        return True
     if "FAIL" in prompt:
         out({"type": "result", "subtype": "error_during_execution", "is_error": True, "result": "模拟的错误", "session_id": sid})
         return False

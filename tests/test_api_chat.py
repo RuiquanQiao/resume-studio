@@ -330,6 +330,15 @@ def test_fork_tasks_context_and_slash_command(server, fake_claude):
     last = server.req("GET", f"/api/chats/{cid}")[1]["messages"][-1]
     assert [b["text"] for b in last["blocks"] if b["type"] == "text"] == ["## Context Usage\n\n**Tokens:** 40k / 200k (20%)"]
 
+    # /compact: the new size is unknown until the next reply, never a window with no use
+    _send(server, cid, "/compact")
+    server.wait_idle(cid)
+    ctx = server.req("GET", f"/api/chats/{cid}")[1]["chat"]["context"]
+    assert ctx["used"] is None and ctx["compacted"] and ctx["window"] == 200000
+    _send(server, cid, "after compact")
+    server.wait_idle(cid)
+    assert server.req("GET", f"/api/chats/{cid}")[1]["chat"]["context"] == {"used": 40130, "model": "fake-model", "window": 200000}
+
 
 def test_chat_error_cancel_and_busy(server, fake_claude):
     code, chat = server.req("POST", "/api/chats")

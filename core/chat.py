@@ -479,7 +479,7 @@ class ChatRunner:
         turn.error = turn.error or error
         turn.flushed_any = True
         turn.blocks, turn.tools, turn.asks = [], {}, {}
-        if turn.usage:
+        if turn.usage and "used" in turn.usage:   # a window alone would wipe the last known use
             self.store.update_meta(turn.chat_id, touch=False, context=turn.usage)
         self._emit("chat.reply", turn.chat_id, error=None if turn.cancelled else error,
                    context=turn.usage, queue=turn.queue)
@@ -566,6 +566,8 @@ class ChatRunner:
                 self._emit("chat.init", turn.chat_id, model=msg.get("model"), mode=msg.get("permissionMode"))
             elif sub == "compact_boundary":
                 self._block(turn, {"type": "note", "text": "上下文已压缩"})
+                # the stream only reports the size before compacting; the new size arrives with the next reply
+                turn.usage = {**(turn.usage or {}), "used": None, "compacted": True}
             elif sub == "thinking_tokens":
                 self._emit("chat.thinking", turn.chat_id, tokens=msg.get("estimated_tokens"))
         elif mtype == "control_request":
@@ -601,6 +603,7 @@ class ChatRunner:
                 used = sum(int(usage.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens",
                                                             "cache_read_input_tokens", "output_tokens"))
                 turn.usage = {**(turn.usage or {}), "used": used, "model": message.get("model")}
+                turn.usage.pop("compacted", None)
             for block in message.get("content") or []:
                 if block.get("type") == "text" and message.get("model") == "<synthetic>" and block.get("text"):
                     self._text(turn, block["text"])   # local commands (/context, /cost…) answer without streaming

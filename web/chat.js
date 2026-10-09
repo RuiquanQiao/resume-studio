@@ -252,26 +252,32 @@ function cycleMode() {
 }
 
 // ---------------------------------------------------------------- context ring + limits
+// {c, p, known}: known only when both numbers are real; right after /compact the new size is not reported yet
+function contextUse() {
+  const c = ui.chat.meta && ui.chat.meta.context;
+  const known = !!(c && c.window > 0 && Number.isFinite(c.used));
+  return { c, known, p: known ? Math.min(1, c.used / c.window) : 0 };
+}
+
 function renderContextRing() {
   const btn = $("#chat-ctx-btn");
   if (!btn) return;
-  const c = ui.chat.meta && ui.chat.meta.context;
-  const p = c && c.window ? Math.min(1, c.used / c.window) : 0;
+  const { c, p, known } = contextUse();
   const r = 6.5, len = 2 * Math.PI * r;
   btn.innerHTML = `<svg viewBox="0 0 18 18" class="ring" aria-hidden="true"><circle cx="9" cy="9" r="${r}" class="bg"/>` +
     `<circle cx="9" cy="9" r="${r}" class="fg" stroke-dasharray="${(len * p).toFixed(2)} ${len.toFixed(2)}" transform="rotate(-90 9 9)"/></svg>`;
   btn.classList.toggle("warn", p >= 0.7);
   btn.classList.toggle("bad", p >= 0.9);
-  setTip(btn, c && c.window ? `上下文已用 ${fmtK(c.used)} / ${fmtK(c.window)}（${Math.round(p * 100)}%）· 点开看额度` : "上下文与额度");
+  setTip(btn, known ? `上下文已用 ${fmtK(c.used)} / ${fmtK(c.window)}（${Math.round(p * 100)}%）· 点开看额度`
+    : c && c.compacted ? "上下文已压缩 · 下一条回复后更新用量" : "上下文与额度");
 }
 
 function openContextPanel(anchor = $("#chat-ctx-btn")) {
-  const c = ui.chat.meta && ui.chat.meta.context;
+  const { c, p, known } = contextUse();
   const lim = (ui.claude && ui.claude.limits) || {};
   const acct = info() && info().account;
   const bar = (p, cls = "") => h("div", { class: "cx-bar " + cls }, h("i", { style: `width:${Math.round(Math.min(1, p) * 100)}%` }));
-  const p = c && c.window ? c.used / c.window : 0;
-  const win = (key, label) => {
+  const win =(key, label) => {
     const w = (lim.windows || {})[key];
     if (!w) return null;
     return h("div", { class: "cx-row" }, h("div", { class: "cx-line" }, h("span", null, label), h("span", { class: "cx-val" }, `${Math.round(w.utilization * 100)}%`)),
@@ -280,10 +286,13 @@ function openContextPanel(anchor = $("#chat-ctx-btn")) {
   const send = (cmd) => { closeFloat(); sendChat(cmd); };
   const panel = h("div", { class: "cx-pop", role: "dialog", "aria-label": "上下文与额度" },
     h("div", { class: "pk-head" }, "上下文"),
-    c && c.window
+    known
       ? h("div", { class: "cx-row" }, h("div", { class: "cx-line" }, h("span", null, `${fmtK(c.used)} / ${fmtK(c.window)} tokens`), h("span", { class: "cx-val" }, `${Math.round(p * 100)}%`)),
         bar(p, p >= 0.9 ? "bad" : p >= 0.7 ? "warn" : ""), h("div", { class: "cx-sub" }, p >= 0.7 ? "快满了：压缩一下能腾出空间，Claude 会保留要点" : "满了以后 Claude Code 会自动压缩"))
-      : h("div", { class: "cx-sub" }, "发一条消息后显示这段对话用了多少上下文。"),
+      : c && c.compacted
+        ? h("div", { class: "cx-row" }, h("div", { class: "cx-line" }, h("span", null, "已压缩"), c.window > 0 ? h("span", { class: "cx-val" }, `窗口 ${fmtK(c.window)}`) : null),
+          bar(0), h("div", { class: "cx-sub" }, "下一条回复后更新用量。"))
+        : h("div", { class: "cx-sub" }, "发一条消息后显示这段对话用了多少上下文。"),
     h("div", { class: "cx-acts" },
       h("button", { type: "button", class: "btn sm", disabled: !ui.chat.id || !ui.chat.meta || !ui.chat.meta.session_id, onclick: () => send("/compact") }, icon("compress"), "压缩上下文"),
       h("button", { type: "button", class: "btn sm ghost", disabled: !ui.chat.id || !ui.chat.meta || !ui.chat.meta.session_id, onclick: () => send("/context") }, "详细用量")),
