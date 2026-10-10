@@ -132,6 +132,19 @@ def test_all_is_the_full_set(data_file):
     assert zh["profile"]["headline"].startswith("计算机硕士在读 · ")
 
 
+def test_deleting_a_job_drops_its_preview_builds(data_file):
+    st = Studio(data_file)
+    names = ["ALL", "ALL@zh", "RES-TECH-EN", "RES-TECH-EN@zh", "RES-TECH-ZH", "RES-OLD"]
+    for name in names:
+        (st.build_root / name).mkdir(parents=True)
+        (st.build_root / name / "main.pdf").write_bytes(b"%PDF")
+    (data_file.parent / "exports").mkdir()
+    (data_file.parent / "exports" / "RES-TECH-EN.pdf").write_bytes(b"%PDF")
+    st.delete_version("RES-TECH-EN")
+    assert sorted(p.name for p in st.build_root.iterdir()) == ["ALL", "ALL@zh", "RES-TECH-ZH"]   # RES-OLD: an older leftover
+    assert (data_file.parent / "exports" / "RES-TECH-EN.pdf").exists()                        # exports are the user's
+
+
 def test_all_is_reserved(data_file):
     st = Studio(data_file)
     with pytest.raises(ValueError):

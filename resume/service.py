@@ -189,7 +189,18 @@ class Studio:
                 if str(versions[i].get("id")) == version_id:
                     del versions[i]
             self.store.save(doc)
+            self._prune_builds(doc)
         return self.state()
+
+    def _prune_builds(self, doc: Any) -> None:
+        """Drop preview builds of jobs that are gone (this one, and any left by a rename or an
+        edit to the file). Exports are the user's and stay."""
+        keep = {self._safe(str(v.get("id"))) for v in doc.get("versions") or []} | {self._safe(model.ALL_ID)}
+        if not self.build_root.is_dir():
+            return
+        for d in self.build_root.iterdir():
+            if d.is_dir() and d.name.split("@", 1)[0] not in keep:
+                shutil.rmtree(d, ignore_errors=True)
 
     # ---- rendering -----------------------------------------------------
     def _safe(self, name: str) -> str:
