@@ -209,7 +209,12 @@ class Studio:
         engine = str(version.get("engine") or "latex")
         build_dir = self.build_root / (self._safe(version_id) + (f"@{self._safe(lang)}" if lang else ""))
         result = get_renderer(engine).render(view, build_dir)
-        pngs = rasterize(result.pdf, build_dir) if images and result.ok and result.pdf else []
+        pngs = []
+        if images and result.ok and result.pdf:
+            pngs = list(build_dir.glob("page-*.png"))
+            pdf_time = result.pdf.stat().st_mtime
+            if not (result.cached and len(pngs) == result.pages and all(p.stat().st_mtime >= pdf_time for p in pngs)):
+                pngs = rasterize(result.pdf, build_dir)
         return {**result.to_json(), "version": version_id, "lang": view["lang"], "digest": digest,
                 "missing": view["missing"], "images": len(pngs), "stamp": int(time.time() * 1000)}
 

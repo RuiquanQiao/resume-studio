@@ -91,6 +91,9 @@ class LatexRenderer(Renderer):
         self.env.filters["num"] = lambda x: f"{float(x):.2f}"
         self.env.filters["bare"] = lambda u: re.sub(r"^(https?://|mailto:)", "", str(u)).rstrip("/")
         self._locks: dict[str, threading.Lock] = {}
+        # last good build per folder: (tex, log, result). The .tex is made from the view alone,
+        # so the same .tex means the same PDF (edits outside the view, like the fact layer, change nothing)
+        self._last: dict[str, tuple[str, str, RenderResult]] = {}
 
     def templates(self) -> list[dict]:
         # files starting with "_" are shared partials, not selectable templates
@@ -113,6 +116,12 @@ class LatexRenderer(Renderer):
                 tex = tpl.render(**view, has_cjk=cjk, fonts=fonts.resolve(view["layout"], cjk, langs.script(view.get("lang") or "en")))
             except jinja2.TemplateError as e:
                 return RenderResult(False, errors=[t("Template error: {error}", error=e)])
+            last = self._last.get(str(build_dir))
+            if last and last[0] == tex and last[2].pdf and last[2].pdf.exists():
+                prev = last[2]
+                return RenderResult(True, pages=prev.pages, pdf=prev.pdf, source=prev.source,
+                                    seconds=prev.seconds, lines=_bullet_lines(last[1], view), cached=True)
+            self._last.pop(str(build_dir), None)
             src = build_dir / "main.tex"
             src.write_text(tex, encoding="utf-8")
             exe = self.compiler()
@@ -138,9 +147,12 @@ class LatexRenderer(Renderer):
                 errors = [ln for ln in log.splitlines()
                           if ln.startswith("!") or re.match(r".*main\.tex:\d+:", ln)][:8] \
                     or [t("xelatex failed, see main.log")]
-            return RenderResult(ok=not errors, pages=pages, pdf=pdf if pdf.exists() else None,
-                                source=src, seconds=time.time() - t0, errors=errors,
-                                lines=_bullet_lines(log, view))
+            result = RenderResult(ok=not errors, pages=pages, pdf=pdf if pdf.exists() else None,
+                                  source=src, seconds=time.time() - t0, errors=errors,
+                                  lines=_bullet_lines(log, view))
+            if result.ok:
+                self._last[str(build_dir)] = (tex, log, result)
+            return result
 
 
 _RSLINE_RE = re.compile(r"^RSLINE (\d+)\.(\d+) (\d+) ([\d.]+)pt ([\d.]+)pt", re.M)

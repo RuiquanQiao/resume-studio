@@ -76,6 +76,24 @@ def test_service_render_and_export(data_file):
     assert ex["exported"]["pdf"].endswith("RES-TECH-ZH.pdf")
 
 
+@needs_tex
+def test_fact_layer_edits_skip_the_compiler(data_file):
+    st = Studio(data_file)
+    assert not st.render("RES-TECH-EN")["cached"]
+    doc, _ = st.store.load()
+    doc["profile"]["notes"] = "only Claude reads this"
+    doc["entries"][1]["notes"] = "neither this"
+    st.store.save(doc)
+    again = st.render("RES-TECH-EN")
+    assert again["ok"] and again["cached"] and again["lines"]
+    if find_pdftoppm():
+        assert again["images"] == 1
+    doc, _ = st.store.load()
+    doc["entries"][1]["bullets"].append({"en": "A new bullet", "zh": "新要点"})
+    st.store.save(doc)
+    assert not st.render("RES-TECH-EN")["cached"]
+
+
 # ---------------------------------------------------------------- one line per bullet
 LONG_EN = "Designed an evaluation harness that scores every generated question against the source paper and flags hallucinated facts before export"
 

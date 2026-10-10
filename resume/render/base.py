@@ -15,12 +15,13 @@ class RenderResult:
     errors: list[str] = field(default_factory=list)
     # per bullet: {entry_id: {bullet_index: {"n": lines, "fill": natural width / line width}}}
     lines: dict = field(default_factory=dict)
+    cached: bool = False             # same source as the last build: the compiler did not run
 
     def to_json(self) -> dict:
         return {"ok": self.ok, "pages": self.pages, "seconds": round(self.seconds, 2),
                 "pdf": str(self.pdf) if self.pdf else None,
                 "source": str(self.source) if self.source else None, "errors": self.errors,
-                "lines": self.lines}
+                "lines": self.lines, "cached": self.cached}
 
 
 class Renderer(ABC):

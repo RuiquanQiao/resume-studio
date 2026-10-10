@@ -1429,9 +1429,12 @@ async function doRender() {
   if (r.busy) { r.again = true; return; }
   r.busy = true;
   const vid = ui.versionId;
-  setBadge({ busy: true });
+  // an unchanged resume comes back at once without compiling: don't flash "Rendering" for it
+  // (another job's badge is wrong right away, so that one is cleared at once)
+  const busyTimer = setTimeout(() => setBadge({ busy: true }), r.last && r.last.version === vid ? 250 : 0);
   try {
     const res = await api("POST", `/api/versions/${encodeURIComponent(vid)}/render`);
+    clearTimeout(busyTimer);
     if (vid === ui.versionId) {
       r.last = res;
       if (res.ok) { ui.lines[res.lang] = res.lines || {}; ui.linesFor[res.lang] = vid; ui.missing = res.missing || []; }
@@ -1441,6 +1444,7 @@ async function doRender() {
     }
     await measureEditLang(vid);
   } catch (e) {
+    clearTimeout(busyTimer);
     setBadge({ ok: false, errors: [e.message] });
   } finally {
     r.busy = false;
@@ -1549,6 +1553,8 @@ function currentZoomFactor() { return ui.zoom === "fit" ? pageWidth() / paperWid
 async function showPages(res) {
   const box = $("#pages");
   if (!res.ok) return; // keep the last good preview on errors
+  if (res.cached && box.dataset.version === res.version && box.children.length) return; // same pages already shown
+  box.dataset.version = res.version;
   const vid = encodeURIComponent(res.version);
   if (!res.images) { // no pdftoppm: fall back to the browser's PDF viewer
     box.replaceChildren(h("iframe", { class: "pdf-frame", src: `/api/versions/${vid}/pdf?t=${res.stamp}#view=FitH`, style: "height:calc(100vh - 150px)" }));
