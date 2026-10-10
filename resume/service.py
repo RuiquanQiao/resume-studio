@@ -92,7 +92,24 @@ class Studio:
                         if str(lang) not in before:
                             model.add_language_titles(doc, str(lang))
             self.store.save(doc)
+            if kind == "version" and str(data["id"]) != str(item_id):
+                self._rename_builds(str(item_id), str(data["id"]))
         return self.state()
+
+    def _rename_builds(self, old_id: str, new_id: str) -> None:
+        """A renamed job keeps its preview builds (JOB-1, JOB-1@zh, ...) under the new ID."""
+        old, new = self._safe(old_id), self._safe(new_id)
+        if old == new or not self.build_root.is_dir():
+            return
+        for d in list(self.build_root.iterdir()):
+            name, at, lang = d.name.partition("@")
+            if d.is_dir() and name == old:
+                target = self.build_root / (new + at + lang)
+                shutil.rmtree(target, ignore_errors=True)  # a leftover of an older job with the new ID
+                try:
+                    d.rename(target)
+                except OSError:
+                    pass  # busy (a render is writing it): the next render rebuilds it, a later delete prunes it
 
     @staticmethod
     def _add_all_version(doc: Any) -> Any:

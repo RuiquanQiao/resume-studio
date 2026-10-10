@@ -145,6 +145,18 @@ def test_deleting_a_job_drops_its_preview_builds(data_file):
     assert (data_file.parent / "exports" / "RES-TECH-EN.pdf").exists()                        # exports are the user's
 
 
+def test_renaming_a_job_renames_its_preview_builds(data_file):
+    st = Studio(data_file)
+    for name in ["RES-TECH-EN", "RES-TECH-EN@zh", "RES-NEW"]:   # RES-NEW: a stale leftover with the new ID
+        (st.build_root / name).mkdir(parents=True)
+        (st.build_root / name / "main.pdf").write_bytes(name.encode())
+    v = to_plain(model.get_item(st.store.load()[0], "version", "RES-TECH-EN"))
+    v["id"] = "RES-NEW"
+    st.update_item("version", "RES-TECH-EN", v, None)
+    assert sorted(p.name for p in st.build_root.iterdir()) == ["RES-NEW", "RES-NEW@zh"]
+    assert (st.build_root / "RES-NEW" / "main.pdf").read_bytes() == b"RES-TECH-EN"
+
+
 def test_all_is_reserved(data_file):
     st = Studio(data_file)
     with pytest.raises(ValueError):
