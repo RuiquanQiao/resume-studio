@@ -283,6 +283,14 @@ body.resizing iframe, body.resizing img { pointer-events: none; }
 .drag-handle:hover { color: var(--text-2); }
 .sort-row.lifted { position: relative; z-index: 2; border-radius: var(--r-sm); background: var(--panel); box-shadow: 0 0 0 1px var(--accent), var(--shadow-sm); }
 body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
+.lang-rows .lr { min-height: 32px; }
+#lang-seg .seg-add { width: 24px; padding: 0; display: inline-grid; place-items: center; color: var(--text-3); }
+#lang-seg .seg-add:hover { color: var(--text); background: var(--panel); }
+#lang-seg .seg-add .i { width: 14px; height: 14px; }
+.modal.settings { width: min(480px, 92vw); }
+.modal.settings .field { margin: 4px 0 18px; }
+.modal.settings .field > label { flex-direction: column; align-items: flex-start; gap: 2px; white-space: normal; }
+.modal.settings .field .hint { overflow: visible; }.lang-rows .lang-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list-rows .lr input { border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 5px 9px; background: var(--panel); min-width: 0; height: 32px; }
 .flash { animation: flash 1.4s ease-out; }
 @keyframes flash { from { box-shadow: inset 0 0 0 999px var(--accent-soft); } to { box-shadow: inset 0 0 0 999px transparent; } }

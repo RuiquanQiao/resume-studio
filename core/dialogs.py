@@ -15,6 +15,8 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
+from .i18n import t
+
 
 class TkWorker:
     """One hidden Tk root on its own thread; every Tk call runs there."""
@@ -76,9 +78,9 @@ def pick(kind: str, initial: str | None, window_dialog: Callable | None = None) 
                 from tkinter import filedialog
                 root.attributes("-topmost", True)
                 if kind == "folder":
-                    r = filedialog.askdirectory(parent=root, initialdir=start, mustexist=True, title="选择项目文件夹")
+                    r = filedialog.askdirectory(parent=root, initialdir=start, mustexist=True, title=t("Choose a project folder"))
                     return [r] if r else []
-                return list(filedialog.askopenfilenames(parent=root, initialdir=start, title="选择文件"))
+                return list(filedialog.askopenfilenames(parent=root, initialdir=start, title=t("Choose files")))
             res = _tk.call(ask)
     return [str(p).replace("\\", "/") for p in res or [] if p]
 

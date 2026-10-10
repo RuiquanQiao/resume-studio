@@ -222,7 +222,7 @@ def test_profile_contacts_and_sections(page, server, data_file):
     last.locator("input").nth(0).fill("linkedin")
     last.locator("input").nth(1).fill("linkedin.com/in/alex")
     wait_until(lambda: "linkedin.com/in/alex" in data_file.read_text(encoding="utf-8"), msg="contact saved")
-    page.click(".nav-row:text('板块与设置')")
+    page.click(".nav-row:text('板块与简历设置')")
     card = page.locator(".card:has(h3:text-is('板块'))")
     first = card.locator(".lr input").first.input_value()
     grip = card.locator(".lr").first.locator(".drag-handle").bounding_box()
@@ -237,6 +237,60 @@ def test_profile_contacts_and_sections(page, server, data_file):
     page.wait_for_function(f"() => document.querySelectorAll('.card .lr input')[0].value !== {first!r}")
     page.click("button:text('添加板块')")
     wait_until(lambda: any(s["id"].startswith("section-") for s in state(server)["doc"]["sections"]), msg="section added")
+
+
+def test_contact_split_by_language_keeps_the_other(page, server, data_file):
+    text = data_file.read_text(encoding="utf-8").replace(
+        "{label: phone, value: '+61 400 000 000'}",
+        "{label: phone, value: {en: '+61 400 000 000', zh: '+86 150 0000 0000'}, url: {en: 'tel:+61400000000', zh: 'tel:+8615000000000'}}")
+    data_file.write_text(text, encoding="utf-8")
+    page.click(".nav-row:text('个人信息')")
+    row = page.locator(".card:has(h3:text('联系方式')) .lr >> nth=2")
+    page.click(".ed-head .seg button:text('中文')")
+    page.wait_for_function("() => [...document.querySelectorAll('.lr input')].some((i) => i.value === 'tel:+8615000000000')")
+    assert "object" not in row.locator("input").nth(2).input_value()
+    row.locator("input").nth(1).fill("+86 150 1111 2222")
+    phone = lambda: next(c for c in state(server)["doc"]["profile"]["contacts"] if c["label"] == "phone")
+    wait_until(lambda: phone()["value"] == {"en": "+61 400 000 000", "zh": "+86 150 1111 2222"}, msg="only the Chinese number changed")
+    assert phone()["url"] == {"en": "tel:+61400000000", "zh": "tel:+8615000000000"}
+    page.click(".card:has(h3:text('联系方式')) .lr >> nth=0 >> input >> nth=1")
+    page.keyboard.press("End")
+    page.keyboard.type(".au")                                         # a contact written once stays one value
+    wait_until(lambda: next(c for c in state(server)["doc"]["profile"]["contacts"] if c["label"] == "email")["value"] == "alex@example.com.au",
+               msg="neutral contact saved as one value")
+
+
+def test_settings_dialog_holds_app_preferences(page, server):
+    assert page.locator(".card:has-text('界面语言')").count() == 0      # not on a resume page
+    page.click(".nav-row:text('板块与简历设置')")
+    assert page.locator("#editor :text('界面语言')").count() == 0
+    page.click("#settings-btn")
+    dlg = page.locator(".modal.settings")
+    dlg.locator(":text('界面语言')").wait_for()
+    dlg.locator(".select").click()
+    page.wait_for_selector(".float [role=option]:has-text('Deutsch')")
+    page.keyboard.press("Escape")                                    # closes the dropdown first
+    page.wait_for_selector(".float", state="detached")
+    assert dlg.is_visible()
+    page.keyboard.press("Escape")
+    dlg.wait_for(state="detached")
+    page.keyboard.press("Control+,")
+    dlg.wait_for()
+    page.click(".modal.settings button:text('完成')")
+    dlg.wait_for(state="detached")
+    page.screenshot(path=str(ART / "new-settings.png"))
+
+
+def test_add_resume_language_from_the_preview(page, server):
+    page.click("#lang-seg .seg-add")
+    page.wait_for_selector(".float .menu-item:has-text('Deutsch')")
+    page.screenshot(path=str(ART / "new-lang-menu.png"))
+    page.click(".float .menu-item:has-text('Deutsch')")
+    wait_until(lambda: state(server)["doc"]["settings"]["languages"] == ["en", "zh", "de"], msg="German added")
+    page.wait_for_selector("#lang-seg button:text('DE')")
+    page.click("#lang-seg .seg-add")
+    page.click(".float .menu-item:has-text('管理语言')")
+    page.wait_for_selector(".ed-head h1:text('板块与简历设置')")
 
 
 def test_jobs_create_switch_delete(page, server):
@@ -406,7 +460,7 @@ def test_no_native_controls_anywhere(page, server, fake_claude):
     no_native(page)
     page.click("#layout-toggle")
     no_native(page)
-    page.click(".nav-row:text('板块与设置')")
+    page.click(".nav-row:text('板块与简历设置')")
     no_native(page)
     page.click(".tab[data-tab=chat]")
     no_native(page)
@@ -499,11 +553,11 @@ def test_writing_the_other_language(page, server, data_file):
     page.click(".ed-head .seg button:text('中文')")
     third = page.locator("#bullets .bullet").nth(2)
     assert "missing" in third.get_attribute("class")
-    assert third.locator("textarea").get_attribute("placeholder").startswith("EN：Added an evaluation")
+    assert third.locator("textarea").get_attribute("placeholder").startswith("EN: Added an evaluation")
     assert third.locator(".line-chip").inner_text() == "缺中文"
     page.wait_for_function("() => document.querySelectorAll('#bullets .line-chip.ok').length === 2", timeout=40000)  # zh measured too
     third.hover()
-    third.locator("button[data-tip^='中文简历不要这一条']").click()
+    third.locator("button[data-tip^='简体中文简历不要这一条']").click()
     entry = lambda: next(x for x in state(server)["doc"]["entries"] if x["id"] == "EXP-002")  # noqa: E731
     wait_until(lambda: entry()["bullets"][2] == {"en": LONG, "zh": ""}, msg="hidden in zh")
     assert page.locator("#bullets .bullet").nth(2).locator(".line-chip").inner_text() == "不显示"
@@ -514,7 +568,7 @@ def test_translate_button_sends_a_native_rewrite_request(page, server, fake_clau
     add_long_bullet(server, page)
     open_entry(page, "EXP-002")
     page.click(".ed-head .seg button:text('中文')")
-    page.click("#bullet-notes button:has-text('让 Claude 写中文版')")
+    page.click("#bullet-notes button:has-text('让 Claude 写简体中文版')")
     page.wait_for_selector(".msg-user.is-action .msg-action:text('写另一种语言')")
     wait_until(lambda: len(calls(fake_claude)) == 1, msg="claude called")
     assert "不是逐句翻译" in calls(fake_claude)[0]["stdin"] and "--lang zh" in calls(fake_claude)[0]["stdin"]
@@ -564,7 +618,7 @@ def test_project_folder_pick_sync_and_update(page, server, data_file, fake_claud
 
 def test_project_roots_setting(page, server, monkeypatch):
     monkeypatch.setenv("STUDIO_FAKE_PICK", json.dumps(["E:/Forge"]))
-    page.click(".nav-row:text('板块与设置')")
+    page.click(".nav-row:text('板块与简历设置')")
     page.click(".card:has(h3:text('我的项目文件夹')) button:has-text('选择文件夹')")
     wait_until(lambda: state(server)["doc"]["settings"].get("project_roots") == ["E:/Forge"], msg="root saved")
     page.wait_for_selector(".card:has(h3:text('我的项目文件夹')) .ev-path:text('E:/Forge')")

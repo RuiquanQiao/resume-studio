@@ -6,44 +6,47 @@
 // read when they run), so the load order stays: ui.js, chat.js, app.js.
 "use strict";
 
+// (i18n.js is loaded before this file, so t() works in these tables)
 const TOOL_NAMES = {
-  Read: "读取", Edit: "修改", MultiEdit: "修改", Write: "写入", NotebookEdit: "修改笔记本", Glob: "查找文件", Grep: "搜索内容",
-  Bash: "运行命令", PowerShell: "运行命令", Skill: "使用技能", WebFetch: "打开网页", WebSearch: "搜索网页",
-  TodoWrite: "列计划", TaskCreate: "新建任务", TaskUpdate: "更新任务", TaskList: "查看任务", TaskGet: "查看任务",
-  Task: "子任务", Agent: "子任务", AskUserQuestion: "向你提问", ExitPlanMode: "提交计划", EnterPlanMode: "进入计划模式",
-  ToolSearch: "加载工具", Monitor: "监视", TaskOutput: "子任务输出", TaskStop: "停止子任务",
+  Read: t("Read"), Edit: t("Edit"), MultiEdit: t("Edit"), Write: t("Write"), NotebookEdit: t("Edit notebook"), Glob: t("Find files"), Grep: t("Search content"),
+  Bash: t("Run command"), PowerShell: t("Run command"), Skill: t("Use skill"), WebFetch: t("Open web page"), WebSearch: t("Search the web"),
+  TodoWrite: t("Plan"), TaskCreate: t("New task"), TaskUpdate: t("Update task"), TaskList: t("View tasks"), TaskGet: t("View tasks"),
+  Task: t("Subtask"), Agent: t("Subtask"), AskUserQuestion: t("Ask you"), ExitPlanMode: t("Submit plan"), EnterPlanMode: t("Enter plan mode"),
+  ToolSearch: t("Load tools"), Monitor: t("Monitor"), TaskOutput: t("Subtask output"), TaskStop: t("Stop subtask"),
 };
 const TOOL_ACTIONS = {
-  Write: "写入文件", Edit: "修改文件", MultiEdit: "修改文件", NotebookEdit: "修改笔记本", Bash: "运行命令", PowerShell: "运行命令",
-  WebFetch: "打开网页", WebSearch: "搜索网页", Read: "读取文件", Glob: "查找文件", Grep: "搜索文件内容", Skill: "使用技能",
+  Write: t("write a file"), Edit: t("edit a file"), MultiEdit: t("edit a file"), NotebookEdit: t("edit a notebook"), Bash: t("run a command"), PowerShell: t("run a command"),
+  WebFetch: t("open a web page"), WebSearch: t("search the web"), Read: t("read a file"), Glob: t("find files"), Grep: t("search file contents"), Skill: t("use a skill"),
 };
+const toolAction = (tool) => TOOL_ACTIONS[tool] || t("use {tool}", { tool });
 const MODE_INFO = {
-  default: { label: "每次询问", short: "询问", icon: "hand", desc: "修改文件、运行命令前都先问你" },
-  acceptEdits: { label: "自动接受编辑", short: "自动编辑", icon: "pen", desc: "直接修改文件；有风险的命令仍会先问你" },
-  plan: { label: "计划模式", short: "计划", icon: "plan", desc: "只读、只出方案，你批准后才动手" },
-  auto: { label: "自动", short: "自动", icon: "bolt", desc: "由 Claude Code 的安全检查判断，只在有风险时问你" },
+  default: { label: t("Ask every time"), short: t("Ask"), icon: "hand", desc: t("Asks you before editing files or running commands") },
+  acceptEdits: { label: t("Accept edits"), short: t("Auto edit"), icon: "pen", desc: t("Edits files directly; still asks before risky commands") },
+  plan: { label: t("Plan mode"), short: t("Plan"), icon: "plan", desc: t("Read-only; proposes a plan and acts once you approve") },
+  auto: { label: t("Auto"), short: t("Auto"), icon: "bolt", desc: t("Claude Code's safety checks decide; asks only when something is risky") },
 };
 const MODE_CYCLE = ["default", "acceptEdits", "plan"];   // Shift+Tab, like the terminal
 const EFFORT_INFO = {
-  "": ["自动", "由 Claude Code 按任务决定"],
-  low: ["Low", "最快，最省额度"], medium: ["Medium", "速度和质量平衡"], high: ["High", "想得更仔细"],
-  xhigh: ["XHigh", "非常仔细，较慢"], max: ["Max", "最深入，最耗额度"],
+  "": [t("Auto"), t("Claude Code decides per task")],
+  low: ["Low", t("Fastest, uses the least quota")], medium: ["Medium", t("Balance of speed and quality")], high: ["High", t("Thinks more carefully")],
+  xhigh: ["XHigh", t("Very careful, slower")], max: ["Max", t("Deepest, uses the most quota")],
 };
 // slash commands this window handles itself (the rest go to Claude Code as typed)
 const LOCAL_COMMANDS = [
-  { name: "model", desc: "切换模型", hint: "[模型]" },
-  { name: "effort", desc: "调整推理强度", hint: "[low|medium|high|xhigh|max|auto]" },
-  { name: "permissions", desc: "切换权限模式（也可以按 Shift+Tab）", hint: "" },
-  { name: "clear", desc: "开始新对话", hint: "" },
-  { name: "rename", desc: "给这段对话改名", hint: "<名字>" },
+  { name: "model", desc: t("Switch model"), hint: t("[model]") },
+  { name: "effort", desc: t("Set the effort level"), hint: "[low|medium|high|xhigh|max|auto]" },
+  { name: "permissions", desc: t("Switch permission mode (or press Shift+Tab)"), hint: "" },
+  { name: "clear", desc: t("Start a new chat"), hint: "" },
+  { name: "rename", desc: t("Rename this chat"), hint: t("<name>") },
 ];
-// Chinese for Claude Code's most used built-ins (the rest keep Claude Code's own description)
-const BUILTIN_ZH = {
-  compact: "压缩上下文：清掉历史，只留一份摘要", context: "查看上下文用量", usage: "查看本次花费和套餐用量", cost: "查看本次花费",
-  init: "为当前文件夹生成 CLAUDE.md", memory: "编辑记忆文件", review: "审查代码改动", "code-review": "审查代码改动",
-  "security-review": "安全审查", agents: "管理子代理", mcp: "管理 MCP 服务", help: "帮助", recap: "回顾这段对话",
-  insights: "使用习惯分析", "output-style": "切换回答风格", autocompact: "设置自动压缩", "update-config": "修改 Claude Code 设置",
+// Claude Code's most used built-ins, for languages other than English (the rest keep Claude Code's own description)
+const BUILTIN_DESC = {
+  compact: "Compact the context: clear the history, keep a summary", context: "Show context usage", usage: "Show this session's cost and plan usage", cost: "Show this session's cost",
+  init: "Create a CLAUDE.md for this folder", memory: "Edit memory files", review: "Review code changes", "code-review": "Review code changes",
+  "security-review": "Security review", agents: "Manage subagents", mcp: "Manage MCP servers", help: "Help", recap: "Recap this chat",
+  insights: "Usage insights", "output-style": "Switch the reply style", autocompact: "Set up auto-compact", "update-config": "Change Claude Code settings",
 };
+const commandDesc = (c) => (I18N.lang !== "en" && BUILTIN_DESC[c.name] ? t(BUILTIN_DESC[c.name]) : c.desc);
 // commands that only make sense in the terminal's full-screen UI
 const TERMINAL_ONLY = new Set(["doctor", "color", "reload-plugins", "config", "theme", "login", "logout", "terminal-setup",
   "vim", "exit", "quit", "ide", "keybindings", "statusline", "hooks", "install-github-app", "heapdump", "upgrade", "resume"]);
@@ -68,21 +71,24 @@ function modelName(id) {
   return m[1][0].toUpperCase() + m[1].slice(1) + (nums.length ? " " + nums.join(".") : "") + (oneM ? " · 1M" : "");
 }
 const fmtK = (n) => (n >= 1000 ? `${Math.round(n / 100) / 10}k`.replace(".0k", "k") : String(n));
+// dates and times in the interface language's own format
+const LOCALE = I18N.lang === "zh" ? "zh-CN" : I18N.lang;
 function resetText(epoch) {
   if (!epoch) return "";
   const d = new Date(epoch * 1000), now = new Date();
-  const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  if (d.toDateString() === now.toDateString()) return `今天 ${hm}`;
-  return `${["周日", "周一", "周二", "周三", "周四", "周五", "周六"][d.getDay()]} ${hm}`;
+  const hm = d.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" });
+  if (d.toDateString() === now.toDateString()) return t("today {time}", { time: hm });
+  return `${d.toLocaleDateString(LOCALE, { weekday: "short" })} ${hm}`;
 }
-function relTime(t) {
-  const d = (Date.now() / 1000 - t) / 60;
-  if (d < 1) return "刚刚";
-  if (d < 60) return `${Math.floor(d)} 分钟前`;
-  if (d < 60 * 24) return `${Math.floor(d / 60)} 小时前`;
-  return new Date(t * 1000).toLocaleDateString();
+function relTime(epoch) {
+  const d = (Date.now() / 1000 - epoch) / 60;
+  if (d < 1) return t("just now");
+  const rtf = new Intl.RelativeTimeFormat(LOCALE, { numeric: "auto", style: "short" });
+  if (d < 60) return rtf.format(-Math.floor(d), "minute");
+  if (d < 60 * 24) return rtf.format(-Math.floor(d / 60), "hour");
+  return new Date(epoch * 1000).toLocaleDateString(LOCALE);
 }
-function autosize(t) { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 200) + "px"; }
+function autosize(ta) { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 200) + "px"; }
 const fileUrl = (path) => `/api/chats/${ui.chat.id}/file?path=${encodeURIComponent(path)}`;
 
 // ---------------------------------------------------------------- Claude Code info
@@ -114,7 +120,7 @@ function effectiveModel() {
   const actual = ui.chat.meta && ui.chat.meta.model;
   const resolved = actual || (i && i.default_model.resolved) || "";
   const m = allModels().find((x) => x.resolved === resolved || x.value === resolved);
-  return { name: modelName(resolved) || (i ? i.default_model.name : "默认模型"), efforts: m ? m.efforts : i ? i.efforts : [], auto: m ? m.auto_mode : true, follows: true };
+  return { name: modelName(resolved) || (i ? t(i.default_model.name) : t("Default model")), efforts: m ? m.efforts : i ? i.efforts : [], auto: m ? m.auto_mode : true, follows: true };
 }
 function effectiveMode() {
   const { mode } = chatSettings();
@@ -134,7 +140,7 @@ async function setChatSetting(field, value) {
       ui.chat.meta = await api("PUT", "/api/chats/" + ui.chat.id, { [field]: value });
       const i = ui.chat.list.findIndex((c) => c.id === ui.chat.id);
       if (i >= 0) ui.chat.list[i] = ui.chat.meta;
-      if (ui.chat.running && field === "effort") toast("推理强度从下一条消息开始生效");
+      if (ui.chat.running && field === "effort") toast(t("The effort level applies from the next message"));
     } catch (e) { toast(e.message); }
   }
   renderPickers();
@@ -146,15 +152,15 @@ function renderPickers() {
   const mb = $("#chat-model-btn"), eb = $("#chat-effort-btn"), pb = $("#chat-mode-btn");
   if (!mb) return;
   mb.querySelector(".lbl").textContent = em.name;
-  setTip(mb, `模型：${em.name}${em.follows ? "（跟随 Claude Code 设置）" : ""}`);
+  setTip(mb, em.follows ? t("Model: {name} (following Claude Code's setting)", { name: em.name }) : t("Model: {name}", { name: em.name }));
   const noEffort = !em.efforts.length;
   eb.querySelector(".lbl").textContent = noEffort ? "—" : EFFORT_INFO[s.effort || ""][0];
   eb.disabled = noEffort;
-  setTip(eb, noEffort ? `${em.name} 不支持调推理强度` : `推理强度：${EFFORT_INFO[s.effort || ""][0]}`);
+  setTip(eb, noEffort ? t("{name} has no effort levels", { name: em.name }) : t("Effort: {level}", { level: EFFORT_INFO[s.effort || ""][0] }));
   const mi = MODE_INFO[mode] || MODE_INFO.default;
   pb.replaceChildren(icon(mi.icon), h("span", { class: "lbl" }, mi.short));
   pb.dataset.mode = mode;
-  setTip(pb, `权限模式：${mi.label}${s.mode ? "" : "（跟随 Claude Code 设置）"} · Shift+Tab 切换`);
+  setTip(pb, `${s.mode ? t("Permission mode: {mode}", { mode: mi.label }) : t("Permission mode: {mode} (following Claude Code's setting)", { mode: mi.label })} · ${t("Shift+Tab to switch")}`);
   renderContextRing();
 }
 
@@ -177,29 +183,29 @@ function pickerKeys(panel) {
 function openPicker(anchor, panel) {
   pickerKeys(panel);
   openFloat(anchor, panel, { place: "top", align: "end", minWidth: 250 });
-  // the next key press must land in the panel: the chosen item if it is visible (not inside a collapsed "更多模型")
+  // the next key press must land in the panel: the chosen item if it is visible (not inside a collapsed "More models")
   const visible = [...panel.querySelectorAll(".pk-item:not(:disabled)")].filter((b) => b.offsetParent);
   (visible.find((b) => b.getAttribute("aria-checked") === "true") || visible[0] || panel).focus({ preventScroll: true });
 }
 
 function openModelMenu(anchor = $("#chat-model-btn")) {
   const i = info(), s = chatSettings();
-  if (!i) { toast(ui.claude && ui.claude.error ? ui.claude.error : "正在读取 Claude Code 的模型列表…"); loadClaudeInfo(true); return; }
+  if (!i) { toast(ui.claude && ui.claude.error ? ui.claude.error : t("Reading Claude Code's model list…")); loadClaudeInfo(true); return; }
   const em = effectiveModel();
-  const panel = h("div", { class: "picker", role: "menu", "aria-label": "模型" }, h("div", { class: "pk-head" }, "模型"));
+  const panel = h("div", { class: "picker", role: "menu", "aria-label": t("Model") }, h("div", { class: "pk-head" }, t("Model")));
   i.models.forEach((m, n) => {
     const on = s.model ? s.model === m.value : em.follows && m.resolved === (ui.chat.meta && ui.chat.meta.model || i.default_model.resolved);
-    const item = pickerItem({ label: m.name, desc: m.desc, tag: m.tag, on, hint: String(n + 1), onClick: () => setChatSetting("model", m.value) });
+    const item = pickerItem({ label: m.name, desc: m.desc && t(m.desc), tag: m.tag && t(m.tag), on, hint: String(n + 1), onClick: () => setChatSetting("model", m.value) });
     item.dataset.num = String(n + 1);
     panel.append(item);
   });
   const more = h("div", { class: "pk-more-body hidden" });
   const moreBtn = h("button", { type: "button", class: "pk-more", "aria-expanded": "false",
     onclick: () => { const open = more.classList.toggle("hidden") === false; moreBtn.setAttribute("aria-expanded", String(open)); placeFloat(Float.cur); } },
-    h("span", null, "更多模型"), icon("chevRight"));
-  more.append(pickerItem({ label: "跟随 Claude Code 设置", desc: `现在是 ${i.default_model.name}`, on: !s.model, onClick: () => setChatSetting("model", null) }));
-  for (const m of i.more_models) more.append(pickerItem({ label: m.name, desc: m.desc, tag: m.tag, on: s.model === m.value, onClick: () => setChatSetting("model", m.value) }));
-  const custom = h("input", { placeholder: "输入模型 ID，如 claude-opus-4-1", spellcheck: "false", "aria-label": "模型 ID",
+    h("span", null, t("More models")), icon("chevRight"));
+  more.append(pickerItem({ label: t("Follow Claude Code's setting"), desc: t("currently {name}", { name: t(i.default_model.name) }), on: !s.model, onClick: () => setChatSetting("model", null) }));
+  for (const m of i.more_models) more.append(pickerItem({ label: m.name, desc: m.desc && t(m.desc), tag: m.tag && t(m.tag), on: s.model === m.value, onClick: () => setChatSetting("model", m.value) }));
+  const custom = h("input", { placeholder: t("Model ID, e.g. claude-opus-4-1"), spellcheck: "false", "aria-label": t("Model ID"),
     value: s.model && !modelEntry(s.model) ? s.model : "" });
   const useCustom = () => {
     const v = custom.value.trim();
@@ -208,7 +214,7 @@ function openModelMenu(anchor = $("#chat-model-btn")) {
   };
   custom.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); useCustom(); } e.stopPropagation(); });
   custom.addEventListener("input", () => custom.classList.remove("bad"));
-  more.append(h("div", { class: "pk-custom" }, custom, h("button", { type: "button", class: "btn sm", onclick: useCustom }, "使用")));
+  more.append(h("div", { class: "pk-custom" }, custom, h("button", { type: "button", class: "btn sm", onclick: useCustom }, t("Use"))));
   if (s.model && !i.models.some((m) => m.value === s.model)) { more.classList.remove("hidden"); moreBtn.setAttribute("aria-expanded", "true"); }
   panel.append(h("div", { class: "menu-sep" }), moreBtn, more);
   openPicker(anchor, panel);
@@ -216,8 +222,8 @@ function openModelMenu(anchor = $("#chat-model-btn")) {
 
 function openEffortMenu(anchor = $("#chat-effort-btn")) {
   const em = effectiveModel(), s = chatSettings();
-  if (!em.efforts.length) { toast(`${em.name} 不支持调推理强度`); return; }
-  const panel = h("div", { class: "picker", role: "menu", "aria-label": "推理强度" }, h("div", { class: "pk-head" }, "推理强度"));
+  if (!em.efforts.length) { toast(t("{name} has no effort levels", { name: em.name })); return; }
+  const panel = h("div", { class: "picker", role: "menu", "aria-label": t("Effort") }, h("div", { class: "pk-head" }, t("Effort")));
   ["", ...em.efforts].forEach((lv, n) => {
     const [label, desc] = EFFORT_INFO[lv] || [lv, ""];
     const item = pickerItem({ label, desc, on: (s.effort || "") === lv, hint: String(n + 1), onClick: () => setChatSetting("effort", lv || null) });
@@ -230,17 +236,17 @@ function openEffortMenu(anchor = $("#chat-effort-btn")) {
 function openModeMenu(anchor = $("#chat-mode-btn")) {
   const s = chatSettings(), em = effectiveModel();
   const base = (ui.chat.meta && !ui.chat.meta.mode && ui.chat.meta.mode_actual) || (info() && info().permission_mode) || "default";
-  const panel = h("div", { class: "picker", role: "menu", "aria-label": "权限模式" }, h("div", { class: "pk-head" }, "权限模式", h("span", { class: "pk-head-hint" }, "Shift+Tab 切换")));
+  const panel = h("div", { class: "picker", role: "menu", "aria-label": t("Permission mode") }, h("div", { class: "pk-head" }, t("Permission mode"), h("span", { class: "pk-head-hint" }, t("Shift+Tab to switch"))));
   (ui.claude && ui.claude.modes || Object.keys(MODE_INFO)).forEach((m, n) => {
     const mi = MODE_INFO[m];
     if (!mi) return;
-    const item = pickerItem({ label: mi.label, desc: m === "auto" && !em.auto ? `${em.name} 不支持自动模式` : mi.desc, on: s.mode === m,
+    const item = pickerItem({ label: mi.label, desc: m === "auto" && !em.auto ? t("{name} has no auto mode", { name: em.name }) : mi.desc, on: s.mode === m,
       hint: String(n + 1), disabled: m === "auto" && !em.auto, onClick: () => setChatSetting("mode", m) });
     item.dataset.num = String(n + 1);
     item.prepend(h("span", { class: "pk-icon" }, icon(mi.icon)));
     panel.append(item);
   });
-  panel.append(h("div", { class: "menu-sep" }), pickerItem({ label: "跟随 Claude Code 设置", desc: `现在是「${(MODE_INFO[base] || MODE_INFO.default).label}」`, on: !s.mode, onClick: () => setChatSetting("mode", null) }));
+  panel.append(h("div", { class: "menu-sep" }), pickerItem({ label: t("Follow Claude Code's setting"), desc: t("currently “{mode}”", { mode: (MODE_INFO[base] || MODE_INFO.default).label }), on: !s.mode, onClick: () => setChatSetting("mode", null) }));
   openPicker(anchor, panel);
 }
 
@@ -248,7 +254,7 @@ function cycleMode() {
   const cur = effectiveMode();
   const next = MODE_CYCLE[(MODE_CYCLE.indexOf(cur) + 1) % MODE_CYCLE.length];
   setChatSetting("mode", next);
-  toast(`权限模式：${MODE_INFO[next].label}`, { ms: 1400 });
+  toast(t("Permission mode: {mode}", { mode: MODE_INFO[next].label }), { ms: 1400 });
 }
 
 // ---------------------------------------------------------------- context ring + limits
@@ -268,8 +274,8 @@ function renderContextRing() {
     `<circle cx="9" cy="9" r="${r}" class="fg" stroke-dasharray="${(len * p).toFixed(2)} ${len.toFixed(2)}" transform="rotate(-90 9 9)"/></svg>`;
   btn.classList.toggle("warn", p >= 0.7);
   btn.classList.toggle("bad", p >= 0.9);
-  setTip(btn, known ? `上下文已用 ${fmtK(c.used)} / ${fmtK(c.window)}（${Math.round(p * 100)}%）· 点开看额度`
-    : c && c.compacted ? "上下文已压缩 · 下一条回复后更新用量" : "上下文与额度");
+  setTip(btn, known ? t("Context used: {used} / {window} ({pct}%) · click for plan usage", { used: fmtK(c.used), window: fmtK(c.window), pct: Math.round(p * 100) })
+    : c && c.compacted ? t("Context compacted · usage updates after the next reply") : t("Context and usage"));
 }
 
 function openContextPanel(anchor = $("#chat-ctx-btn")) {
@@ -281,24 +287,24 @@ function openContextPanel(anchor = $("#chat-ctx-btn")) {
     const w = (lim.windows || {})[key];
     if (!w) return null;
     return h("div", { class: "cx-row" }, h("div", { class: "cx-line" }, h("span", null, label), h("span", { class: "cx-val" }, `${Math.round(w.utilization * 100)}%`)),
-      bar(w.utilization, w.utilization >= 0.9 ? "bad" : w.utilization >= 0.7 ? "warn" : ""), w.resetsAt && h("div", { class: "cx-sub" }, `${resetText(w.resetsAt)} 重置`));
+      bar(w.utilization, w.utilization >= 0.9 ? "bad" : w.utilization >= 0.7 ? "warn" : ""), w.resetsAt && h("div", { class: "cx-sub" }, t("resets {when}", { when: resetText(w.resetsAt) })));
   };
   const send = (cmd) => { closeFloat(); sendChat(cmd); };
-  const panel = h("div", { class: "cx-pop", role: "dialog", "aria-label": "上下文与额度" },
-    h("div", { class: "pk-head" }, "上下文"),
+  const panel = h("div", { class: "cx-pop", role: "dialog", "aria-label": t("Context and usage") },
+    h("div", { class: "pk-head" }, t("Context")),
     known
       ? h("div", { class: "cx-row" }, h("div", { class: "cx-line" }, h("span", null, `${fmtK(c.used)} / ${fmtK(c.window)} tokens`), h("span", { class: "cx-val" }, `${Math.round(p * 100)}%`)),
-        bar(p, p >= 0.9 ? "bad" : p >= 0.7 ? "warn" : ""), h("div", { class: "cx-sub" }, p >= 0.7 ? "快满了：压缩一下能腾出空间，Claude 会保留要点" : "满了以后 Claude Code 会自动压缩"))
+        bar(p, p >= 0.9 ? "bad" : p >= 0.7 ? "warn" : ""), h("div", { class: "cx-sub" }, p >= 0.7 ? t("Nearly full: compacting frees room, and Claude keeps the key points") : t("When it's full, Claude Code compacts it automatically")))
       : c && c.compacted
-        ? h("div", { class: "cx-row" }, h("div", { class: "cx-line" }, h("span", null, "已压缩"), c.window > 0 ? h("span", { class: "cx-val" }, `窗口 ${fmtK(c.window)}`) : null),
-          bar(0), h("div", { class: "cx-sub" }, "下一条回复后更新用量。"))
-        : h("div", { class: "cx-sub" }, "发一条消息后显示这段对话用了多少上下文。"),
+        ? h("div", { class: "cx-row" }, h("div", { class: "cx-line" }, h("span", null, t("Compacted")), c.window > 0 ? h("span", { class: "cx-val" }, t("window {size}", { size: fmtK(c.window) })) : null),
+          bar(0), h("div", { class: "cx-sub" }, t("Usage updates after the next reply.")))
+        : h("div", { class: "cx-sub" }, t("Send a message to see how much context this chat uses.")),
     h("div", { class: "cx-acts" },
-      h("button", { type: "button", class: "btn sm", disabled: !ui.chat.id || !ui.chat.meta || !ui.chat.meta.session_id, onclick: () => send("/compact") }, icon("compress"), "压缩上下文"),
-      h("button", { type: "button", class: "btn sm ghost", disabled: !ui.chat.id || !ui.chat.meta || !ui.chat.meta.session_id, onclick: () => send("/context") }, "详细用量")),
-    (lim.windows && (lim.windows.five_hour || lim.windows.seven_day)) && h("div", { class: "pk-head" }, "套餐额度"),
-    win("five_hour", "5 小时内"), win("seven_day", "本周"),
-    lim.windows ? null : h("div", { class: "cx-sub" }, "收到第一条回复后显示套餐额度。"),
+      h("button", { type: "button", class: "btn sm", disabled: !ui.chat.id || !ui.chat.meta || !ui.chat.meta.session_id, onclick: () => send("/compact") }, icon("compress"), t("Compact context")),
+      h("button", { type: "button", class: "btn sm ghost", disabled: !ui.chat.id || !ui.chat.meta || !ui.chat.meta.session_id, onclick: () => send("/context") }, t("Details"))),
+    (lim.windows && (lim.windows.five_hour || lim.windows.seven_day)) && h("div", { class: "pk-head" }, t("Plan usage")),
+    win("five_hour", t("Last 5 hours")), win("seven_day", t("This week")),
+    lim.windows ? null : h("div", { class: "cx-sub" }, t("Plan usage shows after the first reply.")),
     acct && acct.plan && h("div", { class: "cx-foot" }, [acct.plan, acct.email].filter(Boolean).join(" · ")));
   openFloat(anchor, panel, { place: "top", align: "end", minWidth: 270, focus: panel.querySelector("button:not(:disabled)") });
 }
@@ -375,7 +381,7 @@ async function newChat() {
 
 async function deleteChat() {
   if (!ui.chat.id) return;
-  if (!(await modal({ title: "删除这段对话？", message: "只删除界面里的记录，不影响简历数据。", ok: "删除", danger: true }))) return;
+  if (!(await modal({ title: t("Delete this chat?"), message: t("Only this window's record goes; your resume data is untouched."), ok: t("Delete"), danger: true }))) return;
   try {
     const r = await api("DELETE", "/api/chats/" + ui.chat.id);
     ui.chat.list = r.chats;
@@ -387,10 +393,10 @@ async function deleteChat() {
 
 async function renameChat(title) {
   if (!ui.chat.id) return;
-  const t = title || await modal({ title: "给这段对话改名", input: ui.chat.meta.title || "", ok: "保存" });
-  if (!t) return;
+  const name = title || await modal({ title: t("Rename this chat"), input: ui.chat.meta.title || "", ok: t("Save") });
+  if (!name) return;
   try {
-    ui.chat.meta = await api("PUT", "/api/chats/" + ui.chat.id, { title: t });
+    ui.chat.meta = await api("PUT", "/api/chats/" + ui.chat.id, { title: name });
     const i = ui.chat.list.findIndex((c) => c.id === ui.chat.id);
     if (i >= 0) ui.chat.list[i] = ui.chat.meta;
     renderChatSelect();
@@ -400,8 +406,8 @@ async function renameChat(title) {
 function renderChatSelect() {
   const sel = ui.w.chat;
   sel.disabled = !ui.chat.list.length;
-  sel.setOptions(ui.chat.list.map((c) => ({ value: c.id, label: c.title || "新对话",
-    hint: ui.chat.waiting.has(c.id) ? "等你确认" : relTime(c.updated) })), ui.chat.id);
+  sel.setOptions(ui.chat.list.map((c) => ({ value: c.id, label: c.title || t("New chat"),
+    hint: ui.chat.waiting.has(c.id) ? t("waiting for you") : relTime(c.updated) })), ui.chat.id);
 }
 
 // ---------------------------------------------------------------- transcript
@@ -412,14 +418,14 @@ function renderChat() {
   if (!ui.chat.messages.length && !ui.chat.running) {
     const roots = (doc().settings || {}).project_roots || [];
     const suggest = [
-      roots.length ? `看看我的项目文件夹（${roots.join("、")}），挑出最值得写进简历的项目，先别改，等我确认` : "帮我录入一段新经历，一次只问我一个问题",
-      langs().length > 1 ? "检查中英文两个版本：哪些经历缺中文、哪些要点超过一行" : "检查当前岗位里有没有超出事实层的说法",
-      "把当前岗位压到一页，先调版面再精简措辞",
-      "检查当前岗位里有没有超出事实层的说法",
+      roots.length ? t("Look at my project folders ({folders}) and pick the projects most worth putting on my resume; don't change anything until I confirm", { folders: roots.join(", ") }) : t("Help me add a new experience, one question at a time"),
+      langs().length > 1 ? t("Check every language version: which entries lack a language, which bullets run past one line") : t("Check whether the current job claims anything the fact layer doesn't support"),
+      t("Get the current job onto one page: adjust the layout first, then tighten the wording"),
+      t("Check whether the current job claims anything the fact layer doesn't support"),
     ].filter((s, i, a) => a.indexOf(s) === i);
     log.append(h("div", { class: "chat-welcome" },
-      h("div", { class: "t" }, "和 Claude 一起改简历"),
-      h("div", null, ui.chat.available ? "这里就是 Claude Code：它能读写你的简历数据、使用你装的技能，改完右边会自动刷新。输入 / 可以调用命令和技能。" : "没有找到 claude 命令。请先安装并登录 Claude Code。"),
+      h("div", { class: "t" }, t("Work on your resume with Claude")),
+      h("div", null, ui.chat.available ? t("This is Claude Code: it can read and edit your resume data and use your installed skills, and the preview refreshes after each change. Type / for commands and skills.") : t("The claude command was not found. Install Claude Code and sign in first.")),
       ui.chat.available && h("div", { class: "suggest" }, suggest.map((s) => h("button", { onclick: () => sendChat(s) }, s)))));
     return;
   }
@@ -450,18 +456,18 @@ function messageEl(m, index) {
     // under the message, like Claude Code: time · copy · rewind · fork
     const tools = index != null && h("div", { class: "msg-tools" },
       m.at && h("span", { class: "mt-time", title: new Date(m.at * 1000).toLocaleString() }, relTime(m.at)),
-      h("button", { type: "button", class: "btn icon sm ghost", title: "复制", onclick: () => copyText(m.text) }, icon("copy")),
-      h("button", { type: "button", class: "btn icon sm ghost", title: "回到这条消息之前（rewind）：移除这条和之后的消息，改了再发", onclick: () => rewindAt(index) }, icon("rewind")),
-      h("button", { type: "button", class: "btn icon sm ghost", title: "分叉：开一个新对话停在这条消息之前，原对话保持不变", onclick: () => forkAt(index) }, icon("fork")));
+      h("button", { type: "button", class: "btn icon sm ghost", title: t("Copy"), onclick: () => copyText(m.text) }, icon("copy")),
+      h("button", { type: "button", class: "btn icon sm ghost", title: t("Go back to before this message (rewind): removes it and everything after, so you can edit and resend"), onclick: () => rewindAt(index) }, icon("rewind")),
+      h("button", { type: "button", class: "btn icon sm ghost", title: t("Fork: a new chat that stops just before this message; this chat stays as it is"), onclick: () => forkAt(index) }, icon("fork")));
     return h("div", { class: "msg-user-wrap" + (action ? " is-action" : "") },
-      h("div", { class: "msg-user" + (action ? " is-action" : "") }, action ? h("div", { class: "msg-action" }, icon("sparkle"), AI_LABELS[action] || action) : null,
+      h("div", { class: "msg-user" + (action ? " is-action" : "") }, action ? h("div", { class: "msg-action" }, icon("sparkle"), action in AI_LABELS ? t(AI_LABELS[action]) : action) : null,
         filesEl(m.files), m.text ? h("div", { class: "msg-text" }, m.text) : null),
       tools);
   }
   const el = h("div", { class: "msg-ai" });
   for (const b of m.blocks || []) {
     if (b.type === "text") el.append(h("div", { class: "md", html: md(b.text) }));
-    else if (b.type === "thinking") el.append(h("details", { class: "thought" }, h("summary", null, "思考过程"), h("div", { class: "md", html: md(b.text) })));
+    else if (b.type === "thinking") el.append(h("details", { class: "thought" }, h("summary", null, t("Thinking")), h("div", { class: "md", html: md(b.text) })));
     else if (b.type === "tool") el.append(toolEl(b));
     else if (b.type === "ask") el.append(askEl(b));
     else if (b.type === "note") el.append(h("div", { class: "msg-divider" }, h("span", null, b.text)));
@@ -469,24 +475,24 @@ function messageEl(m, index) {
   const blocks = m.blocks || [];
   const waitingOnUser = blocks.some((b) => b.type === "ask" && b.status === "pending");
   if (m.live && !waitingOnUser && (!blocks.length || blocks[blocks.length - 1].type !== "text")) {
-    el.append(h("div", { class: "thinking", "aria-label": "Claude 正在思考" }, h("i"), h("i"), h("i"),
-      ui.chat.thinking ? h("span", { class: "th-n" }, `思考中 · ${fmtK(ui.chat.thinking)} tokens`) : null));
+    el.append(h("div", { class: "thinking", "aria-label": t("Claude is thinking") }, h("i"), h("i"), h("i"),
+      ui.chat.thinking ? h("span", { class: "th-n" }, t("Thinking · {n} tokens", { n: fmtK(ui.chat.thinking) })) : null));
   }
   if (m.error) el.append(h("div", { class: "msg-error" }, m.error));
-  if (m.cancelled) el.append(h("div", { class: "msg-note" }, "已停止"));
+  if (m.cancelled) el.append(h("div", { class: "msg-note" }, t("Stopped")));
   return el;
 }
 
-function toolEl(t) {
-  const st = t.status === "running" ? h("span", { class: "st running" }) : t.status === "error" ? h("span", { class: "st error" }, icon("x")) : h("span", { class: "st done" }, icon("check"));
+function toolEl(tool) {
+  const st = tool.status === "running" ? h("span", { class: "st running" }) : tool.status === "error" ? h("span", { class: "st error" }, icon("x")) : h("span", { class: "st done" }, icon("check"));
   return h("details", { class: "tool" },
-    h("summary", null, st, h("span", { class: "tn" }, TOOL_NAMES[t.name] || t.name), h("span", { class: "th", title: t.hint || "" }, shortHint(t.hint))),
-    t.result && h("pre", null, t.result));
+    h("summary", null, st, h("span", { class: "tn" }, TOOL_NAMES[tool.name] || tool.name), h("span", { class: "th", title: tool.hint || "" }, shortHint(tool.hint))),
+    tool.result && h("pre", null, tool.result));
 }
 
 async function copyText(text) {
-  try { await navigator.clipboard.writeText(text); toast("已复制", { ms: 1200 }); }
-  catch (_) { toast("复制失败"); }
+  try { await navigator.clipboard.writeText(text); toast(t("Copied"), { ms: 1200 }); }
+  catch (_) { toast(t("Copy failed")); }
 }
 
 // the message comes back into the composer (text and attachments) so it can be rewritten
@@ -503,17 +509,16 @@ async function forkAt(index) {
     ui.chat.list = [r.chat, ...ui.chat.list];
     await openChat(r.chat.id);
     restoreDraft(r);
-    toast("已分叉：改写这条消息后发送，原对话保持不变");
+    toast(t("Forked: edit this message and send it; the original chat stays as it is"));
   } catch (e) { toast(e.message); }
 }
 
 async function rewindAt(index) {
   if (!ui.chat.id) return;
-  if (ui.chat.running) { toast("Claude 还在回复，先停止再回退"); return; }
+  if (ui.chat.running) { toast(t("Claude is still replying; stop it before rewinding")); return; }
   const later = ui.chat.messages.length - index;
-  const ok = await modal({ title: "回到这条消息之前？", ok: "回退",
-    message: `这条和之后的 ${later} 条消息会从这段对话里移除，Claude 也会忘掉它们；这条消息放回输入框，可以改了再发。` +
-      "简历数据不会跟着还原（Claude 改过的条目可以在条目里撤销）。想保留原对话请用「分叉」。" });
+  const ok = await modal({ title: t("Go back to before this message?"), ok: t("Rewind"),
+    message: t("This message and the {n} after it leave this chat, and Claude forgets them; the message goes back into the input so you can edit and resend it. Resume data is not rolled back (undo Claude's changes in each entry). To keep the original chat, use Fork.", { n: later - 1 }) });
   if (!ok) return;
   try {
     const r = await api("POST", `/api/chats/${ui.chat.id}/rewind`, { index });
@@ -545,17 +550,17 @@ async function answerAsk(a, decision, card) {
   }
 }
 
-const STATUS_TEXT = { allowed: "已允许", denied: "已拒绝", cancelled: "已取消（回复被停止）", answered: "已回答", approved: "已批准", revise: "已请 Claude 继续修改" };
+const STATUS_TEXT = { allowed: t("Allowed"), denied: t("Denied"), cancelled: t("Cancelled (the reply was stopped)"), answered: t("Answered"), approved: t("Approved"), revise: t("Asked Claude to revise") };
 
 function suggestionLabel(s) {
-  if (s.type === "setMode") return MODE_INFO[s.mode] ? `并切到「${MODE_INFO[s.mode].label}」` : `并切换模式`;
-  const where = { session: "本对话", localSettings: "这个文件夹", projectSettings: "这个项目", userSettings: "所有项目" }[s.destination] || "";
+  if (s.type === "setMode") return MODE_INFO[s.mode] ? t("and switch to “{mode}”", { mode: MODE_INFO[s.mode].label }) : t("and switch mode");
+  const where = { session: t("this chat"), localSettings: t("this folder"), projectSettings: t("this project"), userSettings: t("all projects") }[s.destination] || "";
   if (s.type === "addRules" || s.type === "replaceRules") {
-    const rules = (s.rules || []).map((r) => r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName).join("、");
-    return `以后不再询问 ${rules}${where ? `（${where}）` : ""}`;
+    const rules = (s.rules || []).map((r) => r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName).join(", ");
+    return where ? t("don't ask again for {rules} ({where})", { rules, where }) : t("don't ask again for {rules}", { rules });
   }
-  if (s.type === "addDirectories") return `并允许访问 ${(s.directories || []).join("、")}`;
-  return "并记住";
+  if (s.type === "addDirectories") return t("and allow access to {dirs}", { dirs: (s.directories || []).join(", ") });
+  return t("and remember");
 }
 
 function permissionDetail(a) {
@@ -574,7 +579,7 @@ function permissionDetail(a) {
   if (a.tool === "Write") {
     const lines = String(inp.content || "").split("\n");
     return [h("div", { class: "ask-path", title: path }, path),
-      h("pre", { class: "ask-diff" }, lines.slice(0, 14).map((l) => h("span", { class: "add" }, "+ " + l + "\n")), lines.length > 14 ? h("span", { class: "more" }, `… 还有 ${lines.length - 14} 行`) : null)];
+      h("pre", { class: "ask-diff" }, lines.slice(0, 14).map((l) => h("span", { class: "add" }, "+ " + l + "\n")), lines.length > 14 ? h("span", { class: "more" }, t("… {n} more line", { n: lines.length - 14 }, "… {n} more lines")) : null)];
   }
   if (inp.url) return h("div", { class: "ask-path" }, inp.url);
   if (path) return h("div", { class: "ask-path", title: path }, path);
@@ -584,18 +589,18 @@ function permissionDetail(a) {
 function permissionCard(a) {
   const pending = a.status === "pending";
   const card = h("div", { class: `ask ask-perm ${pending ? "pending" : "done " + a.status}`, "data-ask": a.id });
-  card.append(h("div", { class: "ask-h" }, icon("shield"), h("span", { class: "ask-t" }, `Claude 想要${TOOL_ACTIONS[a.tool] || "使用 " + a.tool}`),
+  card.append(h("div", { class: "ask-h" }, icon("shield"), h("span", { class: "ask-t" }, t("Claude wants to {action}", { action: toolAction(a.tool) })),
     !pending && h("span", { class: "ask-st" }, STATUS_TEXT[a.status] || a.status)));
   if (pending || a.status !== "cancelled") card.append(h("div", { class: "ask-body" }, permissionDetail(a)));
   if (!pending) return card;
-  const reason = h("input", { class: "ask-input", placeholder: "告诉 Claude 应该怎么做（可选）", "aria-label": "拒绝的理由" });
-  const denyRow = h("div", { class: "ask-row hidden" }, reason, h("button", { type: "button", class: "btn sm", onclick: () => answerAsk(a, { allow: false, message: reason.value }, card) }, "拒绝并发送"));
+  const reason = h("input", { class: "ask-input", placeholder: t("Tell Claude what to do instead (optional)"), "aria-label": t("Why not") });
+  const denyRow = h("div", { class: "ask-row hidden" }, reason, h("button", { type: "button", class: "btn sm", onclick: () => answerAsk(a, { allow: false, message: reason.value }, card) }, t("Deny and send")));
   reason.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); answerAsk(a, { allow: false, message: reason.value }, card); } });
   card.append(h("div", { class: "ask-acts" },
-    h("button", { type: "button", class: "btn sm primary", onclick: () => answerAsk(a, { allow: true }, card) }, "允许"),
-    (a.suggestions || []).map((s, i) => h("button", { type: "button", class: "btn sm", onclick: () => answerAsk(a, { allow: true, suggestion: i }, card) }, "允许，" + suggestionLabel(s))),
-    h("button", { type: "button", class: "btn sm ghost", onclick: () => answerAsk(a, { allow: false }, card) }, "拒绝"),
-    h("button", { type: "button", class: "btn sm ghost", onclick: () => { denyRow.classList.toggle("hidden"); reason.focus(); } }, "拒绝并说明…")), denyRow);
+    h("button", { type: "button", class: "btn sm primary", onclick: () => answerAsk(a, { allow: true }, card) }, t("Allow")),
+    (a.suggestions || []).map((s, i) => h("button", { type: "button", class: "btn sm", onclick: () => answerAsk(a, { allow: true, suggestion: i }, card) }, t("Allow, {what}", { what: suggestionLabel(s) }))),
+    h("button", { type: "button", class: "btn sm ghost", onclick: () => answerAsk(a, { allow: false }, card) }, t("Deny")),
+    h("button", { type: "button", class: "btn sm ghost", onclick: () => { denyRow.classList.toggle("hidden"); reason.focus(); } }, t("Deny with a reason…"))), denyRow);
   return card;
 }
 
@@ -603,15 +608,15 @@ function questionCard(a) {
   const qs = (a.input && a.input.questions) || [];
   const pending = a.status === "pending";
   const card = h("div", { class: `ask ask-q ${pending ? "pending" : "done " + a.status}`, "data-ask": a.id });
-  card.append(h("div", { class: "ask-h" }, icon("chat"), h("span", { class: "ask-t" }, qs.length > 1 ? `Claude 有 ${qs.length} 个问题` : "Claude 想问你"),
+  card.append(h("div", { class: "ask-h" }, icon("chat"), h("span", { class: "ask-t" }, qs.length > 1 ? t("Claude has {n} questions", { n: qs.length }) : t("Claude has a question")),
     !pending && h("span", { class: "ask-st" }, STATUS_TEXT[a.status] || a.status)));
   if (!pending) {
-    if (a.answers) card.append(h("div", { class: "ask-body" }, qs.map((q) => h("div", { class: "q-done" }, h("span", { class: "q-q" }, q.question), h("span", { class: "q-a" }, a.answers[q.question] || "（没回答）")))));
+    if (a.answers) card.append(h("div", { class: "ask-body" }, qs.map((q) => h("div", { class: "q-done" }, h("span", { class: "q-q" }, q.question), h("span", { class: "q-a" }, a.answers[q.question] || t("(no answer)"))))));
     return card;
   }
   const picked = qs.map(() => new Set());
   const others = [];
-  const submit = h("button", { type: "button", class: "btn sm primary", disabled: true, onclick: () => send() }, "提交回答");
+  const submit = h("button", { type: "button", class: "btn sm primary", disabled: true, onclick: () => send() }, t("Submit"));
   const valid = () => qs.every((q, i) => picked[i].size || others[i].value.trim());
   const refresh = () => { submit.disabled = !valid(); };
   const send = () => {
@@ -622,7 +627,7 @@ function questionCard(a) {
   };
   const body = h("div", { class: "ask-body" });
   qs.forEach((q, i) => {
-    const other = h("input", { class: "ask-input", placeholder: "其他（自己写）", "aria-label": "其他答案" });
+    const other = h("input", { class: "ask-input", placeholder: t("Other (write your own)"), "aria-label": t("Other answer") });
     others.push(other);
     const opts = (q.options || []).map((o) => {
       const b = h("button", { type: "button", class: "q-opt", "aria-pressed": "false", onclick: () => {
@@ -640,26 +645,26 @@ function questionCard(a) {
     });
     other.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); send(); } });
     body.append(h("div", { class: "q" }, h("div", { class: "q-head" }, q.header && h("span", { class: "q-tag" }, q.header), h("span", null, q.question),
-      q.multiSelect && h("span", { class: "q-multi" }, "可多选")), h("div", { class: "q-opts" }, opts), other));
+      q.multiSelect && h("span", { class: "q-multi" }, t("pick any"))), h("div", { class: "q-opts" }, opts), other));
   });
-  card.append(body, h("div", { class: "ask-acts" }, submit, h("button", { type: "button", class: "btn sm ghost", onclick: () => answerAsk(a, { skip: true }, card) }, "跳过")));
+  card.append(body, h("div", { class: "ask-acts" }, submit, h("button", { type: "button", class: "btn sm ghost", onclick: () => answerAsk(a, { skip: true }, card) }, t("Skip"))));
   return card;
 }
 
 function planCard(a) {
   const pending = a.status === "pending";
   const card = h("div", { class: `ask ask-plan ${pending ? "pending" : "done " + a.status}`, "data-ask": a.id });
-  const st = a.status === "approved" ? `已批准 · ${a.mode === "acceptEdits" ? "自动接受编辑" : a.mode === "auto" ? "自动" : "编辑前询问"}`
-    : a.status === "revise" ? `已请 Claude 继续修改${a.feedback ? "：" + a.feedback : ""}` : STATUS_TEXT[a.status];
-  card.append(h("div", { class: "ask-h" }, icon("plan"), h("span", { class: "ask-t" }, "Claude 的计划"), !pending && h("span", { class: "ask-st" }, st)));
+  const st = a.status === "approved" ? `${t("Approved")} · ${a.mode === "acceptEdits" ? MODE_INFO.acceptEdits.label : a.mode === "auto" ? MODE_INFO.auto.label : t("Ask before edits")}`
+    : a.status === "revise" ? (a.feedback ? `${t("Asked Claude to revise")}: ${a.feedback}` : t("Asked Claude to revise")) : STATUS_TEXT[a.status];
+  card.append(h("div", { class: "ask-h" }, icon("plan"), h("span", { class: "ask-t" }, t("Claude's plan")), !pending && h("span", { class: "ask-st" }, st)));
   card.append(h("div", { class: "ask-body md plan-md", html: md((a.input && a.input.plan) || "") }));
   if (!pending) return card;
-  const fb = h("textarea", { class: "ask-input", rows: "2", placeholder: "哪里要改？比如：先只改措辞，不动结构" });
-  const fbRow = h("div", { class: "ask-row hidden" }, fb, h("button", { type: "button", class: "btn sm", onclick: () => answerAsk(a, { approve: false, feedback: fb.value }, card) }, "发给 Claude"));
+  const fb = h("textarea", { class: "ask-input", rows: "2", placeholder: t("What should change? e.g. only the wording for now, keep the structure") });
+  const fbRow = h("div", { class: "ask-row hidden" }, fb, h("button", { type: "button", class: "btn sm", onclick: () => answerAsk(a, { approve: false, feedback: fb.value }, card) }, t("Send to Claude")));
   card.append(h("div", { class: "ask-acts" },
-    h("button", { type: "button", class: "btn sm primary", onclick: () => answerAsk(a, { approve: true, mode: "acceptEdits" }, card) }, "批准，自动接受编辑"),
-    h("button", { type: "button", class: "btn sm", onclick: () => answerAsk(a, { approve: true, mode: "default" }, card) }, "批准，编辑前问我"),
-    h("button", { type: "button", class: "btn sm ghost", onclick: () => { fbRow.classList.toggle("hidden"); fb.focus(); } }, "继续修改…")), fbRow);
+    h("button", { type: "button", class: "btn sm primary", onclick: () => answerAsk(a, { approve: true, mode: "acceptEdits" }, card) }, t("Approve, accept edits")),
+    h("button", { type: "button", class: "btn sm", onclick: () => answerAsk(a, { approve: true, mode: "default" }, card) }, t("Approve, ask before edits")),
+    h("button", { type: "button", class: "btn sm ghost", onclick: () => { fbRow.classList.toggle("hidden"); fb.focus(); } }, t("Keep refining…"))), fbRow);
   return card;
 }
 
@@ -694,12 +699,12 @@ function renderComposerState() {
   const running = ui.chat.running;
   $("#chat-stop").classList.toggle("hidden", !running);
   $("#chat-send").disabled = !ui.chat.available;
-  setTip($("#chat-send"), running ? "排队：等这条回复完再发（Enter）" : "发送（Enter）· Shift+Enter 换行");
+  setTip($("#chat-send"), running ? t("Queue: sent after this reply (Enter)") : t("Send (Enter) · Shift+Enter for a new line"));
   $("#chat-input").disabled = !ui.chat.available;
   const parts = [];
-  if (ui.versionId) parts.push(isAll() ? "ALL（全部经历）" : `岗位「${jobName(version())}」`);
-  if (ui.sel.kind === "entry" && entryById(ui.sel.id)) parts.push(`「${display(entryById(ui.sel.id).title) || entryLabel(entryById(ui.sel.id))}」`);
-  $("#chat-context").textContent = parts.length ? `Claude 知道你正在看：${parts.join(" · ")}` : "";
+  if (ui.versionId) parts.push(isAll() ? `ALL (${t("All entries")})` : t("the job “{name}”", { name: jobName(version()) }));
+  if (ui.sel.kind === "entry" && entryById(ui.sel.id)) parts.push(`“${display(entryById(ui.sel.id).title) || entryLabel(entryById(ui.sel.id))}”`);
+  $("#chat-context").textContent = parts.length ? t("Claude knows you're looking at: {what}", { what: parts.join(" · ") }) : "";
   paintChatDot();
 }
 
@@ -713,7 +718,7 @@ function renderTasks() {
   box.classList.remove("hidden");
   box.replaceChildren(
     h("button", { type: "button", class: "ct-head", "aria-expanded": String(open), onclick: () => { store("tasks-open", open ? "0" : "1"); renderTasks(); } },
-      icon("plan"), h("span", { class: "ct-t" }, cur ? cur.active || cur.subject : "任务"), h("span", { class: "ct-n" }, `${done}/${tasks.length}`),
+      icon("plan"), h("span", { class: "ct-t" }, cur ? cur.active || cur.subject : t("Tasks")), h("span", { class: "ct-n" }, `${done}/${tasks.length}`),
       h("span", { class: "ct-bar" }, h("i", { style: `width:${Math.round((done / tasks.length) * 100)}%` })), icon(open ? "down" : "up")),
     open && h("ul", { class: "ct-list" }, tasks.map((t) => h("li", { class: "ct-" + t.status },
       h("span", { class: "ct-ic" }, t.status === "completed" ? icon("check") : t.status === "in_progress" ? h("span", { class: "st running" }) : null),
@@ -725,8 +730,8 @@ function renderQueue() {
   const q = ui.chat.queue || [];
   box.classList.toggle("hidden", !q.length);
   box.replaceChildren(...q.map((item) => h("div", { class: "cq-item" },
-    h("span", { class: "cq-tag" }, "排队中"), h("span", { class: "cq-text" }, item.msg.text || (item.msg.files || []).map((f) => f.name).join("、")),
-    h("button", { type: "button", class: "btn icon sm ghost", title: "不发了", onclick: () => api("DELETE", `/api/chats/${ui.chat.id}/queue/${item.id}`).catch((e) => toast(e.message)) }, icon("x")))));
+    h("span", { class: "cq-tag" }, t("Queued")), h("span", { class: "cq-text" }, item.msg.text || (item.msg.files || []).map((f) => f.name).join(", ")),
+    h("button", { type: "button", class: "btn icon sm ghost", title: t("Don't send"), onclick: () => api("DELETE", `/api/chats/${ui.chat.id}/queue/${item.id}`).catch((e) => toast(e.message)) }, icon("x")))));
 }
 
 // ---------------------------------------------------------------- composer: attachments
@@ -737,16 +742,16 @@ function renderPendingFiles() {
   box.replaceChildren(...files.map((f, i) => h("div", { class: "cf-item" + (f.preview ? " img" : ""), title: f.path || f.name },
     f.preview ? h("img", { src: f.preview, alt: f.name }) : h("span", { class: "cf-ic" }, icon("file")),
     !f.preview && h("span", { class: "cf-name" }, f.name),
-    h("button", { type: "button", class: "cf-x", "aria-label": "移除 " + f.name, onclick: () => { ui.chat.files.splice(i, 1); renderPendingFiles(); } }, icon("x")))));
+    h("button", { type: "button", class: "cf-x", "aria-label": t("Remove {name}", { name: f.name }), onclick: () => { ui.chat.files.splice(i, 1); renderPendingFiles(); } }, icon("x")))));
 }
 
 function addBrowserFiles(list) {
   for (const file of list) {
-    if (file.size > 30 * 1024 * 1024) { toast(`${file.name} 超过 30 MB`); continue; }
+    if (file.size > 30 * 1024 * 1024) { toast(t("{name} is over 30 MB", { name: file.name })); continue; }
     const reader = new FileReader();
     reader.onload = () => {
       const isImg = /^image\/(png|jpeg|gif|webp)$/.test(file.type);
-      ui.chat.files.push({ name: file.name || (isImg ? "粘贴的图片.png" : "文件"), data: reader.result, preview: isImg ? reader.result : null });
+      ui.chat.files.push({ name: file.name || (isImg ? t("pasted image") + ".png" : t("file")), data: reader.result, preview: isImg ? reader.result : null });
       renderPendingFiles();
     };
     reader.readAsDataURL(file);
@@ -784,12 +789,12 @@ function updateSlash() {
   slash.items = all.filter((c) => score(c) < 2).sort((a, b) => rank(a) - rank(b) || a.name.length - b.name.length).slice(0, 40);
   slash.active = 0;
   if (!slash.items.length) { closeSlash(); return; }
-  const panel = h("div", { class: "slash-menu", role: "listbox", "aria-label": "命令和技能" });
+  const panel = h("div", { class: "slash-menu", role: "listbox", "aria-label": t("Commands and skills") });
   slash.items.forEach((c, i) => panel.append(h("div", { role: "option", class: "sl-item" + (i === 0 ? " on" : ""), "aria-selected": String(i === 0), "data-i": String(i),
     onpointerdown: (e) => e.preventDefault(), onclick: () => applySlash(i) },
     h("span", { class: "sl-name" }, "/" + c.name, c.hint && h("span", { class: "sl-hint" }, " " + c.hint)),
-    h("span", { class: "sl-desc", title: c.desc }, BUILTIN_ZH[c.name] || c.desc),
-    h("span", { class: "sl-src" }, c.local ? "本窗口" : TERMINAL_ONLY.has(c.name) ? "终端专用" : c.source === "user" || c.source === "project" ? "技能" : c.source === "plugin" ? "插件" : ""))));
+    h("span", { class: "sl-desc", title: c.desc }, commandDesc(c)),
+    h("span", { class: "sl-src" }, c.local ? t("this window") : TERMINAL_ONLY.has(c.name) ? t("terminal only") : c.source === "user" || c.source === "project" ? t("skill") : c.source === "plugin" ? t("plugin") : ""))));
   if (slash.open && Float.cur && Float.cur.panel.classList.contains("slash-menu")) {
     Float.cur.panel.replaceChildren(...panel.childNodes);
     placeFloat(Float.cur);
@@ -817,7 +822,7 @@ function applySlash(i = slash.active) {
   if (c.local && !c.hint.startsWith("<")) runLocal(input.value.trim()) && clearInput();
   else if (!c.local && !c.hint && !TERMINAL_ONLY.has(c.name)) submitComposer();   // nothing to fill in: run it, like Claude Code
 }
-function clearInput() { const t = $("#chat-input"); t.value = ""; autosize(t); }
+function clearInput() { const ta = $("#chat-input"); ta.value = ""; autosize(ta); }
 
 // /model, /effort, /permissions, /clear, /rename are this window's own; true = handled
 function runLocal(text) {
@@ -836,7 +841,7 @@ function runLocal(text) {
     const lv = a.toLowerCase();
     if (lv === "auto") setChatSetting("effort", null);
     else if (EFFORT_INFO[lv]) setChatSetting("effort", lv);
-    else { toast("推理强度只能是 low / medium / high / xhigh / max / auto"); }
+    else { toast(t("The effort level can only be low / medium / high / xhigh / max / auto")); }
     return true;
   }
   if (name === "permissions" || name === "mode") { openModeMenu(); return true; }
@@ -848,17 +853,17 @@ function runLocal(text) {
 // ---------------------------------------------------------------- sending
 function startChatWith(text) {
   setTab("chat");
-  const t = $("#chat-input");
-  t.value = text;
-  autosize(t);
-  t.focus();
-  t.setSelectionRange(t.value.length, t.value.length);
+  const ta = $("#chat-input");
+  ta.value = text;
+  autosize(ta);
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
 async function sendChat(text, { action = null, entryId = null, target = null, lang = null, files = [] } = {}) {
-  if (!ui.chat.available) { toast("没有找到 claude 命令"); return false; }
+  if (!ui.chat.available) { toast(t("The claude command was not found")); return false; }
   if (!action && !text.trim() && !files.length) return false;
-  if (action && ui.chat.running) { toast("Claude 还在回复上一条，稍等或先停止"); return false; }
+  if (action && ui.chat.running) { toast(t("Claude is still replying; wait or stop it first")); return false; }
   await saveDraft();
   if (!ui.chat.id) {
     const c = await createChat();
@@ -875,8 +880,8 @@ async function sendChat(text, { action = null, entryId = null, target = null, la
     ui.chat.running = true;
     ui.chat.live = { blocks: [] };
     ui.chat.thinking = 0;
-    const who = entryId ? `「${display((entryById(entryId) || {}).title) || entryLabel(entryById(entryId))}」` : "";
-    ui.chat.messages.push({ role: "user", text: action ? `${who}${text ? "：" + text : ""}` || "…" : text, meta: { action },
+    const who = entryId ? `“${display((entryById(entryId) || {}).title) || entryLabel(entryById(entryId))}”` : "";
+    ui.chat.messages.push({ role: "user", text: action ? `${who}${text ? ": " + text : ""}` || "…" : text, meta: { action },
       files: files.map((f) => ({ name: f.name, path: f.path || "", image: !!f.preview, preview: f.preview })) });
     renderChat();
     renderComposerState();
@@ -935,8 +940,8 @@ async function onChatEvent(type, ev) {
     }
     updateWaiting(ev.chat, here ? undefined : ev.ask.status === "pending");
     if (ev.ask.status === "pending" && (ev.chat !== ui.chat.id || ui.tab !== "chat" || document.hidden)) {
-      const what = ev.ask.kind === "question" ? "Claude 有问题想问你" : ev.ask.kind === "plan" ? "Claude 的计划等你批准" : `Claude 想要${TOOL_ACTIONS[ev.ask.tool] || "使用 " + ev.ask.tool}`;
-      toast(what, { ms: 8000, action: { label: "去看看", fn: async () => { if (ev.chat !== ui.chat.id) await openChat(ev.chat); setTab("chat"); } } });
+      const what = ev.ask.kind === "question" ? t("Claude has a question") : ev.ask.kind === "plan" ? t("Claude's plan is waiting for your approval") : t("Claude wants to {action}", { action: toolAction(ev.ask.tool) });
+      toast(what, { ms: 8000, action: { label: t("Show me"), fn: async () => { if (ev.chat !== ui.chat.id) await openChat(ev.chat); setTab("chat"); } } });
     }
     return;
   }
@@ -985,19 +990,19 @@ async function onChatEvent(type, ev) {
     renderComposerState();
     await refresh();
     finishAi(ev.chat);
-    if (ev.error && ui.tab !== "chat") toast("Claude 出错了，详见对话");
+    if (ev.error && ui.tab !== "chat") toast(t("Claude ran into an error; see the chat"));
   }
 }
 
 const CHAT_EVENTS = ["chat.start", "chat.init", "chat.meta", "chat.thinking", "chat.delta", "chat.tool", "chat.block", "chat.ask",
   "chat.tasks", "chat.queue", "chat.reply", "chat.next", "chat.done", "claude.info", "claude.limits"];
 function listenChat(es) {
-  for (const t of CHAT_EVENTS) es.addEventListener(t, (m) => onChatEvent(t, JSON.parse(m.data)));
+  for (const name of CHAT_EVENTS) es.addEventListener(name, (m) => onChatEvent(name, JSON.parse(m.data)));
 }
 
 // ---------------------------------------------------------------- wiring
 function wireChat() {
-  ui.w.chat = uiSelect({ id: "chat-select", cls: "grow", label: "历史对话", placeholder: "还没有对话", menuWidth: 300, onChange: (id) => openChat(id) });
+  ui.w.chat = uiSelect({ id: "chat-select", cls: "grow", label: t("Chats"), placeholder: t("No chats yet"), menuWidth: 300, onChange: (id) => openChat(id) });
   $("#chat-select-slot").replaceWith(ui.w.chat.el);
   $("#chat-new").append(icon("plus"));
   $("#chat-rename").append(icon("pen"));

@@ -98,7 +98,7 @@ def find_csc() -> Path:
         csc = windir / "Microsoft.NET" / fw / "v4.0.30319" / "csc.exe"
         if csc.exists():
             return csc
-    sys.exit("找不到 .NET Framework 4 的 csc.exe（Windows 自带）。")
+    sys.exit("csc.exe of .NET Framework 4 (part of Windows) was not found.")
 
 
 def build_exe() -> None:

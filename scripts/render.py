@@ -4,7 +4,7 @@
     python scripts/render.py RES-TECH-EN          # render one version
     python scripts/render.py RES-TECH-EN --export # also copy PDF + .tex to the export dir
     python scripts/render.py --check              # only validate resume.yaml
-    python scripts/render.py JOB-001 --lang zh    # same template and layout, in Chinese
+    python scripts/render.py JOB-001 --lang de    # same template and layout, in another resume language
 
 Every render also lists the bullets that take more than one line (with how full the text is:
 112% = about 12% too long) and the entries that lack text in the rendered language.
@@ -32,14 +32,14 @@ def main() -> int:
     ap.add_argument("--export", action="store_true")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--json", action="store_true")
-    ap.add_argument("--lang", help="render in this language instead of the version's own (en / zh)")
+    ap.add_argument("--lang", help="render in this resume language instead of the version's own (any code in settings.languages)")
     args = ap.parse_args()
     if args.lang and args.export:
-        ap.error("--lang only checks; to export a Chinese resume, set that version's lang to zh")
+        ap.error("--lang only checks; to export in another language, set that version's lang")
 
     studio = Studio(resolve_data(args.data))
     if not studio.store.exists():
-        print(f"找不到数据文件：{studio.store.path}", file=sys.stderr)
+        print(f"data file not found: {studio.store.path}", file=sys.stderr)
         return 2
     doc, _ = studio.store.load()
     warnings = model.validate(doc)

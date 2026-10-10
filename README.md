@@ -36,5 +36,9 @@ with the C# compiler that ships with Windows.
 - **Safe co-editing**: Claude's edits refresh the form and preview; editing the same item from
   two places raises a conflict instead of overwriting; every save keeps a copy in `.studio/history`.
 - **Export** PDF + `.tex` to `settings.export_dir`.
+- **Your languages**: the window speaks your computer's language (English, 简体中文, 日本語, 한국어,
+  Español, Français, Deutsch; pick another under the gear in the top bar). A resume can be written in any
+  number of languages (Latin, Greek, Cyrillic, Chinese, Japanese, Korean), each with its own text,
+  section titles, date format and fonts; a new file starts in your computer's language.
 
 Data format and Claude's editing rules: [SKILL.md](SKILL.md). How changes are verified: [TESTING.md](TESTING.md).

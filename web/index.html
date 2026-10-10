@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -16,27 +16,28 @@
     </div>
     <div class="version-switch">
       <span id="version-slot"></span>
-      <button id="version-menu-btn" class="btn icon ghost" title="岗位操作" aria-haspopup="menu"></button>
+      <button id="version-menu-btn" class="btn icon ghost" title="Job actions" aria-haspopup="menu"></button>
     </div>
     <span class="spacer"></span>
-    <span id="datapath" class="datapath" title="数据文件"></span>
+    <span id="datapath" class="datapath" title="Data file"></span>
     <span id="save-status" class="save-status"></span>
-    <span id="conn" class="conn" title="连接状态"></span>
+    <button id="settings-btn" class="btn icon ghost" title="Settings (Ctrl+,)" aria-label="Settings" aria-haspopup="dialog"></button>
+    <span id="conn" class="conn" title="Connection"></span>
   </header>
 
   <div id="workspace" class="workspace">
-    <aside class="pane left" aria-label="经历库与对话">
+    <aside class="pane left" aria-label="Library and chat">
       <div class="tabs" role="tablist">
-        <button class="tab" role="tab" data-tab="library">经历库</button>
-        <button class="tab" role="tab" data-tab="chat">对话<span id="chat-dot" class="tab-dot hidden"></span></button>
+        <button class="tab" role="tab" data-tab="library" data-t>Library</button>
+        <button class="tab" role="tab" data-tab="chat" data-t>Chat<span id="chat-dot" class="tab-dot hidden"></span></button>
       </div>
       <div id="library" class="tabpane" role="tabpanel"></div>
       <div id="chat" class="tabpane hidden" role="tabpanel">
         <div class="chat-head">
           <span id="chat-select-slot" class="slot-grow"></span>
-          <button id="chat-new" class="btn icon ghost" title="新对话"></button>
-          <button id="chat-rename" class="btn icon ghost" title="改名"></button>
-          <button id="chat-delete" class="btn icon ghost" title="删除这段对话"></button>
+          <button id="chat-new" class="btn icon ghost" title="New chat"></button>
+          <button id="chat-rename" class="btn icon ghost" title="Rename"></button>
+          <button id="chat-delete" class="btn icon ghost" title="Delete this chat"></button>
         </div>
         <div id="chat-log" class="chat-log"></div>
         <div class="composer">
@@ -46,12 +47,12 @@
           <div id="composer-box" class="composer-box">
             <div id="chat-files" class="chat-files hidden"></div>
             <div class="composer-row">
-              <textarea id="chat-input" rows="1" placeholder="和 Claude 说点什么，输入 / 调用命令和技能"></textarea>
-              <button id="chat-stop" class="btn icon danger-soft hidden" title="停止（Claude 会在当前一步后停下）"></button>
-              <button id="chat-send" class="btn icon primary" title="发送（Enter）"></button>
+              <textarea id="chat-input" rows="1" placeholder="Ask Claude anything; type / for commands and skills"></textarea>
+              <button id="chat-stop" class="btn icon danger-soft hidden" title="Stop (Claude stops after the current step)"></button>
+              <button id="chat-send" class="btn icon primary" title="Send (Enter)"></button>
             </div>
             <div class="composer-bar">
-              <button id="chat-attach" class="cbtn icon" title="添加图片或文件（也可以粘贴截图、拖进来）"></button>
+              <button id="chat-attach" class="cbtn icon" title="Add images or files (you can also paste a screenshot or drop files here)"></button>
               <button id="chat-mode-btn" class="cbtn" aria-haspopup="menu"></button>
               <span class="spacer"></span>
               <button id="chat-ctx-btn" class="cbtn icon ctx" aria-haspopup="dialog"></button>
@@ -62,22 +63,22 @@
         </div>
       </div>
     </aside>
-    <div class="gutter" data-gutter="left" title="拖动调整宽度，双击恢复"></div>
-    <main id="editor" class="pane middle" aria-label="编辑"></main>
-    <div class="gutter" data-gutter="right" title="拖动调整宽度，双击恢复"></div>
-    <section class="pane right" aria-label="预览">
+    <div class="gutter" data-gutter="left" title="Drag to resize, double-click to reset"></div>
+    <main id="editor" class="pane middle" aria-label="Editor"></main>
+    <div class="gutter" data-gutter="right" title="Drag to resize, double-click to reset"></div>
+    <section class="pane right" aria-label="Preview">
       <div class="preview-toolbar">
         <span id="tpl-slot"></span>
-        <div id="lang-seg" class="seg" title="简历语言"></div>
-        <button id="layout-toggle" class="btn ghost" title="字号、边距、间距、颜色"><span class="lbl">版面</span></button>
+        <div id="lang-seg" class="seg" title="Resume language"></div>
+        <button id="layout-toggle" class="btn ghost" title="Font size, margins, spacing, colour"><span class="lbl" data-t>Layout</span></button>
         <span class="spacer"></span>
         <span id="page-badge" class="badge"></span>
         <div class="zoom">
-          <button id="zoom-out" class="btn icon ghost" title="缩小"></button>
-          <button id="zoom-fit" class="btn ghost zoom-label" title="适合宽度">适合</button>
-          <button id="zoom-in" class="btn icon ghost" title="放大"></button>
+          <button id="zoom-out" class="btn icon ghost" title="Zoom out"></button>
+          <button id="zoom-fit" class="btn ghost zoom-label" title="Fit width" data-t>Fit</button>
+          <button id="zoom-in" class="btn icon ghost" title="Zoom in"></button>
         </div>
-        <button id="export-btn" class="btn primary">导出 PDF</button>
+        <button id="export-btn" class="btn primary" data-t>Export PDF</button>
       </div>
       <div id="layout-panel" class="layout-panel hidden"></div>
       <div id="issues" class="issues hidden"></div>
@@ -88,7 +89,9 @@
 
   <div id="toast" class="toast" role="status"></div>
   <div id="modal-root"></div>
+  <script src="i18n.js"></script>
   <script src="ui.js"></script>
+  <script>localizeStatic();</script>
   <script src="chat.js"></script>
   <script src="app.js"></script>
 </body>

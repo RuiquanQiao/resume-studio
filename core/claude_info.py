@@ -15,26 +15,21 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .i18n import t
+
 EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 
 # Claude Code's own model menu (desktop app) lists these; the CLI's aliases can lag behind
 # (`sonnet` may still mean Sonnet 5), so the newest ids come first and the CLI's own list
-# fills "更多模型". Update this table when a new model ships; nothing else depends on it.
+# fills "More models". Descriptions stay English; the page translates them. Update this table when a new model ships; nothing else depends on it.
 LATEST = [
-    {"value": "claude-opus-5-5", "name": "Opus 5.5", "desc": "日常与复杂任务的最佳选择", "effort": True},
-    {"value": "claude-sonnet-5-5", "name": "Sonnet 5.5", "desc": "高效，适合日常任务", "effort": True},
-    {"value": "claude-fable-5-1", "name": "Fable 5.1", "desc": "最强，适合最难、最长的任务", "effort": True, "tag": "需要额外额度"},
-    {"value": "claude-haiku-4-5-20251001", "name": "Haiku 4.5", "desc": "最快，适合简单问题", "effort": False},
+    {"value": "claude-opus-5-5", "name": "Opus 5.5", "desc": "Best for everyday, complex tasks", "effort": True},
+    {"value": "claude-sonnet-5-5", "name": "Sonnet 5.5", "desc": "Efficient for routine tasks", "effort": True},
+    {"value": "claude-fable-5-1", "name": "Fable 5.1", "desc": "Most capable for your hardest and longest-running tasks", "effort": True, "tag": "Requires usage credits"},
+    {"value": "claude-haiku-4-5-20251001", "name": "Haiku 4.5", "desc": "Fastest for quick answers", "effort": False},
 ]
 
-_DESC_ZH = {
-    "Efficient for routine tasks": "高效，适合日常任务",
-    "Best for everyday, complex tasks": "日常与复杂任务的最佳选择",
-    "Most capable for your hardest and longest-running tasks": "最强，适合最难、最长的任务",
-    "Fastest for quick answers": "最快，适合简单问题",
-    "Requires usage credits": "需要额外额度",
-    "~2× usage vs Sonnet": "用量约为 Sonnet 的 2 倍",
-}
+CREDITS = "Requires usage credits"
 
 _MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._\-\[\]]{0,80}$")
 
@@ -59,11 +54,7 @@ def model_name(model_id: str | None) -> str:
     if nums and len(nums[-1]) == 8:   # a date suffix
         nums = nums[:-1]
     name = family + (" " + ".".join(nums) if nums else "")
-    return name + (" · 1M 上下文" if one_m else "")
-
-
-def _zh(parts: list[str]) -> list[str]:
-    return [_DESC_ZH.get(p.strip(), p.strip()) for p in parts]
+    return name + (" · 1M context" if one_m else "")
 
 
 def normalize(raw: dict) -> dict:
@@ -92,11 +83,10 @@ def normalize(raw: dict) -> dict:
 
     more: list[dict] = []
     for resolved, m in by_resolved.items():
-        parts = str(m.get("description") or "").split(" · ")
-        zh = _zh(parts[1:])
-        more.append({"value": m["value"], "name": parts[0] or model_name(resolved), "resolved": resolved,
-                     "desc": "，".join(p for p in zh if p != "需要额外额度") or f"Claude Code 的 {m['value']} 别名",
-                     "tag": "需要额外额度" if "需要额外额度" in zh else None,
+        name, *parts = [p.strip() for p in str(m.get("description") or "").split(" · ")]
+        more.append({"value": m["value"], "name": name or model_name(resolved), "resolved": resolved,
+                     "desc": ", ".join(p for p in parts if p != CREDITS) or f"Claude Code alias {m['value']}",
+                     "tag": CREDITS if CREDITS in parts else None,
                      "efforts": m.get("supportedEffortLevels") or (EFFORTS if m.get("supportsEffort") else []),
                      "auto_mode": bool(m.get("supportsAutoMode"))})
 
@@ -113,7 +103,7 @@ def normalize(raw: dict) -> dict:
     account = raw.get("account") or {}
     return {
         "models": main, "more_models": more,
-        "default_model": {"resolved": default_resolved, "name": model_name(default_resolved) or "Claude Code 默认"},
+        "default_model": {"resolved": default_resolved, "name": model_name(default_resolved) or "Claude Code default"},
         "efforts": EFFORTS,
         "commands": commands,
         "agents": [{"name": a.get("name"), "desc": a.get("description", "")} for a in raw.get("agents") or []],
@@ -163,7 +153,7 @@ class ClaudeInfo:
             try:
                 prefix = self.command()
                 if not prefix:
-                    self.error = "找不到 claude 命令"
+                    self.error = t("The claude command was not found")
                     return self.get()
                 raw = probe(prefix, self.cwd, timeout)
                 self.data, self.error, self.fetched = normalize(raw), None, time.time()
@@ -171,7 +161,7 @@ class ClaudeInfo:
                 self.cache.write_text(json.dumps({"data": self.data, "fetched": self.fetched}, ensure_ascii=False),
                                       encoding="utf-8")
             except Exception as e:  # noqa: BLE001 - the UI falls back to the cached / built-in list
-                self.error = f"读取 Claude Code 信息失败：{e}"
+                self.error = t("Couldn't read Claude Code's info: {error}", error=e)
             finally:
                 self.loading = False
             return self.get()
@@ -198,7 +188,7 @@ def probe(prefix: list[str], cwd: Path, timeout: float) -> dict:
                 if resp.get("subtype") != "success":
                     raise RuntimeError(resp.get("error") or "initialize failed")
                 return resp.get("response") or {}
-        raise RuntimeError("Claude Code 没有回应")
+        raise RuntimeError(t("Claude Code didn't answer"))
     finally:
         timer.cancel()
         try:

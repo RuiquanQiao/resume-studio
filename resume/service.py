@@ -7,9 +7,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+from core.i18n import system_locale, t
 from core.store import YamlStore, fingerprint, merge_into, to_plain
 
-from . import model
+from . import langs, model
 from .render import all_templates, get_renderer
 from .render.fonts import catalog as font_catalog
 from .render.raster import rasterize
@@ -34,14 +35,14 @@ class Studio:
         if self.store.exists():
             return False
         self.store.path.parent.mkdir(parents=True, exist_ok=True)
-        self.store.write_text(self.store.dump(model.skeleton()))
+        self.store.write_text(self.store.dump(model.skeleton(langs.match(system_locale()))))
         return True
 
     # ---- reading -------------------------------------------------------
     def state(self) -> dict:
         doc, digest = self.store.load()
         plain = to_plain(doc)
-        plain["versions"] = model.with_all(plain.get("versions") or [])
+        plain["versions"] = model.with_all(plain.get("versions") or [], model.first_lang(doc))
         return {
             "doc": plain,
             "digest": digest,
@@ -49,6 +50,7 @@ class Studio:
             "warnings": model.validate(doc),
             "templates": all_templates(),
             "fonts": font_catalog(),
+            "resume_langs": langs.catalog(),
             "layout_defaults": model.DEFAULT_LAYOUT,
             "data_path": str(self.store.path),
             **self.extra_state(),
@@ -62,16 +64,16 @@ class Studio:
             if current is None and kind == "version" and str(item_id) == model.ALL_ID:
                 current = self._add_all_version(doc)
             if current is None and kind in ("entry", "version"):
-                raise KeyError(f"{kind} {item_id} 不存在")
+                raise KeyError(t("{kind} {id} doesn't exist", kind=kind, id=item_id))
             if base and current is not None and fingerprint(current) != base:
                 raise Conflict(to_plain(current))
             if kind in ("entry", "version"):
                 data = dict(data)
                 new_id = str(data.get("id") or item_id)
                 if kind == "version" and model.ALL_ID in (str(item_id), new_id) and new_id != str(item_id):
-                    raise ValueError("ALL 是保留的 ID（全部经历），不能改名，也不能给岗位使用")
+                    raise ValueError(t("ALL is reserved for the full set: it can't be renamed or used for a job"))
                 if new_id != str(item_id) and model.get_item(doc, kind, new_id) is not None:
-                    raise ValueError(f"ID {new_id} 已存在")
+                    raise ValueError(t("ID {id} already exists", id=new_id))
                 data["id"] = new_id
                 merge_into(current, data)
                 if kind == "entry" and new_id != str(item_id):  # keep versions pointing at it
@@ -83,7 +85,12 @@ class Studio:
             elif current is None:
                 doc[kind] = data
             else:
+                before = [str(x) for x in (current.get("languages") or [])] if kind == "settings" else []
                 doc[kind] = merge_into(current, data)
+                if kind == "settings":  # a new resume language: the default sections get their titles in it
+                    for lang in data.get("languages") or []:
+                        if str(lang) not in before:
+                            model.add_language_titles(doc, str(lang))
             self.store.save(doc)
         return self.state()
 
@@ -91,7 +98,7 @@ class Studio:
     def _add_all_version(doc: Any) -> Any:
         if doc.get("versions") is None:
             doc["versions"] = []
-        doc["versions"].insert(0, model.default_all_version())
+        doc["versions"].insert(0, model.default_all_version(model.first_lang(doc)))
         return doc["versions"][0]
 
     def create_entry(self, section: str, after: str | None = None) -> tuple[str, dict]:
@@ -113,7 +120,7 @@ class Studio:
             entries = doc.get("entries") or []
             idx = next((i for i, e in enumerate(entries) if str(e.get("id")) == entry_id), None)
             if idx is None:
-                raise KeyError(f"经历 {entry_id} 不存在")
+                raise KeyError(t("Entry {id} doesn't exist", id=entry_id))
             sec = str(entries[idx].get("section"))
             same = [i for i, e in enumerate(entries) if str(e.get("section")) == sec]
             k = same.index(idx) + (1 if direction > 0 else -1)
@@ -151,7 +158,7 @@ class Studio:
             existing = {str(v.get("id")) for v in versions}
             base_id = (new_id or "").strip() or model.next_version_id(doc)
             if base_id == model.ALL_ID:
-                raise ValueError("ALL 是保留的 ID（全部经历）")
+                raise ValueError(t("ALL is reserved for the full set"))
             vid, n = base_id, 2
             while vid in existing:
                 vid, n = f"{base_id}-{n}", n + 1
@@ -164,7 +171,7 @@ class Studio:
                     v["entries"] = [str(e.get("id")) for e in doc.get("entries") or []]
                     v["headline"] = ""
             else:
-                v = {"id": vid, "label": label or vid, "lang": "en", "template": "classic", "headline": "",
+                v = {"id": vid, "label": label or vid, "lang": model.first_lang(doc), "template": "classic", "headline": "",
                      "entries": [], "layout": {}}
             if src is None or model.is_all(src):  # a new resume starts from ALL's section order
                 v["sections"] = model.section_order(doc, model.get_version(doc, model.ALL_ID))
@@ -174,7 +181,7 @@ class Studio:
 
     def delete_version(self, version_id: str) -> dict:
         if version_id == model.ALL_ID:
-            raise ValueError("ALL（全部经历）不能删除")
+            raise ValueError(t("ALL (the full set) can't be deleted"))
         with self.store.lock:
             doc, _ = self.store.load()
             versions = doc.get("versions") or []
@@ -194,7 +201,7 @@ class Studio:
         doc, digest = self.store.load()
         version = model.get_version(doc, version_id)
         if version is None:
-            raise KeyError(f"岗位 {version_id} 不存在")
+            raise KeyError(t("Job {id} doesn't exist", id=version_id))
         v = to_plain(version)
         if lang:
             v["lang"] = lang

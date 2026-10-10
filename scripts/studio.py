@@ -40,7 +40,8 @@ def show_startup_error(exc: BaseException) -> None:
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text("".join(traceback.format_exception(exc)), encoding="utf-8")
     tk.Tk().withdraw()
-    messagebox.showerror("Resume Studio", f"启动失败：{exc}\n\n详细信息：{log}")
+    from _bootstrap import _t
+    messagebox.showerror("Resume Studio", _t("Couldn't start: {error}\n\nDetails: {log}", error=exc, log=log))
 
 
 def set_app_id() -> None:

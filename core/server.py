@@ -54,6 +54,14 @@ class FileResponse:
         self.content_type = content_type or mimetypes.guess_type(str(path))[0] or "application/octet-stream"
 
 
+class TextResponse:
+    """Generated text (not a file, not JSON), e.g. a script built per request."""
+
+    def __init__(self, text: str, content_type: str = "text/plain"):
+        self.data = text.encode("utf-8")
+        self.content_type = content_type
+
+
 Handler = Callable[[Request], Any]
 
 
@@ -158,6 +166,13 @@ class App:
                         return
                     if isinstance(result, FileResponse):
                         self._send_file(result)
+                    elif isinstance(result, TextResponse):
+                        self.send_response(200)
+                        self.send_header("Content-Type", result.content_type + "; charset=utf-8")
+                        self.send_header("Content-Length", str(len(result.data)))
+                        self.send_header("Cache-Control", "no-store")
+                        self.end_headers()
+                        self.wfile.write(result.data)
                     else:
                         self._send_json(200, result if result is not None else {"ok": True})
                     return

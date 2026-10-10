@@ -1,16 +1,17 @@
 """Assemble the Resume Studio server. Used by scripts/studio.py and by the tests."""
 from __future__ import annotations
 
+import json
 import os
 import webbrowser
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from core import dialogs
+from core import dialogs, i18n
 from core.chat import ChatRunner, ChatStore, claude_command
 from core.claude_info import ClaudeInfo
-from core.server import App, HttpError
+from core.server import App, HttpError, TextResponse
 from core.watcher import FileWatcher
 
 from . import api
@@ -51,6 +52,27 @@ def create_app(data_path: str | Path, *, window: bool = False, watch_interval: f
 
     app.route("GET", "/api/instance")(lambda req: {**identity, "window": window})
 
+    # ---- interface language: the computer's, unless the user picked one ----
+    prefs = i18n.Prefs(studio.store.state_dir)
+    i18n.set_lang(prefs.ui_lang())
+
+    @app.route("GET", "/i18n.js")
+    def i18n_js(req):
+        """Loaded before the page's scripts, so every string they build is already translated."""
+        lang = i18n.current()
+        data = {"lang": lang, "dict": i18n.catalog(lang), "chosen": prefs.load().get("ui_lang"),
+                "system": i18n.system_lang(), "langs": i18n.UI_LANGS}
+        return TextResponse("window.I18N = " + json.dumps(data, ensure_ascii=False) + ";\n", "application/javascript")
+
+    @app.route("PUT", "/api/prefs")
+    def set_prefs(req):
+        """ui_lang: a language code, or null to follow the computer again. The page reloads after."""
+        b = req.json() or {}
+        if "ui_lang" in b:
+            prefs.save(ui_lang=b["ui_lang"] if b["ui_lang"] in i18n.UI_LANGS else None)   # None drops the choice
+            i18n.set_lang(prefs.ui_lang())
+        return {"ui_lang": i18n.current(), "chosen": prefs.load().get("ui_lang")}
+
     @app.route("POST", "/api/focus")
     def focus(req):
         fn: Callable | None = inst.focus.get("fn")
@@ -80,7 +102,7 @@ def create_app(data_path: str | Path, *, window: bool = False, watch_interval: f
         try:
             paths = dialogs.pick(kind, b.get("initial"), inst.dialog.get("fn"))
         except Exception as e:  # noqa: BLE001
-            raise HttpError(500, f"打不开选择窗口：{e}")
+            raise HttpError(500, i18n.t("Can't open the file picker: {error}", error=e))
         return {"paths": paths}
 
     @app.route("GET", "/api/clipboard")

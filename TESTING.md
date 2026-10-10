@@ -15,6 +15,7 @@ report which ran and what they caught.
 | --- | --- | --- |
 | Data | `tests/test_store_model.py` | partial writes keep comments/style, conflicts, history, id renames, fact layer never reaches a view |
 | Rendering | `tests/test_render.py` | LaTeX escaping, every template × both languages is one page, hostile characters compile, overflow is detected, export; **per-bullet line counts** (every template), `--lang` renders, `''` hides a bullet in one language, and measuring is **pixel-identical** to a plain `\item` |
+| Languages | `tests/test_i18n.py` | every interface catalog (`web/i18n/*.json`) has every key with its placeholders and plural forms; `t()` and plurals; computer locale → interface and resume language; a new file starts in the computer's language (sections, ALL, new jobs); dates per language; adding a resume language fills the default section titles; switching the app language (`/api/prefs`, `/i18n.js`, API errors); Japanese, Korean, Russian and Greek resumes compile with fitting fonts |
 | Evidence | `tests/test_evidence.py` | git and plain-folder change detection (commits, uncommitted edits, vendor dirs ignored, missing paths), git runs read-only (`.git/index` untouched), folder picker endpoint, "update from project" sends the commits and marks the folder synced after Claude succeeds, project roots reach Claude |
 | API + chat | `tests/test_api_chat.py` | every route; chat is a resumed Claude Code session (`--resume`), no `--bare`/`--system-prompt`, runs in the data folder, user text passed untouched; Claude Code's own model / effort / command lists (`initialize`); per-chat model, effort and permission mode → `--model` / `--effort` / `--permission-mode`, unsafe values refused; permission cards (allow, always-allow changes the mode, deny with a reason), AskUserQuestion answers, plan approve / revise; messages typed while busy queue into the same process, a real `interrupt` on stop; images inline and files by path; fork at a message (`--fork-session --resume-session-at`); task list, context use, plan limits, `/context`; translate / fit / batch actions; errors |
 | UI (Edge) | `tests/e2e/test_ui.py` | load, autosave, external edits, conflicts, include/reorder, layout, templates, languages, entries, contacts, sections, versions, chat streaming + markdown + tools, polish diff + undo, export, overflow, pane resizing; **no native `<select>`, colour input or `title` tooltip anywhere**, custom dropdown by mouse and keyboard, right-click menu, colour picker, line chips + issues strip, writing / hiding the other language, project folder pick → sync → new commit → update; chat composer: model / effort / mode chips (number keys, Shift+Tab, custom model id, a new chat keeps the last choice), permission / question / plan cards, queue while busy, stop, task list, fork, `/` commands, pasted and picked attachments, context ring + plan limits; **fails on any console error or 404/500** |
@@ -24,6 +25,10 @@ Notes
   (control requests, permission prompts, interrupts, several messages per process).
   Tests cost no quota and are deterministic.
 - E2E drives the installed Microsoft Edge (`channel="msedge"`); no browser download.
+- The suite pins the interface to Chinese (`RESUME_STUDIO_LANG=zh-CN` in `conftest.py`) so it runs the
+  same on every computer; `test_i18n.py` covers the other languages.
+- After adding or changing interface text, run `python scripts/i18n_keys.py`: it lists keys that a
+  catalog lacks, stale ones, and translations whose `{placeholders}` don't match.
 - Everything temporary stays in the repo: `.cache/` (pytest temp, Edge profile, TMP) and
   `tests/artifacts/` (screenshots). Both are git-ignored.
 
@@ -73,3 +78,7 @@ copy of `examples/resume.sample.yaml` (never on real data):
 - [ ] model chip: the list matches Claude Code's own menu; Haiku greys out effort; `/context` answers without
       using quota; the context ring and 5-hour / weekly limits fill in after one reply
 - [ ] paste a screenshot (Ctrl+V) into the chat → Claude describes it
+- [ ] the gear in the top bar (or Ctrl+,) → App language → each language: the whole window switches after the reload,
+      nothing is cut off or overlaps (German and French run longest); "Follow the computer" goes back
+- [ ] add Deutsch as a resume language (the "+" after the language buttons above the preview) → the section titles appear in German, DE shows above the preview,
+      the German preview renders with German dates; remove it again → its text stays in resume.yaml

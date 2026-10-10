@@ -35,6 +35,10 @@ from typing import Any
 
 from .claude_info import EFFORTS, valid_model_id
 from .events import EventBus
+from .i18n import t
+
+# default titles a chat may still carry from older versions: still replaced by the first message
+UNTITLED = ("新对话", "New chat")
 
 # Pre-approved so the usual work (reading, rendering, git status) never stops for a card.
 # Edits are not listed: the permission mode decides them, like in the terminal.
@@ -100,10 +104,10 @@ class ChatStore:
     def meta(self, chat_id: str) -> dict | None:
         return next((c for c in self.list() if c["id"] == chat_id), None)
 
-    def create(self, title: str = "新对话", **fields: Any) -> dict:
+    def create(self, title: str | None = None, **fields: Any) -> dict:
         with self.lock:
             items = self.list()
-            chat = {"id": uuid.uuid4().hex[:10], "title": title, "session_id": None,
+            chat = {"id": uuid.uuid4().hex[:10], "title": title or t("New chat"), "session_id": None,
                     "model_choice": None, "effort": None, "mode": None,
                     "created": _now(), "updated": _now(), **fields}
             items.append(chat)
@@ -212,7 +216,7 @@ def user_content(text: str, images: list[dict]) -> Any:
     """The Messages API content for one user message: plain text, or text plus image blocks."""
     if not images:
         return text
-    blocks: list[dict] = [{"type": "text", "text": text or "（见图片）"}]
+    blocks: list[dict] = [{"type": "text", "text": text or t("(see image)")}]
     for im in images:
         blocks.append({"type": "image", "source": {"type": "base64", "media_type": im["media_type"],
                                                    "data": base64.b64encode(Path(im["path"]).read_bytes()).decode()}})
@@ -269,7 +273,7 @@ class ChatRunner:
             turn = self.turns.get(chat_id)
         if turn:
             if on_done or (meta or {}).get("action") or turn.cancelled or turn.closed:
-                raise RuntimeError("这段对话还在回复中，请稍等或先停止。")
+                raise RuntimeError(t("This chat is still replying; wait or stop it first."))
             item = {"id": uuid.uuid4().hex[:8], "msg": msg, "prompt": text, "images": images}
             turn.queue.append(item)
             self._emit("chat.queue", chat_id, queue=turn.queue)
@@ -277,9 +281,9 @@ class ChatRunner:
 
         prefix = claude_command()
         if not prefix:
-            raise RuntimeError("找不到 claude 命令。请先安装并登录 Claude Code。")
+            raise RuntimeError(t("The claude command was not found. Install Claude Code and sign in first."))
         self.store.append(chat_id, msg)
-        if chat.get("title") in (None, "", "新对话"):
+        if chat.get("title") in (None, "", *UNTITLED, t("New chat")):
             self.store.update_meta(chat_id, title=_title_from(text))
         else:
             self.store.update_meta(chat_id)
@@ -338,7 +342,7 @@ class ChatRunner:
         if kind == "question":
             answers = {str(k): str(v) for k, v in (decision.get("answers") or {}).items()}
             if decision.get("skip"):
-                resp = {"behavior": "deny", "message": "用户没有回答这个问题，跳过了。"}
+                resp = {"behavior": "deny", "message": "The user skipped this question without answering."}
                 ask["status"] = "denied"
             else:
                 resp = {"behavior": "allow", "updatedInput": {**inp, "answers": answers}}
@@ -351,7 +355,7 @@ class ChatRunner:
                 ask["status"], ask["mode"] = "approved", new_mode
             else:
                 feedback = str(decision.get("feedback") or "").strip()
-                resp = {"behavior": "deny", "message": "用户希望继续完善计划，暂不执行。" + (f"用户的意见：{feedback}" if feedback else "")}
+                resp = {"behavior": "deny", "message": "The user wants to keep refining the plan; don't carry it out yet." + (f" Their feedback: {feedback}" if feedback else "")}
                 ask["status"], ask["feedback"] = "revise", feedback
         else:
             if decision.get("allow"):
@@ -366,7 +370,7 @@ class ChatRunner:
                 ask["status"] = "allowed"
             else:
                 msg = str(decision.get("message") or "").strip()
-                resp = {"behavior": "deny", "message": msg or "用户拒绝了这个操作。"}
+                resp = {"behavior": "deny", "message": msg or "The user declined this action."}
                 ask["status"] = "denied"
         turn.write({"type": "control_response", "response": {"subtype": "success", "request_id": request_id, "response": resp}})
         if new_mode and new_mode in MODES:   # the next reply keeps the mode the user just chose
@@ -449,9 +453,9 @@ class ChatRunner:
             time.sleep(0.05)
             err_text = b"".join(stderr_chunks).decode("utf-8", errors="replace").strip()
             if code != 0 and not turn.error and not turn.cancelled and not turn.flushed_any:
-                turn.error = err_text or f"claude 退出码 {code}"
+                turn.error = err_text or t("claude exited with code {code}", code=code)
         except OSError as e:
-            turn.error = f"启动 claude 失败：{e}"
+            turn.error = t("Couldn't start claude: {error}", error=e)
         finally:
             self._finish(turn, cost)
 
@@ -514,7 +518,7 @@ class ChatRunner:
         rid = msg.get("request_id")
         if req.get("subtype") != "can_use_tool":
             turn.write({"type": "control_response", "response": {"subtype": "error", "request_id": rid,
-                                                                 "error": f"Resume Studio 不支持 {req.get('subtype')}"}})
+                                                                 "error": f"Resume Studio does not support {req.get('subtype')}"}})
             return
         name = req.get("tool_name") or ""
         kind = "question" if name == "AskUserQuestion" else "plan" if name == "ExitPlanMode" else "permission"
@@ -565,7 +569,7 @@ class ChatRunner:
                 self.store.update_meta(turn.chat_id, touch=False, **fields)
                 self._emit("chat.init", turn.chat_id, model=msg.get("model"), mode=msg.get("permissionMode"))
             elif sub == "compact_boundary":
-                self._block(turn, {"type": "note", "text": "上下文已压缩"})
+                self._block(turn, {"type": "note", "text": t("Context compacted")})
                 # the stream only reports the size before compacting; the new size arrives with the next reply
                 turn.usage = {**(turn.usage or {}), "used": None, "compacted": True}
             elif sub == "thinking_tokens":
@@ -643,7 +647,7 @@ class ChatRunner:
                 turn.usage = {**(turn.usage or {}), "window": mu["contextWindow"]}
             error = None
             if msg.get("is_error") or msg.get("subtype", "success") not in ("success", None):
-                error = msg.get("result") or "Claude 报告了错误"
+                error = msg.get("result") or t("Claude reported an error")
                 if turn.cancelled:
                     error = None
             return {"error": error, "cost": msg.get("total_cost_usd")}
@@ -652,7 +656,7 @@ class ChatRunner:
 
 def _title_from(text: str) -> str:
     line = " ".join(text.strip().split())
-    return (line[:28] + "…") if len(line) > 28 else (line or "新对话")
+    return (line[:28] + "…") if len(line) > 28 else (line or t("New chat"))
 
 
 def _tool_hint(name: str | None, inp: dict) -> str:

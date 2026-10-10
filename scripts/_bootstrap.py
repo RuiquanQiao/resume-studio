@@ -42,7 +42,17 @@ def in_venv() -> bool:
 
 REQUIREMENTS = ROOT / "requirements.txt"
 STAMP = VENV / ".installed"      # holds the hash of requirements.txt the venv was built from
-SETUP_MESSAGE = "首次运行：正在创建独立环境并安装依赖（只装在 Skill 目录里，约 1 分钟）…"
+
+
+def _t(text: str, **kw) -> str:
+    """Before the venv exists: core.i18n is plain standard library, so it works here too."""
+    from core import i18n
+    return i18n.t(text, ui=i18n.system_lang(), **kw)
+
+
+def setup_message() -> str:
+    return _t("First run: creating a private environment and installing dependencies "
+              "(only inside the skill folder, about a minute)…")
 
 
 def venv_ready() -> bool:
@@ -64,7 +74,7 @@ def _install() -> None:
     proc = subprocess.run([str(venv_python()), "-m", "pip", "install", "-q", "-r", str(REQUIREMENTS)],
                           env=env, capture_output=True, text=True, **quiet)
     if proc.returncode:
-        raise RuntimeError("依赖安装失败：\n" + (proc.stderr or proc.stdout)[-2000:])
+        raise RuntimeError(_t("Installing dependencies failed:") + "\n" + (proc.stderr or proc.stdout)[-2000:])
     STAMP.write_text(_requirements_hash(), encoding="utf-8")
 
 
@@ -73,7 +83,7 @@ def ensure_venv(windowed: bool = False) -> None:
     if venv_ready():
         return
     if not windowed:
-        print(SETUP_MESSAGE)
+        print(setup_message())
         _install()
         return
     _install_with_splash()
@@ -90,7 +100,7 @@ def _install_with_splash() -> None:
     root.title("Resume Studio")
     root.resizable(False, False)
     root.attributes("-topmost", True)
-    tk.Label(root, text=SETUP_MESSAGE, padx=28, pady=22, wraplength=360, justify="left").pack()
+    tk.Label(root, text=setup_message(), padx=28, pady=22, wraplength=360, justify="left").pack()
     root.update_idletasks()
     x = (root.winfo_screenwidth() - root.winfo_width()) // 2
     y = (root.winfo_screenheight() - root.winfo_height()) // 3

@@ -5,7 +5,11 @@
 
 // ================================================================ helpers
 const clone = (x) => JSON.parse(JSON.stringify(x ?? null));
-const LANG_NAMES = { en: "EN", zh: "中文" };
+// resume languages (S.resume_langs from resume/langs.py): a code's own name, and a short form for toggles
+const SHORT_LANG = { en: "EN", zh: "中文", "zh-TW": "繁中", ja: "日本語", ko: "한국어" };
+const langInfo = (code) => ((S && S.resume_langs) || []).find((l) => l.code === code) || { code, name: code, cjk: false };
+const langName = (code) => langInfo(code).name;
+const langShort = (code) => SHORT_LANG[code] || String(code).toUpperCase();
 
 // h(), icon(), $ and the custom controls live in ui.js
 
@@ -26,12 +30,12 @@ async function api(method, url, body) {
 }
 
 function toast(msg, { ms = 2800, action = null } = {}) {
-  const t = $("#toast");
-  t.replaceChildren(h("span", null, msg));
-  if (action) t.append(h("button", { class: "btn sm", onclick: () => { t.classList.remove("show"); action.fn(); } }, action.label));
-  t.classList.add("show");
+  const el = $("#toast");
+  el.replaceChildren(h("span", null, msg));
+  if (action) el.append(h("button", { class: "btn sm", onclick: () => { el.classList.remove("show"); action.fn(); } }, action.label));
+  el.classList.add("show");
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.remove("show"), ms);
+  toast._t = setTimeout(() => el.classList.remove("show"), ms);
 }
 
 function store(key, val) {
@@ -44,7 +48,7 @@ function store(key, val) {
 }
 
 // promise-based dialogs (prettier than prompt/confirm and they work in every webview)
-function modal({ title, message = "", input = null, placeholder = "", ok = "确定", danger = false }) {
+function modal({ title, message = "", input = null, placeholder = "", ok = t("OK"), danger = false }) {
   return new Promise((resolve) => {
     const root = $("#modal-root");
     const field = input !== null ? h("input", { value: input, placeholder, spellcheck: "false" }) : null;
@@ -59,7 +63,7 @@ function modal({ title, message = "", input = null, placeholder = "", ok = "确�
       h("div", { class: "modal", role: "dialog", "aria-modal": "true" },
         h("h3", null, title), message && h("p", null, message), field,
         h("div", { class: "acts" },
-          h("button", { class: "btn", onclick: () => close(field ? null : false) }, "取消"),
+          h("button", { class: "btn", onclick: () => close(field ? null : false) }, t("Cancel")),
           h("button", { class: "btn " + (danger ? "danger-soft" : "primary"), onclick: done }, ok)))));
     setTimeout(() => (field || $(".modal .btn:last-child", root)).focus(), 0);
     if (field) field.select();
@@ -158,14 +162,14 @@ const versions = () => doc().versions || [];
 const version = () => versions().find((v) => v.id === ui.versionId) || null;
 const ALL = "ALL";
 const isAll = () => ui.versionId === ALL;
-const jobName = (v) => (v && v.id === ALL ? "全部经历" : (v && (v.label || v.id)) || "");
+const jobName = (v) => (v && v.id === ALL ? t("All entries") : (v && (v.label || v.id)) || "");
 const entryById = (id) => entries().find((e) => e.id === id) || null;
 // what people see: the entry's number inside its own section (library order); ids stay internal
 function localNo(e) { return entries().filter((x) => x.section === e.section).findIndex((x) => x.id === e.id) + 1; }
 function entryLabel(e) {
   if (!e) return "";
   const sec = sectionById(e.section);
-  return `${(sec && display(sec.title)) || e.section || "未归类"} #${localNo(e)}`;
+  return `${(sec && display(sec.title)) || e.section || t("Unsorted")} #${localNo(e)}`;
 }
 const sectionById = (id) => sections().find((s) => s.id === id) || null;
 // a copy of `list` with the item at `from` taken out and put back at `to`
@@ -187,7 +191,7 @@ function currentItem(kind, id) {
   return doc()[kind];
 }
 
-// Any text value is a plain string (all languages) or a map {en: "...", zh: "..."}.
+// Any text value is a plain string (all languages) or a map {en: "...", de: "..."}.
 function getT(v, lang) { return v && typeof v === "object" ? v[lang] ?? "" : v ?? ""; }
 function isNeutral(v) { return !(v && typeof v === "object"); }
 function setT(old, lang, val) {
@@ -205,7 +209,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 function shortDate(v) {
   const s = display(v).trim();
   if (!s) return "";
-  if (/^(present|now|至今)$/i.test(s)) return "至今";
+  if (/^(present|now|current|至今)$/i.test(s)) return t("now");
   const m = s.match(/^(\d{4})-(\d{1,2})/);
   return m ? `${m[1]}.${String(m[2]).padStart(2, "0")}` : s;
 }
@@ -227,7 +231,7 @@ async function refresh() {
 function applyState(s) {
   S = s;
   $("#datapath").textContent = s.data_path;
-  setTip($("#datapath"), "数据文件：" + s.data_path);
+  setTip($("#datapath"), t("Data file: {path}", { path: s.data_path }));
   if (!versions().some((v) => v.id === ui.versionId)) {
     const saved = store("version");
     ui.versionId = versions().some((v) => v.id === saved) ? saved : ALL;
@@ -258,7 +262,7 @@ function syncEditor() {
 function touch() {
   ui.dirty = true;
   ui.editSeq++;
-  setSaveStatus("未保存");
+  setSaveStatus(t("Unsaved"));
   clearTimeout(ui.saveTimer);
   ui.saveTimer = setTimeout(saveDraft, 550);
 }
@@ -275,7 +279,7 @@ async function saveDraft(force = false) {
   const { kind, id } = ui.sel;
   const seq = ui.editSeq;
   ui.saving = true;
-  setSaveStatus("保存中…");
+  setSaveStatus(t("Saving…"));
   try {
     const s = await api("PUT", "/api/item", { kind, id, data: ui.draft, base: force ? null : ui.formBase });
     if (kind === "entry" || kind === "version") ui.sel.id = ui.draft.id;
@@ -283,15 +287,15 @@ async function saveDraft(force = false) {
     applyState(s);
     ui.formBase = itemHash(ui.sel.kind, ui.sel.id);
     if (ui.conflict) { ui.conflict = null; buildEditorKeepDraft(); }
-    if (ui.editSeq === seq) { ui.dirty = false; setSaveStatus("已保存"); }
+    if (ui.editSeq === seq) { ui.dirty = false; setSaveStatus(t("Saved")); }
     else ui.saveTimer = setTimeout(saveDraft, 300);
     scheduleRender();
   } catch (e) {
     if (e.status === 409) {
       ui.conflict = { current: e.data && e.data.current };
       buildEditorKeepDraft();
-      setSaveStatus("有冲突", true);
-    } else setSaveStatus("保存失败：" + e.message, true);
+      setSaveStatus(t("Conflict"), true);
+    } else setSaveStatus(t("Save failed: {error}", { error: e.message }), true);
   } finally {
     ui.saving = false;
     if (ui.refreshAfterSave) { ui.refreshAfterSave = false; refresh(); }
@@ -301,7 +305,7 @@ async function saveDraft(force = false) {
 // version tweaks from the sidebar / preview toolbar: re-read, apply, retry once on conflict
 async function mutateVersion(fn) {
   for (let attempt = 0; attempt < 2; attempt++) {
-    const v = clone(version() || (isAll() ? { id: ALL, label: "全部经历", lang: "en", template: "classic", headline: "", layout: {} } : null));
+    const v = clone(version() || (isAll() ? { id: ALL, label: "All entries", lang: langs()[0], template: "classic", headline: "", layout: {} } : null));
     if (!v) return;   // ALL may not be in the file yet; the server adds it on first save
     fn(v);
     try {
@@ -311,7 +315,7 @@ async function mutateVersion(fn) {
       scheduleRender(200);
       return;
     } catch (e) {
-      if (e.status !== 409 || attempt) { toast("保存失败：" + e.message); return; }
+      if (e.status !== 409 || attempt) { toast(t("Save failed: {error}", { error: e.message })); return; }
       applyState(await api("GET", "/api/state"));
     }
   }
@@ -322,9 +326,10 @@ const TEMPLATE_NAMES = (id) => ((S.templates || []).find((t) => t.id === id) || 
 
 function renderTopbar() {
   const jobs = versions().filter((v) => v.id !== ALL);
-  const opts = [{ value: ALL, label: "ALL · 全部经历", short: "ALL · 全部经历", desc: "经历库全集，不限一页" }];
-  for (const v of jobs) opts.push({ value: v.id, label: v.label || v.id, group: "岗位", hint: `${LANG_NAMES[v.lang] || v.lang} · ${TEMPLATE_NAMES(v.template)}` });
-  if (!jobs.length) opts.push({ value: "__none", label: "还没有岗位", desc: "点右边的 ··· 新建一个", group: "岗位", disabled: true });
+  const all = `ALL · ${t("All entries")}`;
+  const opts = [{ value: ALL, label: all, short: all, desc: t("The whole library, not limited to one page") }];
+  for (const v of jobs) opts.push({ value: v.id, label: v.label || v.id, group: t("Jobs"), hint: `${langShort(v.lang)} · ${TEMPLATE_NAMES(v.template)}` });
+  if (!jobs.length) opts.push({ value: "__none", label: t("No jobs yet"), desc: t("Click ··· on the right to create one"), group: t("Jobs"), disabled: true });
   ui.w.version.setOptions(opts, ui.versionId);
 }
 
@@ -336,21 +341,20 @@ function openVersionMenu() {
   const lacking = (l) => inV.filter((e) => missingIn(e, l)).length;
   const long = longBullets().length;
   openMenu($("#version-menu-btn"), [
-    v && { label: job ? "岗位设置" : "ALL 设置", hint: job ? "名称、求职方向、板块" : "求职方向、板块顺序", icon: "settings", onClick: () => select("version", ui.versionId) },
-    { label: "新建岗位", hint: "空白，自己勾选", icon: "plus", onClick: () => newVersion(null) },
-    v && { label: job ? "复制当前岗位" : "新建岗位（先勾上全部经历）", icon: "copy", onClick: () => newVersion(ui.versionId) },
+    v && { label: job ? t("Job settings") : t("ALL settings"), hint: job ? t("Name, headline, sections") : t("Headline, section order"), icon: "settings", onClick: () => select("version", ui.versionId) },
+    { label: t("New job"), hint: t("Blank, tick entries yourself"), icon: "plus", onClick: () => newVersion(null) },
+    v && { label: job ? t("Duplicate this job") : t("New job (with every entry ticked)"), icon: "copy", onClick: () => newVersion(ui.versionId) },
     "sep",
-    { header: `让 Claude 处理${job ? "这个岗位" : "全部经历"}` },
-    bilingual && { label: "补齐中文版", hint: lacking("zh") ? `${lacking("zh")} 条缺中文` : "都有了", icon: "translate", disabled: !ui.chat.available || !lacking("zh"),
-      onClick: () => aiBatch("batch_translate", { target: "zh" }) },
-    bilingual && { label: "补齐英文版", hint: lacking("en") ? `${lacking("en")} 条缺英文` : "都有了", icon: "translate", disabled: !ui.chat.available || !lacking("en"),
-      onClick: () => aiBatch("batch_translate", { target: "en" }) },
-    { label: "把超过一行的要点压成一行", hint: long ? `${long} 条` : "都是一行", icon: "compress", disabled: !ui.chat.available || !long,
+    { header: job ? t("Ask Claude about this job") : t("Ask Claude about all entries") },
+    ...(bilingual ? langs().map((l) => ({ label: t("Fill in the {lang} version", { lang: langName(l) }),
+      hint: lacking(l) ? t("{n} entry lacks it", { n: lacking(l) }, "{n} entries lack it") : t("All done"), icon: "translate", disabled: !ui.chat.available || !lacking(l),
+      onClick: () => aiBatch("batch_translate", { target: l }) })) : []),
+    { label: t("Fit bullets that run past one line"), hint: long ? t("{n} bullet", { n: long }, "{n} bullets") : t("All on one line"), icon: "compress", disabled: !ui.chat.available || !long,
       onClick: () => aiBatch("batch_fit") },
     "sep",
-    { label: "打开导出文件夹", icon: "folder", onClick: revealExports },
+    { label: t("Open the export folder"), icon: "folder", onClick: revealExports },
     job && "sep",
-    job && { label: "删除当前岗位", icon: "trash", danger: true, onClick: deleteVersion },
+    job && { label: t("Delete this job"), icon: "trash", danger: true, onClick: deleteVersion },
   ], { align: "start", focusFirst: false });
 }
 
@@ -373,21 +377,21 @@ async function switchVersion(id) {
 async function newVersion(copyFrom) {
   const fromAll = copyFrom === ALL;
   const label = await modal({
-    title: copyFrom && !fromAll ? "复制岗位" : "新建岗位",
-    message: fromAll ? "先勾上全部经历，再去掉这个岗位用不上的。" : copyFrom ? "复制当前岗位的经历选择、求职方向和版面。" : "从空白开始，在左侧勾选要放进这个岗位的经历。",
-    input: copyFrom && !fromAll ? `${jobName(version())}（副本）` : "", placeholder: "岗位名称，比如：AI Agent 工程师", ok: "创建",
+    title: copyFrom && !fromAll ? t("Duplicate job") : t("New job"),
+    message: fromAll ? t("Every entry starts ticked; untick the ones this job doesn't need.") : copyFrom ? t("Copies this job's entries, headline and layout.") : t("Starts blank; tick the entries for this job in the library on the left."),
+    input: copyFrom && !fromAll ? t("{name} (copy)", { name: jobName(version()) }) : "", placeholder: t("Job name, e.g. AI Agent Engineer"), ok: t("Create"),
   });
   if (!label || !label.trim()) return;
   try {
     const r = await api("POST", "/api/versions", { label: label.trim(), copy_from: copyFrom });
     applyState(r);
     switchVersion(r.id);
-    toast(`已创建岗位「${label.trim()}」${fromAll || copyFrom ? "" : "，在左侧勾选要放进去的经历"}`);
+    toast(fromAll || copyFrom ? t("Created the job “{name}”", { name: label.trim() }) : t("Created the job “{name}”; tick its entries on the left", { name: label.trim() }));
   } catch (e) { toast(e.message); }
 }
 
 async function deleteVersion() {
-  if (!(await modal({ title: `删除岗位「${jobName(version())}」？`, message: "只删除这个岗位的配置（选了哪些经历、求职方向、模板和版面），经历库本身不受影响。", ok: "删除", danger: true }))) return;
+  if (!(await modal({ title: t("Delete the job “{name}”?", { name: jobName(version()) }), message: t("Only this job's setup goes (which entries, headline, template and layout); the library itself is untouched."), ok: t("Delete"), danger: true }))) return;
   applyState(await api("DELETE", "/api/versions/" + encodeURIComponent(ui.versionId)));
   ui.versionId = null;
   applyState(S);
@@ -399,7 +403,7 @@ async function deleteVersion() {
 async function revealExports() {
   const dir = S.data_path.replace(/[\\/][^\\/]+$/, "") + "/" + ((doc().settings || {}).export_dir || "exports");
   const r = await api("POST", "/api/reveal", { path: dir }).catch(() => ({}));
-  if (!r.ok) toast("还没有导出过，导出一次后就能打开这个文件夹");
+  if (!r.ok) toast(t("Nothing exported yet; export once and this folder opens"));
 }
 
 // ================================================================ left: library
@@ -418,21 +422,21 @@ function renderLibrary() {
   lib.replaceChildren();
   const v = version();
   const nav = (kind, label, ic) => h("button", { class: "nav-row" + (ui.sel.kind === kind ? " on" : ""), onclick: () => select(kind) }, icon(ic), label);
-  lib.append(nav("profile", "个人信息", "user"), nav("sections", "板块与设置", "grid"));
+  lib.append(nav("profile", t("Profile"), "user"), nav("sections", t("Sections & resume settings"), "grid"));
   const job = v && v.id !== ALL;
   lib.append(h("div", { class: "lib-hint" + (job ? " job" : "") }, job
-    ? [h("b", null, jobName(v)), "：勾选 = 放进这个岗位的简历"]
-    : [h("b", null, "ALL"), "：全部经历都在这里。新建岗位后，从中勾选一部分"]));
+    ? [h("b", null, jobName(v)), ": " + t("tick = on this job's resume")]
+    : [h("b", null, "ALL"), ": " + t("every entry lives here. Create a job, then tick the ones it needs")]));
   const changed = entries().filter((e) => (ui.evidence[e.id] || {}).state === "changed");
   if (changed.length) {
     lib.append(h("div", { class: "lib-update" },
       icon("refresh"),
       h("span", { class: "lu-text" }, changed.length === 1
-        ? ["「", display(changed[0].title) || entryLabel(changed[0]), "」的项目有新进展"]
-        : `${changed.length} 个项目自上次同步后有新进展`),
+        ? t("“{name}” has new progress", { name: display(changed[0].title) || entryLabel(changed[0]) })
+        : t("{n} project has new progress since the last sync", { n: changed.length }, "{n} projects have new progress since the last sync")),
       changed.length === 1
-        ? h("button", { class: "btn sm", onclick: () => select("entry", changed[0].id) }, "查看")
-        : h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => aiBatch("batch_sync") }, icon("sparkle"), "逐个更新")));
+        ? h("button", { class: "btn sm", onclick: () => select("entry", changed[0].id) }, t("View"))
+        : h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => aiBatch("batch_sync") }, icon("sparkle"), t("Update one by one"))));
   }
 
   const included = new Set(job ? v.entries || [] : entries().map((e) => e.id));
@@ -444,19 +448,19 @@ function renderLibrary() {
     lib.append(h("div", { class: "lib-section" },
       h("div", { class: "lib-head" },
         h("span", null, h("span", { class: "t" }, display(sec.title) || sec.id), mine.length ? h("span", { class: "n" }, job ? `${inV.length}/${mine.length}` : mine.length) : null),
-        h("button", { class: "btn icon sm ghost", title: `在「${display(sec.title) || sec.id}」新增一条`, onclick: () => newEntry(sec.id) }, icon("plus"))),
+        h("button", { class: "btn icon sm ghost", title: t("Add an entry to “{section}”", { section: display(sec.title) || sec.id }), onclick: () => newEntry(sec.id) }, icon("plus"))),
       [...inV, ...outV].map((e, i) => entryRow(e, included.has(e.id), i, inV.length, job))));
   }
   const orphans = entries().filter((e) => !sectionById(e.section));
-  if (orphans.length) lib.append(h("div", { class: "lib-section" }, h("div", { class: "lib-head" }, h("span", { class: "t" }, "未归类")), orphans.map((e) => entryRow(e, included.has(e.id), 0, 0, job))));
+  if (orphans.length) lib.append(h("div", { class: "lib-section" }, h("div", { class: "lib-head" }, h("span", { class: "t" }, t("Unsorted"))), orphans.map((e) => entryRow(e, included.has(e.id), 0, 0, job))));
 
   if (!entries().length) {
     lib.append(h("div", { class: "empty" },
-      h("div", { class: "t" }, "经历库还是空的"),
-      h("div", null, "把全部真实经历都放进来，导出时再挑。"),
+      h("div", { class: "t" }, t("The library is empty")),
+      h("div", null, t("Put every real experience here; pick for each resume later.")),
       h("div", { class: "acts" },
-        h("button", { class: "btn primary sm", onclick: () => newEntry((sections().find((s) => s.id === "projects") || sections()[0] || {}).id || "projects") }, icon("plus"), "新增经历"),
-        h("button", { class: "btn sm", onclick: () => startChatWith("请帮我把旧简历里的经历导入到 resume.yaml。旧简历在：") }, icon("sparkle"), "让 Claude 导入"))));
+        h("button", { class: "btn primary sm", onclick: () => newEntry((sections().find((s) => s.id === "projects") || sections()[0] || {}).id || "projects") }, icon("plus"), t("Add entry")),
+        h("button", { class: "btn sm", onclick: () => startChatWith(t("Please import the experience from my old resume into resume.yaml. The old resume is at: ")) }, icon("sparkle"), t("Let Claude import")))));
   }
   if (S.warnings && S.warnings.length) lib.append(h("div", { class: "warnings" }, S.warnings.map((w) => h("div", null, w))));
   lib.scrollTop = scroll;
@@ -470,19 +474,19 @@ function entryRow(e, isIn, idx, nIn, hasVersion) {
   return h("div", { class: "entry" + (isIn ? "" : " out") + (active ? " on" : ""), "data-id": e.id, onclick: () => select("entry", e.id) },
     hasVersion && h("button", {
       class: "check" + (isIn ? " on" : ""), role: "checkbox", "aria-checked": String(isIn),
-      title: isIn ? "从这个岗位移除" : "放进这个岗位",
+      title: isIn ? t("Remove from this job") : t("Add to this job"),
       onclick: (ev) => { ev.stopPropagation(); toggleInclude(e.id, !isIn); },
     }),
     h("span", { class: "e-no" }, localNo(e)),
     h("span", { class: "e-main" },
-      h("span", { class: "e-title" }, display(e.title) || "（未命名）",
-        ev === "changed" && h("span", { class: "e-dot", title: "项目文件夹自上次同步后有更新" }),
-        ev === "missing" && h("span", { class: "e-dot bad", title: "找不到证据文件夹" })),
+      h("span", { class: "e-title" }, display(e.title) || t("(untitled)"),
+        ev === "changed" && h("span", { class: "e-dot", title: t("The project folder changed since the last sync") }),
+        ev === "missing" && h("span", { class: "e-dot bad", title: t("The evidence folder can't be found") })),
       (meta || gaps.length > 0) && h("span", { class: "e-meta" }, meta,
-        gaps.map((l) => h("span", { class: "e-gap", title: `有些文字还没有${l === "zh" ? "中文" : "英文"}，${l === "zh" ? "中文" : "英文"}简历里会暂时显示另一种语言` }, `缺${l === "zh" ? "中文" : "英文"}`)))),
+        gaps.map((l) => h("span", { class: "e-gap", title: t("Some text has no {lang} yet; the {lang} resume shows another language there for now", { lang: langName(l) }) }, t("No {lang}", { lang: langShort(l) }))))),
     isIn && h("span", { class: "e-tools" },
-      h("button", { class: "btn icon sm ghost", title: "上移", disabled: idx === 0, onclick: (ev) => { ev.stopPropagation(); hasVersion ? moveInVersion(e.id, -1) : moveInLibrary(e.id, -1); } }, icon("up")),
-      h("button", { class: "btn icon sm ghost", title: "下移", disabled: idx >= nIn - 1, onclick: (ev) => { ev.stopPropagation(); hasVersion ? moveInVersion(e.id, 1) : moveInLibrary(e.id, 1); } }, icon("down"))));
+      h("button", { class: "btn icon sm ghost", title: t("Move up"), disabled: idx === 0, onclick: (ev) => { ev.stopPropagation(); hasVersion ? moveInVersion(e.id, -1) : moveInLibrary(e.id, -1); } }, icon("up")),
+      h("button", { class: "btn icon sm ghost", title: t("Move down"), disabled: idx >= nIn - 1, onclick: (ev) => { ev.stopPropagation(); hasVersion ? moveInVersion(e.id, 1) : moveInLibrary(e.id, 1); } }, icon("down"))));
 }
 
 function toggleInclude(id, on) {
@@ -508,7 +512,7 @@ function moveInVersion(id, dir) {
 // in ALL, the arrows reorder the library itself
 async function moveInLibrary(id, dir) {
   try { applyState(await api("POST", `/api/entries/${encodeURIComponent(id)}/move`, { dir })); scheduleRender(200); }
-  catch (e) { toast("移动失败：" + e.message); }
+  catch (e) { toast(t("Couldn't move it: {error}", { error: e.message })); }
 }
 
 async function newEntry(section) {
@@ -552,7 +556,7 @@ function paintEditor({ flash = false, keepScroll = true } = {}) {
   const scroll = mid.scrollTop;
   const wrap = h("div", { class: "editor" });
   if (ui.conflict) wrap.append(conflictBanner());
-  if (ui.draft == null && ui.sel.kind !== "sections") wrap.append(h("p", { class: "muted" }, "没有内容。"));
+  if (ui.draft == null && ui.sel.kind !== "sections") wrap.append(h("p", { class: "muted" }, t("Nothing here.")));
   else wrap.append(...[BUILDERS()[ui.sel.kind]()].flat(Infinity).filter(Boolean));
   mid.replaceChildren(wrap);
   if (keepScroll) mid.scrollTop = scroll;
@@ -561,20 +565,20 @@ function paintEditor({ flash = false, keepScroll = true } = {}) {
 
 function conflictBanner() {
   return h("div", { class: "banner warn" }, icon("alert"),
-    h("span", { style: "flex:1" }, "这一项刚被 Claude 或另一个窗口改过，而你这里还有没保存的修改。"),
-    h("button", { class: "btn sm", onclick: () => { ui.conflict = null; ui.dirty = false; buildEditor({ flash: true }); } }, "载入最新版本"),
-    h("button", { class: "btn sm danger-soft", onclick: () => saveDraft(true) }, "用我的覆盖"));
+    h("span", { style: "flex:1" }, t("Claude or another window just changed this item, and you have unsaved edits here.")),
+    h("button", { class: "btn sm", onclick: () => { ui.conflict = null; ui.dirty = false; buildEditor({ flash: true }); } }, t("Load the latest")),
+    h("button", { class: "btn sm danger-soft", onclick: () => saveDraft(true) }, t("Keep mine")));
 }
 
 function langSwitch() {
   if (langs().length <= 1) return null;
-  return h("div", { class: "seg", title: "编辑哪种语言的文字（右侧预览的语言在预览上方切换）" }, langs().map((l) =>
+  return h("div", { class: "seg", title: t("Which language you are editing (the preview's language is switched above the preview)") }, langs().map((l) =>
     h("button", { class: l === ui.editLang ? "on" : "", "aria-pressed": String(l === ui.editLang), onclick: () => {
       if (l === ui.editLang) return;
       ui.editLang = l;
       buildEditorKeepDraft();
       if (ui.linesFor[l] !== ui.versionId && !ui.render.busy) measureEditLang(ui.versionId);
-    } }, LANG_NAMES[l] || l)));
+    } }, langShort(l))));
 }
 
 function card(title, sub, body, { cls = "", actions = null } = {}) {
@@ -591,7 +595,7 @@ function tfield(label, obj, key, { i18n = false, multiline = false, placeholder 
   const input = multiline ? h("textarea", { ...attrs, rows }, val) : h("input", { ...attrs, value: val });
   const neutral = i18n && langs().length > 1 && isNeutral(obj[key]) && obj[key];
   const tag = i18n && langs().length > 1
-    ? h("span", { class: "lang-tag" + (neutral ? " neutral" : ""), title: neutral ? "目前各语言共用这段文字；修改后会按语言分开保存" : "" }, neutral ? "通用" : LANG_NAMES[ui.editLang])
+    ? h("span", { class: "lang-tag" + (neutral ? " neutral" : ""), title: neutral ? t("Every language shares this text for now; once edited, each language keeps its own") : "" }, neutral ? t("Shared") : langShort(ui.editLang))
     : null;
   return h("div", { class: "field" }, h("label", null, label, tag, hint && h("span", { class: "hint" }, hint)), input);
 }
@@ -608,51 +612,50 @@ function entryForm() {
   const ai = ui.ai[e.id];
   if (ai && ai.done) out.push(aiDiff(e.id));
 
-  out.push(h("div", { class: "ed-head" }, h("h1", null, display(e.title) || "（未命名）"), h("span", { class: "id" }, entryLabel(entryById(e.id) || e)), h("span", { class: "spacer" }), langSwitch()));
+  out.push(h("div", { class: "ed-head" }, h("h1", null, display(e.title) || t("(untitled)")), h("span", { class: "id" }, entryLabel(entryById(e.id) || e)), h("span", { class: "spacer" }), langSwitch()));
 
   const secSel = uiSelect({
-    options: sections().map((s) => ({ value: s.id, label: display(s.title) || s.id, hint: s.kind === "list" ? "列表" : "时间线" })),
-    value: e.section, cls: "field-select", label: "板块",
+    options: sections().map((s) => ({ value: s.id, label: display(s.title) || s.id, hint: s.kind === "list" ? t("List") : t("Timeline") })),
+    value: e.section, cls: "field-select", label: t("Section"),
     onChange: (v) => { e.section = v; touch(); buildEditorKeepDraft(); },
   });
   secSel.el.setAttribute("data-key", "section");
   const basics = [
-    h("div", { class: "field" }, h("label", null, "板块"), secSel.el),
-    tfield(isList ? "类别名" : "名称", e, "title", { i18n: true, placeholder: isList ? "比如：编程语言" : "公司 / 学校 / 项目名" }),
+    h("div", { class: "field" }, h("label", null, t("Section")), secSel.el),
+    tfield(isList ? t("Category") : t("Name"), e, "title", { i18n: true, placeholder: isList ? t("e.g. Programming languages") : t("Company / school / project") }),
   ];
   if (!isList) {
     basics.push(
-      h("div", { class: "grid2" }, tfield("副标题", e, "subtitle", { i18n: true, placeholder: "职位 / 学位 / 角色" }), tfield("地点", e, "location", { i18n: true })),
-      h("div", { class: "grid3" }, tfield("开始", e, "start", { placeholder: "2025-07" }), tfield("结束", e, "end", { placeholder: "2026-02 或 present" }),
-        tfield("自定义日期", e, "date", { i18n: true, hint: "可选，覆盖左边" })),
-      tfield("链接", e, "link", { placeholder: "https://…" }));
+      h("div", { class: "grid2" }, tfield(t("Subtitle"), e, "subtitle", { i18n: true, placeholder: t("Position / degree / role") }), tfield(t("Location"), e, "location", { i18n: true })),
+      h("div", { class: "grid3" }, tfield(t("Start"), e, "start", { placeholder: "2025-07" }), tfield(t("End"), e, "end", { placeholder: t("2026-02 or present") }),
+        tfield(t("Custom date"), e, "date", { i18n: true, hint: t("optional, overrides start and end") })),
+      tfield(t("Link"), e, "link", { placeholder: "https://…" }));
   }
-  basics.push(h("div", { class: "field" }, h("label", null, isList ? "条目" : "技术 / 关键词", h("span", { class: "hint" }, "用逗号分隔")),
+  basics.push(h("div", { class: "field" }, h("label", null, isList ? t("Items") : t("Tech / keywords"), h("span", { class: "hint" }, t("comma-separated"))),
     h("input", { value: e.tech.map((t) => display(t)).join(", "), spellcheck: "false", "data-key": "tech",
       oninput: (ev) => { e.tech = ev.target.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean); touch(); } })));
-  out.push(card("基本信息", null, basics));
+  out.push(card(t("Basics"), null, basics));
 
   if (!isList) out.push(bulletsCard(e));
 
-  out.push(card("事实层", "只给 Claude 看，永远不会出现在简历上", [
-    h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, "写真实情况：哪些是你做的、哪些是 AI 写的、数字怎么来的、不好意思写进简历的实情。Claude 润色时只在这里能支撑的范围内包装。"),
-    tfield("实际情况 / 原始想法", e, "notes", { multiline: true, rows: 6 }),
+  out.push(card(t("Fact layer"), t("Only Claude sees this; it never appears on the resume"), [
+    h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, t("Write what really happened: what you did, what AI wrote, where the numbers come from, the details you wouldn't put on a resume. When Claude polishes, it stays within what this supports.")),
+    tfield(t("What really happened / raw notes"), e, "notes", { multiline: true, rows: 6 }),
     evidenceEditor(e),
   ], { cls: "fact" }));
 
-  out.push(h("div", { class: "danger-zone" }, h("button", { class: "btn sm ghost danger", onclick: () => deleteEntry(e.id) }, icon("trash"), "删除这条经历")));
+  out.push(h("div", { class: "danger-zone" }, h("button", { class: "btn sm ghost danger", onclick: () => deleteEntry(e.id) }, icon("trash"), t("Delete this entry"))));
   return out;
 }
 
 // ---------------------------------------------------------------- bullets
-const LANG_LONG = { en: "英文", zh: "中文" };
-const otherLang = (l) => langs().find((x) => x !== l) || (l === "zh" ? "en" : "zh");
+const otherLang = (l) => langs().find((x) => x !== l) || l;
 
 function bulletsCard(e) {
   const L = ui.editLang;
   const aiBtn = h("button", { class: "btn sm ghost ai-btn", "aria-haspopup": "menu", disabled: !ui.chat.available,
-    title: ui.chat.available ? "" : "没有找到 claude 命令", onclick: (ev) => openAiMenu(ev.currentTarget, e) }, icon("sparkle"), "让 Claude…", icon("chev"));
-  return card("要点", langs().length > 1 ? `正在编辑${LANG_LONG[L] || L}` : null,
+    title: ui.chat.available ? "" : t("The claude command was not found"), onclick: (ev) => openAiMenu(ev.currentTarget, e) }, icon("sparkle"), t("Ask Claude…"), icon("chev"));
+  return card(t("Bullets"), langs().length > 1 ? t("Editing {lang}", { lang: langName(L) }) : null,
     [h("div", { id: "bullet-notes" }, bulletNotes(e)), bulletsEditor(e)], { actions: aiBtn, cls: "bullets-card" });
 }
 
@@ -661,27 +664,27 @@ function bulletNotes(e) {
   const L = ui.editLang;
   const out = [];
   if (langs().length > 1 && missingIn(e, L)) {
-    out.push(noteBar("translate", `还有内容没有${LANG_LONG[L]}`,
-      ui.chat.available && h("button", { class: "btn sm", onclick: () => aiEntry("translate", e.id, { target: L }) }, icon("sparkle"), `让 Claude 写${LANG_LONG[L]}版`)));
+    out.push(noteBar("translate", t("Some text has no {lang} yet", { lang: langName(L) }),
+      ui.chat.available && h("button", { class: "btn sm", onclick: () => aiEntry("translate", e.id, { target: L }) }, icon("sparkle"), t("Let Claude write the {lang} version", { lang: langName(L) }))));
   }
   const m = measuredFor(e.id, L);
-  // only bullets written in this language: an untranslated one is flagged as 缺 instead
+  // only bullets written in this language: an untranslated one is flagged as missing instead
   const long = m ? Object.entries(m).filter(([i, x]) => x.n > 1 && bulletState(e.bullets[i], L) === "ok").length : 0;
   if (long) {
-    out.push(noteBar("compress", `${long} 条要点超过一行`,
-      ui.chat.available && h("button", { class: "btn sm", onclick: () => aiEntry("fit", e.id, { lang: L }) }, icon("sparkle"), "让 Claude 压成一行"), "warn"));
+    out.push(noteBar("compress", t("{n} bullet runs past one line", { n: long }, "{n} bullets run past one line"),
+      ui.chat.available && h("button", { class: "btn sm", onclick: () => aiEntry("fit", e.id, { lang: L }) }, icon("sparkle"), t("Let Claude fit them on one line")), "warn"));
   } else if (m === null && e.bullets.some((b) => getT(b, L))) {
-    out.push(h("div", { class: "note-line" }, icon("alert"), isAll() ? "这一条所在的板块被隐藏了，预览里没有它，量不出行数。" : `这一条没有勾进「${jobName(version())}」，预览里没有它，量不出行数。`));
+    out.push(h("div", { class: "note-line" }, icon("alert"), isAll() ? t("This entry's section is hidden, so it isn't in the preview and its lines can't be measured.") : t("This entry isn't ticked in “{job}”, so it isn't in the preview and its lines can't be measured.", { job: jobName(version()) })));
   }
   return out;
 }
 
 const NOTE_TIPS = {
-  translate: "缺的部分在这个语言的简历里会暂时显示另一种语言；写好后每条要点后面会显示它占几行",
-  compress: "按右侧预览的模板、字号和边距实测；改字或调版面后会自动重新测",
+  translate: "Missing parts show another language on this language's resume for now; once written, each bullet shows how many lines it takes",
+  compress: "Measured with the preview's template, font size and margins; measured again after every edit or layout change",
 };
 function noteBar(ic, text, action, tone = "") {
-  return h("div", { class: "note-bar " + tone }, icon(ic), h("span", { class: "nb-text", title: NOTE_TIPS[ic] }, text), action);
+  return h("div", { class: "note-bar " + tone }, icon(ic), h("span", { class: "nb-text", title: t(NOTE_TIPS[ic]) }, text), action);
 }
 
 function bulletState(b, L) {
@@ -692,13 +695,13 @@ function bulletState(b, L) {
 }
 
 function lineChip(i, m, st) {
-  if (st === "missing") return h("span", { class: "line-chip gap", "data-line": i, title: `还没有${LANG_LONG[ui.editLang]}，简历里暂时显示${LANG_LONG[otherLang(ui.editLang)]}` }, `缺${LANG_LONG[ui.editLang]}`);
-  if (st === "hidden") return h("span", { class: "line-chip off", "data-line": i, title: `这条只出现在${LANG_LONG[otherLang(ui.editLang)]}简历里` }, "不显示");
+  if (st === "missing") return h("span", { class: "line-chip gap", "data-line": i, title: t("No {lang} yet; the resume shows another language for now", { lang: langName(ui.editLang) }) }, t("No {lang}", { lang: langShort(ui.editLang) }));
+  if (st === "hidden") return h("span", { class: "line-chip off", "data-line": i, title: t("This bullet only appears on the other languages' resumes") }, t("Hidden"));
   const x = m && m[i];
   if (!x) return h("span", { class: "line-chip none", "data-line": i });
   const pct = Math.round(x.fill * 100);
-  if (x.n > 1) return h("span", { class: "line-chip long", "data-line": i, title: `占了 ${x.n} 行：文字是一行的 ${pct}%，大约要删掉 ${Math.max(1, pct - 98)}%` }, `${x.n} 行`);
-  return h("span", { class: "line-chip ok" + (x.fill > 0.93 ? " tight" : ""), "data-line": i, title: `一行，用了这一行的 ${pct}%` }, x.fill > 0.93 ? "满行" : "1 行");
+  if (x.n > 1) return h("span", { class: "line-chip long", "data-line": i, title: t("Takes {n} lines: the text is {pct}% of a line, cut about {cut}%", { n: x.n, pct, cut: Math.max(1, pct - 98) }) }, t("{n} line", { n: x.n }, "{n} lines"));
+  return h("span", { class: "line-chip ok" + (x.fill > 0.93 ? " tight" : ""), "data-line": i, title: t("One line, {pct}% of it used", { pct }) }, x.fill > 0.93 ? t("Full") : t("{n} line", { n: 1 }, "{n} lines"));
 }
 
 function bulletsEditor(e) {
@@ -709,33 +712,33 @@ function bulletsEditor(e) {
   e.bullets.forEach((b, i) => {
     const st = bulletState(b, L);
     const otherText = b && typeof b === "object" ? b[O] || "" : "";
-    const ph = st === "missing" ? `${LANG_NAMES[O]}：${otherText}` : st === "hidden" ? `${LANG_LONG[L]}简历里不显示这一条（${LANG_NAMES[O]}：${otherText}）` : "";
+    const ph = st === "missing" ? `${langShort(O)}: ${otherText}` : st === "hidden" ? t("Not shown on the {lang} resume ({other}: {text})", { lang: langName(L), other: langShort(O), text: otherText }) : "";
     const ta = h("textarea", { rows: 1, spellcheck: "false", "data-bullet": i, placeholder: ph, class: st !== "ok" ? "is-" + st : null,
       oninput: (ev) => { e.bullets[i] = setT(e.bullets[i], L, ev.target.value); touch(); } }, getT(b, L));
     const bilingual = langs().length > 1 && b && typeof b === "object";
     box.append(h("div", { class: "bullet" + (st !== "ok" ? " " + st : "") }, h("span", { class: "dot" }), ta, lineChip(i, m, st),
       h("div", { class: "b-tools" },
         bilingual && (st === "hidden"
-          ? h("button", { class: "btn icon sm ghost", title: `放回${LANG_LONG[L]}简历`, onclick: () => { delete e.bullets[i][L]; touch(); redraw(); } }, icon("undo"))
-          : h("button", { class: "btn icon sm ghost", title: `${LANG_LONG[L]}简历不要这一条（${LANG_LONG[O]}版照常显示）`, onclick: () => { e.bullets[i] = { ...e.bullets[i], [L]: "" }; touch(); redraw(); } }, icon("x"))),
-        h("button", { class: "btn icon sm ghost", title: "上移", disabled: i === 0, onclick: () => { [e.bullets[i - 1], e.bullets[i]] = [e.bullets[i], e.bullets[i - 1]]; touch(); redraw(); } }, icon("up")),
-        h("button", { class: "btn icon sm ghost", title: "下移", disabled: i === e.bullets.length - 1, onclick: () => { [e.bullets[i + 1], e.bullets[i]] = [e.bullets[i], e.bullets[i + 1]]; touch(); redraw(); } }, icon("down")),
-        h("button", { class: "btn icon sm ghost danger", title: langs().length > 1 ? "删除这条要点（中英文都删）" : "删除这条要点", onclick: () => { e.bullets.splice(i, 1); touch(); redraw(); } }, icon("trash")))));
+          ? h("button", { class: "btn icon sm ghost", title: t("Put it back on the {lang} resume", { lang: langName(L) }), onclick: () => { delete e.bullets[i][L]; touch(); redraw(); } }, icon("undo"))
+          : h("button", { class: "btn icon sm ghost", title: t("Leave this bullet off the {lang} resume (the other languages keep it)", { lang: langName(L) }), onclick: () => { e.bullets[i] = { ...e.bullets[i], [L]: "" }; touch(); redraw(); } }, icon("x"))),
+        h("button", { class: "btn icon sm ghost", title: t("Move up"), disabled: i === 0, onclick: () => { [e.bullets[i - 1], e.bullets[i]] = [e.bullets[i], e.bullets[i - 1]]; touch(); redraw(); } }, icon("up")),
+        h("button", { class: "btn icon sm ghost", title: t("Move down"), disabled: i === e.bullets.length - 1, onclick: () => { [e.bullets[i + 1], e.bullets[i]] = [e.bullets[i], e.bullets[i + 1]]; touch(); redraw(); } }, icon("down")),
+        h("button", { class: "btn icon sm ghost danger", title: langs().length > 1 ? t("Delete this bullet (in every language)") : t("Delete this bullet"), onclick: () => { e.bullets.splice(i, 1); touch(); redraw(); } }, icon("trash")))));
   });
   if (!e.bullets.length) {
     const hasEvidence = (e.evidence || []).length;
     box.append(h("p", { class: "muted", style: "margin:0 0 8px" }, hasEvidence
-      ? "还没有要点。已经关联了项目文件夹，可以让 Claude 先读项目再起草。"
-      : "还没有要点。可以自己写；也可以在下面的事实层写清真实情况、关联项目文件夹，再让 Claude 起草。"));
+      ? t("No bullets yet. A project folder is linked, so Claude can read the project first and draft them.")
+      : t("No bullets yet. Write them yourself, or fill in the fact layer below and link a project folder, then let Claude draft them.")));
   }
-  const instr = h("input", { placeholder: "补充要求（可选），比如：更突出架构设计；第二条太夸张了", spellcheck: "false",
+  const instr = h("input", { placeholder: t("Extra instructions (optional), e.g. stress the architecture; the second bullet overclaims"), spellcheck: "false",
     onkeydown: (ev) => { if (ev.key === "Enter" && !ev.isComposing) aiEntry("polish", e.id, { text: instr.value, lang: L }); } });
   box.append(
     h("div", { class: "row wrap" },
-      h("button", { class: "btn sm", onclick: () => { e.bullets.push(langs().length > 1 ? { [L]: "" } : ""); /* the other language shows as 缺 until written */ touch(); redraw(); setTimeout(() => { const t = document.querySelectorAll("#bullets textarea"); if (t.length) t[t.length - 1].focus(); }, 0); } }, icon("plus"), "添加要点"),
-      h("span", { class: "muted", style: "font-size:12px" }, "支持 **加粗**、*斜体*、[文字](链接)")),
+      h("button", { class: "btn sm", onclick: () => { e.bullets.push(langs().length > 1 ? { [L]: "" } : ""); /* the other languages show as missing until written */ touch(); redraw(); setTimeout(() => { const ta = document.querySelectorAll("#bullets textarea"); if (ta.length) ta[ta.length - 1].focus(); }, 0); } }, icon("plus"), t("Add bullet")),
+      h("span", { class: "muted", style: "font-size:12px" }, t("Supports **bold**, *italic*, [text](link)"))),
     h("div", { id: "polish-box", class: "polish-box hidden" }, instr,
-      h("button", { class: "btn primary sm", onclick: () => aiEntry("polish", e.id, { text: instr.value, lang: L }) }, icon("sparkle"), "开始润色")));
+      h("button", { class: "btn primary sm", onclick: () => aiEntry("polish", e.id, { text: instr.value, lang: L }) }, icon("sparkle"), t("Polish"))));
   return box;
 }
 
@@ -747,13 +750,12 @@ function openAiMenu(anchor, e) {
   const changed = ev.state === "changed" || ev.state === "new";
   const empty = !e.bullets.some((b) => getT(b, L));
   openMenu(anchor, [
-    { label: empty ? "起草要点" : `润色${bilingual ? LANG_LONG[L] : ""}要点`, hint: "可加补充要求", icon: "sparkle",
+    { label: empty ? t("Draft bullets") : bilingual ? t("Polish the {lang} bullets", { lang: langName(L) }) : t("Polish bullets"), hint: t("extra instructions welcome"), icon: "sparkle",
       onClick: () => { const box = $("#polish-box"); box.classList.remove("hidden"); $("input", box).focus(); } },
-    bilingual && { label: "写中文版", hint: "按中文习惯重写", icon: "translate", onClick: () => aiEntry("translate", e.id, { target: "zh" }) },
-    bilingual && { label: "写英文版", hint: "按英文习惯重写", icon: "translate", onClick: () => aiEntry("translate", e.id, { target: "en" }) },
-    { label: "把超过一行的要点压成一行", hint: long ? `${long} 条` : "都是一行", icon: "compress", disabled: !long, onClick: () => aiEntry("fit", e.id, { lang: L }) },
+    ...(bilingual ? langs().map((l) => ({ label: t("Write the {lang} version", { lang: langName(l) }), hint: t("rewritten the way a {lang} resume reads", { lang: langName(l) }), icon: "translate", onClick: () => aiEntry("translate", e.id, { target: l }) })) : []),
+    { label: t("Fit bullets that run past one line"), hint: long ? t("{n} bullet", { n: long }, "{n} bullets") : t("All on one line"), icon: "compress", disabled: !long, onClick: () => aiEntry("fit", e.id, { lang: L }) },
     "sep",
-    { label: "按项目新进展更新", hint: ev.state === "changed" ? "有更新" : ev.state === "new" ? "还没读过" : (e.evidence || []).length ? "没有变化" : "没关联文件夹",
+    { label: t("Update from project progress"), hint: ev.state === "changed" ? t("changed") : ev.state === "new" ? t("not read yet") : (e.evidence || []).length ? t("no changes") : t("no folder linked"),
       icon: "refresh", disabled: !changed, onClick: () => aiEntry("sync", e.id) },
   ], { align: "end", focusFirst: true });
 }
@@ -780,7 +782,7 @@ async function addEvidence(e, kind, replaceIndex = null) {
 }
 
 async function typeEvidence(e) {
-  const p = await modal({ title: "输入路径", message: "文件夹或文件的完整路径。一般直接用「选择项目文件夹」更省事。", input: "", placeholder: "E:/Forge/Paper2Exam", ok: "添加" });
+  const p = await modal({ title: t("Type a path"), message: t("The full path of a folder or file. “Choose project folder” is usually easier."), input: "", placeholder: "E:/Forge/Paper2Exam", ok: t("Add") });
   if (!p) return;
   const clean = p.trim().replace(/^["']|["']$/g, "");
   if (!e.evidence.includes(clean)) e.evidence.push(clean);
@@ -791,13 +793,13 @@ async function typeEvidence(e) {
 }
 
 function changeSummary(c) {
-  if (!c) return "有改动";
+  if (!c) return t("changed");
   const parts = [];
-  if (c.commits) parts.push(`${c.commits} 个新提交`);
-  if (c.rewritten) parts.push("git 历史有变化");
-  if (c.uncommitted) parts.push(`${c.uncommitted} 个文件未提交`);
-  if (c.counts) { const n = c.counts.reduce((a, b) => a + b, 0); if (n) parts.push(`${n} 个文件有改动`); }
-  return parts.join("，") || "有改动";
+  if (c.commits) parts.push(t("{n} new commit", { n: c.commits }, "{n} new commits"));
+  if (c.rewritten) parts.push(t("git history changed"));
+  if (c.uncommitted) parts.push(t("{n} uncommitted file", { n: c.uncommitted }, "{n} uncommitted files"));
+  if (c.counts) { const n = c.counts.reduce((a, b) => a + b, 0); if (n) parts.push(t("{n} file changed", { n }, "{n} files changed")); }
+  return parts.join(t(", ")) || t("changed");
 }
 
 function evidenceRow(e, p, i, row) {
@@ -805,39 +807,39 @@ function evidenceRow(e, p, i, row) {
   const st = row ? row.state : "checking";
   const kind = row && row.kind;
   const chip = {
-    checking: h("span", { class: "ev-chip" }, "检查中…"),
-    same: h("span", { class: "ev-chip ok", title: row && row.synced_at ? `Claude 上次读它：${relTime(row.synced_at)}` : "" }, icon("check"), "已同步"),
-    new: h("span", { class: "ev-chip", title: "加进来之后 Claude 还没读过它" }, "Claude 还没读过"),
+    checking: h("span", { class: "ev-chip" }, t("Checking…")),
+    same: h("span", { class: "ev-chip ok", title: row && row.synced_at ? t("Claude last read it {when}", { when: relTime(row.synced_at) }) : "" }, icon("check"), t("In sync")),
+    new: h("span", { class: "ev-chip", title: t("Claude hasn't read it since it was added") }, t("Not read by Claude yet")),
     changed: h("span", { class: "ev-chip new" }, icon("refresh"), changeSummary(row && row.changes)),
-    missing: h("span", { class: "ev-chip bad" }, icon("alert"), "找不到这个路径"),
+    missing: h("span", { class: "ev-chip bad" }, icon("alert"), t("This path can't be found")),
   }[st];
   const detail = st === "changed" && row.changes ? changeDetail(row.changes) : null;
   const toggle = detail && h("button", { class: "ev-more", "aria-expanded": "false", onclick: (ev) => {
     const open = detail.classList.toggle("hidden") === false;
     ev.currentTarget.setAttribute("aria-expanded", String(open));
-    ev.currentTarget.lastChild.textContent = open ? "收起" : "看看改了什么";
-  } }, icon("chev"), "看看改了什么");
+    ev.currentTarget.lastChild.textContent = open ? t("Hide") : t("See what changed");
+  } }, icon("chev"), t("See what changed"));
   return h("div", { class: "ev-row " + st, "data-path": p },
     h("span", { class: "ev-ic" }, icon(kind === "git" ? "git" : kind === "file" ? "file" : "folder")),
     h("div", { class: "ev-main" },
       h("div", { class: "ev-name" }, h("b", null, name), chip),
       h("div", { class: "ev-path", title: p }, p),
-      h("div", { class: "ev-meta" }, row && row.mtime ? `最近改动 ${relTime(row.mtime)}` : null, toggle),
+      h("div", { class: "ev-meta" }, row && row.mtime ? t("last changed {when}", { when: relTime(row.mtime) }) : null, toggle),
       detail),
     h("div", { class: "ev-tools" },
-      h("button", { class: "btn icon sm ghost", title: "在资源管理器里打开", disabled: st === "missing", onclick: () => api("POST", "/api/reveal-any", { path: p }) }, icon("external")),
-      h("button", { class: "btn icon sm ghost", title: st === "missing" ? "重新选择这个文件夹" : "换成别的文件夹", onclick: () => addEvidence(e, kind === "file" ? "files" : "folder", i) }, icon("folderOpen")),
-      h("button", { class: "btn icon sm ghost danger", title: "移除（不会删除文件）", onclick: () => { e.evidence.splice(i, 1); touch(); buildEditorKeepDraft(); } }, icon("x"))));
+      h("button", { class: "btn icon sm ghost", title: t("Show in the file manager"), disabled: st === "missing", onclick: () => api("POST", "/api/reveal-any", { path: p }) }, icon("external")),
+      h("button", { class: "btn icon sm ghost", title: st === "missing" ? t("Choose this folder again") : t("Replace with another folder"), onclick: () => addEvidence(e, kind === "file" ? "files" : "folder", i) }, icon("folderOpen")),
+      h("button", { class: "btn icon sm ghost danger", title: t("Remove (doesn't delete any files)"), onclick: () => { e.evidence.splice(i, 1); touch(); buildEditorKeepDraft(); } }, icon("x"))));
 }
 
 function changeDetail(c) {
   const lines = [];
-  if (c.log && c.log.length) lines.push(h("div", { class: "cd-head" }, "新提交"), ...c.log.slice(0, 12).map((l) => h("div", { class: "cd-line" }, l)));
-  if (c.log && c.log.length > 12) lines.push(h("div", { class: "cd-line muted" }, `…还有 ${c.log.length - 12} 个`));
-  for (const [k, label] of [["added", "新增"], ["modified", "修改"], ["removed", "删除"]]) {
+  if (c.log && c.log.length) lines.push(h("div", { class: "cd-head" }, t("New commits")), ...c.log.slice(0, 12).map((l) => h("div", { class: "cd-line" }, l)));
+  if (c.log && c.log.length > 12) lines.push(h("div", { class: "cd-line muted" }, t("…and {n} more", { n: c.log.length - 12 })));
+  for (const [k, label] of [["added", t("Added")], ["modified", t("Modified")], ["removed", t("Removed")]]) {
     if (c[k] && c[k].length) lines.push(h("div", { class: "cd-head" }, label), ...c[k].slice(0, 8).map((l) => h("div", { class: "cd-line" }, l)));
   }
-  if (c.uncommitted) lines.push(h("div", { class: "cd-line muted" }, `另有 ${c.uncommitted} 个文件有未提交的改动`));
+  if (c.uncommitted) lines.push(h("div", { class: "cd-line muted" }, t("{n} more file has uncommitted changes", { n: c.uncommitted }, "{n} more files have uncommitted changes")));
   return h("div", { class: "change-detail hidden" }, lines);
 }
 
@@ -845,27 +847,27 @@ function evidenceEditor(e) {
   const st = ui.evidence[e.id] || { paths: [] };
   const rows = Object.fromEntries((st.paths || []).map((r) => [r.path, r]));
   const box = h("div", { class: "evidence", id: "evidence" });
-  box.append(h("div", { class: "ev-head" }, h("span", { class: "ev-title" }, "项目文件夹与证据"),
-    h("span", { class: "hint" }, "Claude 会读里面的代码、README 和提交记录")));
+  box.append(h("div", { class: "ev-head" }, h("span", { class: "ev-title" }, t("Project folders and evidence")),
+    h("span", { class: "hint" }, t("Claude reads the code, README and commit history in them"))));
   const pending = e.evidence.map((p) => rows[p]).filter((r) => r && (r.state === "changed" || r.state === "new"));
   if (pending.length) {
     const changed = pending.some((r) => r.state === "changed");
     const empty = !e.bullets.some((b) => getT(b, ui.editLang));
     box.append(h("div", { class: "sync-bar" + (changed ? " changed" : "") }, icon(changed ? "refresh" : "folderOpen"),
-      h("span", { class: "nb-text" }, changed ? "项目有新进展" : "Claude 还没读过这个项目"),
+      h("span", { class: "nb-text" }, changed ? t("The project has new progress") : t("Claude hasn't read this project yet")),
       ui.chat.available && h("button", { class: "btn sm primary", onclick: () => aiEntry(empty && !changed ? "polish" : "sync", e.id, { lang: ui.editLang }) }, icon("sparkle"),
-        changed ? "让 Claude 按新进展更新" : empty ? "让 Claude 读项目写要点" : "让 Claude 读一遍"),
-      h("button", { class: "btn sm ghost", title: "现在的要点已经反映了项目的样子，不用 Claude 再读；项目以后再有改动才会提醒", onclick: () => markSynced(e.id) }, "标记为已同步")));
+        changed ? t("Let Claude update from the progress") : empty ? t("Let Claude read the project and write bullets") : t("Let Claude read it")),
+      h("button", { class: "btn sm ghost", title: t("The bullets already reflect the project, so Claude needn't read it; you'll be told when it changes again"), onclick: () => markSynced(e.id) }, t("Mark as in sync"))));
   }
   const list = h("div", { class: "ev-list" });
   e.evidence.forEach((p, i) => list.append(evidenceRow(e, p, i, rows[p])));
-  if (!e.evidence.length) list.append(h("div", { class: "ev-empty" }, "还没有关联项目。选一个文件夹，Claude 写要点时会去读；项目以后有更新，这里和左边的经历库都会提醒你。"));
+  if (!e.evidence.length) list.append(h("div", { class: "ev-empty" }, t("No project linked yet. Choose a folder and Claude reads it when writing bullets; when the project changes later, this place and the library on the left will tell you.")));
   box.append(list, h("div", { class: "ev-actions" },
-    h("button", { class: "btn sm", onclick: () => addEvidence(e, "folder") }, icon("folder"), "选择项目文件夹"),
-    h("button", { class: "btn sm ghost", onclick: () => addEvidence(e, "files") }, icon("file"), "添加文件"),
-    h("button", { class: "btn sm ghost", onclick: () => typeEvidence(e) }, icon("pen"), "输入路径"),
+    h("button", { class: "btn sm", onclick: () => addEvidence(e, "folder") }, icon("folder"), t("Choose project folder")),
+    h("button", { class: "btn sm ghost", onclick: () => addEvidence(e, "files") }, icon("file"), t("Add files")),
+    h("button", { class: "btn sm ghost", onclick: () => typeEvidence(e) }, icon("pen"), t("Type a path")),
     h("span", { class: "spacer" }),
-    e.evidence.length ? h("button", { class: "btn sm ghost", title: "现在就检查这些文件夹有没有变化（平时切回窗口时会自动检查）", onclick: () => checkEvidence(true).then(() => toast("检查完了")) }, icon("refresh"), "检查更新") : null));
+    e.evidence.length ? h("button", { class: "btn sm ghost", title: t("Check these folders for changes now (it also happens whenever you come back to the window)"), onclick: () => checkEvidence(true).then(() => toast(t("Checked"))) }, icon("refresh"), t("Check for updates")) : null));
   return box;
 }
 
@@ -907,7 +909,7 @@ function paintEvidence() {
 }
 
 async function deleteEntry(id) {
-  if (!(await modal({ title: `删除「${display((entryById(id) || {}).title) || entryLabel(entryById(id))}」？`, message: "它会从经历库和所有岗位里移除。需要时可以从 .studio/history 找回。", ok: "删除", danger: true }))) return;
+  if (!(await modal({ title: t("Delete “{name}”?", { name: display((entryById(id) || {}).title) || entryLabel(entryById(id)) }), message: t("It is removed from the library and every job. You can get it back from .studio/history if needed."), ok: t("Delete"), danger: true }))) return;
   ui.dirty = false;
   applyState(await api("DELETE", "/api/entries/" + encodeURIComponent(id)));
   select("profile");
@@ -917,6 +919,9 @@ async function deleteEntry(id) {
 function profileForm() {
   const p = ui.draft;
   p.contacts = p.contacts || [];
+  // a contact written once serves every language; one already split by language (a phone number
+  // per country) changes only in the language being edited
+  const editT = (old, val) => isNeutral(old) ? val : { ...old, [ui.editLang]: val };
   const rows = h("div", { class: "list-rows" });
   const v = version();
   const job = v && v.id !== ALL;
@@ -925,7 +930,7 @@ function profileForm() {
     const shown = !hiddenC.has(c.label || "");
     rows.append(h("div", { class: "lr", style: `grid-template-columns: ${job ? "22px " : ""}96px 1fr 1fr 30px` },
       job && h("button", { class: "check" + (shown ? " on" : ""), role: "checkbox", "aria-checked": String(shown),
-        title: shown ? `在「${jobName(v)}」里隐藏` : `在「${jobName(v)}」里显示`,
+        title: shown ? t("Hide in “{job}”", { job: jobName(v) }) : t("Show in “{job}”", { job: jobName(v) }),
         onclick: () => mutateVersion((x) => {
           const set = new Set(x.hide_contacts || []);
           if (shown) set.add(c.label || ""); else set.delete(c.label || "");
@@ -933,23 +938,91 @@ function profileForm() {
           if (!x.hide_contacts.length) delete x.hide_contacts;
         }).then(buildEditorKeepDraft) }),
       h("input", { value: c.label ?? "", placeholder: "email", spellcheck: "false", oninput: (ev) => { c.label = ev.target.value; touch(); } }),
-      h("input", { value: getT(c.value, ui.editLang), placeholder: "显示的文字", spellcheck: "false", oninput: (ev) => { c.value = ev.target.value; touch(); } }),
-      h("input", { value: c.url ?? "", placeholder: "链接（可选）mailto: / https://", spellcheck: "false", oninput: (ev) => { c.url = ev.target.value; touch(); } }),
-      h("button", { class: "btn icon sm ghost danger", title: "删除", onclick: () => { p.contacts.splice(i, 1); touch(); buildEditorKeepDraft(); } }, icon("x"))));
+      h("input", { value: getT(c.value, ui.editLang), placeholder: t("Text shown"), spellcheck: "false", oninput: (ev) => { c.value = editT(c.value, ev.target.value); touch(); } }),
+      h("input", { value: getT(c.url, ui.editLang), placeholder: t("Link (optional) mailto: / https://"), spellcheck: "false", oninput: (ev) => { c.url = editT(c.url, ev.target.value); touch(); } }),
+      h("button", { class: "btn icon sm ghost danger", title: t("Delete"), onclick: () => { p.contacts.splice(i, 1); touch(); buildEditorKeepDraft(); } }, icon("x"))));
   });
-  rows.append(h("button", { class: "btn sm", onclick: () => { p.contacts.push({ label: "", value: "", url: "" }); touch(); buildEditorKeepDraft(); } }, icon("plus"), "添加联系方式"));
+  rows.append(h("button", { class: "btn sm", onclick: () => { p.contacts.push({ label: "", value: "", url: "" }); touch(); buildEditorKeepDraft(); } }, icon("plus"), t("Add contact")));
   return [
-    h("div", { class: "ed-head" }, h("h1", null, "个人信息"), h("span", { class: "spacer" }), langSwitch()),
-    card("基本信息", null, [
-      tfield("姓名", p, "name", { i18n: true }),
-      h("div", { class: "field" }, h("label", null, "一句话介绍 / 求职方向"),
+    h("div", { class: "ed-head" }, h("h1", null, t("Profile")), h("span", { class: "spacer" }), langSwitch()),
+    card(t("Basics"), null, [
+      tfield(t("Name"), p, "name", { i18n: true }),
+      h("div", { class: "field" }, h("label", null, t("Headline / job target")),
         h("div", { class: "row wrap" },
-          h("span", { class: "muted", style: "font-size:12.5px;flex:1;min-width:200px" }, "每个岗位写自己的一句，在 ALL 和各岗位的设置里填。"),
-          h("button", { class: "btn sm", onclick: () => select("version", ui.versionId) }, icon("settings"), `编辑「${job ? jobName(v) : "ALL"}」的这一句`))),
+          h("span", { class: "muted", style: "font-size:12.5px;flex:1;min-width:200px" }, t("Each job has its own, set in ALL's and each job's settings.")),
+          h("button", { class: "btn sm", onclick: () => select("version", ui.versionId) }, icon("settings"), t("Edit the headline of “{job}”", { job: job ? jobName(v) : "ALL" })))),
     ]),
-    card("联系方式", job ? `按顺序显示在姓名下面；左边的勾 = 在「${jobName(v)}」里显示` : "按顺序显示在姓名下面；切到某个岗位后可以隐藏其中几项", rows),
-    card("事实层", "只给 Claude 看", tfield("求职背景、限制、偏好", p, "notes", { multiline: true, rows: 5 }), { cls: "fact" }),
+    card(t("Contacts"), job ? t("Shown in order under the name; ticked = shown in “{job}”", { job: jobName(v) }) : t("Shown in order under the name; switch to a job to hide some of them"), rows),
+    card(t("Fact layer"), t("Only Claude sees this"), tfield(t("Job search background, constraints, preferences"), p, "notes", { multiline: true, rows: 5 }), { cls: "fact" }),
   ];
+}
+
+// Resume languages: any number, from the list the templates set well; the first is the default
+// for new jobs. Removing one keeps its text in resume.yaml (adding it back brings the text back).
+function resumeLangEditor(st, save) {
+  const list = st.languages && st.languages.length ? [...st.languages] : ["en"];
+  const commit = (next) => { st.languages = next; save(); };
+  const rows = h("div", { class: "list-rows lang-rows" });
+  list.forEach((code, i) => {
+    rows.append(h("div", { class: "lr sort-row", style: "grid-template-columns: 26px 1fr auto 26px" },
+      dragHandle((from, to) => commit(moved(list, from, to))),
+      h("span", { class: "lang-name" }, langName(code), h("span", { class: "muted" }, ` · ${code}`)),
+      i === 0 ? h("span", { class: "chip" }, t("Default")) : h("span"),
+      h("button", { class: "btn icon sm ghost danger", disabled: list.length === 1, title: list.length === 1 ? t("A resume needs at least one language") : t("Remove (its text stays in resume.yaml)"),
+        onclick: () => commit(list.filter((x) => x !== code)) }, icon("x"))));
+  });
+  const add = uiSelect({ cls: "field-select", label: t("Add a language"), placeholder: t("Add a language…"), menuWidth: 260,
+    options: ((S && S.resume_langs) || []).filter((l) => !list.includes(l.code)).map((l) => ({ value: l.code, label: l.name, hint: l.code })),
+    onChange: (code) => code && commit([...list, code]) });
+  return h("div", null, rows, add.el);
+}
+
+async function putSettings(st) {
+  try { applyState(await api("PUT", "/api/item", { kind: "settings", data: st, base: itemHash("settings") })); buildEditorKeepDraft(); scheduleRender(); }
+  catch (e) { toast(t("Save failed: {error}", { error: e.message })); }
+}
+
+// The "+" after the language buttons above the preview: where one looks first to add a language.
+function openLangMenu(anchor) {
+  const have = langs();
+  const add = (code) => putSettings({ ...clone(doc().settings || {}), languages: [...have, code] });
+  openMenu(anchor, [
+    { label: t("Manage languages…"), icon: "settings", onClick: () => select("sections") },
+    "sep",
+    { header: t("Add a language") },
+    ...((S && S.resume_langs) || []).filter((l) => !have.includes(l.code)).map((l) => ({ label: l.name, hint: l.code, onClick: () => add(l.code) })),
+  ], { align: "end", focusFirst: true });
+}
+
+// App preferences belong to this computer (.studio/prefs.json), not to the resume, so they live
+// behind the gear in the top bar (Ctrl+,) instead of on a resume page.
+function openSettings() {
+  const root = $("#modal-root");
+  if (root.firstChild) return;
+  const close = () => { root.replaceChildren(); document.removeEventListener("keydown", onKey); $("#settings-btn").focus(); };
+  // bubble phase: an open dropdown takes Escape first (it stops the event in the capture phase)
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
+  root.replaceChildren(h("div", { class: "modal-back", onmousedown: (e) => { if (e.target === e.currentTarget) close(); } },
+    h("div", { class: "modal settings", role: "dialog", "aria-modal": "true", "aria-label": t("Settings") },
+      h("h3", null, t("Settings")),
+      h("p", null, t("These belong to this computer, not to your resume.")),
+      h("div", { class: "field" }, h("label", null, t("App language"), h("span", { class: "hint" }, t("The language of this window; it follows your computer unless you pick one"))), uiLangPicker()),
+      h("div", { class: "acts" }, h("button", { class: "btn primary", onclick: close }, t("Done"))))));
+  setTimeout(() => $(".modal .select", root).focus(), 0);
+}
+
+// The window's own language: the computer's unless the user picks one; the page reloads to apply it.
+function uiLangPicker() {
+  const sys = I18N.langs[I18N.system] || I18N.system;
+  const sel = uiSelect({ cls: "field-select", label: t("App language"), menuWidth: 260, value: I18N.chosen || null,
+    options: [{ value: null, label: t("Follow the computer ({lang})", { lang: sys }) },
+      ...Object.entries(I18N.langs).map(([code, name]) => ({ value: code, label: name, hint: code }))],
+    onChange: async (code) => {
+      try { await api("PUT", "/api/prefs", { ui_lang: code }); await saveDraft(); location.reload(); }
+      catch (e) { toast(t("Save failed: {error}", { error: e.message })); }
+    } });
+  return sel.el;
 }
 
 function sectionsForm() {
@@ -965,28 +1038,17 @@ function sectionsForm() {
     const used = entries().some((e) => e.section === s.id);
     rows.append(h("div", { class: "lr sort-row", style: "grid-template-columns: 26px 120px 1fr auto 26px" },
       dragHandle(move),
-      h("input", { value: s.id, title: "板块 ID（经历里的 section 字段）", spellcheck: "false", oninput: (ev) => { s.id = ev.target.value; touch(); } }),
-      h("input", { value: getT(s.title, ui.editLang), placeholder: "显示标题", oninput: (ev) => { s.title = setT(s.title, ui.editLang, ev.target.value); touch(); } }),
-      uiSeg([{ value: "timeline", label: "时间线", tip: "标题 + 日期 + 要点" }, { value: "list", label: "列表", tip: "「类别：条目」一行一个，适合技能" }],
-        s.kind || "timeline", (kind) => { s.kind = kind; touch(); buildEditorKeepDraft(); }, { cls: "sm", label: "板块类型" }),
-      h("button", { class: "btn icon sm ghost danger", disabled: used, title: used ? "还有经历在这个板块里" : "删除板块", onclick: () => { list.splice(i, 1); touch(); buildEditorKeepDraft(); } }, icon("x"))));
+      h("input", { value: s.id, title: t("Section ID (the section field of entries)"), spellcheck: "false", oninput: (ev) => { s.id = ev.target.value; touch(); } }),
+      h("input", { value: getT(s.title, ui.editLang), placeholder: t("Title shown"), oninput: (ev) => { s.title = setT(s.title, ui.editLang, ev.target.value); touch(); } }),
+      uiSeg([{ value: "timeline", label: t("Timeline"), tip: t("Title + dates + bullets") }, { value: "list", label: t("List"), tip: t("“Category: items”, one per line, good for skills") }],
+        s.kind || "timeline", (kind) => { s.kind = kind; touch(); buildEditorKeepDraft(); }, { cls: "sm", label: t("Section type") }),
+      h("button", { class: "btn icon sm ghost danger", disabled: used, title: used ? t("Some entries are still in this section") : t("Delete section"), onclick: () => { list.splice(i, 1); touch(); buildEditorKeepDraft(); } }, icon("x"))));
   });
-  rows.append(h("button", { class: "btn sm", onclick: () => { list.push({ id: `section-${list.length + 1}`, title: "New section", kind: "timeline" }); touch(); buildEditorKeepDraft(); } }, icon("plus"), "添加板块"));
+  rows.append(h("button", { class: "btn sm", onclick: () => { list.push({ id: `section-${list.length + 1}`, title: t("New section"), kind: "timeline" }); touch(); buildEditorKeepDraft(); } }, icon("plus"), t("Add section")));
 
   const st = clone(doc().settings || {});
-  const saveSettings = async () => {
-    try { applyState(await api("PUT", "/api/item", { kind: "settings", data: st, base: itemHash("settings") })); buildEditorKeepDraft(); scheduleRender(); }
-    catch (e) { toast("保存失败：" + e.message); }
-  };
-  const langToggle = h("div", { class: "seg", role: "group", "aria-label": "内容语言" }, ["en", "zh"].map((l) => h("button", {
-    class: (st.languages || []).includes(l) ? "on" : "", "aria-pressed": String((st.languages || []).includes(l)),
-    onclick: () => {
-      const set = new Set(st.languages || []);
-      if (set.has(l)) set.delete(l); else set.add(l);
-      st.languages = ["en", "zh"].filter((x) => set.has(x));
-      if (!st.languages.length) st.languages = ["en"];
-      saveSettings();
-    } }, LANG_NAMES[l])));
+  const saveSettings = () => putSettings(st);
+  const langEditor = resumeLangEditor(st, saveSettings);
   const roots = st.project_roots || [];
   const addRoot = async () => {
     let r;
@@ -1000,22 +1062,22 @@ function sectionsForm() {
     h("span", { class: "ev-ic" }, icon("folder")),
     h("div", { class: "ev-main" }, h("div", { class: "ev-name" }, h("b", null, p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p)), h("div", { class: "ev-path" }, p)),
     h("div", { class: "ev-tools", style: "opacity:1" },
-      h("button", { class: "btn icon sm ghost", title: "在资源管理器里打开", onclick: () => api("POST", "/api/reveal-any", { path: p }) }, icon("external")),
-      h("button", { class: "btn icon sm ghost danger", title: "移除（不会删除文件）", onclick: () => { st.project_roots = roots.filter((_, j) => j !== i); if (!st.project_roots.length) delete st.project_roots; saveSettings(); } }, icon("x"))))));
+      h("button", { class: "btn icon sm ghost", title: t("Show in the file manager"), onclick: () => api("POST", "/api/reveal-any", { path: p }) }, icon("external")),
+      h("button", { class: "btn icon sm ghost danger", title: t("Remove (doesn't delete any files)"), onclick: () => { st.project_roots = roots.filter((_, j) => j !== i); if (!st.project_roots.length) delete st.project_roots; saveSettings(); } }, icon("x"))))));
   return [
-    h("div", { class: "ed-head" }, h("h1", null, "板块与设置"), h("span", { class: "spacer" }), langSwitch()),
-    card("板块", `顺序属于「${isAll() ? "ALL" : jobName(version())}」；新建岗位沿用 ALL 的顺序`, [
-      h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, "时间线 = 标题 + 日期 + 要点；列表 = 「类别：条目」一行一个，适合技能。"), rows]),
-    card("设置", null, [
-      h("div", { class: "field" }, h("label", null, "内容语言", h("span", { class: "hint" }, "选两种时，文字按语言分开保存，编辑区会出现语言切换")), h("div", null, langToggle)),
-      h("div", { class: "field" }, h("label", null, "导出目录", h("span", { class: "hint" }, "相对于 resume.yaml")),
+    h("div", { class: "ed-head" }, h("h1", null, t("Sections & resume settings")), h("span", { class: "spacer" }), langSwitch()),
+    card(t("Sections"), t("The order belongs to “{job}”; new jobs start from ALL's order", { job: isAll() ? "ALL" : jobName(version()) }), [
+      h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, t("Timeline = title + dates + bullets; List = “Category: items”, one per line, good for skills.")), rows]),
+    card(t("Resume settings"), t("Saved in resume.yaml"), [
+      h("div", { class: "field" }, h("label", null, t("Resume languages"), h("span", { class: "hint" }, t("Each language keeps its own text; the first one is the default for new jobs"))), langEditor),
+      h("div", { class: "field" }, h("label", null, t("Export folder"), h("span", { class: "hint" }, t("relative to resume.yaml"))),
         h("input", { value: st.export_dir || "exports", spellcheck: "false", onchange: (ev) => { st.export_dir = ev.target.value.trim() || "exports"; saveSettings(); } })),
     ]),
-    card("我的项目文件夹", "放个人项目的地方，比如 E:/Forge", [
-      h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, "Claude 会知道你的项目都在这里：可以让它在对话里帮你挑出值得写进简历的项目；给经历选文件夹时也会从这里开始找。"),
+    card(t("My project folders"), t("Where your own projects live, e.g. E:/Forge"), [
+      h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, t("Claude will know your projects are here: ask it in the chat which ones are worth a place on your resume; picking a folder for an entry also starts here.")),
       rootRows,
-      h("div", { class: "ev-actions" }, h("button", { class: "btn sm", onclick: addRoot }, icon("folder"), "选择文件夹"),
-        roots.length && ui.chat.available ? h("button", { class: "btn sm ghost", onclick: () => sendChat(`看看我的项目文件夹（${roots.join("、")}），挑出最值得写进简历的几个项目，说说理由。先别改 resume.yaml，等我确认后再一个一个录入。`) }, icon("sparkle"), "让 Claude 挑项目") : null),
+      h("div", { class: "ev-actions" }, h("button", { class: "btn sm", onclick: addRoot }, icon("folder"), t("Choose folder")),
+        roots.length && ui.chat.available ? h("button", { class: "btn sm ghost", onclick: () => sendChat(t("Look at my project folders ({folders}) and pick the projects most worth putting on my resume, with your reasons. Don't change resume.yaml yet; once I confirm, add them one at a time.", { folders: roots.join(", ") })) }, icon("sparkle"), t("Let Claude pick projects")) : null),
     ]),
   ];
 }
@@ -1029,7 +1091,7 @@ function versionForm() {
   order.forEach((sid) => {
     rows.append(h("div", { class: "lr sort-row", style: "grid-template-columns: 26px 22px 1fr" },
       dragHandle(move),
-      h("button", { class: "check" + (hidden.has(sid) ? "" : " on"), title: "在这里显示", onclick: () => {
+      h("button", { class: "check" + (hidden.has(sid) ? "" : " on"), title: t("Show here"), onclick: () => {
         const set = new Set(v.hide_sections || []);
         if (set.has(sid)) set.delete(sid); else set.add(sid);
         v.hide_sections = [...set];
@@ -1040,20 +1102,20 @@ function versionForm() {
   });
   return [
     v.id === ALL
-      ? h("div", { class: "ed-head" }, h("h1", null, "ALL 设置"), h("span", { class: "id" }, "全部经历"), h("span", { class: "spacer" }), langSwitch())
-      : h("div", { class: "ed-head" }, h("h1", null, "岗位设置"), h("span", { class: "id" }, v.id), h("span", { class: "spacer" }), langSwitch()),
+      ? h("div", { class: "ed-head" }, h("h1", null, t("ALL settings")), h("span", { class: "id" }, t("All entries")), h("span", { class: "spacer" }), langSwitch())
+      : h("div", { class: "ed-head" }, h("h1", null, t("Job settings")), h("span", { class: "id" }, v.id), h("span", { class: "spacer" }), langSwitch()),
     v.id === ALL
-      ? card("ALL", "全集预览：全部经历、全部联系方式，不受一页限制；模板、语言和版面在右侧预览上方调整", tfield("一句话介绍 / 求职方向", v, "headline", { i18n: true, placeholder: "可以留空" }))
-      : card("岗位信息", "模板、语言和版面在右侧预览上方调整；选哪些经历在左侧勾选", [
-        h("div", { class: "grid2" }, tfield("名称", v, "label", { placeholder: "AI Agent 工程师" }), tfield("ID", v, "id", { hint: "也是导出文件名" })),
-        tfield("一句话介绍 / 求职方向", v, "headline", { i18n: true, placeholder: "比如：AI Agent Engineer · LLM tooling & full-stack" }),
+      ? card("ALL", t("The full set: every entry and contact, not limited to one page; template, language and layout are above the preview"), tfield(t("Headline / job target"), v, "headline", { i18n: true, placeholder: t("can be empty") }))
+      : card(t("Job"), t("Template, language and layout are above the preview; tick entries in the library on the left"), [
+        h("div", { class: "grid2" }, tfield(t("Name"), v, "label", { placeholder: t("AI Agent Engineer") }), tfield("ID", v, "id", { hint: t("also the export file name") })),
+        tfield(t("Headline / job target"), v, "headline", { i18n: true, placeholder: t("e.g. AI Agent Engineer · LLM tooling & full-stack") }),
       ]),
-    card("板块顺序与显示", v.id === ALL ? "只影响 ALL；新建的岗位从这个顺序开始" : "只影响这个岗位", rows),
+    card(t("Section order and visibility"), v.id === ALL ? t("Only for ALL; new jobs start from this order") : t("Only for this job"), rows),
   ];
 }
 
 // ================================================================ AI polish (runs in the chat)
-const AI_LABELS = { polish: "润色", translate: "写另一种语言", fit: "压成一行", sync: "按项目更新", batch_translate: "补齐另一种语言", batch_fit: "压成一行", batch_sync: "按项目更新" };
+const AI_LABELS = { polish: "Polish", translate: "Another language", fit: "Fit on one line", sync: "Update from the project", batch_translate: "Fill in a language", batch_fit: "Fit on one line", batch_sync: "Update from the project" };
 
 function aiDiff(id) {
   const a = ui.ai[id];
@@ -1062,18 +1124,18 @@ function aiDiff(id) {
   const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])]
     .filter((k) => JSON.stringify(before[k] ?? null) !== JSON.stringify(after[k] ?? null));
   const fmt = (v) => {
-    const one = (x) => (x && typeof x === "object" ? Object.entries(x).map(([l, t]) => `[${l}] ${t === "" ? "（不显示）" : t}`).join("\n   ") : String(x ?? ""));
+    const one = (x) => (x && typeof x === "object" ? Object.entries(x).map(([l, s]) => `[${l}] ${s === "" ? t("(hidden)") : s}`).join("\n   ") : String(x ?? ""));
     if (Array.isArray(v)) return v.map((x) => "• " + one(x)).join("\n");
     return one(v);
   };
-  const names = { title: "名称", subtitle: "副标题", bullets: "要点", tech: "技术", location: "地点", start: "开始", end: "结束", date: "日期", link: "链接", notes: "事实层", evidence: "证据路径" };
+  const names = { title: t("Name"), subtitle: t("Subtitle"), bullets: t("Bullets"), tech: t("Tech"), location: t("Location"), start: t("Start"), end: t("End"), date: t("Date"), link: t("Link"), notes: t("Fact layer"), evidence: t("Evidence paths") };
   const close = () => { delete ui.ai[id]; buildEditor(); };
-  return card(keys.length ? "Claude 改了这一条" : "Claude 没有改动这一条", `${AI_LABELS[a.action] || ""} · 对话里有它的说明`, [
+  return card(keys.length ? t("Claude changed this entry") : t("Claude didn't change this entry"), `${a.action in AI_LABELS ? t(AI_LABELS[a.action]) : ""} · ${t("the chat explains why")}`, [
     keys.map((k) => [h("div", { class: "k" }, names[k] || k), h("div", { class: "before" }, fmt(before[k])), h("div", { class: "after" }, fmt(after[k]))]),
     h("div", { class: "row", style: "margin-top:12px" },
-      h("button", { class: "btn sm", onclick: close }, icon("check"), keys.length ? "保留" : "知道了"),
-      keys.length && h("button", { class: "btn sm danger-soft", onclick: () => undoAi(id) }, icon("undo"), "撤销，恢复到改动前"),
-      h("button", { class: "btn sm ghost", onclick: () => setTab("chat") }, icon("chat"), "看对话")),
+      h("button", { class: "btn sm", onclick: close }, icon("check"), keys.length ? t("Keep") : t("Got it")),
+      keys.length && h("button", { class: "btn sm danger-soft", onclick: () => undoAi(id) }, icon("undo"), t("Undo, back to before")),
+      h("button", { class: "btn sm ghost", onclick: () => setTab("chat") }, icon("chat"), t("Open the chat"))),
   ], { cls: "diff" });
 }
 
@@ -1085,8 +1147,8 @@ async function undoAi(id) {
     applyState(s);
     buildEditor({ flash: true });
     scheduleRender();
-    toast("已恢复到改动前");
-  } catch (e) { toast("撤销失败：" + e.message); }
+    toast(t("Restored to before the change"));
+  } catch (e) { toast(t("Undo failed: {error}", { error: e.message })); }
 }
 
 // one entry: snapshot it first so the result can be compared and undone
@@ -1116,7 +1178,7 @@ function finishAi(chatId) {
       const before = snaps[e.id];
       if (before && JSON.stringify(before) !== JSON.stringify(e)) { ui.ai[e.id] = { chat: chatId, action, snapshot: before, done: true }; touched.push(e.id); }
     }
-    if (!touched.length) { toast("Claude 这次没有改动任何经历，详见对话"); return; }
+    if (!touched.length) { toast(t("Claude didn't change any entry this time; see the chat")); return; }
   }
   if (!touched.length) return;
   const open = ui.sel.kind === "entry" && touched.includes(ui.sel.id);
@@ -1124,19 +1186,19 @@ function finishAi(chatId) {
   const first = touched.find((id) => id !== ui.sel.id) || touched[0];
   if (!open || touched.length > 1) {
     const name = display((entryById(first) || {}).title) || entryLabel(entryById(first));
-    toast(touched.length > 1 ? `Claude 改了 ${touched.length} 条经历，打开每一条都能看到改了什么、可以撤销` : `Claude 改完了「${name}」`,
-      { ms: 6000, action: { label: "查看", fn: () => select("entry", first) } });
+    toast(touched.length > 1 ? t("Claude changed {n} entries; open each to see what changed and undo it", { n: touched.length }) : t("Claude finished “{name}”", { name }),
+      { ms: 6000, action: { label: t("View"), fn: () => select("entry", first) } });
   }
 }
 
-// ---- bilingual checks (mirror resume/model.py missing_text) ----
-const CJK = /[㐀-鿿]/;
+// ---- language checks (mirror resume/model.py missing_text) ----
+const CJK = /[぀-ヿ㐀-鿿가-힯]/;
 function lacks(v, lang, bullet = false) {
   if (v && typeof v === "object") {
     const others = Object.entries(v).some(([k, x]) => k !== lang && x);
     return others && (bullet ? !(lang in v) : !v[lang]);
   }
-  if (bullet && v) return (lang === "zh") !== CJK.test(String(v));
+  if (bullet && v) return !!langInfo(lang).cjk !== CJK.test(String(v));
   return false;
 }
 function missingIn(e, lang) {
@@ -1183,13 +1245,13 @@ function paintLines() {
 
 // ================================================================ right: preview
 const SLIDERS = [
-  ["font_size", "字号", 8, 13, 0.1, "pt"],
-  ["line_spread", "行距", 0.8, 1.4, 0.01, "×"],
-  ["margin_x", "左右边距", 0.4, 3, 0.05, "cm"],
-  ["margin_y", "上下边距", 0.4, 3, 0.05, "cm"],
-  ["section_sep", "板块间距", 0, 20, 0.5, "pt"],
-  ["entry_sep", "条目间距", 0, 14, 0.5, "pt"],
-  ["item_sep", "要点间距", 0, 8, 0.25, "pt"],
+  ["font_size", "Font size", 8, 13, 0.1, "pt"],
+  ["line_spread", "Line spacing", 0.8, 1.4, 0.01, "×"],
+  ["margin_x", "Side margins", 0.4, 3, 0.05, "cm"],
+  ["margin_y", "Top & bottom margins", 0.4, 3, 0.05, "cm"],
+  ["section_sep", "Section spacing", 0, 20, 0.5, "pt"],
+  ["entry_sep", "Entry spacing", 0, 14, 0.5, "pt"],
+  ["item_sep", "Bullet spacing", 0, 8, 0.25, "pt"],
 ];
 
 function layoutValue(key) {
@@ -1201,10 +1263,13 @@ function layoutValue(key) {
 let layoutBuiltFor = null;
 function renderPreviewToolbar() {
   const v = version();
-  ui.w.tpl.setOptions((S.templates || []).map((t) => ({ value: t.id, label: t.name, desc: t.description })), v ? v.template : null);
+  ui.w.tpl.setOptions((S.templates || []).map((tp) => ({ value: tp.id, label: tp.name, desc: t(tp.description) })), v ? v.template : null);
   ui.w.tpl.disabled = !v;
-  $("#lang-seg").replaceChildren(...["en", "zh"].map((l) => h("button", { class: v && v.lang === l ? "on" : "", disabled: !v,
-    title: v ? `预览和导出用${LANG_LONG[l]}` : "", onclick: () => mutateVersion((x) => { x.lang = l; }) }, LANG_NAMES[l])));
+  const shown = [...new Set([...langs(), ...(v && v.lang ? [v.lang] : [])])];
+  $("#lang-seg").replaceChildren(...shown.map((l) => h("button", { class: v && v.lang === l ? "on" : "", disabled: !v,
+    title: v ? t("Preview and export in {lang}", { lang: langName(l) }) : "", onclick: () => mutateVersion((x) => { x.lang = l; }) }, langShort(l))),
+    h("button", { class: "seg-add", title: t("Add or manage resume languages"), "aria-label": t("Add or manage resume languages"), "aria-haspopup": "menu",
+      onclick: (e) => openLangMenu(e.currentTarget) }, icon("plus")));
   $("#layout-toggle").classList.toggle("on", ui.layoutOpen);
   $("#layout-toggle").disabled = !v;
   $("#export-btn").disabled = !v;
@@ -1217,7 +1282,7 @@ function renderPreviewToolbar() {
 
 function buildLayoutPanel() {
   layoutBuiltFor = ui.versionId;
-  const reset = (key) => h("button", { class: "btn icon sm ghost", title: "恢复默认", "data-reset": key, onclick: () => queueLayout(key, undefined, 0) }, icon("undo"));
+  const reset = (key) => h("button", { class: "btn icon sm ghost", title: t("Reset to default"), "data-reset": key, onclick: () => queueLayout(key, undefined, 0) }, icon("undo"));
   ui.w.accent = colorField({
     value: layoutValue("accent"), onChange: (c) => queueLayout("accent", c, 0), onReset: () => queueLayout("accent", undefined, 0),
     isDefault: () => !((version() || {}).layout || {}).accent,
@@ -1225,23 +1290,24 @@ function buildLayoutPanel() {
   $("#layout-panel").replaceChildren(
     ...SLIDERS.map(([key, label, min, max, step, unit]) => {
       const val = h("span", { class: "val" });
-      const input = h("input", { type: "range", min, max, step, "data-key": key, "aria-label": label,
+      const input = h("input", { type: "range", min, max, step, "data-key": key, "aria-label": t(label),
         oninput: (ev) => { val.textContent = ev.target.value + unit; queueLayout(key, parseFloat(ev.target.value)); } });
-      return h("div", { class: "ctl" }, h("span", null, label), input, val, reset(key));
+      return h("div", { class: "ctl" }, h("span", null, t(label)), input, val, reset(key));
     }),
-    h("div", { class: "ctl" }, h("span", null, "强调色"), ui.w.accent.el, h("span"), reset("accent")),
-    h("div", { class: "ctl" }, h("span", null, "纸张"), h("div", { id: "ctl-paper" }), h("span"), reset("paper")),
-    fontControl("font", "英文字体", reset),
-    fontControl("cjk_font", "中文字体", reset));
+    h("div", { class: "ctl" }, h("span", null, t("Accent colour")), ui.w.accent.el, h("span"), reset("accent")),
+    h("div", { class: "ctl" }, h("span", null, t("Paper")), h("div", { id: "ctl-paper" }), h("span"), reset("paper")),
+    fontControl("font", t("Latin font"), reset),
+    fontControl("cjk_font", t("CJK font"), reset));
 }
 
-// ---- font pickers: installed fonts from the server, plus "自定义…" for any other font name
+// ---- font pickers: installed fonts from the server, plus "Custom…" for any other font name
 const CUSTOM_FONT = "\u0000custom";
-const FONT_GROUPS = { serif: "衬线 / 宋体", sans: "无衬线 / 黑体", kai: "楷体 / 仿宋", fang: "楷体 / 仿宋" };
+const FONT_GROUPS = { serif: "Serif", sans: "Sans serif", kai: "Kai / Fangsong", fang: "Kai / Fangsong" };
+const CJK_FONT_LANGS = { zh: "简体中文", "zh-tw": "繁體中文", ja: "日本語", ko: "한국어" };
 ui.fontPick = {};
 function fontControl(key, label, reset) {
-  const input = h("input", { type: "text", class: "hidden", id: `ctl-${key}-custom`, spellcheck: "false", "aria-label": `${label}（自定义）`,
-    placeholder: "输入已安装字体的名字", onchange: (ev) => { ev.target.classList.add("hidden"); queueLayout(key, ev.target.value.trim() || undefined, 0); } });
+  const input = h("input", { type: "text", class: "hidden", id: `ctl-${key}-custom`, spellcheck: "false", "aria-label": t("{label} (custom)", { label }),
+    placeholder: t("Name of an installed font"), onchange: (ev) => { ev.target.classList.add("hidden"); queueLayout(key, ev.target.value.trim() || undefined, 0); } });
   const sel = uiSelect({ id: `ctl-${key}`, label, menuWidth: 320,
     onChange: (v) => {
       if (v === CUSTOM_FONT) { input.classList.remove("hidden"); input.value = ""; input.focus(); return; }
@@ -1254,20 +1320,25 @@ function fontControl(key, label, reset) {
 
 function updateFontControls(v) {
   const F = S.fonts || { latin: [], cjk: [] };
-  const zh = v.lang === "zh";
+  const info = langInfo(v.lang);
+  const script = info.script || "latin";
+  const wide = info.cjk || script === "greek" || script === "cyrillic";
+  const cjkDefault = (F.default_cjk_by_script || {})[info.cjk ? script : "zh"] || F.default_cjk;
   const defaults = {
-    font: zh ? `默认：${F.default_latin_cjk}` : "默认：Latin Modern Roman",
-    cjk_font: `默认：${(F.cjk.find((f) => f.name === F.default_cjk) || { label: F.default_cjk }).label}`,
+    font: t("Default: {font}", { font: wide ? (F.default_latin_cjk || "Latin Modern Roman") : "Latin Modern Roman" }),
+    cjk_font: t("Default: {font}", { font: (F.cjk.find((f) => f.name === cjkDefault) || { label: cjkDefault }).label }),
   };
+  const fontGroup = (f) => (f.lang ? `${CJK_FONT_LANGS[f.lang] || f.lang} · ` : "") + t(FONT_GROUPS[f.kind] || "Serif");
   for (const [key, list] of [["font", F.latin], ["cjk_font", F.cjk]]) {
     const pick = ui.fontPick[key];
     if (!pick) continue;
     const cur = (v.layout || {})[key] || null;
     const known = list.some((f) => f.name === cur);
-    const opts = [{ value: null, label: defaults[key], desc: zh ? "中文简历：宋体 + 粗细相近的衬线英文" : "跟随模板" },
-      ...list.map((f) => ({ value: f.name, label: f.label, hint: f.label !== f.name ? f.name : "", desc: f.desc, group: FONT_GROUPS[f.kind] }))];
-    if (cur && !known) opts.push({ value: cur, label: cur, desc: "自定义字体", group: "自定义" });
-    opts.push({ value: CUSTOM_FONT, label: "自定义…", desc: "输入电脑上任意已安装字体的名字", group: "自定义" });
+    const mine = key === "cjk_font" && info.cjk ? [...list.filter((f) => f.lang === script), ...list.filter((f) => f.lang !== script)] : list;
+    const opts = [{ value: null, label: defaults[key], desc: key === "font" && wide ? t("A serif that covers this language, matched in weight") : t("Follows the template") },
+      ...mine.map((f) => ({ value: f.name, label: f.label, hint: f.label !== f.name ? f.name : "", desc: f.desc ? t(f.desc) : "", group: fontGroup(f) }))];
+    if (cur && !known) opts.push({ value: cur, label: cur, desc: t("Custom font"), group: t("Custom") });
+    opts.push({ value: CUSTOM_FONT, label: t("Custom…"), desc: t("Type the name of any font installed on this computer"), group: t("Custom") });
     pick.sel.setOptions(opts, cur);
     if (document.activeElement !== pick.input) pick.input.classList.add("hidden");
   }
@@ -1279,8 +1350,8 @@ function updateLayoutPanel() {
   const active = document.activeElement;
   const set = (el, value) => { if (el && el !== active) el.value = value; };
   const paper = layoutValue("paper");
-  $("#ctl-paper").replaceChildren(uiSeg([{ value: "a4", label: "A4", tip: "21 × 29.7 cm，澳洲和中国常用" }, { value: "letter", label: "Letter", tip: "8.5 × 11 in，北美常用" }],
-    paper, (p) => queueLayout("paper", p, 0), { label: "纸张" }));
+  $("#ctl-paper").replaceChildren(uiSeg([{ value: "a4", label: "A4", tip: t("21 × 29.7 cm, used in most of the world") }, { value: "letter", label: "Letter", tip: t("8.5 × 11 in, used in North America") }],
+    paper, (p) => queueLayout("paper", p, 0), { label: t("Paper") }));
   updateFontControls(v);
   if (ui.w.accent) ui.w.accent.value = layoutValue("accent");
   for (const [key, , , , , unit] of SLIDERS) {
@@ -1361,19 +1432,19 @@ function renderIssues() {
   const items = [];
   if (long.length) {
     items.push(h("button", { class: "issue warn", "aria-haspopup": "menu", onclick: (ev) => openMenu(ev.currentTarget, [
-      { header: `${LANG_LONG[lang]}要点超过一行` },
-      ...long.map((b) => { const e = entryById(b.id); return { label: `${display(e.title) || entryLabel(e)} · 第 ${b.index + 1} 条`, hint: `${b.n} 行 · ${Math.round(b.fill * 100)}%`, icon: "compress", onClick: () => jumpToBullet(b.id, b.index, lang) }; }),
+      { header: t("{lang} bullets that run past one line", { lang: langName(lang) }) },
+      ...long.map((b) => { const e = entryById(b.id); return { label: t("{name} · bullet {n}", { name: display(e.title) || entryLabel(e), n: b.index + 1 }), hint: `${t("{n} line", { n: b.n }, "{n} lines")} · ${Math.round(b.fill * 100)}%`, icon: "compress", onClick: () => jumpToBullet(b.id, b.index, lang) }; }),
       "sep",
-      { label: "让 Claude 全部压成一行", icon: "sparkle", disabled: !ui.chat.available, onClick: () => aiBatch("batch_fit") },
-    ], { minWidth: 280 }) }, icon("compress"), `${long.length} 条要点超过一行`));
+      { label: t("Let Claude fit them all on one line"), icon: "sparkle", disabled: !ui.chat.available, onClick: () => aiBatch("batch_fit") },
+    ], { minWidth: 280 }) }, icon("compress"), t("{n} bullet runs past one line", { n: long.length }, "{n} bullets run past one line")));
   }
   if (missing.length && langs().length > 1) {
     items.push(h("button", { class: "issue", "aria-haspopup": "menu", onclick: (ev) => openMenu(ev.currentTarget, [
-      { header: `这些经历还缺${LANG_LONG[lang]}，暂时显示另一种语言` },
-      ...missing.map((m) => { const e = entryById(m.id); return { label: display(e.title) || entryLabel(e), hint: m.bullets && m.bullets.length ? `${m.bullets.length} 条要点` : "标题等", icon: "translate", onClick: () => { ui.editLang = lang; select("entry", m.id); } }; }),
+      { header: t("These entries lack {lang} and show another language for now", { lang: langName(lang) }) },
+      ...missing.map((m) => { const e = entryById(m.id); return { label: display(e.title) || entryLabel(e), hint: m.bullets && m.bullets.length ? t("{n} bullet", { n: m.bullets.length }, "{n} bullets") : t("title etc."), icon: "translate", onClick: () => { ui.editLang = lang; select("entry", m.id); } }; }),
       "sep",
-      { label: `让 Claude 补齐${LANG_LONG[lang]}版`, icon: "sparkle", disabled: !ui.chat.available, onClick: () => aiBatch("batch_translate", { target: lang }) },
-    ], { minWidth: 280 }) }, icon("translate"), `${missing.length} 条经历缺${LANG_LONG[lang]}`));
+      { label: t("Let Claude fill in the {lang} version", { lang: langName(lang) }), icon: "sparkle", disabled: !ui.chat.available, onClick: () => aiBatch("batch_translate", { target: lang }) },
+    ], { minWidth: 280 }) }, icon("translate"), t("{n} entry lacks {lang}", { n: missing.length, lang: langName(lang) }, "{n} entries lack {lang}")));
   }
   box.replaceChildren(...items);
   box.classList.toggle("hidden", !items.length);
@@ -1382,8 +1453,8 @@ function renderIssues() {
 async function jumpToBullet(id, index, lang) {
   if (langs().includes(lang)) ui.editLang = lang;
   await select("entry", id);
-  const t = document.querySelector(`#bullets textarea[data-bullet="${index}"]`);
-  if (t) { t.scrollIntoView({ block: "center", behavior: "smooth" }); t.focus(); t.closest(".bullet").classList.add("pulse"); }
+  const ta = document.querySelector(`#bullets textarea[data-bullet="${index}"]`);
+  if (ta) { ta.scrollIntoView({ block: "center", behavior: "smooth" }); ta.focus(); ta.closest(".bullet").classList.add("pulse"); }
 }
 
 function setBadge(res) {
@@ -1391,19 +1462,19 @@ function setBadge(res) {
   const errs = $("#render-errors");
   errs.classList.add("hidden");
   if (!res) { b.className = "badge"; b.textContent = ""; return; }
-  if (res.busy) { b.className = "badge busy"; b.textContent = "渲染中"; return; }
+  if (res.busy) { b.className = "badge busy"; b.textContent = t("Rendering"); return; }
   if (res.ok && res.version === ALL) {
     b.className = "badge info";
-    b.replaceChildren(`全部经历 · ${res.pages} 页`);
-    setTip(b, "ALL 不受一页限制；投递用的简历请在岗位里做");
+    b.replaceChildren(`${t("All entries")} · ${t("{n} page", { n: res.pages }, "{n} pages")}`);
+    setTip(b, t("ALL isn't limited to one page; make the resumes you send in jobs"));
   } else if (res.ok) {
     const one = res.pages === 1;
     b.className = "badge " + (one ? "ok" : "bad");
-    b.replaceChildren(icon(one ? "check" : "alert"), one ? "1 页" : `${res.pages} 页 · 超出一页`);
-    setTip(b, one ? `渲染用时 ${res.seconds}s` : "试试在「版面」里减小字号、边距、间距，或在这个岗位里少选一条经历");
+    b.replaceChildren(icon(one ? "check" : "alert"), one ? t("{n} page", { n: 1 }, "{n} pages") : `${t("{n} page", { n: res.pages }, "{n} pages")} · ${t("over one page")}`);
+    setTip(b, one ? t("Rendered in {s}s", { s: res.seconds }) : t("Try a smaller font size, margins or spacing under Layout, or one entry fewer in this job"));
   } else {
     b.className = "badge bad";
-    b.replaceChildren(icon("alert"), "渲染失败");
+    b.replaceChildren(icon("alert"), t("Rendering failed"));
     errs.textContent = (res.errors || []).join("\n");
     errs.classList.remove("hidden");
   }
@@ -1424,7 +1495,7 @@ function pageWidth() {
 function applyZoom() {
   const w = pageWidth();
   for (const p of document.querySelectorAll("#pages .page")) p.style.width = w + "px";
-  $("#zoom-fit").textContent = ui.zoom === "fit" ? "适合" : Math.round(ui.zoom * 100) + "%";
+  $("#zoom-fit").textContent = ui.zoom === "fit" ? t("Fit") : Math.round(ui.zoom * 100) + "%";
 }
 
 function setZoom(z) {
@@ -1446,14 +1517,14 @@ async function showPages(res) {
   }
   const imgs = await Promise.all(Array.from({ length: res.images }, (_, i) => new Promise((resolve) => {
     const img = new Image();
-    img.alt = `第 ${i + 1} 页`;
+    img.alt = t("Page {n}", { n: i + 1 });
     img.onload = img.onerror = () => resolve(img);
     img.src = `/api/versions/${vid}/page/${i + 1}?t=${res.stamp}`;
   })));
   const w = pageWidth();
   const all = res.version === ALL;
   box.replaceChildren(...imgs.map((img, i) => h("div", { class: "page" + (i > 0 && !all ? " overflow" : ""), style: `width:${w}px` },
-    res.images > 1 ? h("span", { class: "plabel" }, i === 0 || all ? `第 ${i + 1} 页` : `第 ${i + 1} 页 · 超出一页`) : null, img)));
+    res.images > 1 ? h("span", { class: "plabel" }, i === 0 || all ? t("Page {n}", { n: i + 1 }) : `${t("Page {n}", { n: i + 1 })} · ${t("over one page")}`) : null, img)));
 }
 
 async function exportPdf() {
@@ -1461,12 +1532,13 @@ async function exportPdf() {
   $("#export-btn").disabled = true;
   try {
     const r = await api("POST", `/api/versions/${encodeURIComponent(ui.versionId)}/export`);
-    if (!r.ok) { setBadge(r); toast("导出失败，看预览上方的错误信息"); return; }
+    if (!r.ok) { setBadge(r); toast(t("Export failed; see the error above the preview")); return; }
     setBadge(r);
     await showPages(r);
-    toast(`已导出 ${r.exported.pdf.split(/[\\/]/).pop()}${r.pages > 1 ? `（注意：共 ${r.pages} 页）` : ""}`,
-      { ms: 6000, action: { label: "打开文件夹", fn: () => api("POST", "/api/reveal", { path: r.exported.pdf }) } });
-  } catch (e) { toast("导出失败：" + e.message); }
+    const file = r.exported.pdf.split(/[\\/]/).pop();
+    toast(r.pages > 1 ? t("Exported {file} (note: {n} pages)", { file, n: r.pages }) : t("Exported {file}", { file }),
+      { ms: 6000, action: { label: t("Open folder"), fn: () => api("POST", "/api/reveal", { path: r.exported.pdf }) } });
+  } catch (e) { toast(t("Export failed: {error}", { error: e.message })); }
   finally { $("#export-btn").disabled = !version(); }
 }
 
@@ -1508,8 +1580,8 @@ function initGutters() {
 function connect() {
   const es = new EventSource("/api/events");
   const conn = $("#conn");
-  es.onopen = () => { conn.className = "conn ok"; setTip(conn, "已连接"); if (S) { refresh(); checkEvidence(); } };
-  es.onerror = () => { conn.className = "conn bad"; setTip(conn, "连接断开，正在重连…"); };
+  es.onopen = () => { conn.className = "conn ok"; setTip(conn, t("Connected")); if (S) { refresh(); checkEvidence(); } };
+  es.onerror = () => { conn.className = "conn bad"; setTip(conn, t("Disconnected, reconnecting…")); };
   es.addEventListener("file", (m) => { const d = JSON.parse(m.data); if (S && d.digest === S.digest) return; refresh(); });
   es.addEventListener("evidence", () => checkEvidence(true));
   listenChat(es);
@@ -1520,15 +1592,17 @@ function wire() {
   initContextMenu();
   for (const b of document.querySelectorAll(".tab")) b.onclick = () => setTab(b.dataset.tab);
 
-  ui.w.version = uiSelect({ id: "version-select", cls: "version", label: "ALL 或岗位", menuWidth: 300,
-    title: "ALL = 全部经历；其余是各个岗位的简历", onChange: (v) => switchVersion(v) });
+  ui.w.version = uiSelect({ id: "version-select", cls: "version", label: t("ALL or a job"), menuWidth: 300,
+    title: t("ALL = every entry; the others are each job's resume"), onChange: (v) => switchVersion(v) });
   $("#version-slot").replaceWith(ui.w.version.el);
   $("#version-menu-btn").append(icon("more"));
   $("#version-menu-btn").onclick = openVersionMenu;
 
-  ui.w.tpl = uiSelect({ id: "tpl-select", label: "模板", menuWidth: 300, onChange: (t) => mutateVersion((x) => { x.template = t; }) });
+  ui.w.tpl = uiSelect({ id: "tpl-select", label: t("Template"), menuWidth: 300, onChange: (tp) => mutateVersion((x) => { x.template = tp; }) });
   $("#tpl-slot").replaceWith(ui.w.tpl.el);
-  $("#layout-toggle").prepend(icon("settings"));
+  $("#layout-toggle").prepend(icon("sliders"));
+  $("#settings-btn").append(icon("settings"));
+  $("#settings-btn").onclick = openSettings;
   $("#layout-toggle").onclick = () => { ui.layoutOpen = !ui.layoutOpen; store("layoutOpen", ui.layoutOpen ? "1" : "0"); renderPreviewToolbar(); };
   $("#zoom-in").append(icon("zoomIn"));
   $("#zoom-out").append(icon("zoomOut"));
@@ -1541,6 +1615,7 @@ function wire() {
 
   document.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveDraft(); }
+    if ((e.ctrlKey || e.metaKey) && e.key === ",") { e.preventDefault(); openSettings(); }
     if (e.key === "Escape" && !Float.cur && ui.layoutOpen) { ui.layoutOpen = false; renderPreviewToolbar(); }
   });
   window.addEventListener("beforeunload", () => { if (ui.dirty) saveDraft(); });

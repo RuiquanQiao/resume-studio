@@ -20,6 +20,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from core.i18n import t
+
 SKIP_DIRS = {
     ".git", "node_modules", ".venv", "venv", "env", "__pycache__", ".next", ".nuxt", "dist", "build",
     "out", "target", ".cache", ".pytest_cache", ".mypy_cache", ".idea", ".vscode", ".gradle", "bin",
@@ -211,19 +213,19 @@ def describe(row: dict) -> str:
     c = row.get("changes") or {}
     lines = [f"- {row['path']}"]
     if c.get("commits"):
-        lines.append(f"  {c['commits']} 个新提交：")
+        lines.append("  " + t("{n} new commit:", "{n} new commits:", n=c["commits"]))
         lines += [f"    {l}" for l in c.get("log", [])]
         if c.get("stat"):
-            lines.append("  改动的文件（git diff --stat）：")
+            lines.append("  " + t("Changed files (git diff --stat):"))
             lines += [f"    {l.strip()}" for l in c["stat"]]
     if c.get("rewritten"):
-        lines.append("  git 历史被改写过，无法列出新提交；请直接看 git log 和代码。")
+        lines.append("  " + t("The git history was rewritten, so the new commits can't be listed; look at git log and the code directly."))
     if c.get("uncommitted"):
-        lines.append(f"  另有 {c['uncommitted']} 个文件有未提交的改动。")
+        lines.append("  " + t("{n} more file has uncommitted changes.", "{n} more files have uncommitted changes.", n=c["uncommitted"]))
     if c.get("counts"):
         a, m, r = c["counts"]
-        lines.append(f"  新增 {a} 个文件、修改 {m} 个、删除 {r} 个。")
-        for label, key in (("新增", "added"), ("修改", "modified"), ("删除", "removed")):
+        lines.append("  " + t("{a} files added, {m} modified, {r} removed.", a=a, m=m, r=r))
+        for label, key in ((t("Added"), "added"), (t("Modified"), "modified"), (t("Removed"), "removed")):
             if c.get(key):
-                lines.append(f"  {label}：" + "，".join(c[key][:12]))
+                lines.append(f"  {label}: " + ", ".join(c[key][:12]))
     return "\n".join(lines)

@@ -13,24 +13,55 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from core.i18n import t
 from core.store import fingerprint, to_plain
+
+from . import langs as L
 
 SCHEMA_VERSION = 1
 
 DEFAULT_SECTIONS = [
-    {"id": "education", "title": {"en": "Education", "zh": "教育背景"}, "kind": "timeline"},
-    {"id": "experience", "title": {"en": "Experience", "zh": "工作经历"}, "kind": "timeline"},
-    {"id": "projects", "title": {"en": "Projects", "zh": "项目经历"}, "kind": "timeline"},
-    {"id": "skills", "title": {"en": "Skills", "zh": "专业技能"}, "kind": "list"},
-    {"id": "awards", "title": {"en": "Awards", "zh": "荣誉奖项"}, "kind": "timeline"},
+    {"id": "education", "kind": "timeline"},
+    {"id": "experience", "kind": "timeline"},
+    {"id": "projects", "kind": "timeline"},
+    {"id": "skills", "kind": "list"},
+    {"id": "awards", "kind": "timeline"},
 ]
+
+
+def section_title(section_id: str, lang: str) -> str | None:
+    """A default section's title in one resume language (None for custom sections)."""
+    titles = L.SECTION_TITLES.get(lang) or L.SECTION_TITLES["en"]
+    return titles.get(section_id)
+
+
+def default_sections(languages: list[str]) -> list[dict]:
+    out = []
+    for s in DEFAULT_SECTIONS:
+        names = {lang: section_title(s["id"], lang) for lang in languages}
+        out.append({"id": s["id"], "title": names[languages[0]] if len(languages) == 1 else names, "kind": s["kind"]})
+    return out
+
+
+def add_language_titles(doc: Any, lang: str) -> None:
+    """A language was added: give the default sections their titles in it (custom ones are left to the user)."""
+    for s in doc.get("sections") or []:
+        name = section_title(str(s.get("id")), lang)
+        title = s.get("title")
+        if not name or (isinstance(title, dict) and title.get(lang)):
+            continue
+        if isinstance(title, dict):
+            title[lang] = name
+        elif title:  # one shared string so far: keep it for the languages that had it
+            others = [x for x in (doc.get("settings") or {}).get("languages") or [] if x != lang]
+            s["title"] = {**{o: title for o in others}, lang: name}
 
 
 ALL_ID = "ALL"
 
 
-def default_all_version() -> dict:
-    return {"id": ALL_ID, "label": "全部经历", "lang": "en", "template": "classic", "headline": "", "layout": {}}
+def default_all_version(lang: str = "en") -> dict:
+    return {"id": ALL_ID, "label": "All entries", "lang": lang, "template": "classic", "headline": "", "layout": {}}
 
 
 def is_all(version: Any) -> bool:
@@ -52,14 +83,16 @@ DEFAULT_LAYOUT = {
 }
 
 
-def skeleton() -> dict:
+def skeleton(lang: str = "en") -> dict:
+    """A new, empty file whose resume language is `lang` (the computer's language by default)."""
+    all_v = default_all_version(lang)
     return {
         "schema_version": SCHEMA_VERSION,
-        "settings": {"languages": ["en"], "export_dir": "exports"},
+        "settings": {"languages": [lang], "export_dir": "exports"},
         "profile": {"name": "Your Name", "contacts": [], "notes": ""},
-        "sections": [dict(s) for s in DEFAULT_SECTIONS],
+        "sections": default_sections([lang]),
         "entries": [],
-        "versions": [default_all_version()],
+        "versions": [all_v],
     }
 
 
@@ -112,7 +145,7 @@ def bullet_text(value: Any, lang: str) -> str:
     return tr(value, lang)
 
 
-_CJK_RE = re.compile(r"[㐀-鿿]")
+_CJK_RE = re.compile(r"[぀-ヿ㐀-鿿가-힯]")
 
 
 def _lacks(value: Any, lang: str, bullet: bool = False) -> bool:
@@ -120,7 +153,7 @@ def _lacks(value: Any, lang: str, bullet: bool = False) -> bool:
         others = any(v for k, v in value.items() if k != lang)
         return others and (lang not in value if bullet else not value.get(lang))
     if bullet and value:  # one plain string for every language: flag it where it is the wrong script
-        return (lang == "zh") != bool(_CJK_RE.search(str(value)))
+        return L.is_cjk(lang) != bool(_CJK_RE.search(str(value)))
     return False
 
 
@@ -131,8 +164,7 @@ def missing_text(entry: Any, lang: str) -> dict:
     return {"fields": fields, "bullets": bullets} if fields or bullets else {}
 
 
-_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-_PRESENT = {"present", "now", "current", "至今", "今"}
+_PRESENT = {"present", "now", "current", "至今", "今"} | {v["present"].lower() for v in L.LANGS.values()}
 
 
 def fmt_date(value: Any, lang: str) -> str:
@@ -140,12 +172,12 @@ def fmt_date(value: Any, lang: str) -> str:
     if not s:
         return ""
     if s.lower() in _PRESENT:
-        return "至今" if lang == "zh" else "Present"
+        return L.present(lang)
     m = re.fullmatch(r"(\d{4})-(\d{1,2})(?:-\d{1,2})?", s)
     if m:
-        y, mo = m.group(1), int(m.group(2))
+        y, mo = int(m.group(1)), int(m.group(2))
         if 1 <= mo <= 12:
-            return f"{y}.{mo:02d}" if lang == "zh" else f"{_MONTHS[mo - 1]} {y}"
+            return L.format_month(y, mo, lang)
     return s
 
 
@@ -176,8 +208,13 @@ def get_version(doc: Any, version_id: str) -> Any:
     """Like get_item, but ALL always exists (a file may not have saved it yet)."""
     v = get_item(doc, "version", version_id)
     if v is None and version_id == ALL_ID:
-        return default_all_version()
+        return default_all_version(first_lang(doc))
     return v
+
+
+def first_lang(doc: Any) -> str:
+    """The file's main resume language (the first one in settings)."""
+    return str(((doc.get("settings") or {}).get("languages") or ["en"])[0])
 
 
 def section_order(doc: Any, version: Any) -> list[str]:
@@ -188,11 +225,11 @@ def section_order(doc: Any, version: Any) -> list[str]:
     return list(dict.fromkeys(listed + ids))
 
 
-def with_all(versions: list) -> list:
+def with_all(versions: list, lang: str = "en") -> list:
     """Versions as the UI sees them: ALL first, then the job targets."""
     rest = [v for v in versions if not is_all(v)]
     found = next((v for v in versions if is_all(v)), None)
-    return [found if found is not None else default_all_version(), *rest]
+    return [found if found is not None else default_all_version(lang), *rest]
 
 
 def hashes(doc: Any) -> dict:
@@ -224,18 +261,18 @@ def validate(doc: Any) -> list[str]:
     warn: list[str] = []
     ids = [str(e.get("id")) for e in doc.get("entries") or []]
     for dup in sorted({i for i in ids if ids.count(i) > 1}):
-        warn.append(f"经历 ID 重复：{dup}")
+        warn.append(t("Duplicate entry ID: {id}", id=dup))
     section_ids = {str(s.get("id")) for s in doc.get("sections") or []}
     for e in doc.get("entries") or []:
         if str(e.get("section")) not in section_ids:
-            warn.append(f"{e.get('id')} 的 section「{e.get('section')}」不在 sections 列表里")
+            warn.append(t("{id} is in section “{section}”, which isn't in the sections list", id=e.get("id"), section=e.get("section")))
     known = set(ids)
     for v in doc.get("versions") or []:
         if is_all(v):
             continue
         for ref in v.get("entries") or []:
             if str(ref) not in known:
-                warn.append(f"岗位 {v.get('id')} 引用了不存在的经历 {ref}")
+                warn.append(t("Job {job} refers to entry {ref}, which doesn't exist", job=v.get("id"), ref=ref))
     return warn
 
 

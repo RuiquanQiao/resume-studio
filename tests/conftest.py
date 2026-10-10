@@ -22,6 +22,11 @@ _TMP.mkdir(parents=True, exist_ok=True)
 for _k in ("TMP", "TEMP", "TMPDIR"):
     os.environ[_k] = str(_TMP)
 
+# The interface follows the computer's language; pin it so the suite runs the same on every
+# machine. Most UI assertions are written against the Chinese catalog (the sample file is
+# bilingual); test_i18n.py covers English, fallback and switching.
+os.environ["RESUME_STUDIO_LANG"] = "zh-CN"
+
 
 @pytest.fixture
 def data_file(tmp_path: Path) -> Path:

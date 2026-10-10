@@ -6,6 +6,32 @@
 
 const $ = (s, root = document) => root.querySelector(s);
 
+// ================================================================ i18n
+// window.I18N comes from /i18n.js (loaded first): {lang, dict, chosen, system, langs}.
+// Keys are the English text; t("Saved"), t("{n} entry", {n}, "{n} entries") for counts.
+const I18N = window.I18N || { lang: "en", dict: {}, langs: { en: "English" } };
+function t(key, vars = {}, other = null) {
+  const n = vars.n;
+  const hit = I18N.lang !== "en" ? I18N.dict[key] : undefined;
+  let s;
+  if (Array.isArray(hit)) s = hit[(n === 1 || (I18N.lang === "fr" && (n === 0 || n === 1)) || hit.length === 1) ? 0 : 1];
+  else if (hit != null) s = hit;
+  else s = other != null && n !== 1 ? other : key;
+  return s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
+}
+// the static page (index.html): the own text of elements marked data-t (child elements such as
+// the chat tab's dot stay), and every title / placeholder / aria-label
+function localizeStatic(root = document) {
+  for (const el of root.querySelectorAll("[data-t]")) {
+    const node = [...el.childNodes].find((n) => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
+    if (node) node.textContent = t(node.textContent.trim());
+  }
+  for (const attr of ["title", "placeholder", "aria-label"]) {
+    for (const el of root.querySelectorAll(`[${attr}]`)) el.setAttribute(attr, t(el.getAttribute(attr)));
+  }
+  document.documentElement.lang = I18N.lang === "zh" ? "zh-CN" : I18N.lang;
+}
+
 function h(tag, attrs, ...kids) {
   const el = document.createElement(tag);
   let tip = null;
@@ -50,6 +76,7 @@ const ICONS = {
   folderOpen: '<path d="M3 8V6a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v2"/><path d="M3 8h17.5a1 1 0 0 1 1 1.2l-1.6 8A1 1 0 0 1 19 18H4.6a1 1 0 0 1-1-.8L2.1 9.2A1 1 0 0 1 3 8z"/>',
   git: '<circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="9" r="2.2"/><path d="M6 8.2v7.6M18 11.2c0 3.5-4 3.3-10.4 5.5"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/>',
+  sliders: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
   file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
   undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
   chat: '<path d="M4 5h16v11H9l-5 4z"/>',
@@ -83,7 +110,7 @@ function icon(name) {
 // A Notion-style six-dot handle. Rows are the `.sort-row` children of one parent; while
 // dragging, the row moves through the list live, and onMove(from, to) runs on drop.
 // The arrow keys move a focused handle one step.
-function dragHandle(onMove, label = "拖动排序") {
+function dragHandle(onMove, label = t("Drag to reorder")) {
   const btn = h("button", { type: "button", class: "btn icon sm ghost drag-handle", title: label, "aria-label": label }, icon("grip"));
   const rowsOf = (row) => [...row.parentElement.children].filter((x) => x.classList.contains("sort-row"));
   btn.addEventListener("pointerdown", (e) => {
@@ -297,7 +324,7 @@ function uiSelect(o) {
   const same = (a, b) => (a ?? null) === (b ?? null);
   const paint = () => {
     const cur = opts.find((x) => same(x.value, val));
-    lab.textContent = cur ? (cur.short || cur.label) : (o.placeholder || "请选择");
+    lab.textContent = cur ? (cur.short || cur.label) : (o.placeholder || t("Choose…"));
     lab.classList.toggle("ph", !cur);
     btn.dataset.value = val ?? "";
   };
@@ -364,9 +391,9 @@ function uiSeg(options, value, onChange, { cls = "", disabled = false, label = "
 
 // ================================================================ colour picker
 const SWATCHES = [
-  ["1F4E79", "深海蓝（默认）"], ["2A4B8D", "墨水蓝"], ["1D3557", "午夜蓝"], ["0F5257", "深青"],
-  ["1E5631", "松绿"], ["4A5D23", "橄榄"], ["7A1F2B", "酒红"], ["8C2F1B", "砖红"],
-  ["5B2A86", "暗紫"], ["6B4E16", "古铜"], ["3A3F47", "石墨"], ["111111", "黑"],
+  ["1F4E79", "Deep sea blue (default)"], ["2A4B8D", "Ink blue"], ["1D3557", "Midnight blue"], ["0F5257", "Dark teal"],
+  ["1E5631", "Pine green"], ["4A5D23", "Olive"], ["7A1F2B", "Wine red"], ["8C2F1B", "Brick red"],
+  ["5B2A86", "Dark purple"], ["6B4E16", "Bronze"], ["3A3F47", "Graphite"], ["111111", "Black"],
 ];
 function colorField({ value, onChange, onReset, isDefault }) {
   const norm = (v) => String(v || "").replace("#", "").toUpperCase();
@@ -377,7 +404,7 @@ function colorField({ value, onChange, onReset, isDefault }) {
   paint(value);
   btn.addEventListener("click", () => {
     const cur = norm(btn.dataset.value);
-    const hex = h("input", { class: "cp-hex", value: "#" + cur, spellcheck: "false", maxlength: "7", "aria-label": "十六进制颜色" });
+    const hex = h("input", { class: "cp-hex", value: "#" + cur, spellcheck: "false", maxlength: "7", "aria-label": t("Hex colour") });
     const commit = () => {
       const v = norm(hex.value);
       if (!/^[0-9A-F]{6}$/.test(v)) { hex.classList.add("bad"); return; }
@@ -390,12 +417,12 @@ function colorField({ value, onChange, onReset, isDefault }) {
       if (/^[0-9A-F]{6}$/.test(v)) preview.style.background = "#" + v;
     });
     const preview = h("span", { class: "cp-preview", style: `background:#${cur}` });
-    const panel = h("div", { class: "color-pop", role: "dialog", "aria-label": "强调色" },
+    const panel = h("div", { class: "color-pop", role: "dialog", "aria-label": t("Accent colour") },
       h("div", { class: "cp-grid" }, SWATCHES.map(([c, name]) => h("button", {
-        type: "button", class: "cp-sw" + (c === cur ? " on" : ""), style: `--c:#${c}`, title: `${name} #${c}`, "aria-label": name,
+        type: "button", class: "cp-sw" + (c === cur ? " on" : ""), style: `--c:#${c}`, title: `${t(name)} #${c}`, "aria-label": t(name),
         onclick: () => { closeFloat(); paint(c); onChange(c); } }))),
-      h("div", { class: "cp-row" }, preview, hex, h("button", { type: "button", class: "btn sm", onclick: commit }, "应用")),
-      onReset && h("button", { type: "button", class: "cp-reset", disabled: isDefault && isDefault(), onclick: () => { closeFloat(); onReset(); } }, icon("undo"), "恢复模板默认色"));
+      h("div", { class: "cp-row" }, preview, hex, h("button", { type: "button", class: "btn sm", onclick: commit }, t("Apply"))),
+      onReset && h("button", { type: "button", class: "cp-reset", disabled: isDefault && isDefault(), onclick: () => { closeFloat(); onReset(); } }, icon("undo"), t("Back to the template's colour")));
     openFloat(btn, panel, { focus: panel.querySelector(".cp-sw.on") || hex });
   });
   return { el: btn, set value(v) { paint(v); } };
@@ -412,11 +439,11 @@ function initContextMenu() {
     e.preventDefault();
     const ro = field && (field.readOnly || field.disabled);
     const items = [
-      field && { label: "剪切", icon: "scissors", hint: "Ctrl+X", disabled: ro || !hasFieldSel, keepFocus: true, onClick: () => document.execCommand("cut") },
-      { label: "复制", icon: "copy", hint: "Ctrl+C", disabled: field ? !hasFieldSel : !selected, keepFocus: true, onClick: () => document.execCommand("copy") },
-      field && { label: "粘贴", icon: "clipboard", hint: "Ctrl+V", disabled: ro, keepFocus: true, onClick: () => pasteInto(field) },
+      field && { label: t("Cut"), icon: "scissors", hint: "Ctrl+X", disabled: ro || !hasFieldSel, keepFocus: true, onClick: () => document.execCommand("cut") },
+      { label: t("Copy"), icon: "copy", hint: "Ctrl+C", disabled: field ? !hasFieldSel : !selected, keepFocus: true, onClick: () => document.execCommand("copy") },
+      field && { label: t("Paste"), icon: "clipboard", hint: "Ctrl+V", disabled: ro, keepFocus: true, onClick: () => pasteInto(field) },
       field && "sep",
-      field && { label: "全选", icon: "selectAll", hint: "Ctrl+A", keepFocus: true, onClick: () => { field.focus(); field.select(); } },
+      field && { label: t("Select all"), icon: "selectAll", hint: "Ctrl+A", keepFocus: true, onClick: () => { field.focus(); field.select(); } },
     ];
     openMenu(pointAnchor(e.clientX, e.clientY), items, { minWidth: 168 });
   });

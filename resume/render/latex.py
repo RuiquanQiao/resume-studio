@@ -10,6 +10,9 @@ from pathlib import Path
 
 import jinja2
 
+from core.i18n import t
+
+from .. import langs
 from . import fonts
 from .base import Renderer, RenderResult
 
@@ -22,7 +25,7 @@ _TEX_ESCAPES = {
 _ESC_RE = re.compile(r"[\\&%$#_{}~^]")
 # **bold**, *italic*, [text](url)
 _MARK_RE = re.compile(r"\*\*(.+?)\*\*|\*(.+?)\*|\[([^\]]+)\]\(([^)\s]+)\)")
-_CJK_RE = re.compile(r"[　-〿㐀-䶿一-鿿＀-￯]")
+_CJK_RE = re.compile(r"[　-〿぀-ヿ㐀-䶿一-鿿가-힯＀-￯]")
 
 
 def escape(text: str) -> str:
@@ -104,24 +107,24 @@ class LatexRenderer(Renderer):
             try:
                 tpl = self.env.get_template(f"{view['template']}.tex.j2")
             except jinja2.TemplateNotFound:
-                return RenderResult(False, errors=[f"找不到模板：{view['template']}"])
+                return RenderResult(False, errors=[t("Template not found: {name}", name=view["template"])])
             try:
                 cjk = _has_cjk(view)
-                tex = tpl.render(**view, has_cjk=cjk, fonts=fonts.resolve(view["layout"], cjk))
+                tex = tpl.render(**view, has_cjk=cjk, fonts=fonts.resolve(view["layout"], cjk, langs.script(view.get("lang") or "en")))
             except jinja2.TemplateError as e:
-                return RenderResult(False, errors=[f"模板错误：{e}"])
+                return RenderResult(False, errors=[t("Template error: {error}", error=e)])
             src = build_dir / "main.tex"
             src.write_text(tex, encoding="utf-8")
             exe = self.compiler()
             if not exe:
-                return RenderResult(False, source=src, errors=["找不到 xelatex，请安装 TeX Live 或 MiKTeX。"])
+                return RenderResult(False, source=src, errors=[t("xelatex not found. Install TeX Live or MiKTeX.")])
             try:
                 proc = subprocess.run(
                     [exe, "-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "main.tex"],
                     cwd=str(build_dir), capture_output=True, timeout=120,
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             except subprocess.TimeoutExpired:
-                return RenderResult(False, source=src, errors=["xelatex 超时（120 秒）"])
+                return RenderResult(False, source=src, errors=[t("xelatex timed out (120 s)")])
             log_path = build_dir / "main.log"
             log = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else \
                 proc.stdout.decode("utf-8", errors="replace")
@@ -134,7 +137,7 @@ class LatexRenderer(Renderer):
             if proc.returncode != 0 or not pdf.exists():
                 errors = [ln for ln in log.splitlines()
                           if ln.startswith("!") or re.match(r".*main\.tex:\d+:", ln)][:8] \
-                    or ["xelatex 编译失败，详见 main.log"]
+                    or [t("xelatex failed, see main.log")]
             return RenderResult(ok=not errors, pages=pages, pdf=pdf if pdf.exists() else None,
                                 source=src, seconds=time.time() - t0, errors=errors,
                                 lines=_bullet_lines(log, view))
