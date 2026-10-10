@@ -144,7 +144,7 @@
 textarea.ask-input { height: auto; line-height: 1.45; }
 .ask-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 .q .ask-input { width: 100%; }
-.plan-md { max-height: 340px; overflow: auto; font-size: 13px; }
+.plan-md { font-size: 13px; }
 .q + .q { margin-top: 10px; }
 .q-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; font-weight: 550; }
 .q-tag { padding: 0 6px; border-radius: 4px; font-size: 10.5px; line-height: 17px; color: var(--accent); background: var(--accent-soft); font-weight: 600; }

@@ -17,8 +17,18 @@ function t(key, vars = {}, other = null) {
   if (Array.isArray(hit)) s = hit[(n === 1 || (I18N.lang === "fr" && (n === 0 || n === 1)) || hit.length === 1) ? 0 : 1];
   else if (hit != null) s = hit;
   else s = other != null && n !== 1 ? other : key;
-  return s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
+  return s.replace(/\{(\w+)\}/g, (m, k, at) => {
+    if (!(k in vars)) return m;
+    let v = String(vars[k]);
+    // Chinese sets a space between Han characters and a Latin word or number ("补齐 English 版")
+    if (I18N.lang === "zh" && v) {
+      if (HAN.test(s[at - 1] || "") && LATIN.test(v[0])) v = " " + v;
+      if (HAN.test(s[at + m.length] || "") && LATIN.test(v[v.length - 1])) v += " ";
+    }
+    return v;
+  });
 }
+const HAN = /[㐀-鿿豈-﫿]/, LATIN = /[A-Za-z0-9]/;
 // the static page (index.html): the own text of elements marked data-t (child elements such as
 // the chat tab's dot stay), and every title / placeholder / aria-label
 function localizeStatic(root = document) {

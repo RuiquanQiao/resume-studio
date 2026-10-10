@@ -40,8 +40,13 @@ def test_t_translates_counts_and_falls_back_to_english():
     assert i18n.t("{n} page", "{n} pages", ui="de", n=3) == "3 Seiten"
     assert i18n.t("{n} page", "{n} pages", ui="fr", n=0) == "0 page"       # French: 0 is singular
     assert i18n.t("Opened {path}", ui="ja", path="x.yaml") == "x.yaml を開きました"
+    # Chinese: a space between Han characters and a Latin word filled in, none next to punctuation or Han
+    assert i18n.t("Fill in the {lang} version", ui="zh", lang="English") == "补齐 English 版"
+    assert i18n.t("Fill in the {lang} version", ui="zh", lang="简体中文") == "补齐简体中文版"
+    assert i18n.t("Follow the computer ({lang})", ui="zh", lang="English") == "跟随电脑（English）"
+    assert i18n.t("Fill in the {lang} version", ui="ja", lang="English") == i18n.catalog("ja")["Fill in the {lang} version"].replace("{lang}", "English")
     # a placeholder may be called lang: it fills the text, it doesn't pick the catalog
-    assert i18n.t("Editing {lang}", ui="zh", lang="Deutsch") == "正在编辑Deutsch"
+    assert i18n.t("Editing {lang}", ui="zh", lang="Deutsch") == "正在编辑 Deutsch"
 
 
 def test_computer_locale_picks_the_interface_and_resume_language(monkeypatch):

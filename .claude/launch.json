@@ -8,6 +8,14 @@
       "port": 8790,
       "autoPort": true,
       "env": { "RESUME_STUDIO_PREFS": ".cache/trial/local" }
+    },
+    {
+      "name": "review",
+      "runtimeExecutable": ".venv/Scripts/python",
+      "runtimeArgs": ["scripts/studio.py", "--data", ".cache/review/resume.yaml", "--no-browser", "--port", "8791"],
+      "port": 8791,
+      "autoPort": true,
+      "env": { "RESUME_STUDIO_PREFS": ".cache/review/local", "STUDIO_NO_SHELL": "1" }
     }
   ]
 }

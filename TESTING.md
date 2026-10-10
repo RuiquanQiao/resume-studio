@@ -48,6 +48,14 @@ Open them and check:
 - [ ] empty states read well (no blank selects, no "undefined", no stray "0")
 - [ ] every dropdown / menu / picker is the app's own (rounded panel, app font), opened fully, not mid-fade
 - [ ] bullet text boxes use the full width (the tools float above them on hover)
+- [ ] text boxes grow with their text: no scrollbar inside the page's own scrollbar
+- [ ] every setting sits where one looks for it first; nothing hides behind a long button that jumps elsewhere
+
+Then repeat on a copy of a real, long `resume.yaml` (the sample is short): copy it to `.cache/review/`,
+start the `review` entry of `.claude/launch.json`, and screenshot every screen (ALL and a job: profile,
+sections, job settings, a project entry with bullets, menus, Settings, layout, chat) at 1280×800 and
+1600×900, light and dark, and once with the interface in German (longest labels). Nothing may be cut
+off, wrap a heading into two lines, squeeze an input to a sliver, or push a button out of the window.
 
 ## 3. Hands-on trial (real Claude Code)
 

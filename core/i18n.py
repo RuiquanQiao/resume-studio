@@ -3,13 +3,14 @@
 The catalogs live in web/i18n/<lang>.json and are shared with the page. Keys are the English
 text itself (English needs no catalog); a value is a string, or [one, other] for a count.
 The language follows the computer unless the user picks one; that choice is a per-machine
-preference kept next to the chats, not in resume.yaml.
+preference (Prefs), not part of resume.yaml.
 """
 from __future__ import annotations
 
 import json
 import locale
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -121,9 +122,26 @@ def t(key: str, other: str | None = None, *, ui: str | None = None, **vars: Any)
         text = _pick(hit, n, lang)
     else:
         text = other if other is not None and n != 1 else key
-    for k, v in vars.items():
-        text = text.replace("{" + k + "}", str(v))
-    return text
+
+    def fill(m: re.Match) -> str:
+        k = m.group(1)
+        if k not in vars:
+            return m.group(0)
+        v = str(vars[k])
+        # Chinese sets a space between Han characters and a Latin word or number ("补齐 English 版")
+        if lang == "zh" and v:
+            before, after = text[m.start() - 1:m.start()], text[m.end():m.end() + 1]
+            if _HAN.match(before) and _LATIN.match(v[0]):
+                v = " " + v
+            if _HAN.match(after) and _LATIN.match(v[-1]):
+                v += " "
+        return v
+
+    return re.sub(r"\{(\w+)\}", fill, text)
+
+
+_HAN = re.compile(r"[㐀-鿿豈-﫿]")
+_LATIN = re.compile(r"[A-Za-z0-9]")
 
 
 class Prefs:

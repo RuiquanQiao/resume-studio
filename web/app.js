@@ -339,7 +339,7 @@ function openVersionMenu() {
   const lacking = (l) => inV.filter((e) => missingIn(e, l)).length;
   const long = longBullets().length;
   openMenu($("#version-menu-btn"), [
-    v && { label: job ? t("Job settings") : t("ALL settings"), hint: job ? t("Name, headline, sections") : t("Headline, section order"), icon: "settings", onClick: () => select("version", ui.versionId) },
+    job && { label: t("Job settings"), hint: t("Name, ID, headline"), icon: "settings", onClick: () => select("version", ui.versionId) },
     { label: t("New job"), hint: t("Blank, tick entries yourself"), icon: "plus", onClick: () => newVersion(null) },
     v && { label: job ? t("Duplicate this job") : t("New job (with every entry ticked)"), icon: "copy", onClick: () => newVersion(ui.versionId) },
     "sep",
@@ -358,6 +358,7 @@ function openVersionMenu() {
 
 async function switchVersion(id) {
   await saveDraft();
+  if (ui.headPending) await ui.headPending();   // a headline being typed belongs to the version it was typed in
   ui.versionId = id;
   store("version", id);
   const v = version();
@@ -367,7 +368,8 @@ async function switchVersion(id) {
   renderLibrary();
   renderPreviewToolbar();
   renderComposerState();
-  if (ui.sel.kind === "version") select("version", id); else buildEditorKeepDraft();
+  if (ui.sel.kind === "version") select(id === ALL ? "profile" : "version", id === ALL ? null : id);   // ALL has no job settings
+  else buildEditorKeepDraft();
   clearPages();
   scheduleRender(0);
 }
@@ -419,9 +421,10 @@ function renderLibrary() {
   const scroll = lib.scrollTop;
   lib.replaceChildren();
   const v = version();
-  const nav = (kind, label, ic) => h("button", { class: "nav-row" + (ui.sel.kind === kind ? " on" : ""), onclick: () => select(kind) }, icon(ic), label);
-  lib.append(nav("profile", t("Profile"), "user"), nav("sections", t("Sections & resume settings"), "grid"));
+  const nav = (kind, label, ic, id = null) => h("button", { class: "nav-row" + (ui.sel.kind === kind ? " on" : ""), onclick: () => select(kind, id) }, icon(ic), label);
   const job = v && v.id !== ALL;
+  lib.append(nav("profile", t("Profile"), "user"), nav("sections", t("Sections & resume settings"), "grid"));
+  if (job) lib.append(nav("version", t("Job settings"), "settings", v.id));
   lib.append(h("div", { class: "lib-hint" + (job ? " job" : "") }, job
     ? [h("b", null, jobName(v)), ": " + t("tick = on this job's resume")]
     : [h("b", null, "ALL"), ": " + t("every entry lives here. Create a job, then tick the ones it needs")]));
@@ -920,14 +923,14 @@ function profileForm() {
   // a contact written once serves every language; one already split by language (a phone number
   // per country) changes only in the language being edited
   const editT = (old, val) => isNeutral(old) ? val : { ...old, [ui.editLang]: val };
-  const rows = h("div", { class: "list-rows" });
+  const rows = h("div", { class: "list-rows contacts" });
   const v = version();
   const job = v && v.id !== ALL;
   const hiddenC = new Set(job ? v.hide_contacts || [] : []);
   p.contacts.forEach((c, i) => {
     const shown = !hiddenC.has(c.label || "");
-    rows.append(h("div", { class: "lr", style: `grid-template-columns: ${job ? "22px " : ""}96px 1fr 1fr 30px` },
-      job && h("button", { class: "check" + (shown ? " on" : ""), role: "checkbox", "aria-checked": String(shown),
+    rows.append(h("div", { class: "lr" + (job ? " job" : "") },
+      job && h("button", { class: "check c-check" + (shown ? " on" : ""), role: "checkbox", "aria-checked": String(shown),
         title: shown ? t("Hide in “{job}”", { job: jobName(v) }) : t("Show in “{job}”", { job: jobName(v) }),
         onclick: () => mutateVersion((x) => {
           const set = new Set(x.hide_contacts || []);
@@ -935,24 +938,46 @@ function profileForm() {
           x.hide_contacts = [...set];
           if (!x.hide_contacts.length) delete x.hide_contacts;
         }).then(buildEditorKeepDraft) }),
-      h("input", { value: c.label ?? "", placeholder: "email", spellcheck: "false", oninput: (ev) => { c.label = ev.target.value; touch(); } }),
-      h("input", { value: getT(c.value, ui.editLang), placeholder: t("Text shown"), spellcheck: "false", oninput: (ev) => { c.value = editT(c.value, ev.target.value); touch(); } }),
-      h("input", { value: getT(c.url, ui.editLang), placeholder: t("Link (optional) mailto: / https://"), spellcheck: "false", oninput: (ev) => { c.url = editT(c.url, ev.target.value); touch(); } }),
-      h("button", { class: "btn icon sm ghost danger", title: t("Delete"), onclick: () => { p.contacts.splice(i, 1); touch(); buildEditorKeepDraft(); } }, icon("x"))));
+      h("input", { class: "c-label", value: c.label ?? "", placeholder: "email", spellcheck: "false", oninput: (ev) => { c.label = ev.target.value; touch(); } }),
+      h("input", { class: "c-value", value: getT(c.value, ui.editLang), placeholder: t("Text shown"), spellcheck: "false", oninput: (ev) => { c.value = editT(c.value, ev.target.value); touch(); } }),
+      h("input", { class: "c-url", value: getT(c.url, ui.editLang), placeholder: t("Link (optional) mailto: / https://"), spellcheck: "false", oninput: (ev) => { c.url = editT(c.url, ev.target.value); touch(); } }),
+      h("button", { class: "btn icon sm ghost danger c-del", title: t("Delete"), onclick: () => { p.contacts.splice(i, 1); touch(); buildEditorKeepDraft(); } }, icon("x"))));
   });
   rows.append(h("button", { class: "btn sm", onclick: () => { p.contacts.push({ label: "", value: "", url: "" }); touch(); buildEditorKeepDraft(); } }, icon("plus"), t("Add contact")));
   return [
     h("div", { class: "ed-head" }, h("h1", null, t("Profile")), h("span", { class: "spacer" }), langSwitch()),
     card(t("Basics"), null, [
       tfield(t("Name"), p, "name", { i18n: true }),
-      h("div", { class: "field" }, h("label", null, t("Headline / job target")),
-        h("div", { class: "row wrap" },
-          h("span", { class: "muted", style: "font-size:12.5px;flex:1;min-width:200px" }, t("Each job has its own, set in ALL's and each job's settings.")),
-          h("button", { class: "btn sm", onclick: () => select("version", ui.versionId) }, icon("settings"), t("Edit the headline of “{job}”", { job: job ? jobName(v) : "ALL" })))),
+      headlineField(v, job),
     ]),
     card(t("Contacts"), job ? t("Shown in order under the name; ticked = shown in “{job}”", { job: jobName(v) }) : t("Shown in order under the name; switch to a job to hide some of them"), rows),
     card(t("Fact layer"), t("Only Claude sees this"), tfield(t("Job search background, constraints, preferences"), p, "notes", { multiline: true, rows: 5 }), { cls: "fact" }),
   ];
+}
+
+// The headline under the name belongs to the resume picked at the top (ALL or a job), so it is
+// edited right here, in that resume, instead of on a page of its own.
+function headlineField(v, job) {
+  const cur = (v && v.headline) || "";
+  const multi = langs().length > 1;
+  const neutral = multi && isNeutral(cur) && cur;
+  const tag = multi ? h("span", { class: "lang-tag" + (neutral ? " neutral" : "") }, neutral ? t("Shared") : langShort(ui.editLang)) : null;
+  return h("div", { class: "field" },
+    h("label", null, t("Headline / job target"), tag, h("span", { class: "hint" }, t("Belongs to “{job}”; each job has its own", { job: job ? jobName(v) : "ALL" }))),
+    h("input", { value: getT(cur, ui.editLang), "data-key": "headline", spellcheck: "false",
+      placeholder: job ? t("e.g. AI Agent Engineer · LLM tooling & full-stack") : t("can be empty"),
+      oninput: (ev) => queueHeadline(ui.editLang, ev.target.value) }));
+}
+
+function queueHeadline(lang, val) {
+  clearTimeout(ui.headTimer);
+  setSaveStatus(t("Unsaved"));
+  ui.headPending = () => {
+    clearTimeout(ui.headTimer);
+    ui.headPending = null;
+    return mutateVersion((x) => { x.headline = setT(x.headline, lang, val); }).then(() => setSaveStatus(t("Saved")));
+  };
+  ui.headTimer = setTimeout(() => ui.headPending && ui.headPending(), 500);
 }
 
 // Resume languages: any number, from the list the templates set well; the first is the default
@@ -1050,16 +1075,27 @@ function uiLangPicker() {
 function sectionsForm() {
   if (!Array.isArray(ui.draft)) ui.draft = [];
   const list = ui.draft;
-  const rows = h("div", { class: "list-rows" });
+  const rows = h("div", { class: "list-rows section-rows" });
   // shown and moved in the order of the resume picked at the top (ALL or a job): the order belongs to it
   const ids = list.map((s) => s.id);
   const order = [...new Set([...((version() || {}).sections || []).filter((id) => ids.includes(id)), ...ids])];
   const move = (from, to) => mutateVersion((v) => { v.sections = moved(order, from, to); }).then(buildEditorKeepDraft);
+  const hidden = new Set((version() || {}).hide_sections || []);
+  const where = isAll() ? "ALL" : jobName(version());
   order.map((id) => list.find((s) => s.id === id)).forEach((s) => {
     const i = list.indexOf(s);
     const used = entries().some((e) => e.section === s.id);
-    rows.append(h("div", { class: "lr sort-row", style: "grid-template-columns: 26px 120px 1fr auto 26px" },
+    const shown = !hidden.has(s.id);
+    rows.append(h("div", { class: "lr sort-row" + (shown ? "" : " off") },
       dragHandle(move),
+      h("button", { class: "check" + (shown ? " on" : ""), role: "checkbox", "aria-checked": String(shown),
+        title: shown ? t("Hide in “{job}”", { job: where }) : t("Show in “{job}”", { job: where }),
+        onclick: () => mutateVersion((v) => {
+          const set = new Set(v.hide_sections || []);
+          if (shown) set.add(s.id); else set.delete(s.id);
+          v.hide_sections = [...set];
+          if (!v.hide_sections.length) delete v.hide_sections;
+        }).then(buildEditorKeepDraft) }),
       h("input", { value: s.id, title: t("Section ID (the section field of entries)"), spellcheck: "false", oninput: (ev) => { s.id = ev.target.value; touch(); } }),
       h("input", { value: getT(s.title, ui.editLang), placeholder: t("Title shown"), oninput: (ev) => { s.title = setT(s.title, ui.editLang, ev.target.value); touch(); } }),
       uiSeg([{ value: "timeline", label: t("Timeline"), tip: t("Title + dates + bullets") }, { value: "list", label: t("List"), tip: t("“Category: items”, one per line, good for skills") }],
@@ -1088,7 +1124,7 @@ function sectionsForm() {
       h("button", { class: "btn icon sm ghost danger", title: t("Remove (doesn't delete any files)"), onclick: () => { st.project_roots = roots.filter((_, j) => j !== i); if (!st.project_roots.length) delete st.project_roots; saveSettings(); } }, icon("x"))))));
   return [
     h("div", { class: "ed-head" }, h("h1", null, t("Sections & resume settings")), h("span", { class: "spacer" }), langSwitch()),
-    card(t("Sections"), t("The order belongs to “{job}”; new jobs start from ALL's order", { job: isAll() ? "ALL" : jobName(version()) }), [
+    card(t("Sections"), t("Order and ticks belong to “{job}”; new jobs start from ALL's order", { job: isAll() ? "ALL" : jobName(version()) }), [
       h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, t("Timeline = title + dates + bullets; List = “Category: items”, one per line, good for skills.")), rows]),
     card(t("Resume settings"), t("Saved in resume.yaml"), [
       h("div", { class: "field" }, h("label", null, t("Resume languages"), h("span", { class: "hint" }, t("Each language keeps its own text; the first one is the default for new jobs"))), langEditor),
@@ -1104,35 +1140,16 @@ function sectionsForm() {
   ];
 }
 
+// A job's own name, ID and headline. Which entries: ticks in the library; section order and
+// visibility: Sections & resume settings; template, language, layout: above the preview.
 function versionForm() {
   const v = ui.draft;
-  const order = sectionOrder(v);
-  const hidden = new Set(v.hide_sections || []);
-  const rows = h("div", { class: "list-rows" });
-  const move = (from, to) => { v.sections = moved(order, from, to); touch(); buildEditorKeepDraft(); };
-  order.forEach((sid) => {
-    rows.append(h("div", { class: "lr sort-row", style: "grid-template-columns: 26px 22px 1fr" },
-      dragHandle(move),
-      h("button", { class: "check" + (hidden.has(sid) ? "" : " on"), title: t("Show here"), onclick: () => {
-        const set = new Set(v.hide_sections || []);
-        if (set.has(sid)) set.delete(sid); else set.add(sid);
-        v.hide_sections = [...set];
-        if (!v.hide_sections.length) delete v.hide_sections;
-        touch(); buildEditorKeepDraft();
-      } }),
-      h("span", null, display((sectionById(sid) || {}).title) || sid)));
-  });
   return [
-    v.id === ALL
-      ? h("div", { class: "ed-head" }, h("h1", null, t("ALL settings")), h("span", { class: "id" }, t("All entries")), h("span", { class: "spacer" }), langSwitch())
-      : h("div", { class: "ed-head" }, h("h1", null, t("Job settings")), h("span", { class: "id" }, v.id), h("span", { class: "spacer" }), langSwitch()),
-    v.id === ALL
-      ? card("ALL", t("The full set: every entry and contact, not limited to one page; template, language and layout are above the preview"), tfield(t("Headline / job target"), v, "headline", { i18n: true, placeholder: t("can be empty") }))
-      : card(t("Job"), t("Template, language and layout are above the preview; tick entries in the library on the left"), [
-        h("div", { class: "grid2" }, tfield(t("Name"), v, "label", { placeholder: t("AI Agent Engineer") }), tfield("ID", v, "id", { hint: t("also the export file name") })),
-        tfield(t("Headline / job target"), v, "headline", { i18n: true, placeholder: t("e.g. AI Agent Engineer · LLM tooling & full-stack") }),
-      ]),
-    card(t("Section order and visibility"), v.id === ALL ? t("Only for ALL; new jobs start from this order") : t("Only for this job"), rows),
+    h("div", { class: "ed-head" }, h("h1", null, t("Job settings")), h("span", { class: "id" }, v.id), h("span", { class: "spacer" }), langSwitch()),
+    card(t("Job"), t("Tick entries in the library on the left; template, language and layout are above the preview"), [
+      h("div", { class: "grid2" }, tfield(t("Name"), v, "label", { placeholder: t("AI Agent Engineer") }), tfield("ID", v, "id", { hint: t("also the export file name") })),
+      tfield(t("Headline / job target"), v, "headline", { i18n: true, placeholder: t("e.g. AI Agent Engineer · LLM tooling & full-stack") }),
+    ]),
   ];
 }
 
@@ -1650,7 +1667,7 @@ function wire() {
     if ((e.ctrlKey || e.metaKey) && e.key === ",") { e.preventDefault(); openSettings(); }
     if (e.key === "Escape" && !Float.cur && ui.layoutOpen) { ui.layoutOpen = false; renderPreviewToolbar(); }
   });
-  window.addEventListener("beforeunload", () => { if (ui.dirty) saveDraft(); });
+  window.addEventListener("beforeunload", () => { if (ui.dirty) saveDraft(); if (ui.headPending) ui.headPending(); });
   // projects change while the window is in the background: look again when the user comes back
   window.addEventListener("focus", () => checkEvidence(true));
   document.addEventListener("visibilitychange", () => { if (!document.hidden) checkEvidence(true); });

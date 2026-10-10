@@ -341,11 +341,38 @@ def test_job_from_all_starts_full_and_has_own_headline(page_all, server):
     pg.click(".modal button:text('创建')")
     wait_until(lambda: value_of(pg, "#version-select") == "JOB-001", msg="new job")
     assert pg.locator(".entry.out").count() == 0
-    pg.click("#version-menu-btn")
-    pg.click(".float .menu-item:has-text('岗位设置')")
+    # the headline is typed right on the profile page, into the job picked at the top
+    pg.click(".nav-row:text('个人信息')")
+    pg.click(".ed-head .seg button:text('EN')")
     pg.fill("#editor input[data-key=headline]", "AI Agent Engineer")
     wait_until(lambda: version(server, "JOB-001").get("headline") in ("AI Agent Engineer", {"en": "AI Agent Engineer"}), msg="headline saved")
     assert "headline" not in state(server)["doc"]["profile"]
+    assert version(server, "ALL").get("headline") != "AI Agent Engineer"
+    pg.fill("#editor input[data-key=headline]", "AI Agent Engineer · LLM")
+    choose(pg, "#version-select", "ALL")                              # switching right away still saves into the job
+    wait_until(lambda: "LLM" in json.dumps(version(server, "JOB-001").get("headline")), msg="typed headline kept in the job")
+    assert "LLM" not in json.dumps(version(server, "ALL").get("headline"))
+    # job settings: in the sidebar for a job, absent for ALL
+    assert pg.locator(".nav-row:text('岗位设置')").count() == 0
+    choose(pg, "#version-select", "JOB-001")
+    pg.click(".nav-row:text('岗位设置')")
+    pg.wait_for_selector(".ed-head h1:text('岗位设置')")
+    choose(pg, "#version-select", "ALL")
+    pg.wait_for_selector(".ed-head h1:text('个人信息')")
+    pg.click("#version-menu-btn")
+    assert pg.locator(".float .menu-item:has-text('设置')").count() == 0
+    pg.keyboard.press("Escape")
+
+
+def test_sections_can_be_hidden_per_resume(page, server):
+    page.click(".nav-row:text('板块与简历设置')")
+    first = page.locator(".card:has(h3:text-is('板块')) .lr .check").first
+    first.click()
+    wait_until(lambda: len(version(server).get("hide_sections") or []) == 1, msg="section hidden in this job")
+    assert not version(server, "ALL").get("hide_sections")
+    page.wait_for_selector(".card:has(h3:text-is('板块')) .lr.off")
+    page.locator(".card:has(h3:text-is('板块')) .lr .check").first.click()
+    wait_until(lambda: not version(server).get("hide_sections"), msg="shown again")
 
 
 def test_contacts_can_be_hidden_per_job(page, server):

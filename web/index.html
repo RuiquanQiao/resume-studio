@@ -46,7 +46,7 @@
           <div id="composer-box" class="composer-box">
             <div id="chat-files" class="chat-files hidden"></div>
             <div class="composer-row">
-              <textarea id="chat-input" rows="1" placeholder="Ask Claude anything; type / for commands and skills"></textarea>
+              <textarea id="chat-input" rows="1" placeholder="Ask Claude, or type / for commands"></textarea>
               <button id="chat-stop" class="btn icon danger-soft hidden" title="Stop (Claude stops after the current step)"></button>
               <button id="chat-send" class="btn icon primary" title="Send (Enter)"></button>
             </div>
@@ -70,14 +70,15 @@
         <span id="tpl-slot"></span>
         <div id="lang-seg" class="seg" title="Resume language"></div>
         <button id="layout-toggle" class="btn ghost" title="Font size, margins, spacing, colour"><span class="lbl" data-t>Layout</span></button>
-        <span class="spacer"></span>
-        <span id="page-badge" class="badge"></span>
-        <div class="zoom">
-          <button id="zoom-out" class="btn icon ghost" title="Zoom out"></button>
-          <button id="zoom-fit" class="btn ghost zoom-label" title="Fit width" data-t>Fit</button>
-          <button id="zoom-in" class="btn icon ghost" title="Zoom in"></button>
+        <div class="pt-end">
+          <span id="page-badge" class="badge"></span>
+          <div class="zoom">
+            <button id="zoom-out" class="btn icon ghost" title="Zoom out"></button>
+            <button id="zoom-fit" class="btn ghost zoom-label" title="Fit width" data-t>Fit</button>
+            <button id="zoom-in" class="btn icon ghost" title="Zoom in"></button>
+          </div>
+          <button id="export-btn" class="btn primary" data-t>Export PDF</button>
         </div>
-        <button id="export-btn" class="btn primary" data-t>Export PDF</button>
       </div>
       <div id="layout-panel" class="layout-panel hidden"></div>
       <div id="issues" class="issues hidden"></div>
