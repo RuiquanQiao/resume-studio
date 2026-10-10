@@ -260,6 +260,11 @@ def test_contact_split_by_language_keeps_the_other(page, server, data_file):
                msg="neutral contact saved as one value")
 
 
+def chosen_lang(server):
+    js = server.req("GET", "/i18n.js")[1].decode("utf-8")
+    return json.loads(js.split("=", 1)[1].rstrip().rstrip(";"))["chosen"]
+
+
 def test_settings_dialog_holds_app_preferences(page, server):
     assert page.locator(".card:has-text('界面语言')").count() == 0      # not on a resume page
     page.click(".nav-row:text('板块与简历设置')")
@@ -284,6 +289,25 @@ def test_settings_dialog_holds_app_preferences(page, server):
     page.click(".modal.settings button:text('完成')")
     dlg.wait_for(state="detached")
     page.screenshot(path=str(ART / "new-settings.png"))
+    # a picked language waits for "Done": no reload on pick, Escape drops it
+    page.evaluate("window.__noReload = true")
+    page.click("#settings-btn")
+    dlg.locator(".select").click()
+    page.click(".float [role=option]:has-text('Deutsch')")
+    page.wait_for_timeout(400)
+    assert dlg.is_visible() and page.evaluate("window.__noReload") is True
+    assert chosen_lang(server) is None
+    page.keyboard.press("Escape")
+    dlg.wait_for(state="detached")
+    assert chosen_lang(server) is None
+    page.click("#settings-btn")
+    dlg.locator(".select").click()
+    page.click(".float [role=option]:has-text('Deutsch')")
+    page.click(".modal.settings button:text('完成')")
+    page.wait_for_function("() => window.__noReload === undefined")   # the page reloaded
+    page.locator("#settings-btn").wait_for()
+    assert chosen_lang(server) == "de"
+    server.req("PUT", "/api/prefs", {"ui_lang": None})
 
 
 def test_open_another_data_file_in_the_same_window(page, server, data_file, tmp_path, monkeypatch):

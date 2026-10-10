@@ -1020,10 +1020,27 @@ function openLangMenu(anchor) {
 // App preferences belong to this computer (<skill>/.local/prefs.json), not to the resume, so they
 // live behind the gear in the top bar (Ctrl+,) instead of on a resume page.
 let closeSettings = () => {};
+// a language picked in Settings waits for "Done" (Escape or a click outside drop it)
+let pendingUiLang, uiLangSaved = false;
+async function applyUiLang() {
+  if (pendingUiLang !== undefined) {
+    const code = pendingUiLang;
+    pendingUiLang = undefined;
+    if (code !== (I18N.chosen || null)) { await api("PUT", "/api/prefs", { ui_lang: code }); uiLangSaved = true; }
+  }
+  return uiLangSaved;   // saved but not shown yet: the page still has to reload
+}
 function openSettings() {
   const root = $("#modal-root");
   if (root.firstChild) return;
-  const close = () => { closeSettings = () => {}; root.replaceChildren(); document.removeEventListener("keydown", onKey); $("#settings-btn").focus(); };
+  pendingUiLang = undefined;
+  const done = async () => {
+    try { if (await applyUiLang()) { await saveDraft(); location.reload(); return; } }
+    catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
+    close();
+  };
+  const close = () => {
+    pendingUiLang = undefined; closeSettings = () => {}; root.replaceChildren(); document.removeEventListener("keydown", onKey); $("#settings-btn").focus(); };
   closeSettings = close;
   // bubble phase: an open dropdown takes Escape first (it stops the event in the capture phase)
   const onKey = (e) => { if (e.key === "Escape") close(); };
@@ -1039,13 +1056,15 @@ function openSettings() {
           h("button", { class: "btn sm", onclick: () => api("POST", "/api/reveal", { path: S.data_path }) }, icon("external"), t("Show in the file manager")),
           h("button", { class: "btn sm", onclick: () => changeDataFile("open") }, icon("folderOpen"), t("Open another…")),
           h("button", { class: "btn sm", onclick: () => changeDataFile("new") }, icon("plus"), t("New…")))),
-      h("div", { class: "acts" }, h("button", { class: "btn primary", onclick: close }, t("Done"))))));
+      h("div", { class: "acts" }, h("button", { class: "btn primary", onclick: done }, t("Done"))))));
   setTimeout(() => $(".modal .select", root).focus(), 0);
 }
 
 // Work on another data file in this same window. Chats and history live next to each file, so
 // they switch too; a reply Claude is still writing would be cut off, hence the question first.
 async function changeDataFile(mode) {
+  // the reload below would drop a language picked a moment ago in the same dialog
+  try { await applyUiLang(); } catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
   if (ui.chat.running) {
     closeSettings();
     if (!(await modal({ title: t("Switch data file?"), message: t("Claude is still working in the chat. Switching files stops it."), ok: t("Switch"), danger: true }))) return;
@@ -1059,16 +1078,13 @@ async function changeDataFile(mode) {
   location.reload();
 }
 
-// The window's own language: the computer's unless the user picks one; the page reloads to apply it.
+// The window's own language: the computer's unless the user picks one; "Done" reloads the page to apply it.
 function uiLangPicker() {
   const sys = I18N.langs[I18N.system] || I18N.system;
   const sel = uiSelect({ cls: "field-select", label: t("App language"), menuWidth: 260, value: I18N.chosen || null,
     options: [{ value: null, label: t("Follow the computer ({lang})", { lang: sys }) },
       ...Object.entries(I18N.langs).map(([code, name]) => ({ value: code, label: name, hint: code }))],
-    onChange: async (code) => {
-      try { await api("PUT", "/api/prefs", { ui_lang: code }); await saveDraft(); location.reload(); }
-      catch (e) { toast(t("Save failed: {error}", { error: e.message })); }
-    } });
+    onChange: (code) => { pendingUiLang = code; } });
   return sel.el;
 }
 
