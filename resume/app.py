@@ -11,19 +11,21 @@ from typing import Callable
 from core import dialogs, i18n
 from core.chat import ChatRunner, ChatStore, claude_command
 from core.claude_info import ClaudeInfo
-from core.server import App, HttpError, TextResponse
+from core.server import App, HttpError, TextResponse, running_instance
 from core.watcher import FileWatcher
 
 from . import api
 from .evidence import EvidenceTracker
 from .service import Studio
 
-WEB = Path(__file__).resolve().parent.parent / "web"
+ROOT = Path(__file__).resolve().parent.parent
+WEB = ROOT / "web"
+LOCAL = ROOT / ".local"   # this computer's app preferences (git-ignored); scripts/_bootstrap.py reads it too
 
 
 @dataclass
 class Instance:
-    app: App
+    app: App          # the app the HTTP server was bound to; after a switch it forwards to the new one
     studio: Studio
     chats: ChatRunner
     identity: dict
@@ -32,12 +34,46 @@ class Instance:
     url: dict = field(default_factory=dict)     # {"url": str} once bound
     dialog: dict = field(default_factory=dict)  # {"fn": callable(kind, start)} — the window's own picker
     info: ClaudeInfo | None = None
+    # {"fn": callable(old_studio, new_studio)} — the launcher moves its server.json along
+    switched: dict = field(default_factory=dict)
+    window: bool = False
+    prefs: i18n.Prefs | None = None
+
+    def stop(self) -> None:
+        self.chats.cancel_all()
+        self.watcher.stop()
 
 
-def create_app(data_path: str | Path, *, window: bool = False, watch_interval: float = 0.5) -> Instance:
+def create_app(data_path: str | Path, *, window: bool = False, watch_interval: float = 0.5,
+               prefs_dir: str | Path | None = None) -> Instance:
+    """prefs_dir: where this computer's app preferences live (default <skill>/.local)."""
+    inst = Instance(App(static_dir=WEB), None, None, {}, None, window=window,  # type: ignore[arg-type]
+                    prefs=i18n.Prefs(Path(prefs_dir) if prefs_dir else LOCAL))
+    inst.url["url"] = ""
+    inst.focus["fn"] = lambda: webbrowser.open(inst.url["url"]) if inst.url["url"] else None
+    _load(inst, inst.app, data_path, watch_interval)
+    return inst
+
+
+def switch_data(inst: Instance, path: str | Path) -> None:
+    """Work on another data file from now on, in the same window and on the same port: a fresh
+    app (studio, chats, watcher) for it, and the bound one hands it every request.
+    Chats and history live next to each data file, so they switch along."""
+    old_studio, interval = inst.studio, inst.watcher.interval
+    app = App(static_dir=WEB)
+    inst.stop()
+    _load(inst, app, path, interval)
+    inst.app.forward = app
+    fn = inst.switched.get("fn")
+    if fn:
+        fn(old_studio, inst.studio)
+
+
+def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float) -> None:
+    """Point `inst` at `data_path` and register every route on `app`. Routes reach the window
+    (focus, pickers) and the switch through `inst`, which outlives any one data file."""
     studio = Studio(data_path)
     studio.ensure_file()
-    app = App(static_dir=WEB)
     chats = ChatRunner(app.bus, ChatStore(studio.store.state_dir / "chats"), cwd=studio.data_dir)
     tracker = EvidenceTracker(studio.store.state_dir)
     # what the user's Claude Code offers (models, effort, commands): cached, refreshed at every start
@@ -45,16 +81,48 @@ def create_app(data_path: str | Path, *, window: bool = False, watch_interval: f
     info.refresh_async(lambda: app.bus.publish("claude.info", {}))
     api.register(app, studio, chats, tracker, info)
     identity = {"app": "resume-studio", "data": str(studio.store.path)}
-    inst = Instance(app, studio, chats, identity, watcher=None)  # type: ignore[arg-type]
-    inst.info = info
-    inst.url["url"] = ""
-    inst.focus["fn"] = lambda: webbrowser.open(inst.url["url"]) if inst.url["url"] else None
+    inst.studio, inst.chats, inst.identity, inst.info = studio, chats, identity, info
+    window = inst.window
 
     app.route("GET", "/api/instance")(lambda req: {**identity, "window": window})
 
     # ---- interface language: the computer's, unless the user picked one ----
-    prefs = i18n.Prefs(studio.store.state_dir)
+    prefs = inst.prefs
+    assert prefs is not None
     i18n.set_lang(prefs.ui_lang())
+
+    @app.route("POST", "/api/data-file")
+    def data_file(req):
+        """Open another data file ({"mode": "open"}) or start a new one ({"mode": "new"}), picked
+        in the native dialog. Remembered as this computer's choice for the next start."""
+        mode = (req.json() or {}).get("mode")
+        if mode not in ("open", "new"):
+            raise HttpError(400, "mode must be open or new")
+        try:
+            picked = dialogs.pick("yaml" if mode == "open" else "save", str(studio.data_dir), inst.dialog.get("fn"))
+        except Exception as e:  # noqa: BLE001
+            raise HttpError(500, i18n.t("Can't open the file picker: {error}", error=e))
+        if not picked:
+            return {"path": None}
+        target = Path(picked[0]).expanduser().resolve()
+        if mode == "new" and target.suffix.lower() not in (".yaml", ".yml"):
+            target = target.with_suffix(".yaml")
+        if target == studio.store.path.resolve():
+            return {"path": str(target), "same": True}
+        existed = target.exists()     # "new" on an existing file opens it; it is never overwritten
+        if mode == "open":
+            if not existed:
+                raise HttpError(404, i18n.t("File not found: {path}", path=target))
+            try:
+                Studio(target).store.load()
+            except Exception as e:  # noqa: BLE001
+                raise HttpError(400, i18n.t("This file can't be read as a resume: {error}", error=e))
+        probe = Studio(target)   # one window per data file: two would overwrite each other's edits
+        if running_instance(probe.store.state_dir / "server.json", {"app": "resume-studio", "data": str(probe.store.path)}):
+            raise HttpError(409, i18n.t("This file is already open in another Resume Studio window."))
+        switch_data(inst, target)
+        prefs.save(data=str(target))
+        return {"path": str(target), "created": not existed}
 
     @app.route("GET", "/i18n.js")
     def i18n_js(req):
@@ -136,4 +204,3 @@ def create_app(data_path: str | Path, *, window: bool = False, watch_interval: f
     inst.watcher = FileWatcher(studio.store.path, studio.store.digest_text,
                                lambda digest: app.bus.publish("file", {"digest": digest}), interval=watch_interval)
     inst.watcher.start()
-    return inst

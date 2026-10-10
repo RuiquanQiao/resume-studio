@@ -16,7 +16,7 @@ import sys
 import urllib.request
 import webbrowser
 
-from _bootstrap import LOCAL, ROOT, reexec_in_venv, resolve_data
+from _bootstrap import LOCAL, PREFS_DIR, ROOT, reexec_in_venv, resolve_data
 
 ICON = ROOT / "assets" / "icon.ico"
 
@@ -80,22 +80,34 @@ def main() -> None:
         return
 
     existed = probe.store.exists()
-    inst = create_app(data, window=args.window)
+    inst = create_app(data, window=args.window, prefs_dir=PREFS_DIR)
     if not existed:
         print(f"  created a new data file: {inst.studio.store.path}")
     print(f"  Resume Studio  data: {inst.studio.store.path}")
 
+    current = {"state": state_file}   # follows the data file when the user opens another one
+
     def write_state(url: str) -> None:
         inst.url["url"] = url
-        state_file.parent.mkdir(parents=True, exist_ok=True)
-        state_file.write_text(json.dumps({"url": url, "pid": os.getpid()}), encoding="utf-8")
+        current["state"].parent.mkdir(parents=True, exist_ok=True)
+        current["state"].write_text(json.dumps({"url": url, "pid": os.getpid()}), encoding="utf-8")
 
     def cleanup() -> None:
         inst.chats.cancel_all()
         try:
-            state_file.unlink()
+            current["state"].unlink()
         except OSError:
             pass
+
+    def switched(old, new) -> None:
+        try:
+            current["state"].unlink()
+        except OSError:
+            pass
+        current["state"] = new.store.state_dir / "server.json"
+        write_state(inst.url["url"])
+
+    inst.switched["fn"] = switched
 
     if not args.window:
         inst.app.serve(port=args.port, open_browser=not args.no_browser, on_ready=write_state, on_exit=cleanup)
@@ -119,8 +131,14 @@ def main() -> None:
 
     def pick(kind: str, start: str):
         # Windows uses `directory` only until the user has picked once; then it reopens at the last folder
+        yaml = ("YAML (*.yaml;*.yml)",)
+        if kind == "save":
+            r = window.create_file_dialog(webview.FileDialog.SAVE, directory=os.path.normpath(start),
+                                          save_filename="resume.yaml", file_types=yaml)
+            return [r] if isinstance(r, str) else list(r or [])
         dialog = webview.FileDialog.FOLDER if kind == "folder" else webview.FileDialog.OPEN
-        return window.create_file_dialog(dialog, directory=os.path.normpath(start), allow_multiple=kind == "files") or []
+        return window.create_file_dialog(dialog, directory=os.path.normpath(start), allow_multiple=kind == "files",
+                                         file_types=yaml if kind == "yaml" else ()) or []
 
     inst.dialog["fn"] = pick
     try:

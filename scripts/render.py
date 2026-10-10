@@ -9,7 +9,7 @@
 Every render also lists the bullets that take more than one line (with how full the text is:
 112% = about 12% too long) and the entries that lack text in the rendered language.
 
-Options: --data PATH (default: $RESUME_STUDIO_DATA or <skill>/resume.yaml)
+Options: --data PATH (default: $RESUME_STUDIO_DATA, else the file the window last opened, else <skill>/resume.yaml)
 """
 from __future__ import annotations
 

@@ -79,7 +79,7 @@ class Server:
 def server(data_file: Path, fake_claude: Path):
     from resume.app import create_app
 
-    inst = create_app(data_file, watch_interval=0.15)
+    inst = create_app(data_file, watch_interval=0.15, prefs_dir=data_file.parent / "local")
     httpd, url = inst.app.start_background(port=18765)
     inst.url["url"] = url
     yield Server(inst, httpd, url)

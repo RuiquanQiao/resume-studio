@@ -264,9 +264,14 @@ def test_settings_dialog_holds_app_preferences(page, server):
     assert page.locator(".card:has-text('界面语言')").count() == 0      # not on a resume page
     page.click(".nav-row:text('板块与简历设置')")
     assert page.locator("#editor :text('界面语言')").count() == 0
+    assert page.locator("header :text('resume.yaml')").count() == 0    # no file path or status dot in the top bar
+    assert page.locator("#conn, #datapath").count() == 0
+    assert page.locator("#offline").is_hidden()
     page.click("#settings-btn")
     dlg = page.locator(".modal.settings")
     dlg.locator(":text('界面语言')").wait_for()
+    assert dlg.locator(".data-path").inner_text() == state(server)["data_path"]
+    page.screenshot(path=str(ART / "new-settings-open.png"))
     dlg.locator(".select").click()
     page.wait_for_selector(".float [role=option]:has-text('Deutsch')")
     page.keyboard.press("Escape")                                    # closes the dropdown first
@@ -279,6 +284,26 @@ def test_settings_dialog_holds_app_preferences(page, server):
     page.click(".modal.settings button:text('完成')")
     dlg.wait_for(state="detached")
     page.screenshot(path=str(ART / "new-settings.png"))
+
+
+def test_open_another_data_file_in_the_same_window(page, server, data_file, tmp_path, monkeypatch):
+    other = tmp_path / "other" / "resume.yaml"
+    other.parent.mkdir()
+    other.write_text(data_file.read_text(encoding="utf-8").replace("Alex Chen", "Sam Lee"), encoding="utf-8")
+    monkeypatch.setenv("STUDIO_FAKE_PICK", json.dumps([str(other)]))
+    page.click("#settings-btn")
+    page.click(".modal.settings button:has-text('打开其他文件')")
+    page.wait_for_selector("#toast.show:has-text('已打开')")
+    page.wait_for_selector(".entry")
+    wait_rendered(page)
+    assert state(server)["data_path"] == str(other.resolve())
+    page.click(".nav-row:text('个人信息')")
+    page.click(".ed-head .seg button:text('EN')")
+    page.wait_for_function("() => [...document.querySelectorAll('#editor input')].some((i) => i.value === 'Sam Lee')")
+    # the connection follows the new file: an edit Claude makes to it refreshes the form
+    other.write_text(other.read_text(encoding="utf-8").replace("Sam Lee", "Sam Q. Lee"), encoding="utf-8")
+    page.wait_for_function("() => [...document.querySelectorAll('#editor input')].some((i) => i.value === 'Sam Q. Lee')", timeout=8000)
+    assert "Sam" not in data_file.read_text(encoding="utf-8")
 
 
 def test_add_resume_language_from_the_preview(page, server):

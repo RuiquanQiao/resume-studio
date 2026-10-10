@@ -15,7 +15,8 @@ It is also a first attempt at "skills with a UI": `core/` knows nothing about re
 - Or from a shell: `python scripts/studio.py [--window] [--data other/resume.yaml]`.
 
 Your data lives in this folder: `resume.yaml`, plus `.studio/` (chats, history) and `exports/`.
-All three are git-ignored, so pulling updates never touches them.
+All three are git-ignored, so pulling updates never touches them. Settings (the gear, Ctrl+,) shows
+the data file and can open or start another one anywhere; the window remembers it in `.local/prefs.json`.
 
 Needs Python 3.10+, `xelatex` (TeX Live / MiKTeX) and a logged-in Claude Code for the chat.
 Everything is installed into this folder (`.venv`, `.cache`); nothing global.

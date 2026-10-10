@@ -39,7 +39,7 @@ def test_t_translates_counts_and_falls_back_to_english():
     assert i18n.t("{n} page", "{n} pages", ui="en", n=3) == "3 pages"
     assert i18n.t("{n} page", "{n} pages", ui="de", n=3) == "3 Seiten"
     assert i18n.t("{n} page", "{n} pages", ui="fr", n=0) == "0 page"       # French: 0 is singular
-    assert i18n.t("Data file: {path}", ui="ja", path="x.yaml") == "データファイル：x.yaml"
+    assert i18n.t("Opened {path}", ui="ja", path="x.yaml") == "x.yaml を開きました"
     # a placeholder may be called lang: it fills the text, it doesn't pick the catalog
     assert i18n.t("Editing {lang}", ui="zh", lang="Deutsch") == "正在编辑Deutsch"
 

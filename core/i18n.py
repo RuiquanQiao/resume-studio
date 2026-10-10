@@ -127,10 +127,11 @@ def t(key: str, other: str | None = None, *, ui: str | None = None, **vars: Any)
 
 
 class Prefs:
-    """Per-machine preferences (interface language) in the state folder."""
+    """This computer's app preferences (interface language, which data file to open), kept in
+    `folder`/prefs.json: they belong to the app, not to any one data file."""
 
-    def __init__(self, state_dir: Path):
-        self.path = Path(state_dir) / "prefs.json"
+    def __init__(self, folder: Path):
+        self.path = Path(folder) / "prefs.json"
 
     def load(self) -> dict:
         try:

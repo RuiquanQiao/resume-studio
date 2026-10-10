@@ -6,6 +6,7 @@ and pip's cache in <skill>/.cache/pip. The first run creates them.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -140,13 +141,21 @@ def reexec_in_venv(windowed: bool = False, detach: bool = False) -> None:
 
 
 DEFAULT_DATA = ROOT / "resume.yaml"   # git-ignored; never somewhere outside the skill by surprise
+# the app's own preferences (interface language, last data file); a trial run points this elsewhere
+PREFS_DIR = Path(os.environ.get("RESUME_STUDIO_PREFS") or LOCAL)
 
 
 def resolve_data(arg: str | None) -> Path:
-    """--data > $RESUME_STUDIO_DATA > <skill>/resume.yaml"""
+    """--data > $RESUME_STUDIO_DATA > the file last opened in the window's Settings > <skill>/resume.yaml"""
     if arg:
         return Path(arg).expanduser().resolve()
     env = os.environ.get("RESUME_STUDIO_DATA")
     if env:
         return Path(env).expanduser().resolve()
+    try:
+        saved = json.loads((PREFS_DIR / "prefs.json").read_text(encoding="utf-8")).get("data")
+    except (OSError, ValueError, AttributeError):
+        saved = None
+    if saved and Path(saved).is_file():
+        return Path(saved)
     return DEFAULT_DATA

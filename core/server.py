@@ -70,6 +70,9 @@ class App:
         self.routes: list[tuple[str, re.Pattern, Handler]] = []
         self.static_dir = static_dir
         self.bus = EventBus()
+        # set to another App to hand it every request from now on (switching what the server
+        # works on without closing the port or the window)
+        self.forward: App | None = None
 
     def route(self, method: str, pattern: str) -> Callable[[Handler], Handler]:
         """Register a handler. `{name}` in the pattern captures one path segment."""
@@ -83,7 +86,7 @@ class App:
 
     # ---- serving -------------------------------------------------------
     def _make_handler(self) -> type[BaseHTTPRequestHandler]:
-        app = self
+        root = self
 
         class _H(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
@@ -117,6 +120,7 @@ class App:
                 self.wfile.write(data)
 
             def _sse(self) -> None:
+                app = root.forward or root
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream; charset=utf-8")
                 self.send_header("Cache-Control", "no-store")
@@ -146,6 +150,7 @@ class App:
                 if method == "GET" and path == "/api/events":
                     self._sse()
                     return
+                app = root.forward or root
                 length = int(self.headers.get("Content-Length") or 0)
                 body = self.rfile.read(length) if length else b""
                 for m, regex, fn in app.routes:

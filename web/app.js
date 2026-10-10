@@ -230,8 +230,6 @@ async function refresh() {
 
 function applyState(s) {
   S = s;
-  $("#datapath").textContent = s.data_path;
-  setTip($("#datapath"), t("Data file: {path}", { path: s.data_path }));
   if (!versions().some((v) => v.id === ui.versionId)) {
     const saved = store("version");
     ui.versionId = versions().some((v) => v.id === saved) ? saved : ALL;
@@ -994,12 +992,14 @@ function openLangMenu(anchor) {
   ], { align: "end", focusFirst: true });
 }
 
-// App preferences belong to this computer (.studio/prefs.json), not to the resume, so they live
-// behind the gear in the top bar (Ctrl+,) instead of on a resume page.
+// App preferences belong to this computer (<skill>/.local/prefs.json), not to the resume, so they
+// live behind the gear in the top bar (Ctrl+,) instead of on a resume page.
+let closeSettings = () => {};
 function openSettings() {
   const root = $("#modal-root");
   if (root.firstChild) return;
-  const close = () => { root.replaceChildren(); document.removeEventListener("keydown", onKey); $("#settings-btn").focus(); };
+  const close = () => { closeSettings = () => {}; root.replaceChildren(); document.removeEventListener("keydown", onKey); $("#settings-btn").focus(); };
+  closeSettings = close;
   // bubble phase: an open dropdown takes Escape first (it stops the event in the capture phase)
   const onKey = (e) => { if (e.key === "Escape") close(); };
   document.addEventListener("keydown", onKey);
@@ -1008,8 +1008,30 @@ function openSettings() {
       h("h3", null, t("Settings")),
       h("p", null, t("These belong to this computer, not to your resume.")),
       h("div", { class: "field" }, h("label", null, t("App language"), h("span", { class: "hint" }, t("The language of this window; it follows your computer unless you pick one"))), uiLangPicker()),
+      h("div", { class: "field" }, h("label", null, t("Data file"), h("span", { class: "hint" }, t("Your whole resume lives in this one file; the window opens it next time too"))),
+        h("div", { class: "data-path" }, S.data_path),
+        h("div", { class: "row wrap" },
+          h("button", { class: "btn sm", onclick: () => api("POST", "/api/reveal", { path: S.data_path }) }, icon("external"), t("Show in the file manager")),
+          h("button", { class: "btn sm", onclick: () => changeDataFile("open") }, icon("folderOpen"), t("Open another…")),
+          h("button", { class: "btn sm", onclick: () => changeDataFile("new") }, icon("plus"), t("New…")))),
       h("div", { class: "acts" }, h("button", { class: "btn primary", onclick: close }, t("Done"))))));
   setTimeout(() => $(".modal .select", root).focus(), 0);
+}
+
+// Work on another data file in this same window. Chats and history live next to each file, so
+// they switch too; a reply Claude is still writing would be cut off, hence the question first.
+async function changeDataFile(mode) {
+  if (ui.chat.running) {
+    closeSettings();
+    if (!(await modal({ title: t("Switch data file?"), message: t("Claude is still working in the chat. Switching files stops it."), ok: t("Switch"), danger: true }))) return;
+  }
+  await saveDraft();
+  let r;
+  try { r = await api("POST", "/api/data-file", { mode }); }
+  catch (e) { toast(e.message); return; }
+  if (!r.path || r.same) return;
+  store("dataSwitched", r.created ? "new" : "open");
+  location.reload();
 }
 
 // The window's own language: the computer's unless the user picks one; the page reloads to apply it.
@@ -1579,9 +1601,19 @@ function initGutters() {
 // ================================================================ wiring
 function connect() {
   const es = new EventSource("/api/events");
-  const conn = $("#conn");
-  es.onopen = () => { conn.className = "conn ok"; setTip(conn, t("Connected")); if (S) { refresh(); checkEvidence(); } };
-  es.onerror = () => { conn.className = "conn bad"; setTip(conn, t("Disconnected, reconnecting…")); };
+  // nothing to show while connected; a strip only when the background service is gone. The short
+  // delay keeps it from flashing when the page reloads or the network hiccups.
+  const bar = $("#offline");
+  let timer = null;
+  es.onopen = () => { clearTimeout(timer); timer = null; bar.classList.add("hidden"); if (S) { refresh(); checkEvidence(); } };
+  es.onerror = () => {
+    if (timer || !bar.classList.contains("hidden")) return;
+    timer = setTimeout(() => {
+      timer = null;
+      bar.replaceChildren(icon("alert"), h("span", null, t("Lost the connection to Resume Studio's background service; reconnecting… Changes you make now may not be saved.")));
+      bar.classList.remove("hidden");
+    }, 1500);
+  };
   es.addEventListener("file", (m) => { const d = JSON.parse(m.data); if (S && d.digest === S.digest) return; refresh(); });
   es.addEventListener("evidence", () => checkEvidence(true));
   listenChat(es);
@@ -1631,6 +1663,11 @@ function wire() {
   wire();
   initGutters();
   applyState(await api("GET", "/api/state"));
+  const switched = store("dataSwitched");
+  if (switched) {
+    store("dataSwitched", null);
+    toast(switched === "new" ? t("Started a new data file: {path}", { path: S.data_path }) : t("Opened {path}", { path: S.data_path }), { ms: 5000 });
+  }
   select("profile");
   setTab(store("tab") === "chat" ? "chat" : "library");
   connect();

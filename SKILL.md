@@ -17,8 +17,10 @@ directly. Both sides change the same file; the window watches it and refreshes a
 - **`/resume-studio <task>`**, e.g. `/resume-studio polish Paper2Exam` or `/resume-studio fit JOB-001 on one
   page`: edit `resume.yaml` following the rules below. If the window is open it refreshes by itself;
   there is no need to open it.
-- Data file: the one the user names (add `--data`), otherwise always `<skill>/resume.yaml` (git-ignored).
-  Never edit a `resume.yaml` just because the current directory happens to have one.
+- Data file: the one the user names (add `--data`); otherwise the one last opened in the window
+  (`"data"` in `<skill>/.local/prefs.json`); otherwise `<skill>/resume.yaml` (git-ignored). The
+  scripts resolve this the same way when `--data` is left out. Never edit a `resume.yaml` just
+  because the current directory happens to have one.
 - Reply in the language the user writes in.
 
 ## Opening the window
@@ -35,13 +37,14 @@ python "<skill>/scripts/studio.py" --window
   it again is safe.
 - A missing data file is created as an empty skeleton in the computer's language (resume language and
   default section titles). For another file add `--data <absolute path>`; it applies to this run only.
+  In the window, Settings → Data file shows the file and opens or starts another one (remembered).
 - Without a desktop (or when the user asks for the browser) drop `--window`: it opens in the browser
   and prints `UI running at http://...`.
 - Every dependency lives in `<skill>/.venv` and pip's cache in `<skill>/.cache`; the first run creates
   them and touches nothing global. LaTeX needs `xelatex` on the system (TeX Live or MiKTeX).
 - The window's language follows the computer (English, 简体中文, 日本語, 한국어, Español, Français,
   Deutsch; others fall back to English). The user can pick another in Settings (the gear in the top
-  bar, Ctrl+,). That choice belongs to the computer and lives in `.studio/prefs.json`, not in resume.yaml.
+  bar, Ctrl+,). That choice belongs to the computer and lives in `<skill>/.local/prefs.json`, not in resume.yaml.
 
 ## The chat in the window is Claude Code
 

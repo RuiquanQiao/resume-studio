@@ -65,7 +65,8 @@ def _fake() -> tuple[bool, Any]:
 
 
 def pick(kind: str, initial: str | None, window_dialog: Callable | None = None) -> list[str]:
-    """kind: 'folder' or 'files'. Returns chosen paths (forward slashes), [] if cancelled."""
+    """kind: 'folder', 'files', 'yaml' (open one data file) or 'save' (where a new data file
+    goes). Returns chosen paths (forward slashes), [] if cancelled."""
     is_fake, value = _fake()
     start = initial if initial and Path(initial).is_dir() else str(Path.home())
     with _pick_lock:
@@ -79,6 +80,15 @@ def pick(kind: str, initial: str | None, window_dialog: Callable | None = None) 
                 root.attributes("-topmost", True)
                 if kind == "folder":
                     r = filedialog.askdirectory(parent=root, initialdir=start, mustexist=True, title=t("Choose a project folder"))
+                    return [r] if r else []
+                if kind == "yaml":
+                    r = filedialog.askopenfilename(parent=root, initialdir=start, title=t("Open a resume data file"),
+                                                   filetypes=[("YAML", "*.yaml *.yml")])
+                    return [r] if r else []
+                if kind == "save":
+                    r = filedialog.asksaveasfilename(parent=root, initialdir=start, title=t("New resume data file"),
+                                                     initialfile="resume.yaml", defaultextension=".yaml",
+                                                     filetypes=[("YAML", "*.yaml *.yml")])
                     return [r] if r else []
                 return list(filedialog.askopenfilenames(parent=root, initialdir=start, title=t("Choose files")))
             res = _tk.call(ask)
