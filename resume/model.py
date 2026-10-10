@@ -180,6 +180,14 @@ def get_version(doc: Any, version_id: str) -> Any:
     return v
 
 
+def section_order(doc: Any, version: Any) -> list[str]:
+    """Every section id in the order this version shows them. The order belongs to the version;
+    ids it doesn't list yet (sections added later) go last, in the order of the sections list."""
+    ids = [str(s.get("id")) for s in doc.get("sections") or []]
+    listed = [str(s) for s in (version or {}).get("sections") or [] if str(s) in ids]
+    return list(dict.fromkeys(listed + ids))
+
+
 def with_all(versions: list) -> list:
     """Versions as the UI sees them: ALL first, then the job targets."""
     rest = [v for v in versions if not is_all(v)]
@@ -254,11 +262,8 @@ def build_view(doc: Any, version: dict) -> dict:
     else:
         chosen = [by_id[str(i)] for i in version.get("entries") or [] if str(i) in by_id]
 
-    sections = list(doc.get("sections") or [])
-    order = [str(s) for s in version.get("sections") or []]
-    if order:
-        rank = {sid: i for i, sid in enumerate(order)}
-        sections.sort(key=lambda s: rank.get(str(s.get("id")), len(rank)))
+    rank = {sid: i for i, sid in enumerate(section_order(doc, version))}
+    sections = sorted(doc.get("sections") or [], key=lambda s: rank[str(s.get("id"))])
     hidden = {str(s) for s in version.get("hide_sections") or []}
 
     p = doc.get("profile") or {}

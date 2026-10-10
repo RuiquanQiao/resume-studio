@@ -149,6 +149,25 @@ def test_all_is_reserved(data_file):
     assert vid == "JOB-002" and next(x for x in s["doc"]["versions"] if x["id"] == vid)["entries"] == []
 
 
+def test_section_order_belongs_to_the_version(data_file):
+    st = Studio(data_file)
+    doc = st.store.load()[0]
+    ids = [str(s["id"]) for s in doc["sections"]]
+    all_v = to_plain(model.get_version(doc, "ALL"))
+    all_v["sections"] = list(reversed(ids))
+    st.update_item("version", "ALL", all_v, None)
+    for src in (None, "ALL"):                                   # blank or from ALL: ALL's order
+        vid, s = st.create_version(src, None, "x")
+        assert next(x for x in s["doc"]["versions"] if x["id"] == vid)["sections"] == list(reversed(ids))
+    job = to_plain(model.get_item(st.store.load()[0], "version", vid))
+    job["sections"] = [ids[1]]
+    st.update_item("version", vid, job, None)
+    vid2, s = st.create_version(vid, None, "copy")              # a copy keeps its job's order
+    assert next(x for x in s["doc"]["versions"] if x["id"] == vid2)["sections"] == [ids[1]]
+    order = model.section_order(s["doc"], job)                  # unlisted sections go last
+    assert order[0] == ids[1] and sorted(order) == sorted(ids)
+
+
 def test_files_without_all_still_get_it(tmp_path):
     f = tmp_path / "resume.yaml"
     f.write_text("schema_version: 1\n"

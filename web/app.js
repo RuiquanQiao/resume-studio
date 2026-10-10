@@ -168,6 +168,13 @@ function entryLabel(e) {
   return `${(sec && display(sec.title)) || e.section || "未归类"} #${localNo(e)}`;
 }
 const sectionById = (id) => sections().find((s) => s.id === id) || null;
+// a copy of `list` with the item at `from` taken out and put back at `to`
+const moved = (list, from, to) => { const o = [...list]; o.splice(to, 0, ...o.splice(from, 1)); return o; };
+// every section id in this version's order (same rule as model.section_order: unlisted ones go last)
+function sectionOrder(v) {
+  const all = sections().map((s) => s.id);
+  return [...new Set([...((v && v.sections) || []).filter((id) => all.includes(id)), ...all])];
+}
 
 function itemHash(kind, id) {
   if (!S) return null;
@@ -294,8 +301,8 @@ async function saveDraft(force = false) {
 // version tweaks from the sidebar / preview toolbar: re-read, apply, retry once on conflict
 async function mutateVersion(fn) {
   for (let attempt = 0; attempt < 2; attempt++) {
-    const v = clone(version());
-    if (!v) return;
+    const v = clone(version() || (isAll() ? { id: ALL, label: "全部经历", lang: "en", template: "classic", headline: "", layout: {} } : null));
+    if (!v) return;   // ALL may not be in the file yet; the server adds it on first save
     fn(v);
     try {
       const s = await api("PUT", "/api/item", { kind: "version", id: ui.versionId, data: v, base: itemHash("version", ui.versionId) });
@@ -430,7 +437,7 @@ function renderLibrary() {
 
   const included = new Set(job ? v.entries || [] : entries().map((e) => e.id));
   const order = job ? v.entries || [] : entries().map((e) => e.id);
-  for (const sec of sections()) {
+  for (const sec of sectionOrder(v).map(sectionById)) {   // same order as this version's resume
     const mine = entries().filter((e) => e.section === sec.id);
     const inV = order.map(entryById).filter((e) => e && e.section === sec.id);
     const outV = mine.filter((e) => !included.has(e.id));
@@ -949,15 +956,19 @@ function sectionsForm() {
   if (!Array.isArray(ui.draft)) ui.draft = [];
   const list = ui.draft;
   const rows = h("div", { class: "list-rows" });
-  list.forEach((s, i) => {
+  // shown and moved in the order of the resume picked at the top (ALL or a job): the order belongs to it
+  const ids = list.map((s) => s.id);
+  const order = [...new Set([...((version() || {}).sections || []).filter((id) => ids.includes(id)), ...ids])];
+  const move = (from, to) => mutateVersion((v) => { v.sections = moved(order, from, to); }).then(buildEditorKeepDraft);
+  order.map((id) => list.find((s) => s.id === id)).forEach((s) => {
+    const i = list.indexOf(s);
     const used = entries().some((e) => e.section === s.id);
-    rows.append(h("div", { class: "lr", style: "grid-template-columns: 120px 1fr auto 26px 26px 26px" },
+    rows.append(h("div", { class: "lr sort-row", style: "grid-template-columns: 26px 120px 1fr auto 26px" },
+      dragHandle(move),
       h("input", { value: s.id, title: "板块 ID（经历里的 section 字段）", spellcheck: "false", oninput: (ev) => { s.id = ev.target.value; touch(); } }),
       h("input", { value: getT(s.title, ui.editLang), placeholder: "显示标题", oninput: (ev) => { s.title = setT(s.title, ui.editLang, ev.target.value); touch(); } }),
       uiSeg([{ value: "timeline", label: "时间线", tip: "标题 + 日期 + 要点" }, { value: "list", label: "列表", tip: "「类别：条目」一行一个，适合技能" }],
-        s.kind || "timeline", (k) => { s.kind = k; touch(); buildEditorKeepDraft(); }, { cls: "sm", label: "板块类型" }),
-      h("button", { class: "btn icon sm ghost", title: "上移", disabled: i === 0, onclick: () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; touch(); buildEditorKeepDraft(); } }, icon("up")),
-      h("button", { class: "btn icon sm ghost", title: "下移", disabled: i === list.length - 1, onclick: () => { [list[i + 1], list[i]] = [list[i], list[i + 1]]; touch(); buildEditorKeepDraft(); } }, icon("down")),
+        s.kind || "timeline", (kind) => { s.kind = kind; touch(); buildEditorKeepDraft(); }, { cls: "sm", label: "板块类型" }),
       h("button", { class: "btn icon sm ghost danger", disabled: used, title: used ? "还有经历在这个板块里" : "删除板块", onclick: () => { list.splice(i, 1); touch(); buildEditorKeepDraft(); } }, icon("x"))));
   });
   rows.append(h("button", { class: "btn sm", onclick: () => { list.push({ id: `section-${list.length + 1}`, title: "New section", kind: "timeline" }); touch(); buildEditorKeepDraft(); } }, icon("plus"), "添加板块"));
@@ -993,7 +1004,7 @@ function sectionsForm() {
       h("button", { class: "btn icon sm ghost danger", title: "移除（不会删除文件）", onclick: () => { st.project_roots = roots.filter((_, j) => j !== i); if (!st.project_roots.length) delete st.project_roots; saveSettings(); } }, icon("x"))))));
   return [
     h("div", { class: "ed-head" }, h("h1", null, "板块与设置"), h("span", { class: "spacer" }), langSwitch()),
-    card("板块", "默认顺序；每个岗位还能单独调整", [
+    card("板块", `顺序属于「${isAll() ? "ALL" : jobName(version())}」；新建岗位沿用 ALL 的顺序`, [
       h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, "时间线 = 标题 + 日期 + 要点；列表 = 「类别：条目」一行一个，适合技能。"), rows]),
     card("设置", null, [
       h("div", { class: "field" }, h("label", null, "内容语言", h("span", { class: "hint" }, "选两种时，文字按语言分开保存，编辑区会出现语言切换")), h("div", null, langToggle)),
@@ -1011,13 +1022,13 @@ function sectionsForm() {
 
 function versionForm() {
   const v = ui.draft;
-  const all = sections().map((s) => s.id);
-  const custom = (v.sections || []).filter((id) => all.includes(id));
-  const order = [...new Set([...custom, ...all])];
+  const order = sectionOrder(v);
   const hidden = new Set(v.hide_sections || []);
   const rows = h("div", { class: "list-rows" });
-  order.forEach((sid, i) => {
-    rows.append(h("div", { class: "lr", style: "grid-template-columns: 22px 1fr 26px 26px" },
+  const move = (from, to) => { v.sections = moved(order, from, to); touch(); buildEditorKeepDraft(); };
+  order.forEach((sid) => {
+    rows.append(h("div", { class: "lr sort-row", style: "grid-template-columns: 26px 22px 1fr" },
+      dragHandle(move),
       h("button", { class: "check" + (hidden.has(sid) ? "" : " on"), title: "在这里显示", onclick: () => {
         const set = new Set(v.hide_sections || []);
         if (set.has(sid)) set.delete(sid); else set.add(sid);
@@ -1025,11 +1036,8 @@ function versionForm() {
         if (!v.hide_sections.length) delete v.hide_sections;
         touch(); buildEditorKeepDraft();
       } }),
-      h("span", null, display((sectionById(sid) || {}).title) || sid),
-      h("button", { class: "btn icon sm ghost", disabled: i === 0, onclick: () => { const o = [...order]; [o[i - 1], o[i]] = [o[i], o[i - 1]]; v.sections = o; touch(); buildEditorKeepDraft(); } }, icon("up")),
-      h("button", { class: "btn icon sm ghost", disabled: i === order.length - 1, onclick: () => { const o = [...order]; [o[i + 1], o[i]] = [o[i], o[i + 1]]; v.sections = o; touch(); buildEditorKeepDraft(); } }, icon("down"))));
+      h("span", null, display((sectionById(sid) || {}).title) || sid)));
   });
-  if (v.sections && v.sections.length) rows.append(h("button", { class: "btn sm", onclick: () => { delete v.sections; touch(); buildEditorKeepDraft(); } }, icon("undo"), "恢复默认顺序"));
   return [
     v.id === ALL
       ? h("div", { class: "ed-head" }, h("h1", null, "ALL 设置"), h("span", { class: "id" }, "全部经历"), h("span", { class: "spacer" }), langSwitch())
@@ -1040,7 +1048,7 @@ function versionForm() {
         h("div", { class: "grid2" }, tfield("名称", v, "label", { placeholder: "AI Agent 工程师" }), tfield("ID", v, "id", { hint: "也是导出文件名" })),
         tfield("一句话介绍 / 求职方向", v, "headline", { i18n: true, placeholder: "比如：AI Agent Engineer · LLM tooling & full-stack" }),
       ]),
-    card("板块顺序与显示", v.id === ALL ? "只影响 ALL" : "只影响这个岗位", rows),
+    card("板块顺序与显示", v.id === ALL ? "只影响 ALL；新建的岗位从这个顺序开始" : "只影响这个岗位", rows),
   ];
 }
 

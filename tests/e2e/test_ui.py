@@ -1,4 +1,4 @@
-﻿"""End-to-end: drive the real UI in Microsoft Edge like a user would.
+"""End-to-end: drive the real UI in Microsoft Edge like a user would.
 
 Run:  .venv/Scripts/python -m pytest tests/e2e
 Screenshots for visual review land in tests/artifacts/.
@@ -223,6 +223,18 @@ def test_profile_contacts_and_sections(page, server, data_file):
     last.locator("input").nth(1).fill("linkedin.com/in/alex")
     wait_until(lambda: "linkedin.com/in/alex" in data_file.read_text(encoding="utf-8"), msg="contact saved")
     page.click(".nav-row:text('板块与设置')")
+    card = page.locator(".card:has(h3:text-is('板块'))")
+    first = card.locator(".lr input").first.input_value()
+    grip = card.locator(".lr").first.locator(".drag-handle").bounding_box()
+    third = card.locator(".lr").nth(2).bounding_box()
+    page.mouse.move(grip["x"] + grip["width"] / 2, grip["y"] + grip["height"] / 2)   # drag the first row past the third
+    page.mouse.down()
+    page.mouse.move(grip["x"] + grip["width"] / 2, third["y"] + third["height"] - 2, steps=8)
+    page.mouse.up()
+    vid = value_of(page, "#version-select")
+    wait_until(lambda: next(v for v in state(server)["doc"]["versions"] if v["id"] == vid).get("sections", [None] * 3)[2] == first,
+               msg="order saved on the version")
+    page.wait_for_function(f"() => document.querySelectorAll('.card .lr input')[0].value !== {first!r}")
     page.click("button:text('添加板块')")
     wait_until(lambda: any(s["id"].startswith("section-") for s in state(server)["doc"]["sections"]), msg="section added")
 

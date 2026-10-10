@@ -32,6 +32,7 @@ const ICONS = {
   more: '<path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3.2"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
+  grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3.2"/>',
   up: '<path d="m6 15 6-6 6 6"/>',
   down: '<path d="m6 9 6 6 6-6"/>',
   chev: '<path d="m7 10 5 5 5-5"/>',
@@ -76,6 +77,51 @@ function icon(name) {
   s.setAttribute("aria-hidden", "true");
   s.innerHTML = ICONS[name] || "";
   return s;
+}
+
+// ================================================================ drag to reorder
+// A Notion-style six-dot handle. Rows are the `.sort-row` children of one parent; while
+// dragging, the row moves through the list live, and onMove(from, to) runs on drop.
+// The arrow keys move a focused handle one step.
+function dragHandle(onMove, label = "拖动排序") {
+  const btn = h("button", { type: "button", class: "btn icon sm ghost drag-handle", title: label, "aria-label": label }, icon("grip"));
+  const rowsOf = (row) => [...row.parentElement.children].filter((x) => x.classList.contains("sort-row"));
+  btn.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const row = btn.closest(".sort-row");
+    const list = row.parentElement, home = row.nextSibling, from = rowsOf(row).indexOf(row);
+    // listen on window, not pointer capture: moving the row in the DOM would drop the capture
+    row.classList.add("lifted");
+    document.body.classList.add("sorting");
+    const move = (ev) => {
+      const others = rowsOf(row).filter((x) => x !== row);
+      const before = others.find((x) => { const r = x.getBoundingClientRect(); return ev.clientY < r.top + r.height / 2; });
+      const at = before || (others.length ? others[others.length - 1].nextSibling : null);
+      if (at !== row && at !== row.nextSibling) list.insertBefore(row, at);
+    };
+    const end = (ev) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      row.classList.remove("lifted");
+      document.body.classList.remove("sorting");
+      const to = rowsOf(row).indexOf(row);
+      if (ev.type === "pointercancel") { list.insertBefore(row, home); return; }
+      if (to !== from) onMove(from, to);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  });
+  btn.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    const row = btn.closest(".sort-row"), rows = rowsOf(row), from = rows.indexOf(row);
+    const to = from + (e.key === "ArrowUp" ? -1 : 1);
+    if (to >= 0 && to < rows.length) onMove(from, to);
+  });
+  return btn;
 }
 
 // ================================================================ tooltips

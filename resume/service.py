@@ -141,7 +141,8 @@ class Studio:
         return self.state()
 
     def create_version(self, copy_from: str | None, new_id: str | None, label: str | None = None) -> tuple[str, dict]:
-        """A new job target. Copying ALL starts it with every entry ticked."""
+        """A new job target. Copying ALL starts it with every entry ticked; a copy of a job keeps
+        that job's section order, anything else starts from ALL's."""
         with self.store.lock:
             doc, _ = self.store.load()
             if not any(model.is_all(v) for v in doc.get("versions") or []):
@@ -165,6 +166,8 @@ class Studio:
             else:
                 v = {"id": vid, "label": label or vid, "lang": "en", "template": "classic", "headline": "",
                      "entries": [], "layout": {}}
+            if src is None or model.is_all(src):  # a new resume starts from ALL's section order
+                v["sections"] = model.section_order(doc, model.get_version(doc, model.ALL_ID))
             versions.append(v)
             self.store.save(doc)
         return vid, self.state()

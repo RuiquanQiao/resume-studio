@@ -64,7 +64,7 @@ profile:
   contacts:                  # 全部联系方式；岗位可以隐藏其中几项
     - {label: email, value: a@b.com, url: 'mailto:a@b.com'}
   notes: ...                 # 事实层
-sections:                    # 板块的默认顺序
+sections:                    # 所有简历共用的板块定义；顺序由每个版本的 sections 决定
   - {id: projects, title: {en: Projects, zh: 项目经历}, kind: timeline}   # timeline | list
 entries:                     # 经历库：全部真实经历，不受一页纸限制
   - id: EXP-002              # 内部 ID：稳定、和板块无关，界面上不显示（界面按板块各自编号）
@@ -89,6 +89,7 @@ versions:
     lang: en
     template: classic
     headline: ''             # 没有 entries：永远显示全部经历（按经历库顺序）和全部联系方式，不受一页限制
+    sections: [skills, experience, projects, education]   # ALL 的板块顺序；新建岗位从这里复制
     layout: {}
   - id: JOB-001              # 岗位：只引用条目，不复制内容
     label: AI Agent 工程师
@@ -96,7 +97,7 @@ versions:
     template: classic        # classic | modern | timeline（见 resume/templates/latex）
     headline: {en: 'AI Agent Engineer · LLM tooling', zh: AI Agent 工程师}   # 这个岗位的一句话介绍
     entries: [EXP-001, EXP-002]   # 选中的条目；同一板块内按这里的顺序排列
-    sections: [education, projects]   # 可选：这个岗位的板块顺序
+    sections: [education, projects]   # 这个岗位自己的板块顺序；没列出的板块排在最后
     hide_sections: [awards]  # 可选
     hide_contacts: [phone]   # 可选：按 label 隐藏联系方式
     layout: {font_size: 10, margin_x: 1.4, margin_y: 1.2, line_spread: 1.0,
