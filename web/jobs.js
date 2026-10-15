@@ -723,6 +723,9 @@ function setWorkspace(ws, { path = null } = {}) {
     store("jobs-web-used", "1");
     paintJobspace();
     startWeb();
+  } else if (ws === "fill") {
+    paintFill();
+    loadFill();
   } else if (typeof applyZoom === "function" && ui.zoom === "fit") applyZoom();
   renderWsTools();
 }
@@ -838,6 +841,7 @@ function renderWsTools() {
   if (!el) return;
   if (W.ws === "resume") { el.replaceChildren(); return; }
   if (Float.cur && el.contains(Float.cur.anchor)) return;   // a menu hangs off these buttons: redrawn when it closes
+  if (W.ws === "fill") { renderFillTools(el); return; }
   const name = jobsTool().name;
   const out = [h("button", { class: "btn ghost" + (W.chat === "on" ? " on" : ""), "aria-pressed": String(W.chat === "on"),
     title: t("Claude, working in {name}'s folder (it can still edit your resume)", { name }), onclick: () => setJobsChat(W.chat !== "on") },
@@ -946,11 +950,12 @@ window.addEventListener("blur", () => setTimeout(() => {
 
 function initWorkspaces() {
   for (const b of document.querySelectorAll(".ws-btn")) {
-    b.prepend(icon({ jobs: "briefcase" }[b.dataset.ws] || "file"));
+    b.prepend(icon({ jobs: "briefcase", fill: "globe" }[b.dataset.ws] || "file"));
     b.onclick = () => setWorkspace(b.dataset.ws);
   }
   W.path = store("jobs-path") || "/";
   W.chat = store("jobs-chat") === "on" ? "on" : "off";
   document.body.dataset.jchat = W.chat;
-  setWorkspace(store("ws") === "jobs" ? store("ws") : "resume");
+  F.site = store("fill-site") || F.site;
+  setWorkspace(["jobs", "fill"].includes(store("ws")) ? store("ws") : "resume");
 }

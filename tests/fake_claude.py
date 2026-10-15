@@ -20,6 +20,8 @@ Env:
                     environment a connected tool sets (npm's cache, Playwright's browsers)
                     control requests from the app go to <log>.ctl
   FAKE_CLAUDE_EDIT  JSON {"file","from","to"}: apply this edit to the data file
+  FAKE_CLAUDE_RUN   JSON {"<words in the message>": [{"argv": [...], "stdin": "..."}]}: run these commands as
+                    Bash tool calls when the message has those words (each run is logged to <log>.run)
 """
 import json
 import os
@@ -209,6 +211,20 @@ def handle(prompt, content):
          "message": {"model": model, "content": [{"type": "tool_use", "id": "toolu_1", "name": "Read",
                                                   "input": {"file_path": "E:/data/resume.yaml"}}]}})
     tool_result("toolu_1", "file contents here")
+    # FAKE_CLAUDE_RUN: {"<words in the message>": [{"argv": [...], "stdin": "..."}]}: run them as Bash calls
+    for words, steps in json.loads(os.environ.get("FAKE_CLAUDE_RUN") or "{}").items():
+        if words not in prompt:
+            continue
+        for i, step in enumerate(steps):
+            tid = f"toolu_run{i}"
+            out({"type": "assistant", "parent_tool_use_id": None, "session_id": sid,
+                 "message": {"model": model, "content": [{"type": "tool_use", "id": tid, "name": "Bash",
+                                                          "input": {"command": " ".join(step["argv"])}}]}})
+            import subprocess
+            p = subprocess.run(step["argv"], input=(step.get("stdin") or "").encode("utf-8"), capture_output=True)
+            text = (p.stdout + p.stderr).decode("utf-8", errors="replace")
+            note(".run", {"argv": step["argv"], "code": p.returncode, "out": text})
+            tool_result(tid, text, is_error=p.returncode != 0)
     edit = os.environ.get("FAKE_CLAUDE_EDIT")
     if edit:
         e = json.loads(edit)

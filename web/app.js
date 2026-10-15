@@ -1184,7 +1184,8 @@ function versionForm() {
 }
 
 // ================================================================ AI polish (runs in the chat)
-const AI_LABELS = { polish: "Polish", translate: "Another language", fit: "Fit on one line", sync: "Update from the project", batch_translate: "Fill in a language", batch_fit: "Fit on one line", batch_sync: "Update from the project" };
+const AI_LABELS = { polish: "Polish", translate: "Another language", fit: "Fit on one line", sync: "Update from the project", batch_translate: "Fill in a language", batch_fit: "Fit on one line", batch_sync: "Update from the project",
+  autofill_read: "Read a profile", autofill_apply: "Update a profile" };
 
 function aiDiff(id) {
   const a = ui.ai[id];
@@ -1669,6 +1670,7 @@ function connect() {
   };
   es.addEventListener("file", (m) => {
     jobsAfterResumeChange();   // the window's own saves too: the tool's CV, version ranking, profile freshness
+    fillAfterResumeChange();   // what each online profile should say
     const d = JSON.parse(m.data);
     if (S && d.digest === S.digest) return;
     refresh();
@@ -1676,6 +1678,7 @@ function connect() {
   es.addEventListener("evidence", () => checkEvidence(true));
   listenChat(es);
   listenJobs(es);
+  listenFill(es);
 }
 
 function wire() {
@@ -1707,7 +1710,7 @@ function wire() {
   document.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveDraft(); }
     if ((e.ctrlKey || e.metaKey) && e.key === ",") { e.preventDefault(); openSettings(); }
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && ["1", "2"].includes(e.key)) { e.preventDefault(); setWorkspace({ 1: "resume", 2: "jobs" }[e.key]); }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && ["1", "2", "3"].includes(e.key)) { e.preventDefault(); setWorkspace({ 1: "resume", 2: "jobs", 3: "fill" }[e.key]); }
     if (e.key === "Escape" && !Float.cur && ui.layoutOpen) { ui.layoutOpen = false; renderPreviewToolbar(); }
   });
   window.addEventListener("beforeunload", () => { if (ui.dirty) saveDraft(); if (ui.headPending) ui.headPending(); });

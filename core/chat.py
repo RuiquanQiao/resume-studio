@@ -139,9 +139,18 @@ class ChatStore:
 
     def messages(self, chat_id: str) -> list[dict]:
         try:
-            return json.loads((self.root / f"{chat_id}.json").read_text(encoding="utf-8"))
+            msgs = json.loads((self.root / f"{chat_id}.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return []
+        # chats saved before browser commands were kept as steps: work them out from the command shown
+        for m in msgs:
+            for b in m.get("blocks") or []:
+                if b.get("type") == "tool" and b.get("name") in ("Bash", "PowerShell") and "browser.py" in str(b.get("hint") or "") \
+                        and not isinstance((b.get("input") or {}).get("browser"), list):
+                    step = _browser_step(str(b["hint"]))
+                    if step:
+                        b["input"] = {**(b.get("input") or {}), "browser": step}
+        return msgs
 
     def save_messages(self, chat_id: str, msgs: list[dict]) -> None:
         with self.lock:
@@ -707,7 +716,16 @@ def _small_input(name: str | None, inp: dict) -> dict:
     keep = {k: inp[k] for k in ("subject", "activeForm", "taskId", "status") if k in inp}
     if name == "TaskCreate" and inp.get("subject"):
         keep["subject"] = str(inp["subject"])[:200]
+    if name in ("Bash", "PowerShell") and inp.get("command"):
+        step = _browser_step(str(inp["command"]))   # Resume Studio's browser command: shown as a step, not a command line
+        if step:
+            keep["browser"] = step
     return keep
+
+
+def _browser_step(command: str) -> list[dict] | None:
+    from .browser import steps_of
+    return steps_of(command) or None
 
 
 def _result_preview(content: Any) -> str:

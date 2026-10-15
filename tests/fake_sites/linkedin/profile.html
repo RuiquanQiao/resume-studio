@@ -1,0 +1,132 @@
+<!doctype html>
+<!-- A stand-in for a LinkedIn-style profile page (tests only). Edit buttons open a dialog whose
+     fields are React-like: the value only counts when an input event arrives (see save()). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Alex Chen | Profile</title>
+<style>
+  body { font-family: sans-serif; margin: 0; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  section { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 12px 0; }
+  .spacer { height: 1600px; }      /* pushes Education off screen */
+  .pill { cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px solid #888; border-radius: 99px; }
+  [role=dialog] { position: fixed; inset: 40px; background: white; border: 2px solid #333; padding: 16px; overflow: auto; }
+  .hidden { display: none; }
+  textarea { width: 100%; height: 120px; }
+</style>
+</head>
+<body>
+<main>
+  <section id="top">
+    <h1 id="name">Alex Chen</h1>
+    <div id="headline">Student at ANU</div>
+    <button aria-label="Edit intro" onclick="openIntro()">✎</button>
+  </section>
+  <section id="experience">
+    <h2>Experience</h2>
+    <ul id="exp-list"></ul>
+    <button aria-label="Add position" onclick="openPos(-1)">+</button>
+  </section>
+  <div class="spacer"></div>
+  <section id="education">
+    <h2>Education</h2>
+    <ul><li><b>Australian National University</b><div>Master of Computing</div><div>Jul 2025 – Jun 2027</div></li></ul>
+  </section>
+  <section id="skills">
+    <h2>Skills</h2>
+    <span class="pill" onclick="this.textContent='Python ✓'">Python</span>
+  </section>
+</main>
+
+<div id="dlg" role="dialog" aria-label="Edit" class="hidden">
+  <h2 id="dlg-title">Edit</h2>
+  <div id="intro-fields">
+    <label for="f-headline">Headline*</label><input id="f-headline" maxlength="220">
+  </div>
+  <div id="pos-fields">
+    <label for="f-title">Title*</label><input id="f-title" maxlength="100"><br>
+    <label for="f-company">Company name*</label><input id="f-company"><br>
+    <label for="f-month">Start month</label>
+    <select id="f-month"><option value="">Month</option><option>January</option><option>February</option><option>March</option>
+      <option>April</option><option>May</option><option>June</option><option>July</option><option>August</option>
+      <option>September</option><option>October</option><option>November</option><option>December</option></select>
+    <label for="f-year">Start year</label>
+    <select id="f-year"><option value="">Year</option></select><br>
+    <input type="checkbox" id="f-current"><label for="f-current">I am currently working in this role</label><br>
+    <label for="f-desc">Description</label><textarea id="f-desc" maxlength="2000"></textarea>
+    <div id="counter">0/2,000</div>
+  </div>
+  <button onclick="save()">Save</button>
+  <button aria-label="Dismiss" onclick="closeDlg()">✕</button>
+</div>
+
+<script>
+  // what "the server" holds
+  const DB = {
+    headline: "Student at ANU",
+    positions: [{ title: "Research Intern", company: "CSIRO", month: "February", year: "2024", current: false, desc: "Mapped flood risk." }],
+    saves: 0,
+  };
+  // React-like: a field's state changes only through input events, never by setting .value in a script
+  const state = {};
+  for (const id of ["f-headline", "f-title", "f-company", "f-desc"]) {
+    document.getElementById(id).addEventListener("input", (e) => {
+      state[id] = e.target.value;
+      if (!e.isTrusted) state.untrusted = true;
+      if (id === "f-desc") document.getElementById("counter").textContent = e.target.value.length + "/2,000";
+    });
+  }
+  for (const id of ["f-month", "f-year", "f-current"]) {
+    document.getElementById(id).addEventListener("change", (e) => { state[id] = e.target.type === "checkbox" ? e.target.checked : e.target.value; });
+  }
+  const years = document.getElementById("f-year");
+  for (let y = 2027; y >= 1990; y--) years.append(new Option(String(y)));
+  let editing = null;
+
+  function paint() {
+    document.getElementById("headline").textContent = DB.headline;
+    const ul = document.getElementById("exp-list");
+    ul.replaceChildren(...DB.positions.map((p, i) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<b></b><div class="co"></div><div class="dt"></div><p class="ds"></p><button aria-label="Edit position ${i + 1}">✎</button>`;
+      li.querySelector("b").textContent = p.title;
+      li.querySelector(".co").textContent = p.company;
+      li.querySelector(".dt").textContent = `${p.month} ${p.year} – ${p.current ? "Present" : ""}`;
+      li.querySelector(".ds").textContent = p.desc;
+      li.querySelector("button").onclick = () => openPos(i);
+      return li;
+    }));
+  }
+  function show(kind, title) {
+    document.getElementById("dlg").classList.remove("hidden");
+    document.getElementById("dlg").setAttribute("aria-label", title);
+    document.getElementById("dlg-title").textContent = title;
+    document.getElementById("intro-fields").classList.toggle("hidden", kind !== "intro");
+    document.getElementById("pos-fields").classList.toggle("hidden", kind !== "pos");
+  }
+  function setField(id, v) { const el = document.getElementById(id); if (el.type === "checkbox") el.checked = v; else el.value = v; state[id] = v; }
+  function openIntro() { editing = "intro"; setField("f-headline", DB.headline); show("intro", "Edit intro"); }
+  function openPos(i) {
+    editing = i;
+    const p = i >= 0 ? DB.positions[i] : { title: "", company: "", month: "", year: "", current: false, desc: "" };
+    setField("f-title", p.title); setField("f-company", p.company); setField("f-month", p.month);
+    setField("f-year", p.year); setField("f-current", p.current); setField("f-desc", p.desc);
+    show("pos", i >= 0 ? "Edit experience" : "Add experience");
+  }
+  function closeDlg() { document.getElementById("dlg").classList.add("hidden"); editing = null; }
+  function save() {
+    if (editing === "intro") DB.headline = state["f-headline"];
+    else {
+      const p = { title: state["f-title"], company: state["f-company"], month: state["f-month"], year: state["f-year"],
+                  current: !!state["f-current"], desc: state["f-desc"] };
+      if (editing >= 0) DB.positions[editing] = p; else DB.positions.push(p);
+    }
+    DB.saves++;
+    closeDlg();
+    paint();
+  }
+  paint();
+</script>
+</body>
+</html>

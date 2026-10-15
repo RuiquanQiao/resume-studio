@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlparse
 
+from autofill import api as autofill_api
 from core import dialogs, i18n
+from core.browser import ManagedBrowser
 from core.chat import ChatRunner, ChatStore, claude_command
 from core.claude_info import ClaudeInfo
 from core.server import App, HttpError, TextResponse, running_instance
@@ -46,6 +48,7 @@ class Instance:
     jobtool: JobTool | None = None             # the job-posting tool (per computer, survives data switches)
     jobs_watcher: SignatureWatcher | None = None
     web: WebHost | None = None                 # the tool's own web interface, hosted in the window
+    browser: ManagedBrowser | None = None      # the browser Autofill drives (its own profile, per computer)
 
     def stop(self) -> None:
         """Before switching to another data file (the hosted web interface keeps running)."""
@@ -59,6 +62,8 @@ class Instance:
         self.stop()
         if self.web:
             self.web.shutdown()
+        if self.browser:
+            self.browser.stop()
 
 
 def create_app(data_path: str | Path, *, window: bool = False, watch_interval: float = 0.5,
@@ -72,6 +77,10 @@ def create_app(data_path: str | Path, *, window: bool = False, watch_interval: f
                                         cache=ROOT / ".cache", skill_md=prompts.SKILL_MD)
     inst.web = WebHost(inst.jobtool.id, ROOT / ".cache" / "logs" / f"{inst.jobtool.id}-web.log",
                        window_ports=lambda: _ports(inst.url.get("url")))
+    # sign-ins live in this profile, next to the app's own preferences; tests run it headless and unhurried
+    inst.browser = ManagedBrowser(local / "browser", ROOT / ".cache" / "logs" / "browser.log",
+                                  headless=os.environ.get("RESUME_STUDIO_BROWSER_HEADLESS") == "1",
+                                  pace=float(os.environ.get("RESUME_STUDIO_BROWSER_PACE") or 1))
     inst.url["url"] = ""
     inst.focus["fn"] = lambda: webbrowser.open(inst.url["url"]) if inst.url["url"] else None
     _load(inst, inst.app, data_path, watch_interval)
@@ -250,3 +259,7 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
     inst.jobs_watcher = SignatureWatcher(tool.signature, lambda: app.bus.publish("jobs", {}),
                                          interval=max(watch_interval * 3, 1.0))
     inst.jobs_watcher.start()
+
+    # ---- autofill: online profiles kept in step with a resume version, in the browser ----
+    assert inst.browser is not None
+    autofill_api.register(app, studio, chats, inst.browser)

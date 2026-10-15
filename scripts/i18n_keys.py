@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CATALOGS = ROOT / "web" / "i18n"
-PY_DIRS = [ROOT / "core", ROOT / "resume", ROOT / "jobs", ROOT / "scripts"]
+PY_DIRS = [ROOT / "core", ROOT / "resume", ROOT / "jobs", ROOT / "autofill", ROOT / "scripts"]
 T_NAMES = {"t", "_t"}
 
 _JS_STR = r'"((?:[^"\\]|\\.)*)"'
@@ -27,6 +27,7 @@ _JS_TABLES = {
     "app.js": ["NOTE_TIPS", "AI_LABELS", "FONT_GROUPS"],
     "chat.js": ["BUILTIN_DESC"],
     "jobs.js": ["STATE_NAMES", "DECISIONS", "IMPORTANCE", "VALUE_NAMES", "CHECK_NAMES", "STEP_NAMES", "MODE_NAMES", "WEB_STEPS"],
+    "autofill.js": ["OPS", "APPLIED", "SECTION_NAMES", "FIELD_NAMES"],
 }
 _JS_GROUPS = {"jobs.js": ["MODE_GROUPS"]}   # [["Group title", [...]], ...]
 

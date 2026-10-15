@@ -1241,3 +1241,151 @@ def test_chats_follow_the_workspace(connected, page_all, server, fake_claude):
     wait_until(lambda: pg.get_attribute("#chat-select", "data-value") == resume_chat, msg="Resume's chat again")
     pg.keyboard.press("Control+2")
     wait_until(lambda: pg.get_attribute("#chat-select", "data-value") == jobs_chat, msg="Job search's chat again")
+
+
+# ---------------------------------------------------------------- Autofill (online profiles)
+FILL_NOW = {
+    "url": "https://www.linkedin.com/in/alex/",
+    "basics": {"headline": "Student at ANU", "about": ""},
+    "items": [
+        {"section": "education", "key": "EXP-001", "fields": {"org": "The Australian National University", "degree": "Master of Computing",
+                                                           "start": "2025-07", "end": "2027-06"}},
+        {"section": "projects", "key": None, "fields": {"name": "Old hackathon thing", "start": "2022-03"}},
+    ],
+    "skills": ["Python"],
+    "drafts": {"about": "MSc Computing student building LLM tools."},
+}
+
+
+def test_autofill_workspace_plan_ticks_edits_and_apply(page_all, server, fake_claude, monkeypatch):
+    pg = page_all
+    server.inst.browser.headless, server.inst.browser.pace = True, 0
+    server.inst.browser.prefer = "msedge"
+    pg.keyboard.press("Control+3")
+    pg.wait_for_selector("#fillspace .fill-start")
+    assert not pg.is_visible("#editor") and not pg.is_visible(".pane.right") and pg.is_visible("#chat")
+    assert pg.get_attribute(".fs-site.on", "data-site") == "linkedin"
+    assert "读取我的 LinkedIn 资料" in pg.inner_text("#fillspace")
+    assert "false" not in pg.inner_text("#ws-tools") and "false" not in pg.inner_text("#fillspace")
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"autofill-start-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+
+    # what Claude read arrives: the plan appears by itself
+    assert server.req("POST", "/api/autofill/linkedin/current", FILL_NOW)[0] == 200
+    pg.wait_for_selector("#fillspace .fill-plan .fi")
+    assert pg.is_visible(".fi[data-id='basics.headline'] .fi-op") and pg.is_visible(".fi.op-remove.off")
+    assert pg.inner_text(".fi[data-id='skills'] .fi-was").startswith("TypeScript")   # the skills to add, collapsed
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"autofill-plan-{scheme}.png"), full_page=True)
+    pg.emulate_media(color_scheme="light")
+    no_native(pg)
+
+    # untick one, edit the drafted About: both saved for this data file
+    pg.click(".fi[data-id='skills'] .check")
+    ta = pg.locator(".fi[data-id='basics.about'] textarea")
+    ta.click()
+    pg.keyboard.press("End")
+    pg.keyboard.type(" Open to ML roles.")
+    wait_until(lambda: (lambda i: i["fields"][0].get("edited") and i["fields"][0]["to"].endswith("ML roles."))(
+        next(i for i in server.req("GET", "/api/autofill/linkedin")[1]["plan"]["items"] if i["id"] == "basics.about")), msg="edit saved")
+    assert ta.evaluate("e => e === document.activeElement")   # typing kept the caret
+    items = {i["id"]: i for i in server.req("GET", "/api/autofill/linkedin")[1]["plan"]["items"]}
+    assert items["skills"]["checked"] is False
+    assert "处修改" in pg.inner_text("#fill-foot")
+
+    # make them: a chat in this workspace, with only the ticked changes; Claude's browser commands show as steps
+    data = Path(server.inst.studio.store.path)
+    (data.parent / ".studio" / "server.json").write_text(json.dumps({"url": server.url}), encoding="utf-8")
+    b = [sys.executable, str(ROOT / "scripts" / "browser.py"), "--data", str(data)]
+    monkeypatch.setenv("FAKE_CLAUDE_RUN", json.dumps({"逐条": [
+        {"argv": b + ["open", server.url + "api/instance"]}, {"argv": b + ["screenshot"]},
+        {"argv": b + ["report", "linkedin", "basics.headline", "done"]}]}))
+    pg.click("#fill-apply")
+    wait_until(lambda: any("## The approved changes" in c["stdin"] for c in calls(fake_claude)), timeout=30, msg="apply sent")
+    sent = next(c["stdin"] for c in calls(fake_claude) if "## The approved changes" in c["stdin"])
+    assert "basics.about" in sent and "Open to ML roles." in sent and '"id": "skills"' not in sent
+    pg.wait_for_selector("#chat-log .msg-user, #chat-log .msg-action")
+    assert "Resume Studio 的浏览器" in pg.inner_text("#chat-context")
+    # the steps and the reply appear in the left pane (it has no Chat tab here), in words, with the screenshot
+    pg.wait_for_selector("#chat-log .msg-ai .md >> text=已经处理", timeout=30000)
+    steps = pg.locator("#chat-log .tool-step .tn").all_inner_texts()
+    assert steps[:3] == ["打开 127.0.0.1/api/instance", "截个图", "已完成：标题"], steps
+    pg.wait_for_function("() => { const i = document.querySelector('#chat-log .step-shot img'); return i && i.complete && i.naturalWidth > 0; }")
+    assert "browser.py" not in pg.inner_text("#chat-log .msg-ai")
+    pg.screenshot(path=str(ART / "autofill-steps-light.png"))
+    pg.wait_for_selector(".fi[data-id='basics.headline'] .fi-state.s-done")
+    chats = server.req("GET", "/api/chats")[1]["chats"]
+    assert [c["workspace"] for c in chats] == ["autofill"]
+
+    # BOSS直聘: its own plan and the resume's Chinese
+    pg.click(".fs-site[data-site='boss']")
+    pg.wait_for_selector(".fs-site.on[data-site='boss']")
+    pg.wait_for_selector("#fillspace .fill-start")
+    assert pg.inner_text("#fillspace .fill-target .seg button.on") == "中文"
+    pg.screenshot(path=str(ART / "autofill-boss-light.png"))
+    # Resume shows every chat again; Ctrl+3 comes back to the same site
+    pg.keyboard.press("Control+1")
+    pg.wait_for_selector("#editor", state="visible")
+    pg.keyboard.press("Control+3")
+    pg.wait_for_selector(".fs-site.on[data-site='boss']")
+    server.inst.browser.stop()
+
+def test_autofill_sites_are_the_users_to_pick(page_all, server):
+    pg = page_all
+    pg.keyboard.press("Control+3")
+    pg.wait_for_selector("#fillspace .fill-start")
+    # any other site, by its address, with notes for Claude
+    pg.click("#fill-add-site")
+    pg.wait_for_selector(".modal.site-dialog")
+    assert "认识的网站" not in pg.inner_text(".site-dialog")   # LinkedIn and BOSS are on the list already
+    pg.click(".site-dialog .btn.primary")                         # no address: says so, stays open
+    assert pg.is_visible(".modal.site-dialog")
+    pg.fill("#site-name", "SEEK")
+    pg.fill("#site-home", "www.seek.com.au/profile/me")
+    pg.fill("#site-notes", "Career history is under Profile.")
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"autofill-add-site-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+    pg.click(".site-dialog .btn.primary")
+    pg.wait_for_selector(".fs-site.on[data-site='seek']")
+    assert not pg.is_visible(".modal.site-dialog")
+    assert "读取我的 SEEK 资料" in pg.inner_text("#fillspace")
+    sites = server.req("GET", "/api/autofill")[1]["sites"]
+    assert [s["id"] for s in sites] == ["linkedin", "boss", "seek"] and sites[2]["home"] == "https://www.seek.com.au/profile/me"
+    assert sites[2]["notes"] == "Career history is under Profile."
+
+    # its settings: rename, move it first
+    pg.click("#fill-site-settings")
+    pg.click(".menu-item >> text=网站设置…")
+    pg.fill("#site-name", "SEEK AU")
+    pg.click(".site-dialog .btn.primary")
+    pg.wait_for_selector(".fs-site[data-site='seek'] >> text=SEEK AU")
+    pg.click(".fs-site[data-site='seek']", button="right")
+    pg.click(".menu-item >> text=左移")
+    pg.click(".fs-site[data-site='seek']", button="right")
+    pg.click(".menu-item >> text=左移")
+    wait_until(lambda: [s.get_attribute("data-site") for s in pg.locator(".fs-site[data-site]").all()] == ["seek", "linkedin", "boss"], msg="moved")
+
+    # every site can go (asked first); the page then offers what to add
+    for sid in ("seek", "linkedin", "boss"):
+        pg.click(f".fs-site[data-site='{sid}']", button="right")
+        pg.click(".menu-item >> text=从列表中移除")
+        pg.click(".modal .btn.danger-soft")
+        pg.wait_for_selector(f".fs-site[data-site='{sid}']", state="detached")
+    pg.wait_for_selector("#fillspace >> text=你在哪些网站上有资料？")
+    pg.screenshot(path=str(ART / "autofill-no-sites-light.png"))
+    assert pg.locator("#chat .suggest button").count() == 0   # no site to name
+    pg.click("#fillspace .btn.primary")
+    pg.wait_for_selector(".site-dialog >> text=Resume Studio 认识的网站")
+    pg.wait_for_timeout(400)   # the dialog's fade-in
+    pg.screenshot(path=str(ART / "autofill-add-site-presets-light.png"))
+    pg.keyboard.press("Escape")
+    pg.wait_for_selector(".modal.site-dialog", state="detached")
+    pg.click("#fillspace .btn >> text=LinkedIn")
+    pg.wait_for_selector(".fs-site.on[data-site='linkedin']")
+    pg.wait_for_selector("#fillspace .fill-start")
+    no_native(pg)

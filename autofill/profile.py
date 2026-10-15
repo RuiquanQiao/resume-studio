@@ -1,0 +1,322 @@
+"""What a site's profile should say (from a resume version), what it says now (read by Claude), and
+the plan between the two that the user ticks.
+
+The resume side is worked out here, not by Claude: the same resume version always gives the same
+profile, and the user sees exactly where each value came from. Claude reads the site (snapshots) and
+hands back what it found in the same shape (`validate_current`); `make_plan` compares them field by
+field. Only the profile's "about" text has no field in resume.yaml: Claude drafts it from the
+visible layer and the user edits it in the plan before anything is changed.
+"""
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from resume import model
+
+from .sites import BASICS, FIELDS, Site
+
+# a resume section -> the site's section, by id first, then by words in the id or title
+SECTION_WORDS = [
+    ("experience", ("experience", "work", "employment", "intern", "工作", "实习", "経歴", "경력")),
+    ("projects", ("project", "项目", "プロジェクト", "프로젝트")),
+    ("education", ("education", "study", "school", "教育", "学历", "学歴", "학력")),
+    ("awards", ("award", "honor", "honour", "prize", "奖", "受賞", "수상")),
+    ("skills", ("skill", "技能", "スキル", "기술")),
+]
+
+
+def site_section(section: Any, lang: str) -> str | None:
+    sid = str(section.get("id") or "")
+    if sid in FIELDS or sid == "skills":
+        return sid
+    words = (sid + " " + model.tr(section.get("title"), lang)).lower()
+    for target, keys in SECTION_WORDS:
+        if any(k in words for k in keys):
+            return target
+    return "skills" if str(section.get("kind")) == "list" else None
+
+
+_MARK = [(re.compile(r"\[([^\]]+)\]\([^)]+\)"), r"\1"), (re.compile(r"\*\*(.+?)\*\*"), r"\1"), (re.compile(r"\*(.+?)\*"), r"\1")]
+
+
+def plain(text: str) -> str:
+    """The resume's inline markup (**bold**, *italic*, [text](link)) as plain text."""
+    for rx, rep in _MARK:
+        text = rx.sub(rep, text)
+    return text.strip()
+
+
+def _date(value: Any, lang: str) -> str:
+    s = model.tr(value, lang).strip()
+    if not s:
+        return ""
+    if s.lower() in model._PRESENT:   # noqa: SLF001 - the same words the renderer accepts
+        return "present"
+    m = re.fullmatch(r"(\d{4})-(\d{1,2})(?:-\d{1,2})?", s)
+    return f"{m.group(1)}-{int(m.group(2)):02d}" if m else s
+
+
+_SCHOOL = re.compile(r"universit|college|institut|school|academy|polytechnic|hochschule|universidad|université|"
+                     r"大学|学院|学校|大學|학교|대학", re.IGNORECASE)
+
+
+def _school(text: str) -> bool:
+    return bool(_SCHOOL.search(text or ""))
+
+
+def item_fields(section: str, entry: Any, lang: str, bullet: str) -> dict:
+    title, sub = plain(model.tr(entry.get("title"), lang)), plain(model.tr(entry.get("subtitle"), lang))
+    lines = [plain(model.bullet_text(b, lang)) for b in entry.get("bullets") or []]
+    desc = "\n".join(bullet + x for x in lines if x)
+    start, end = _date(entry.get("start"), lang), _date(entry.get("end"), lang)
+    if entry.get("date") and not start:
+        start = plain(model.tr(entry.get("date"), lang))
+    loc = plain(model.tr(entry.get("location"), lang))
+    if section == "experience":
+        return {"title": sub, "org": title, "location": loc, "start": start, "end": end, "description": desc}
+    if section == "education":
+        if _school(sub) and not _school(title):   # some resumes put the degree first and the school under it
+            title, sub = sub, title
+        return {"org": title, "degree": sub, "start": start, "end": end, "description": desc}
+    if section == "projects":
+        return {"name": title, "role": sub, "start": start, "end": end, "link": model.tr(entry.get("link"), lang),
+                "description": desc}
+    if section == "awards":
+        return {"title": title, "issuer": sub, "date": end or start, "description": desc}
+    raise ValueError(section)
+
+
+def label_of(section: str, fields: dict) -> str:
+    parts = {"experience": ("title", "org"), "education": ("degree", "org"), "projects": ("name", "role"),
+             "awards": ("title", "issuer")}.get(section, ())
+    return " · ".join(str(fields.get(p) or "") for p in parts if fields.get(p)) or "—"
+
+
+def desired(doc: Any, version: Any, lang: str, site: Site) -> dict:
+    """The profile this resume version gives on `site`, in resume language `lang`."""
+    view_sections = {str(s.get("id")): s for s in doc.get("sections") or []}
+    order = model.section_order(doc, version)
+    hidden = {str(s) for s in version.get("hide_sections") or []}
+    by_id = {str(e.get("id")): e for e in doc.get("entries") or []}
+    chosen = list(doc.get("entries") or []) if model.is_all(version) else \
+        [by_id[str(i)] for i in version.get("entries") or [] if str(i) in by_id]
+    rank = {sid: i for i, sid in enumerate(order)}
+    chosen.sort(key=lambda e: rank.get(str(e.get("section")), 999))   # stable: the job's order within a section
+
+    items, skills, skipped = [], [], []
+    for e in chosen:
+        sid = str(e.get("section"))
+        sec = view_sections.get(sid)
+        if sec is None or sid in hidden:
+            continue
+        target = site_section(sec, lang)
+        if target == "skills" and "skills" in site.sections:
+            for t in e.get("tech") or []:
+                name = plain(model.tr(t, lang))
+                if name and name.lower() not in {s.lower() for s in skills}:
+                    skills.append(name)
+            continue
+        if target not in site.sections or target == "skills":
+            skipped.append({"key": str(e.get("id")), "section": model.tr(sec.get("title"), lang) or sid,
+                            "label": plain(model.tr(e.get("title"), lang))})
+            continue
+        f = item_fields(target, e, lang, site.bullet)
+        for name in site.lacks.get(target, []):
+            # nowhere to put it on this site: it leads the description instead of disappearing
+            extra = f.pop(name, "")
+            if extra:
+                f["description"] = extra + ("\n" + f["description"] if f.get("description") else "")
+        items.append({"section": target, "key": str(e.get("id")), "label": label_of(target, f), "fields": f})
+
+    headline = version.get("headline") if "headline" in version else (doc.get("profile") or {}).get("headline")
+    basics = {}
+    if "headline" in site.basics:
+        basics["headline"] = plain(model.tr(headline, lang))
+    return {"site": site.id, "version": str(version.get("id")), "lang": lang, "basics": basics,
+            "items": items, "skills": skills, "skipped": skipped}
+
+
+# ---- what the site says now (Claude reads it and sends it in this shape) --------------------------
+CURRENT_SHAPE = """\
+{
+  "url": "<the address of the profile page you read>",
+  "basics": {"headline": "...", "about": "..."},          // what the site shows now ("" when empty)
+  "items": [                                              // every item on the site, in its order
+    {"section": "experience", "key": "EXP-002" or null,  // key: the resume item it is, or null
+     "fields": {"title": "...", "org": "...", "location": "...", "start": "2024-02", "end": "present",
+                "description": "..."}}
+  ],
+  "skills": ["Python", "..."],                            // every skill listed on the site
+  "drafts": {"about": "..."},                             // your proposed text for fields the resume has none for
+  "notes": "anything the user should know (a section you couldn't read, a field the site lacks), in the user's language"
+}"""
+
+
+def validate_current(data: Any, site: Site) -> tuple[dict, list[str]]:
+    """Check what Claude read; returns it cleaned up, plus what is wrong with it."""
+    errs: list[str] = []
+    if not isinstance(data, dict):
+        return {}, ["the profile must be a JSON object"]
+    out: dict[str, Any] = {"url": str(data.get("url") or ""), "basics": {}, "items": [], "skills": [], "drafts": {},
+                           "notes": str(data.get("notes") or "")}
+    for name, slot in (("basics", "basics"), ("drafts", "drafts")):
+        val = data.get(name) or {}
+        if not isinstance(val, dict):
+            errs.append(f"`{name}` must be an object")
+            continue
+        for k, v in val.items():
+            if k not in BASICS:
+                errs.append(f"`{name}.{k}`: only {', '.join(BASICS)} are known")
+            elif not isinstance(v, str):
+                errs.append(f"`{name}.{k}` must be text")
+            else:
+                out[slot][k] = v
+    for i, it in enumerate(data.get("items") or []):
+        if not isinstance(it, dict):
+            errs.append(f"items[{i}] must be an object")
+            continue
+        sec = it.get("section")
+        if sec not in FIELDS or sec not in site.sections:
+            errs.append(f"items[{i}].section must be one of {', '.join(s for s in site.sections if s in FIELDS)}")
+            continue
+        fields = it.get("fields") or {}
+        if not isinstance(fields, dict):
+            errs.append(f"items[{i}].fields must be an object")
+            continue
+        known = site.fields(sec)
+        unknown = [k for k in fields if k not in known]
+        if unknown:
+            errs.append(f"items[{i}].fields: {', '.join(unknown)} not known for {sec} on {site.name} (use {', '.join(known)})")
+        key = it.get("key")
+        out["items"].append({"section": sec, "key": str(key) if key else None,
+                             "fields": {k: str(v if v is not None else "") for k, v in fields.items() if k in known}})
+    skills = data.get("skills") or []
+    if not isinstance(skills, list) or not all(isinstance(s, str) for s in skills):
+        errs.append("`skills` must be a list of names")
+    else:
+        out["skills"] = [s.strip() for s in skills if s.strip()]
+    return out, errs
+
+
+# ---- the plan --------------------------------------------------------------------------------
+_MONTHS = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+
+
+def norm_date(s: str) -> str:
+    s = (s or "").strip().lower()
+    if not s:
+        return ""
+    if s in model._PRESENT or s in ("present", "now", "至今", "现在"):   # noqa: SLF001
+        return "present"
+    m = re.search(r"(\d{4})\s*[-./年]\s*(\d{1,2})", s)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}"
+    m = re.search(r"([a-z]{3})[a-z]*\.?\s+(\d{4})", s)
+    if m and m.group(1) in _MONTHS:
+        return f"{m.group(2)}-{_MONTHS[m.group(1)]:02d}"
+    m = re.fullmatch(r"(\d{4})", s)
+    return m.group(1) if m else s
+
+
+def norm_text(s: str) -> str:
+    lines = [re.sub(r"^\s*(?:[•·\-*–]|\d+[.、)])\s*", "", x) for x in (s or "").splitlines()]
+    return re.sub(r"\s+", " ", " ".join(lines)).strip().lower()
+
+
+def same(field: str, a: str, b: str) -> bool:
+    if field in ("start", "end", "date"):
+        return norm_date(a) == norm_date(b)
+    if field == "link":
+        return (a or "").strip().rstrip("/").lower().removeprefix("https://").removeprefix("http://") == \
+            (b or "").strip().rstrip("/").lower().removeprefix("https://").removeprefix("http://")
+    if field in ("org", "issuer", "degree"):
+        # sites pick organisations from their own list ("The Australian National University"): a name
+        # that contains the other is the same organisation, not a change worth making
+        x, y = norm_text(a), norm_text(b)
+        return x == y or bool(x and y and (x in y or y in x))
+    return norm_text(a) == norm_text(b)
+
+
+def _match(want: dict, have: list[dict], used: set[int]) -> int | None:
+    for i, h in enumerate(have):
+        if i not in used and h["section"] == want["section"] and h.get("key") == want["key"]:
+            return i
+    name_field = {"experience": "org", "education": "org", "projects": "name", "awards": "title"}[want["section"]]
+    second = {"experience": "title", "education": "degree"}.get(want["section"])
+    named = [i for i, h in enumerate(have)
+             if i not in used and h["section"] == want["section"] and not h.get("key")
+             and (a := norm_text(want["fields"].get(name_field, ""))) and (b := norm_text(h["fields"].get(name_field, "")))
+             and (a == b or a in b or b in a)]
+    for i in named:   # same place and same role / degree
+        if not second or not want["fields"].get(second) or same(second, want["fields"][second], have[i]["fields"].get(second, "")):
+            return i
+    # same place, the role worded differently: the same item when it is the only one there
+    return named[0] if len(named) == 1 else None
+
+
+def make_plan(site: Site, want: dict, have: dict | None, choices: dict | None = None) -> dict:
+    """Every change between the resume (`want`) and the site (`have`), each one tickable.
+
+    An item: {id, op: add | update | remove | same, section, key, label, fields: [{name, from, to,
+    limit, over}], checked}. `choices` ({id: {checked, fields: {name: text}}}) are the user's ticks and
+    edits, kept across reads."""
+    choices = choices or {}
+    out: list[dict] = []
+    if have is None:
+        return {"items": [], "read": False}
+
+    def add(item: dict, default_checked: bool) -> None:
+        ch = choices.get(item["id"]) or {}
+        for f in item["fields"]:
+            edited = (ch.get("fields") or {}).get(f["name"])
+            if edited is not None and item["op"] != "remove":
+                f["edited"], f["to"] = True, edited
+            lim = site.limits.get(f"{item['section']}.{f['name']}")
+            if lim:
+                f["limit"], f["over"] = lim, len(f["to"] or "") > lim
+        item["checked"] = bool(ch["checked"]) if "checked" in ch else default_checked
+        out.append(item)
+
+    for name in site.basics:
+        to = want["basics"].get(name)
+        if to is None:
+            to = (have.get("drafts") or {}).get(name)
+        cur = (have.get("basics") or {}).get(name, "")
+        if not to:
+            continue
+        op = "same" if same(name, to, cur) else "update"
+        add({"id": f"basics.{name}", "op": op, "section": "basics", "key": name, "label": name,
+             "fields": [{"name": name, "from": cur, "to": to}], "drafted": name not in want["basics"]}, op != "same")
+
+    have_items = have.get("items") or []
+    used: set[int] = set()
+    for w in want["items"]:
+        i = _match(w, have_items, used)
+        iid = f"{w['section']}:{w['key']}"
+        if i is None:
+            add({"id": iid, "op": "add", "section": w["section"], "key": w["key"], "label": w["label"],
+                 "fields": [{"name": k, "from": "", "to": v} for k, v in w["fields"].items() if v]}, True)
+            continue
+        used.add(i)
+        h = have_items[i]["fields"]
+        diffs = [{"name": k, "from": h.get(k, ""), "to": v} for k, v in w["fields"].items()
+                 if not same(k, v, h.get(k, "")) and (v or h.get(k))]
+        add({"id": iid, "op": "update" if diffs else "same", "section": w["section"], "key": w["key"], "label": w["label"],
+             "fields": diffs, "site_label": label_of(w["section"], h)}, bool(diffs))
+    for i, h in enumerate(have_items):
+        if i in used:
+            continue
+        add({"id": f"{h['section']}:site{i}", "op": "remove", "section": h["section"], "key": None,
+             "label": label_of(h["section"], h["fields"]),
+             "fields": [{"name": k, "from": v, "to": ""} for k, v in h["fields"].items() if v]}, False)
+
+    if "skills" in site.sections and want["skills"]:
+        on_site = {s.lower() for s in have.get("skills") or []}
+        missing = [s for s in want["skills"] if s.lower() not in on_site]
+        add({"id": "skills", "op": "add" if missing else "same", "section": "skills", "key": "skills", "label": "skills",
+             "fields": [{"name": "skills", "from": ", ".join(have.get("skills") or []), "to": ", ".join(missing)}]},
+            bool(missing))
+
+    counts = {op: sum(1 for x in out if x["op"] == op) for op in ("add", "update", "remove", "same")}
+    return {"items": out, "read": True, "counts": counts, "checked": sum(1 for x in out if x["checked"] and x["op"] != "same")}

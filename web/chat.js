@@ -89,8 +89,8 @@ function relTime(epoch) {
   return new Date(epoch * 1000).toLocaleDateString(LOCALE);
 }
 function autosize(ta) { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 200) + "px"; }
-// the chat is on screen: its tab in Resume, or the left pane of Job search (where it has no tab)
-const chatShown = () => ui.tab === "chat" || (W.ws === "jobs" && W.chat === "on");
+// the chat is on screen: its tab in Resume, or the left pane of Autofill and Job search (where it has no tab)
+const chatShown = () => ui.tab === "chat" || W.ws === "fill" || (W.ws === "jobs" && W.chat === "on");
 const fileUrl = (path) => `/api/chats/${ui.chat.id}/file?path=${encodeURIComponent(path)}`;
 
 // ---------------------------------------------------------------- Claude Code info
@@ -378,8 +378,10 @@ function reloadChat() {
 
 async function createChat() {
   // in Job search a new chat works in the tool's folder
+  // in Autofill it can use Resume Studio's browser
   const c = W.ws === "jobs" && jobsReady()
     ? (await api("POST", "/api/jobs/chat", { ...chatSettings(), title: jobsTool().name })).chat
+    : W.ws === "fill" ? (await api("POST", "/api/autofill/chat", { ...chatSettings(), site: F.site })).chat
     : await api("POST", "/api/chats", chatSettings());
   ui.chat.list = [c, ...ui.chat.list];
   return c;
@@ -415,13 +417,15 @@ async function renameChat(title) {
   } catch (e) { toast(e.message); }
 }
 
-// Job search shows the chats that run in the tool's folder; Resume shows every chat
+// Job search shows the chats that run in the tool's folder, Autofill the ones that use the browser;
+// Resume shows every chat
 function visibleChats() {
+  if (W.ws === "fill") return ui.chat.list.filter((c) => c.workspace === "autofill");
   if (W.ws !== "jobs" || !jobsReady()) return ui.chat.list;
   const id = (J.data.status.tool || {}).id;
   return ui.chat.list.filter((c) => c.workspace === id);
 }
-const chatKey = () => (W.ws === "jobs" ? "chat-jobs" : "chat");
+const chatKey = () => (W.ws === "jobs" ? "chat-jobs" : W.ws === "fill" ? "chat-fill" : "chat");
 
 // each workspace keeps its own open chat
 async function chatForWorkspace() {
@@ -441,7 +445,7 @@ function renderChatSelect() {
   const sel = ui.w.chat;
   const list = visibleChats();
   sel.disabled = !list.length;
-  sel.setOptions(list.map((c) => ({ value: c.id, label: c.title || t("New chat"), desc: c.workspace || null,
+  sel.setOptions(list.map((c) => ({ value: c.id, label: c.title || t("New chat"), desc: c.workspace === "autofill" ? t("Autofill") : c.workspace || null,
     hint: ui.chat.waiting.has(c.id) ? t("waiting for you") : relTime(c.updated) })), ui.chat.id);
 }
 
@@ -450,6 +454,7 @@ function renderChat() {
   const log = $("#chat-log");
   log.replaceChildren();
   ui.chat.liveEl = null;
+  if (!ui.chat.messages.length && !ui.chat.running && W.ws === "fill") { log.append(fillWelcome()); return; }
   if (!ui.chat.messages.length && !ui.chat.running && W.ws === "jobs" && jobsReady()) {
     const name = jobsTool().name;
     const suggest = [
@@ -545,9 +550,82 @@ function loginHelpEl() {
 
 function toolEl(tool) {
   const st = tool.status === "running" ? h("span", { class: "st running" }) : tool.status === "error" ? h("span", { class: "st error" }, icon("x")) : h("span", { class: "st done" }, icon("check"));
+  const step = tool.input && tool.input.browser;
+  if (step) return browserStepEl(tool, step, st);
   return h("details", { class: "tool" },
     h("summary", null, st, h("span", { class: "tn" }, TOOL_NAMES[tool.name] || tool.name), h("span", { class: "th", title: tool.hint || "" }, shortHint(tool.hint))),
     tool.result && h("pre", null, tool.result));
+}
+
+// ---- Resume Studio's browser (scripts/browser.py): each command as the step a person would describe
+const clipText = (s, n = 60) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+
+// what the action touched, from the command's answer (`target: button "Add position"`)
+function stepTarget(step, result) {
+  const m = /^target: \S+ "(.*)"$/m.exec(result || "");
+  return m ? `“${clipText(m[1], 50)}”` : step.ref ? t("element {ref}", { ref: step.ref }) : "";
+}
+
+// a page by its site and the end of its path, which says which page it is: linkedin.com/…/details/experience
+function stepWhere(url) {
+  try {
+    const u = new URL(url);
+    const parts = u.pathname.split("/").filter(Boolean);
+    const path = parts.length > 3 ? "/…/" + parts.slice(-2).join("/") : parts.length ? "/" + parts.join("/") : "";
+    return clipText(u.hostname.replace(/^www\./, "") + path, 60);
+  } catch (_) { return clipText(url, 60); }
+}
+
+function stepLabel(s, result) {
+  const what = stepTarget(s, result);
+  const site = (s.site && (((F.sites || []).find((x) => x.id === s.site) || {}).name || SITE_NAMES[s.site])) || s.site || "";
+  const item = () => {
+    const v = s.site && F.view[s.site];
+    const it = v && v.plan.items.find((i) => i.id === s.id);
+    return it ? itemLabel(it) : s.id;
+  };
+  switch (s.cmd) {
+    case "open": return [s.url && /^https?:\/\/[^$]+$/.test(s.url) ? t("Open {where}", { where: stepWhere(s.url) }) : t("Open a page")];
+    case "snapshot": return [s.part === "dialog" ? t("Read the dialog") : s.part === "part" ? t("Read part of the page") : t("Read the page")];
+    case "text": return [t("Read the page's text")];
+    case "click": return [t("Click {what}", { what })];
+    case "type": return [t("Type into {what}", { what }), s.text ? `“${clipText(s.text)}”` : ""];
+    case "select": return [t("Choose {option} in {what}", { option: `“${clipText(s.option, 30)}”`, what })];
+    case "press": return [t("Press {key}", { key: s.key })];
+    case "scroll": return [t("Scroll the page")];
+    case "upload": return [t("Upload {files}", { files: (s.files || []).join(", ") })];
+    case "screenshot": return [t("Take a screenshot")];
+    case "tabs": return [t("Look at the open tabs")];
+    case "tab": return [t("Switch to another tab")];
+    case "back": return [t("Go back")];
+    case "front": return [t("Show the browser")];
+    case "profile": return [t("Send what {site} says to the window", { site })];
+    case "signed-out": return [t("Ask you to sign in to {site}", { site })];
+    case "report": return [{ doing: t("Start: {item}", { item: item() }), done: t("Done: {item}", { item: item() }),
+      failed: t("Didn't work: {item}", { item: item() }), skipped: t("Skipped: {item}", { item: item() }) }[s.state] || item(), s.note || ""];
+    default: return [t("Browser: {cmd}", { cmd: s.cmd })];
+  }
+}
+
+// one Bash call can hold several browser actions (Claude batches them): one card, every action listed
+function browserStepEl(tool, steps, st) {
+  steps = Array.isArray(steps) ? steps : [steps];
+  const labels = steps.map((s) => {
+    const [label, detail] = stepLabel(s, steps.length === 1 ? tool.result : "");
+    return [s.loop ? `${label} ${t("(repeated)")}` : label, detail];
+  });
+  const [label, detail] = labels[0];
+  const shots = [...String(tool.result || "").matchAll(/saved: .*?[\\/](shot-\d+\.png)\s*$/gm)].map((m) => m[1]);
+  const src = shots.length ? "/api/browser/shot/" + shots[shots.length - 1] : null;
+  const last = steps[steps.length - 1];
+  return h("div", { class: "tool-step" + (last.cmd === "report" ? " s-" + (last.state || "") : "") },
+    h("details", { class: "tool step" },
+      h("summary", null, st, h("span", { class: "tn" }, label),
+        steps.length > 1 ? h("span", { class: "th" }, t("+{n} more step", { n: steps.length - 1 }, "+{n} more steps")) : detail && h("span", { class: "th" }, detail)),
+      steps.length > 1 && h("ol", { class: "step-list" }, labels.map(([l, d]) => h("li", null, l, d ? h("span", { class: "muted" }, " " + d) : null))),
+      tool.result && h("pre", null, tool.result)),
+    src && h("button", { type: "button", class: "step-shot", title: t("Open the screenshot"), onclick: () => openImage(src, shots[shots.length - 1]) },
+      h("img", { src, alt: t("Screenshot"), loading: "lazy", onerror: (e) => { e.target.parentElement.remove(); } })));
 }
 
 async function copyText(text) {
@@ -764,8 +842,9 @@ function renderComposerState() {
   const parts = [];
   if (ui.versionId) parts.push(isAll() ? `ALL (${t("All entries")})` : t("the job “{name}”", { name: jobName(version()) }));
   if (ui.sel.kind === "entry" && entryById(ui.sel.id)) parts.push(`“${display(entryById(ui.sel.id).title) || entryLabel(entryById(ui.sel.id))}”`);
-  const ws = (ui.chat.meta && ui.chat.meta.workspace) || (W.ws === "jobs" && jobsReady() ? jobsTool().name : null);
-  $("#chat-context").textContent = ws ? t("This chat runs in {name}'s folder; it can still edit your resume", { name: ws })
+  const ws = (ui.chat.meta && ui.chat.meta.workspace) || (W.ws === "jobs" && jobsReady() ? jobsTool().name : W.ws === "fill" ? "autofill" : null);
+  $("#chat-context").textContent = ws === "autofill" ? t("In this chat Claude can use Resume Studio's browser")
+    : ws ? t("This chat runs in {name}'s folder; it can still edit your resume", { name: ws })
     : parts.length ? t("Claude knows you're looking at: {what}", { what: parts.join(" · ") }) : "";
   paintChatDot();
 }

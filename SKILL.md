@@ -1,6 +1,6 @@
 ---
 name: resume-studio
-description: Resume builder with its own window. An experience library with a private fact layer, per-job selections, LaTeX templates, a live one-page preview and PDF export, all in one resume.yaml that the user edits in the window while Claude reads and writes the same file. Resumes can be written in any number of languages; the interface speaks the user's language. Use when the user wants to make or edit a resume / CV, open the resume window, mentions resume studio or resume.yaml, the experience library, exporting a resume PDF, fitting a resume on one page, or polishing an entry. Triggers also on 简历, 改简历, 经历库, 履歴書, 이력서, Lebenslauf, CV.
+description: Resume builder with its own window. An experience library with a private fact layer, per-job selections, LaTeX templates, a live one-page preview and PDF export, all in one resume.yaml that the user edits in the window while Claude reads and writes the same file. Resumes can be written in any number of languages; the interface speaks the user's language. Use when the user wants to make or edit a resume / CV, open the resume window, mentions resume studio or resume.yaml, the experience library, exporting a resume PDF, fitting a resume on one page, polishing an entry, or updating their LinkedIn / BOSS直聘 or any other job-site profile from the resume (the Autofill workspace drives its own browser). Triggers also on 简历, 改简历, 经历库, 履歴書, 이력서, Lebenslauf, CV.
 ---
 
 # Resume Studio
@@ -243,6 +243,49 @@ The window connects a job-posting tool. Today that is
 - **Statuses go through career-ops' own writer** (`set-status.mjs`); the tracker and reports are read as
   career-ops documents them.
 
+## Online profiles (the Autofill workspace, Ctrl+3)
+
+The window keeps the user's online profiles saying what a resume version says, on the sites the user
+lists there: LinkedIn and BOSS直聘 come with a guide, and any other site can be added by its address
+(with the user's own notes for you, which every read and apply passes on). There is no
+browser extension: Resume Studio starts **its own browser** (Google Chrome, else Microsoft Edge) with a
+profile of its own in `<skill>/.local/browser/` and drives it over the DevTools protocol
+(`core/browser.py`). The user signs in to each site there once, by hand; it stays signed in.
+
+- **What the profile should say is worked out by the window, not by you** (`autofill/profile.py`): the
+  chosen version's entries mapped to the site's sections, bullets as plain lines, dates as `YYYY-MM` /
+  `present`. Only text resume.yaml has no field for (LinkedIn's About, BOSS直聘's 个人优势) is drafted by
+  you, from the visible layer only; `notes` stay private.
+- **Reading** ("Read my … profile"): a chat reads the site with the browser command below and sends what
+  it found as JSON (`browser.py profile <site>`). The window compares it field by field and lists every
+  difference; the user ticks and edits them. Nothing on the site changes in that chat. For a site the
+  user added, the first read also says what the site has (`"site": {sections, basics, limits, lacks}`
+  in the JSON); the window keeps it, so the plan only offers what fits there.
+- **Applying** ("Make these changes"): a chat gets exactly the ticked changes, with the user's edits, and
+  makes them one at a time, reporting each (`browser.py report <site> <id> doing|done|failed`). It never
+  touches anything else: no messages, connections, posts, applications, or 求职状态.
+- Sign-ins, verification codes and captchas are always the user's: stop and ask (AskUserQuestion) and
+  never type a password. `browser.py signed-out <site>` makes the window show its sign-in banner.
+- **The browser command** (standard library only; the window must be open):
+
+```bash
+python <skill>/scripts/browser.py open <url>        # also: back, tabs, tab <n>, front
+python <skill>/scripts/browser.py snapshot          # the whole page, a [ref] on every control; --dialog, --in <ref>
+python <skill>/scripts/browser.py click <ref>       # real mouse / keyboard input, the way a person's arrives
+python <skill>/scripts/browser.py type <ref> --text "..."   # or --stdin with a quoted heredoc for long text
+python <skill>/scripts/browser.py select <ref> "<option>"   # native selects; custom pickers: click, then click
+python <skill>/scripts/browser.py press Enter       # Escape, Tab, ArrowDown, ctrl+a…
+python <skill>/scripts/browser.py screenshot        # prints a PNG path to open with Read
+python <skill>/scripts/browser.py upload <ref> <file>       # only files inside the data folder (exported PDFs)
+```
+
+- Every message in an Autofill chat carries a note on how to use the browser, so a user's own request
+  there ("add my newest project to LinkedIn") works the same way: one change, checked, then report.
+- State per data file is in `.studio/autofill/`: `sites.json` (the user's list, in their order) and
+  `<site>.json` per site (what was read, ticks and edits, how applying went; it stays when a site is
+  taken off the list). The presets and their guides are in `autofill/sites.py`; a site has no
+  selectors, so a redesign of it changes nothing here.
+
 ## Layout of this folder
 
 - `Resume Studio.exe`: double-click to open the window (source in `launcher/`, icon in `assets/`, rebuilt
@@ -250,15 +293,19 @@ The window connects a job-posting tool. Today that is
 - `resume.yaml`, `.studio/`, `exports/`: the user's data, chats, history, preferences and exported PDFs;
   all git-ignored.
 - `core/`: the resume-independent "skill + window" layer: YAML store, file watcher, SSE, HTTP server,
-  Claude Code sessions (`chat.py`), interface language (`i18n.py`), and hosting a skill's own web interface in
-  the window (`webhost.py`).
+  Claude Code sessions (`chat.py`), interface language (`i18n.py`), hosting a skill's own web interface in
+  the window (`webhost.py`), and the browser it drives (`browser.py` over `cdp.py`, pages read by `snapshot.js`).
 - `resume/`: the resume itself: data model, resume languages (`langs.py`), renderer (`render/`, LaTeX
   today, with room for Typst), templates (`templates/latex/*.tex.j2`), API, app assembly (`app.py`).
 - `jobs/`: the job-posting tool behind Job search and the Applications tab: the contract any tool implements (`base.py`),
   the career-ops connector (`career_ops.py`), resume.yaml as the Markdown CV such tools read
   (`cv_markdown.py`), and its routes (`api.py`).
+- `autofill/`: online profiles kept in step with a version: the sites (`sites.py`), what a version gives a site and
+  the plan between that and what was read (`profile.py`), per-file state (`service.py`), what Claude is told
+  (`prompts.py`) and the routes (`api.py`).
 - `web/`: the build-free front end; `web/i18n/<lang>.json` are the interface translations (keys are the
   English text). `python scripts/i18n_keys.py` lists missing or broken translations.
-- `scripts/`: `studio.py` (start; `--window` for the native window), `render.py` (command-line render).
+- `scripts/`: `studio.py` (start; `--window` for the native window), `render.py` (command-line render),
+  `browser.py` (Claude's hands in the Autofill browser).
 - `tests/` and `TESTING.md`: automated tests and the manual checklist. Run them before handing over
   code changes.
