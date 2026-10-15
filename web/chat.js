@@ -440,6 +440,7 @@ async function chatForWorkspace() {
   const id = list.some((c) => c.id === saved) ? saved : list.some((c) => c.id === ui.chat.id) ? ui.chat.id : (list[0] || {}).id || null;
   if (id && id !== ui.chat.id) { await openChat(id, { quiet: true }); return; }
   if (!id) {
+    openSeq++; opening = null;   // a chat still opening from the last workspace must not land here
     ui.chat.id = null; ui.chat.meta = null; ui.chat.messages = []; ui.chat.running = false; ui.chat.live = null;
     renderComposerState(); renderPickers();
   }

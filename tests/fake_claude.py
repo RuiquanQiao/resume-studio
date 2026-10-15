@@ -256,4 +256,7 @@ while True:
               "env": {k: os.environ.get(k) for k in ("npm_config_cache", "PLAYWRIGHT_BROWSERS_PATH") if os.environ.get(k)}})
     interrupted.clear()
     if not handle(prompt, content):
-        sys.exit(1)
+        # not sys.exit: shutting the interpreter down while the reader thread sits in stdin can hang on
+        # Windows (it can't take stdin's lock), and the app would wait on this process for ever
+        sys.stdout.flush()
+        os._exit(1)
