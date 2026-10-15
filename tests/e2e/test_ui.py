@@ -778,6 +778,22 @@ def test_permission_card_in_the_chat(page, server, fake_claude):
     page.wait_for_selector(".msg-ai .md:has-text('好的，不写了。')", timeout=10000)
 
 
+def test_signed_out_claude_explains_how_to_sign_in(page, server, fake_claude):
+    open_chat_tab(page)
+    page.fill("#chat-input", "FAIL 普通错误")
+    page.keyboard.press("Enter")
+    page.wait_for_selector(".msg-error:has-text('模拟的错误')", timeout=10000)
+    assert page.locator(".msg-help").count() == 0                             # other errors get no sign-in hint
+
+    page.fill("#chat-input", "LOGIN 你好")
+    page.keyboard.press("Enter")
+    help_ = page.locator(".msg-help")
+    help_.wait_for(timeout=10000)
+    text = help_.inner_text()
+    assert "Claude Code（命令行）没有登录" in text and "/login" in text
+    assert help_.locator("code:has-text('claude')").count() >= 1
+
+
 def test_question_and_plan_cards_in_the_chat(page, server, fake_claude):
     open_chat_tab(page)
     page.fill("#chat-input", "QUESTION 颜色")

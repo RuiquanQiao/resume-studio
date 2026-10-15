@@ -479,8 +479,21 @@ function messageEl(m, index) {
       ui.chat.thinking ? h("span", { class: "th-n" }, t("Thinking · {n} tokens", { n: fmtK(ui.chat.thinking) })) : null));
   }
   if (m.error) el.append(h("div", { class: "msg-error" }, m.error));
+  if (m.error && isLoginError(m.error)) el.append(loginHelpEl());
   if (m.cancelled) el.append(h("div", { class: "msg-note" }, t("Stopped")));
   return el;
+}
+
+// Errors that mean the `claude` command itself isn't signed in. A fixed check, not Claude:
+// Claude can't answer while it is signed out, so the window says what is wrong and how to fix it.
+const LOGIN_ERROR = /failed to authenticate|oauth|not (logged|signed) in|run \/login|invalid api key|authentication_error|api error: 401/i;
+const isLoginError = (text) => LOGIN_ERROR.test(String(text || ""));
+
+function loginHelpEl() {
+  return h("div", { class: "msg-help" },
+    h("div", { class: "mh-title" }, icon("alert"), t("Claude Code (the command line) isn't signed in")),
+    h("div", { class: "md", html: md(t("This chat runs the `claude` command, which signs in on its own, separately from the Claude app. Its sign-in has expired (for example after switching accounts or not using it for a while), so Claude can't answer until it signs in again.")) }),
+    h("div", { class: "md", html: md(t("To fix it: open a terminal, run `claude`, type `/login` and finish signing in in the browser. Then send your message here again.")) }));
 }
 
 function toolEl(tool) {
@@ -990,7 +1003,7 @@ async function onChatEvent(type, ev) {
     renderComposerState();
     await refresh();
     finishAi(ev.chat);
-    if (ev.error && ui.tab !== "chat") toast(t("Claude ran into an error; see the chat"));
+    if (ev.error && ui.tab !== "chat") toast(isLoginError(ev.error) ? t("Claude Code isn't signed in; see the chat") : t("Claude ran into an error; see the chat"));
   }
 }
 

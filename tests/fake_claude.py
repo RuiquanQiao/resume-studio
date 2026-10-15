@@ -8,6 +8,7 @@ final result per message. Several messages can arrive on one stdin (the queue).
 
 Behaviour switches, read from the message text:
   FAIL   -> report an error result and exit
+  LOGIN  -> fail like a signed-out claude ("Failed to authenticate: OAuth session expired…")
   SLOW   -> wait until interrupted (or 30 s)
   PERM   -> ask permission to Write a file, report what the user decided
   QUESTION -> AskUserQuestion (colour: Red / Blue), echo the answer
@@ -152,6 +153,12 @@ def handle(prompt, content):
         return True
     if "FAIL" in prompt:
         out({"type": "result", "subtype": "error_during_execution", "is_error": True, "result": "模拟的错误", "session_id": sid})
+        return False
+    if "LOGIN" in prompt:   # like the real CLI once its sign-in is gone: a synthetic message, then the error
+        err = "Failed to authenticate: OAuth session expired and could not be refreshed"
+        out({"type": "assistant", "parent_tool_use_id": None, "session_id": sid,
+             "message": {"model": "<synthetic>", "content": [{"type": "text", "text": err}]}})
+        out({"type": "result", "subtype": "success", "is_error": True, "result": err, "session_id": sid})
         return False
     if "TASKS" in prompt:
         for i, name in enumerate(["读取数据", "改写要点"], 1):
