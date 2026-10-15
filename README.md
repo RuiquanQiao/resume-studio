@@ -58,13 +58,15 @@ with the C# compiler that ships with Windows.
     anything that changed in what Resume Studio reads. The connector sits behind a small contract
     (`jobs/base.py`), and hosting a tool's web interface is generic (`core/webhost.py`), so another tool can
     replace career-ops later without changing the window.
-- **Autofill (Ctrl+3)**: keeps your online profiles saying what a resume version says. LinkedIn and BOSS直聘
-  come with notes for Claude; add any other site by its address (with your own notes), rename, reorder or
-  remove them. There is no browser extension: Resume Studio opens its own Chrome or Edge with a profile of
-  its own in `.local/browser/`, where you sign in once by hand. Claude reads the profile there, the window
-  lists every difference from the resume field by field, you tick and edit them, and Claude makes only
-  those, one at a time, each shown in the chat as a readable step with a screenshot. Nothing changes on a
-  site before you press "Make these changes", and Claude never types a password.
+- **Autofill (Ctrl+3)**: a local copy of each online profile (LinkedIn and BOSS直聘 come with notes for
+  Claude; add any other site by its address). Edit the copy here or the profile on the site: "Check for
+  updates" brings the site's changes in, your edits wait as git-style diffs until you push them, and a
+  field changed on both sides asks which to keep. The first time, Claude reads the site and records a
+  read route; after that checking takes seconds and needs no Claude, and when a site redesign breaks the
+  route, Claude records it anew. There is no browser extension: Resume Studio opens its own Chrome or
+  Edge with a profile of its own in `.local/browser/`, where you sign in once by hand. Pushing is
+  Claude's, one ticked change at a time, each shown in the chat as a readable step; Claude never types a
+  password. The resume is a reference: where it words something differently, the copy offers it.
 - **Your languages**: the window speaks your computer's language (English, 简体中文, 日本語, 한국어,
   Español, Français, Deutsch; pick another under the gear in the top bar). A resume can be written in any
   number of languages (Latin, Greek, Cyrillic, Chinese, Japanese, Korean), each with its own text,

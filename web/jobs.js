@@ -957,5 +957,6 @@ function initWorkspaces() {
   W.chat = store("jobs-chat") === "on" ? "on" : "off";
   document.body.dataset.jchat = W.chat;
   F.site = store("fill-site") || F.site;
+  F.tab = store("fill-tab") === "push" ? "push" : "copy";
   setWorkspace(["jobs", "fill"].includes(store("ws")) ? store("ws") : "resume");
 }

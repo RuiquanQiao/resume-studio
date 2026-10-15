@@ -337,14 +337,19 @@ function paintChatDot(running = ui.chat.running ? [ui.chat.id] : []) {
   renderWsTools();   // the dot on Job search's Claude button
 }
 
-// the latest call wins: an older one answering late (a chat that just ended, while the user switched
-// workspaces) must not bring its chat back
-let openSeq = 0;
-async function openChat(id, { quiet = false } = {}) {
+// the latest call wins: an older one answering late must not bring its chat back. A refresh of the
+// shown chat (a reply ended) yields to a switch already under way: ui.chat.id still names the old chat
+// until the switch lands, so refreshing it then would reopen the chat the user just left
+let openSeq = 0, opening = null;
+async function openChat(id, { quiet = false, refresh = false } = {}) {
+  if (refresh && opening && opening !== id) return;
   const seq = ++openSeq;
+  opening = id;
   let r;
   try { r = await api("GET", "/api/chats/" + id); }
   catch (e) { // deleted elsewhere: fall back to whatever is left
+    if (seq !== openSeq) return;
+    opening = null;
     store(chatKey(), null);
     const list = await api("GET", "/api/chats");
     ui.chat.list = list.chats;
@@ -354,6 +359,7 @@ async function openChat(id, { quiet = false } = {}) {
     return;
   }
   if (seq !== openSeq) return;
+  opening = null;
   if (ui.chat.id !== id) askEls.clear();
   ui.chat.id = id;
   ui.chat.meta = r.chat;
@@ -373,7 +379,7 @@ async function openChat(id, { quiet = false } = {}) {
 let reloadTimer = 0;
 function reloadChat() {
   clearTimeout(reloadTimer);
-  reloadTimer = setTimeout(() => ui.chat.id && openChat(ui.chat.id, { quiet: !chatShown() }), 30);
+  reloadTimer = setTimeout(() => ui.chat.id && openChat(ui.chat.id, { quiet: !chatShown(), refresh: true }), 30);
 }
 
 async function createChat() {
@@ -581,8 +587,8 @@ function stepLabel(s, result) {
   const site = (s.site && (((F.sites || []).find((x) => x.id === s.site) || {}).name || SITE_NAMES[s.site])) || s.site || "";
   const item = () => {
     const v = s.site && F.view[s.site];
-    const it = v && v.plan.items.find((i) => i.id === s.id);
-    return it ? itemLabel(it) : s.id;
+    const it = v && (v.pending || []).find((i) => i.id === s.id);
+    return it ? pushLabel(it) : s.id;
   };
   switch (s.cmd) {
     case "open": return [s.url && /^https?:\/\/[^$]+$/.test(s.url) ? t("Open {where}", { where: stepWhere(s.url) }) : t("Open a page")];
@@ -601,6 +607,9 @@ function stepLabel(s, result) {
     case "front": return [t("Show the browser")];
     case "profile": return [t("Send what {site} says to the window", { site })];
     case "signed-out": return [t("Ask you to sign in to {site}", { site })];
+    case "extract": return [t("Try a read script on the page")];
+    case "route": return [t("Record how to read {site}", { site })];
+    case "sync": return [t("Check {site} for updates by the recorded route", { site })];
     case "report": return [{ doing: t("Start: {item}", { item: item() }), done: t("Done: {item}", { item: item() }),
       failed: t("Didn't work: {item}", { item: item() }), skipped: t("Skipped: {item}", { item: item() }) }[s.state] || item(), s.note || ""];
     default: return [t("Browser: {cmd}", { cmd: s.cmd })];
@@ -1124,7 +1133,7 @@ async function onChatEvent(type, ev) {
     ui.chat.running = false;
     ui.chat.thinking = 0;
     updateWaiting(ev.chat, false);
-    await openChat(ui.chat.id, { quiet: !chatShown() });
+    await openChat(ui.chat.id, { quiet: !chatShown(), refresh: true });
     const r = await api("GET", "/api/chats");
     ui.chat.list = r.chats;
     renderChatSelect();

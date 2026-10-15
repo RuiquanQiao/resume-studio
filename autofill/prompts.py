@@ -60,7 +60,7 @@ def _shape_step(site: Site) -> str:
         f" Last time it had: {json.dumps({'sections': site.sections, 'basics': site.basics, 'limits': site.limits, 'lacks': site.lacks}, ensure_ascii=False)}"
         " (correct it if the site changed).")
     return f"""
-   This site is new to Resume Studio, so also add what it has, at the top level of the JSON:
+   This site is new to Resume Studio, so the route JSON also says what the site has, at its top level:
    `"site": {{"sections": [...], "basics": [...], "limits": {{"experience.description": 2000}}, "lacks": {{"projects": ["role"]}}}}`
    - `sections`: which of experience, education, projects, awards, skills the profile has a place for
      (map the site's own names: 实习经历/工作经历 = experience, 项目经历 = projects, 获奖/荣誉 = awards).
@@ -72,63 +72,72 @@ def _shape_step(site: Site) -> str:
    Items and fields then use only what you listed."""
 
 
-def read_context(site: Site, data_path: str, want: dict, lang: str) -> str:
-    keys = [{"key": i["key"], "section": i["section"], "label": i["label"]} for i in want["items"]]
-    covers = ", ".join(site.basics + site.sections) if site.preset or site.learned else \
-        "whatever it has of: headline, about, " + ", ".join(site.sections)
+def learn_context(site: Site, data_path: str, old_route: dict | None, broken: str, synced: bool) -> str:
+    b = cli(data_path)
+    why = (f"The recorded route stopped working ({broken}): the site probably changed. Record it anew."
+           if broken else "Record it anew (the user asked)." if old_route else
+           "Nothing is recorded for this site yet.")
+    old = ("\nThe route recorded before (fix what broke, keep what still works):\n```\n"
+           + json.dumps(old_route, ensure_ascii=False, indent=1)[:12000] + "\n```") if old_route else ""
     return f"""\
-# Resume Studio · {site.name} profile
+# Resume Studio · read {site.name} and record how
 
-The user wants their {site.name} profile to match a resume version. Your part now is only to READ the
-profile and report what it says; change nothing on the site.
+Resume Studio keeps a local copy of the user's {site.name} profile. "Check for updates" reads the site
+by a recorded **route**: per page, a short read-only JavaScript function you write and test now, which
+Resume Studio then runs by itself every time, without you. {why} Change nothing on {site.name}.
 
 ## {site.name}
 {guide(site)}
 
 ## What to do
-1. `open {site.home}`. If it lands on a sign-in page, run `{cli(data_path)} signed-out {site.id}` and
-   ask the user to sign in in the browser window; continue once they have.
-2. Read every section the plan covers: {covers}. Open each section's full
-   list; read each item's whole text (descriptions included; a "see more" may need a click).
-3. Write what you found as JSON in this shape (only these fields; dates as YYYY-MM or "present"):
-
+1. `{b} open {site.home}`. If it lands on a sign-in page, run `{b} signed-out {site.id}` and ask the user to
+   sign in in the browser window; continue once they have. Note the real profile address it ends on.
+2. Find the pages that show every section the copy keeps: {", ".join(site.basics + site.sections)} (the full lists,
+   not the cards that show two or three items). Use `snapshot` and `text` to see what is there.
+3. For each page write a script: `async (h) => ({{basics, items, skills}})`, returning only what that page
+   shows, in this shape (dates as YYYY-MM or "present"; only these fields):
 ```
 {CURRENT_SHAPE}
 ```
-   The fields each section has here: {json.dumps(site.public()["fields"], ensure_ascii=False)}.{_shape_step(site)}
-   For each item on the site, set `key` to the resume item it corresponds to (same organisation and
-   role, even if worded differently), or null. The resume items:
-```
-{json.dumps(keys, ensure_ascii=False, indent=1)}
-```
-4. Drafts: {_drafts(site, lang)}
-5. Send it: `{cli(data_path)} profile {site.id} --stdin <<'JSON'` … `JSON` (or `--file <path>`). It
-   answers with the plan the user will see, or with what is wrong with the JSON; fix and send again.
-6. Reply to the user in two or three sentences: what you read, and that the window now lists the changes
-   for them to tick. Don't list the changes yourself; the window shows them."""
+   The fields each section has here: {json.dumps(site.public()["fields"], ensure_ascii=False)}. Items need only
+   `section` and `fields` (no `key`).
+   `h` has: `h.text(el)` (an element's visible text), `h.all(sel, root)`, `h.one(sel, root)`,
+   `h.section(heading)` (the part of the page under a heading: a string or a RegExp), `h.waitFor(sel)`,
+   `h.scrollToEnd()` (lazy lists), `h.sleep(ms)`.
+   - Find things by headings, ARIA roles and labels, `aria-*` attributes, element structure and visible
+     text, **never by generated class names** (like `pvs-1x7a`): those change every release.
+   - Read only. The script may scroll and click a "see more" / "…more" toggle to show the whole text,
+     and nothing else.
+   - Test it on the page: `{b} extract --file read.js` (or `--stdin` with a quoted heredoc) prints what
+     it returns. Fix it until it matches what you see, every item and the whole text.
+4. Save the route: `{b} route {site.id} --file route.json` with
+   `{{"pages": [{{"url": "<the page's full address>", "reads": ["experience"], "script": "async (h) => ..."}}]}}`
+   (`reads`: what that page gives, from basics, {", ".join(site.sections)}). It is run once at once and prints
+   what it read: compare it with the pages; send it again until it is right.{_shape_step(site)}
+5. Then `{b} sync {site.id}`: Resume Studio reads the site by the route and updates the local copy
+   {"(changes from the site come in; the user's own local edits stay)" if synced else "(the first copy of the profile)"}.
+6. If a part really can't be read by a script, record the route for the rest and send that part's
+   content once with `{b} profile {site.id} --stdin` (the whole profile, in the shape above), and say so.
+7. Reply in two or three sentences: what the route reads, and what the sync brought in. The window shows
+   the copy; don't list it.{old}"""
 
 
-def _drafts(site: Site, lang: str) -> str:
-    if "about" not in site.basics:
-        return "none for this site."
-    name = rp.lang_name(lang)
-    called = {"boss": "个人优势", "linkedin": "About"}.get(site.preset, "the summary / about field")
-    return (f"resume.yaml has no text for the profile's \"about\" ({called}). If the site has one, "
-            f"draft it in {name} from the resume version's visible layer only (headline, entries, bullets; "
-            f"the data file's `notes` are private and must not appear), the way a strong {site.name} profile reads, "
-            f"within {site.limits.get('basics.about', 'the site’s')} characters, and put it in `drafts.about`. "
-            "The user edits it before anything is changed.")
-
-
-def read_message(site: Site, version_label: str, lang: str) -> str:
-    return t("Read my {site} profile in the browser and compare it with my resume “{version}” ({lang}). Don't change anything on {site} yet.",
-             site=site.name, version=version_label, lang=rp.lang_name(lang))
+def learn_message(site: Site, recorded: bool, broken: str) -> str:
+    if broken:
+        return t("Reading {site} by the recorded route stopped working. Read it again in the browser and record the route anew. Don't change anything on {site}.", site=site.name)
+    if recorded:
+        return t("Read my {site} profile in the browser again and record the route anew. Don't change anything on {site}.", site=site.name)
+    return t("Read my {site} profile in the browser and record how to read it, so Resume Studio can check it for updates by itself. Don't change anything on {site}.", site=site.name)
 
 
 def apply_context(site: Site, data_path: str, items: list[dict], current_url: str) -> str:
-    plan = [{"id": i["id"], "op": i["op"], "section": i["section"], "now_on_site": i.get("site_label") or (i["label"] if i["op"] != "add" else None),
-             "set": {f["name"]: f["to"] for f in i["fields"]} if i["op"] != "remove" else None}
-            for i in items]
+    def one(i: dict) -> dict:
+        if i["section"] == "skills":
+            return {"id": i["id"], "op": "update", "section": "skills", "add": i.get("add") or [], "remove": i.get("remove") or []}
+        return {"id": i["id"], "op": i["op"], "section": i["section"],
+                "now_on_site": i.get("site_label") or (i["label"] if i["op"] != "add" else None),
+                "set": {f["name"]: f["to"] for f in i["fields"]} if i["op"] != "remove" else None}
+    plan = [one(i) for i in items]
     return f"""\
 # Resume Studio · update the {site.name} profile
 
@@ -140,7 +149,8 @@ these, nothing else.
 
 ## The approved changes
 `op`: add = a new item with the `set` fields; update = change only the fields in `set` on the item that
-is `now_on_site`; remove = delete that item. Text goes in as written (it is already in the right
+is `now_on_site` (a field set to "" is emptied); remove = delete that item; skills: add the `add` ones,
+remove the `remove` ones. Text goes in as written (it is already in the right
 language; the user may have edited it). Dates are YYYY-MM or "present" (= currently there, no end date).
 A field the site doesn't have: leave it out and say so in the report note.
 

@@ -9,8 +9,11 @@
     python scripts/browser.py select 15 "March"
     python scripts/browser.py press Enter
     python scripts/browser.py screenshot               # prints the PNG's path (open it with Read)
+    python scripts/browser.py extract --file read.js   # run a read script on the open page, print its JSON
+    python scripts/browser.py route linkedin --file route.json   # save the read route and run it once
+    python scripts/browser.py sync linkedin             # check for updates now, by the route
     python scripts/browser.py profile linkedin --stdin <<'JSON' ... JSON   # what the site's profile says now
-    python scripts/browser.py report linkedin experience:EXP-002 done
+    python scripts/browser.py report linkedin item.i3 done
 
 Every command prints what happened. The browser is a real Chrome or Edge with its own profile, which
 the window starts; this script only talks to the window (standard library only, no venv needed).
@@ -114,6 +117,10 @@ def main() -> int:
     p = sub.add_parser("tab"); p.add_argument("index", type=int)
     sub.add_parser("back")
     sub.add_parser("front")
+    p = sub.add_parser("extract", help="run a read script on the open page"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
+    p = sub.add_parser("route", help="save a site's read route and run it once"); p.add_argument("site")
+    p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
+    p = sub.add_parser("sync", help="check for updates now, by the route"); p.add_argument("site")
     p = sub.add_parser("profile", help="send what the site's profile says now"); p.add_argument("site")
     p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("report", help="how one approved change went"); p.add_argument("site"); p.add_argument("id")
@@ -123,13 +130,21 @@ def main() -> int:
 
     url = server_url(resolve_data(args.data))
     c = args.cmd
-    if c == "profile":
+    if c in ("profile", "route"):
         raw = read_text(args)
         try:
             data = json.loads(raw)
         except ValueError as e:
             sys.exit(f"error: that isn't valid JSON ({e})")
-        show(call(url, "POST", f"/api/autofill/{args.site}/current", data))
+        show(call(url, "POST", f"/api/autofill/{args.site}/{'current' if c == 'profile' else 'route'}", data))
+        return 0
+    if c == "sync":
+        show(call(url, "POST", f"/api/autofill/{args.site}/sync", {}))
+        return 0
+    if c == "extract":
+        r = call(url, "POST", "/api/browser/do", {"cmd": "extract", "script": read_text(args)})
+        out = json.dumps(r.get("data"), ensure_ascii=False, indent=1)
+        print(out if len(out) <= 30000 else out[:30000] + "\n(cut off: the script's answer is longer)")
         return 0
     if c == "report":
         show(call(url, "POST", f"/api/autofill/{args.site}/report", {"id": args.id, "state": args.state, "note": args.note}))

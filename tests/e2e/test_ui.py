@@ -1248,16 +1248,19 @@ FILL_NOW = {
     "url": "https://www.linkedin.com/in/alex/",
     "basics": {"headline": "Student at ANU", "about": ""},
     "items": [
-        {"section": "education", "key": "EXP-001", "fields": {"org": "The Australian National University", "degree": "Master of Computing",
-                                                           "start": "2025-07", "end": "2027-06"}},
+        {"section": "education", "key": None, "fields": {"org": "The Australian National University", "degree": "Master of Computing",
+                                                       "start": "2025-07", "end": "2027-06"}},
         {"section": "projects", "key": None, "fields": {"name": "Old hackathon thing", "start": "2022-03"}},
     ],
     "skills": ["Python"],
-    "drafts": {"about": "MSc Computing student building LLM tools."},
 }
 
 
-def test_autofill_workspace_plan_ticks_edits_and_apply(page_all, server, fake_claude, monkeypatch):
+def fill_view(server):
+    return server.req("GET", "/api/autofill/linkedin")[1]
+
+
+def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, monkeypatch):
     pg = page_all
     server.inst.browser.headless, server.inst.browser.pace = True, 0
     server.inst.browser.prefer = "msedge"
@@ -1265,63 +1268,75 @@ def test_autofill_workspace_plan_ticks_edits_and_apply(page_all, server, fake_cl
     pg.wait_for_selector("#fillspace .fill-start")
     assert not pg.is_visible("#editor") and not pg.is_visible(".pane.right") and pg.is_visible("#chat")
     assert pg.get_attribute(".fs-site.on", "data-site") == "linkedin"
-    assert "读取我的 LinkedIn 资料" in pg.inner_text("#fillspace")
+    assert "读取 LinkedIn" in pg.inner_text("#fill-check") and "记下读取路线" in pg.inner_text("#fillspace")
     assert "false" not in pg.inner_text("#ws-tools") and "false" not in pg.inner_text("#fillspace")
     for scheme in ("light", "dark"):
         pg.emulate_media(color_scheme=scheme)
         pg.screenshot(path=str(ART / f"autofill-start-{scheme}.png"))
     pg.emulate_media(color_scheme="light")
 
-    # what Claude read arrives: the plan appears by itself. Paper2Exam is on the site with one word changed
-    want = next(i for i in server.req("GET", "/api/autofill/linkedin")[1]["desired"]["items"] if i["key"] == "EXP-002")
-    lines = want["fields"]["description"].split("\n")
-    old = lines[:]
-    old[1] = old[1].replace("multi-stage", "two-stage")
-    now = {**FILL_NOW, "items": FILL_NOW["items"] + [{"section": "projects", "key": "EXP-002", "fields": {
-        **want["fields"], "description": "\n".join(old)}}]}
-    assert server.req("POST", "/api/autofill/linkedin/current", now)[0] == 200
-    pg.wait_for_selector("#fillspace .fill-plan .fi")
-    assert pg.is_visible(".fi[data-id='basics.headline'] .fi-op") and pg.is_visible(".fi.op-remove.off")
-    assert pg.inner_text(".fi[data-id='skills'] .fi-was").startswith("TypeScript")   # the skills to add, collapsed
-    # changes read like git: − what goes, + what comes, the changed words marked, long unchanged stretches folded
-    head = ".fi[data-id='basics.headline'] .diff"
-    assert "Student at ANU" in pg.inner_text(head + " .dl-del")
-    assert "MSc Computing student" in pg.inner_text(head + " .dl-add")
-    desc = ".fi[data-id='projects:EXP-002'] .diff"
-    pg.wait_for_selector(desc)
-    assert pg.inner_text(desc + " mark.w-del") == "two" and pg.inner_text(desc + " mark.w-add") == "multi"
-    assert pg.locator(desc + " .dl-del").count() == 1 and pg.locator(desc + " .dl-add").count() == 1
-    if len(lines) - 1 > 2 * 2 + 1:
-        pg.click(desc + " .dl-fold")
-        assert pg.locator(desc + " .dl-fold").count() == 0 and pg.locator(desc + " .dl-same").count() == len(lines) - 1
-    pg.click(".fi.op-add[data-id^='projects'] .fi-label")          # a new item: every line is a +
-    pg.wait_for_selector(".fi.op-add[data-id^='projects'] .diff")
-    assert pg.locator(".fi.op-add .diff .dl-del").count() == 0 and pg.locator(".fi.op-add .diff .dl-add").count() > 0
-    assert not pg.is_visible(".fi[data-id='basics.headline'] textarea")   # the text box only on a click
+    # the first read arrives (Claude's): the copy appears by itself
+    assert server.req("POST", "/api/autofill/linkedin/current", FILL_NOW)[0] == 200
+    pg.wait_for_selector("#fill-tabs .fv-tab.on")
+    assert "你的 LinkedIn 副本" in pg.inner_text(".fill-sync")
+    head = pg.locator("[data-edit='basics|headline']")
+    assert head.input_value() == "Student at ANU"
+    # the resume's wording, one click away
+    hint = pg.locator(".ff:has([data-edit='basics|headline']) .ff-ref")
+    assert "MSc Computing student" in hint.inner_text()
+    hint.locator("button").click()
+    pg.wait_for_function("() => document.querySelector(\"[data-edit='basics|headline']\").value === 'MSc Computing student'")
+    assert pg.locator(".ff.changed [data-edit='basics|headline']").count() == 1
+    assert "LinkedIn 上现在是：" in pg.inner_text(".ff:has([data-edit='basics|headline'])")
+    # typing in the copy: saved, the caret stays
+    about = pg.locator("[data-edit='basics|about']")
+    about.click()
+    pg.keyboard.type("Open to ML roles.")
+    wait_until(lambda: fill_view(server)["local"]["basics"].get("about") == "Open to ML roles.", msg="typing saved")
+    assert about.evaluate("e => e === document.activeElement")
+    # remove one, add one from the resume
+    old = pg.locator(".fi.copy", has_text="Old hackathon thing")
+    old.locator("button[aria-label='从副本中删除']").click()
+    pg.wait_for_selector(".fi.removed >> text=Old hackathon thing")
+    pg.click(".fi.suggest:has-text('EuroSAT') button")
+    pg.wait_for_selector(".fi.copy.open:has(.op-add) >> text=EuroSAT")
+    wait_until(lambda: len(fill_view(server)["pending"]) == 4, msg="four changes to push")
+    pg.wait_for_selector("#fill-tab-push .fs-n >> text=4")
+    pg.locator(".fill-scroll").evaluate("e => { e.scrollTop = 0; }")
     for scheme in ("light", "dark"):
         pg.emulate_media(color_scheme=scheme)
-        pg.screenshot(path=str(ART / f"autofill-plan-{scheme}.png"), full_page=True)
+        pg.screenshot(path=str(ART / f"autofill-copy-{scheme}.png"))
+    pg.locator(".fill-scroll").evaluate("e => { e.scrollTop = e.scrollHeight; }")
+    pg.screenshot(path=str(ART / "autofill-copy-end-light.png"))
     pg.emulate_media(color_scheme="light")
     no_native(pg)
 
-    # untick one, edit the drafted About: both saved for this data file
-    pg.click(".fi[data-id='skills'] .check")
-    pg.click(".fi[data-id='basics.about'] .diff")
-    ta = pg.locator(".fi[data-id='basics.about'] textarea")
-    assert ta.evaluate("e => e === document.activeElement")
-    pg.keyboard.press("Control+End")
-    pg.keyboard.type(" Open to ML roles.")
-    wait_until(lambda: (lambda i: i["fields"][0].get("edited") and i["fields"][0]["to"].endswith("ML roles."))(
-        next(i for i in server.req("GET", "/api/autofill/linkedin")[1]["plan"]["items"] if i["id"] == "basics.about")), msg="edit saved")
-    assert ta.evaluate("e => e === document.activeElement")   # typing kept the caret
-    pg.screenshot(path=str(ART / "autofill-editing-light.png"))
-    pg.keyboard.press("Escape")                                  # back to the diff, now of the edited text
-    pg.wait_for_selector(".fi[data-id='basics.about'] .diff .dl-add >> text=Open to ML roles.")
-    items = {i["id"]: i for i in server.req("GET", "/api/autofill/linkedin")[1]["plan"]["items"]}
-    assert items["skills"]["checked"] is False
-    assert "处修改" in pg.inner_text("#fill-foot")
+    # meanwhile the site got an About too: a conflict, settled here
+    pg.locator(".fill-scroll").evaluate("e => e.focus()")
+    now = {**FILL_NOW, "basics": {"headline": "Student at ANU", "about": "Hello from LinkedIn."}}
+    assert server.req("POST", "/api/autofill/linkedin/current", now)[0] == 200
+    pg.wait_for_selector(".ff.conflict .ff-conflict")
+    assert "Hello from LinkedIn." in pg.inner_text(".ff-conflict") and "Open to ML roles." in pg.inner_text(".ff-conflict")
+    assert pg.locator("#fill-tabs .fv-tab .fs-n.warn").count() == 1
+    pg.screenshot(path=str(ART / "autofill-conflict-light.png"))
+    pg.click(".ff-conflict button >> text=保留我的")
+    pg.wait_for_selector(".ff-conflict", state="detached")
 
-    # make them: a chat in this workspace, with only the ticked changes; Claude's browser commands show as steps
+    # the changes to push: git-style, ticked, one unticked
+    pg.click("#fill-review")
+    pg.wait_for_selector(".fill-plan .fi[data-id='basics.headline'] .diff")
+    assert "Student at ANU" in pg.inner_text(".fi[data-id='basics.headline'] .dl-del")
+    assert "MSc Computing student" in pg.inner_text(".fi[data-id='basics.headline'] .dl-add")
+    removal = pg.locator(".fill-plan .fi.op-remove")
+    assert removal.count() == 1 and pg.locator(".fill-plan .fi.op-add").count() == 1
+    removal.locator(".check").click()
+    wait_until(lambda: not next(p for p in fill_view(server)["pending"] if p["op"] == "remove")["checked"], msg="unticked")
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"autofill-push-{scheme}.png"), full_page=True)
+    pg.emulate_media(color_scheme="light")
+
+    # push: a chat with only the ticked changes; Claude's browser commands show as steps
     data = Path(server.inst.studio.store.path)
     (data.parent / ".studio" / "server.json").write_text(json.dumps({"url": server.url}), encoding="utf-8")
     b = [sys.executable, str(ROOT / "scripts" / "browser.py"), "--data", str(data)]
@@ -1331,25 +1346,25 @@ def test_autofill_workspace_plan_ticks_edits_and_apply(page_all, server, fake_cl
     pg.click("#fill-apply")
     wait_until(lambda: any("## The approved changes" in c["stdin"] for c in calls(fake_claude)), timeout=30, msg="apply sent")
     sent = next(c["stdin"] for c in calls(fake_claude) if "## The approved changes" in c["stdin"])
-    assert "basics.about" in sent and "Open to ML roles." in sent and '"id": "skills"' not in sent
+    assert "basics.about" in sent and "Open to ML roles." in sent and '"op": "remove"' not in sent and "EuroSAT" in sent
     pg.wait_for_selector("#chat-log .msg-user, #chat-log .msg-action")
     assert "Resume Studio 的浏览器" in pg.inner_text("#chat-context")
-    # the steps and the reply appear in the left pane (it has no Chat tab here), in words, with the screenshot
     pg.wait_for_selector("#chat-log .msg-ai .md >> text=已经处理", timeout=30000)
     steps = pg.locator("#chat-log .tool-step .tn").all_inner_texts()
     assert steps[:3] == ["打开 127.0.0.1/api/instance", "截个图", "已完成：标题"], steps
     pg.wait_for_function("() => { const i = document.querySelector('#chat-log .step-shot img'); return i && i.complete && i.naturalWidth > 0; }")
     assert "browser.py" not in pg.inner_text("#chat-log .msg-ai")
     pg.screenshot(path=str(ART / "autofill-steps-light.png"))
-    pg.wait_for_selector(".fi[data-id='basics.headline'] .fi-state.s-done")
+    # done: the headline is on the site now, so it no longer waits
+    pg.wait_for_selector(".fill-banner.ok")
+    assert pg.locator(".fill-plan .fi[data-id='basics.headline']").count() == 0
     chats = server.req("GET", "/api/chats")[1]["chats"]
     assert [c["workspace"] for c in chats] == ["autofill"]
 
-    # BOSS直聘: its own plan and the resume's Chinese
+    # BOSS直聘: a copy of its own, read once first
     pg.click(".fs-site[data-site='boss']")
     pg.wait_for_selector(".fs-site.on[data-site='boss']")
     pg.wait_for_selector("#fillspace .fill-start")
-    assert pg.inner_text("#fillspace .fill-target .seg button.on") == "中文"
     pg.screenshot(path=str(ART / "autofill-boss-light.png"))
     # Resume shows every chat again; Ctrl+3 comes back to the same site
     pg.keyboard.press("Control+1")
@@ -1357,6 +1372,7 @@ def test_autofill_workspace_plan_ticks_edits_and_apply(page_all, server, fake_cl
     pg.keyboard.press("Control+3")
     pg.wait_for_selector(".fs-site.on[data-site='boss']")
     server.inst.browser.stop()
+
 
 def test_autofill_sites_are_the_users_to_pick(page_all, server):
     pg = page_all
@@ -1378,7 +1394,7 @@ def test_autofill_sites_are_the_users_to_pick(page_all, server):
     pg.click(".site-dialog .btn.primary")
     pg.wait_for_selector(".fs-site.on[data-site='seek']")
     assert not pg.is_visible(".modal.site-dialog")
-    assert "读取我的 SEEK 资料" in pg.inner_text("#fillspace")
+    assert "读取 SEEK" in pg.inner_text("#fill-check")
     sites = server.req("GET", "/api/autofill")[1]["sites"]
     assert [s["id"] for s in sites] == ["linkedin", "boss", "seek"] and sites[2]["home"] == "https://www.seek.com.au/profile/me"
     assert sites[2]["notes"] == "Career history is under Profile."

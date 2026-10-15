@@ -3,7 +3,9 @@ browser with). The browser belongs to the computer (one per Resume Studio window
 what was read belong to the data file."""
 from __future__ import annotations
 
+import json
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -16,7 +18,7 @@ from resume import model
 from resume import prompts as rp
 from resume.service import Studio
 
-from . import prompts
+from . import profile, prompts, route
 from .service import Autofill
 from .sites import Site
 
@@ -152,7 +154,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
 
     @app.route("PUT", "/api/autofill/{site}")
     def choose(req: Request):
-        """Which resume version and language go to this site, and the user's ticks and edits."""
+        """Which resume version and language the copy is compared with, and the ticks on the changes to push."""
         site, b = site_of(req), body(req)
         doc, _ = studio.store.load()
         vid = b.get("version_id")
@@ -162,14 +164,28 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         langs = [str(x) for x in (doc.get("settings") or {}).get("languages") or []]
         if lang is not None and str(lang) not in langs:
             raise HttpError(400, t("{lang} isn't one of this file's resume languages", lang=lang))
-        choices = b.get("choices")
-        if choices is not None and not isinstance(choices, dict):
-            raise HttpError(400, "choices must be an object")
+        ticks = b.get("ticks")
+        if ticks is not None and not isinstance(ticks, dict):
+            raise HttpError(400, "ticks must be an object")
         fill.choose(site, version_id=str(vid) if vid is not None else None, lang=str(lang) if lang is not None else None,
-                    choices=choices)
-        if vid is not None or lang is not None:   # ticks and edits come from this window only: no echo
+                    ticks=ticks)
+        if vid is not None or lang is not None:   # ticks come from this window only: no echo
             publish(site.id)
         return full(site)
+
+    @app.route("PUT", "/api/autofill/{site}/local")
+    def edit_local(req: Request):
+        """One edit to the local copy (autofill/service.py `edit`)."""
+        site, b = site_of(req), body(req)
+        try:
+            out = fill.edit(site, b)
+        except KeyError as e:
+            raise HttpError(404, f"no such item or conflict: {e}")
+        except ValueError as e:
+            raise HttpError(400, str(e))
+        if b.get("op") != "set":   # typing comes from this window: no echo while the user types
+            publish(site.id)
+        return {**full(site), **out}
 
     @app.route("POST", "/api/autofill/{site}/open")
     def open_site(req: Request):
@@ -184,34 +200,82 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         publish(site.id)
         return {**here, "signed_out": out, "browser": browser.status()}
 
-    @app.route("POST", "/api/autofill/{site}/read")
-    def read_profile(req: Request):
-        site, b = site_of(req), body(req)
+    # ---- check for updates: by the recorded route (no Claude), or Claude reads and records it ----
+    checking: dict[str, bool] = {}
+
+    def run_check(site: Site) -> dict:
         st = fill.load(site.id)
-        version, lang = fill.target(site, st)
-        want = fill.desired(site, st)
+        r = st.get("route")
+        base, _ = fill.copies(site.id, st)
+
+        def progress(n: int, total: int, url: str) -> None:
+            fill.save(site.id, checking={"page": n + 1, "pages": total, "url": url})
+            publish(site.id)
+
+        try:
+            bro(browser.ensure)
+            reading, scope = route.run(browser, site, r, base, progress)
+            return {"ok": True, **fill.take_reading(site, reading, scope, "route")}
+        except route.RouteBroken as e:
+            fill.check_failed(site, str(e), e.signed_out)
+            return {"ok": False, "error": str(e), "page": e.page, "signed_out": e.signed_out}
+        except (BrowserError, HttpError) as e:
+            fill.check_failed(site, str(e))
+            return {"ok": False, "error": str(e)}
+        finally:
+            checking.pop(site.id, None)
+            publish(site.id)
+
+    def start_check(site: Site, wait: bool = False) -> dict:
+        if checking.get(site.id):
+            raise HttpError(409, t("Resume Studio is already checking {site}", site=site.name))
+        checking[site.id] = True
+        fill.save(site.id, checking={"page": 0, "pages": len(fill.load(site.id)["route"]["pages"]), "url": ""})
+        publish(site.id)
+        if wait:
+            return run_check(site)
+        threading.Thread(target=run_check, args=(site,), daemon=True, name=f"autofill-check-{site.id}").start()
+        return {"started": True}
+
+    def learn_chat(site: Site, b: dict, repair: str = "") -> dict:
+        st = fill.load(site.id)
         bro(browser.ensure)
-        label = str(version.get("label") or version.get("id"))
-        if model.is_all(version):
-            label = t("All entries")
 
         def done(ok: bool) -> None:
             publish(site.id)
 
-        chat = start_chat(b, site, t("Read {site}", site=site.name), prompts.read_message(site, label, lang),
-                          prompts.read_context(site, str(studio.store.path), want, lang), done, action="autofill_read")
+        base, _ = fill.copies(site.id, st)
+        chat = start_chat(b, site, t("Read {site}", site=site.name), prompts.learn_message(site, bool(st.get("route")), repair),
+                          prompts.learn_context(site, str(studio.store.path), st.get("route"), repair, base is not None),
+                          done, action="autofill_read")
         fill.save(site.id, read_chat=chat["id"])
         publish(site.id)
-        return {"chat": chat}
+        return chat
+
+    @app.route("POST", "/api/autofill/{site}/check")
+    def check(req: Request):
+        """Check for updates: the route reads the site when one is recorded, else Claude reads it and records one."""
+        site, b = site_of(req), body(req)
+        if fill.load(site.id).get("route"):
+            return {"mode": "route", **start_check(site, wait=bool(b.get("wait")))}
+        return {"mode": "claude", "chat": learn_chat(site, b)}
+
+    @app.route("POST", "/api/autofill/{site}/learn")
+    def learn(req: Request):
+        """Claude reads the site and records the route anew (first time, or after the site changed)."""
+        site, b = site_of(req), body(req)
+        return {"mode": "claude", "chat": learn_chat(site, b, str(fill.load(site.id).get("route_broken") or ""))}
 
     @app.route("POST", "/api/autofill/{site}/apply")
     def apply(req: Request):
-        """Make the ticked changes: Claude, in the browser, reporting each one back."""
+        """Push the ticked changes: Claude, in the browser, reporting each one back."""
         site, b = site_of(req), body(req)
         view = fill.view(site)
-        if not view["plan"]["read"]:
-            raise HttpError(409, t("Read the {site} profile first", site=site.name))
-        items = [i for i in view["plan"]["items"] if i["checked"] and i["op"] != "same"]
+        if not view["synced"]:
+            raise HttpError(409, t("Check {site} for updates first", site=site.name))
+        if view["conflicts"]:
+            raise HttpError(409, t("Settle the conflicts first: a field was changed both here and on {site}", site=site.name))
+        items = [i for i in view["pending"] if i["checked"]]
         if not items:
             raise HttpError(409, t("Nothing is ticked"))
         over = [i for i in items if any(f.get("over") for f in i["fields"])]
@@ -220,34 +284,72 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
                                    items=", ".join(i["label"] for i in over)))
         bro(browser.ensure)
         st = fill.load(site.id)
-        applied = {k: v for k, v in (st.get("applied") or {}).items() if k not in {i["id"] for i in items}}
-        fill.save(site.id, applied=applied, applying=[i["id"] for i in items])
+        fill.save(site.id, applied={}, applying=[i["id"] for i in items])   # each push reports afresh
 
         def done(ok: bool) -> None:
             fill.save(site.id, applying=[])
             publish(site.id)
+            # see that the site now says it (and pick up anything else that changed there)
+            if fill.load(site.id).get("route") and not checking.get(site.id):
+                try:
+                    start_check(site)
+                except HttpError:
+                    pass
 
         chat = start_chat(b, site, t("Update {site}", site=site.name), prompts.apply_message(site, len(items)),
-                          prompts.apply_context(site, str(studio.store.path), items, str((view["current"] or {}).get("url") or "")),
+                          prompts.apply_context(site, str(studio.store.path), items, str((st.get("current") or {}).get("url") or "")),
                           done, action="autofill_apply")
         fill.save(site.id, apply_chat=chat["id"])
         publish(site.id)
         return {"chat": chat}
 
     # ---- what Claude sends back (scripts/browser.py) --------------------------------------
+    def check_text(site: Site, res: dict) -> str:
+        if not res.get("ok", True):
+            return f"the route didn't read {site.name}: {res.get('error')}"
+        v = fill.view(site)
+        lines = [f"synced. {res.get('synced', 0)} change(s) from {site.name} came into the local copy; "
+                 f"{res.get('conflicts', 0)} conflict(s); {len(v['pending'])} change(s) wait to go up. The local copy now has:"]
+        for it in (v["local"] or {}).get("items") or []:
+            lines.append(f"- {it['section']}: {profile.label_of(it['section'], it['fields'])}")
+        lines.append(f"- skills: {len((v['local'] or {}).get('skills') or [])}; basics: {', '.join(k for k, x in ((v['local'] or {}).get('basics') or {}).items() if x) or '-'}")
+        return "\n".join(lines)
+
     @app.route("POST", "/api/autofill/{site}/current")
     def current(req: Request):
+        """Claude's own reading of the whole profile (when no route could be recorded)."""
         site = site_of(req)
-        plan, errs = fill.set_current(site, req.json())
+        res, errs = fill.set_current(site, req.json())
         if errs:
             raise HttpError(400, "the profile JSON has problems:\n- " + "\n- ".join(errs))
         publish(site.id)
-        lines = [f"saved. The window now shows {plan['counts']['add']} to add, {plan['counts']['update']} to change, "
-                 f"{plan['counts']['remove']} only on {site.name}, {plan['counts']['same']} already the same:"]
-        for i in plan["items"]:
-            if i["op"] != "same":
-                lines.append(f"- {i['op']} {i['section']}: {i['label']}" + (f" ({', '.join(f['name'] for f in i['fields'])})" if i["op"] == "update" else ""))
-        return {"text": "\n".join(lines)}
+        return {"text": check_text(site, {"ok": True, **res})}
+
+    @app.route("POST", "/api/autofill/{site}/route")
+    def save_route(req: Request):
+        """Claude's read route: saved, then run once on the live site; the answer is what it read."""
+        site = site_of(req)
+        r, errs = fill.set_route(site, req.json())
+        if errs:
+            raise HttpError(400, "the route has problems:\n- " + "\n- ".join(errs))
+        site = fill.site(site.id) or site   # what it learned about the site (a site of the user's own)
+        publish(site.id)
+        st = fill.load(site.id)
+        base, _ = fill.copies(site.id, st)
+        try:
+            reading, scope = route.run(browser, site, r, base)
+        except route.RouteBroken as e:
+            return {"text": f"saved, but running it failed{' on ' + e.page if e.page else ''}: {e}\nFix the script and send the route again."}
+        return {"text": "saved. Running it read this (compare it with the page; when it matches, run `sync`):\n"
+                        + json.dumps({"covers": scope, **reading}, ensure_ascii=False, indent=1)[:30000]}
+
+    @app.route("POST", "/api/autofill/{site}/sync")
+    def sync_now(req: Request):
+        """`browser.py sync <site>`: check for updates now, by the route, and say what came of it."""
+        site = site_of(req)
+        if not fill.load(site.id).get("route"):
+            raise HttpError(409, "no route is recorded yet: send one with `route` first")
+        return {"text": check_text(site, start_check(site, wait=True))}
 
     @app.route("POST", "/api/autofill/{site}/report")
     def report(req: Request):
@@ -255,7 +357,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         try:
             fill.report(site, str(b.get("id") or ""), str(b.get("state") or ""), str(b.get("note") or ""))
         except KeyError:
-            raise HttpError(404, f"no change {b.get('id')!r} in the plan; use the ids from the approved list")
+            raise HttpError(404, f"no change {b.get('id')!r} waits to go up; use the ids from the approved list")
         except ValueError as e:
             raise HttpError(400, str(e))
         publish(site.id)
@@ -318,6 +420,8 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
                 return browser.snapshot(within, int(b.get("max") or 60000))
             if cmd == "text":
                 return browser.text()
+            if cmd == "extract":
+                return {"data": browser.run_script(str(b.get("script") or ""), timeout=90)}
             if cmd == "click":
                 return browser.click(ref)
             if cmd == "type":

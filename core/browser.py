@@ -13,6 +13,7 @@ them like a person's. Nothing here submits anything by itself; callers decide wh
 from __future__ import annotations
 
 import base64
+import json
 import os
 import random
 import re
@@ -35,7 +36,7 @@ class BrowserError(Exception):
 
 
 COMMANDS = {"open", "snapshot", "text", "click", "type", "select", "press", "scroll", "upload", "screenshot", "tabs",
-            "tab", "back", "front", "profile", "report", "signed-out"}
+            "tab", "back", "front", "profile", "report", "signed-out", "extract", "route", "sync"}
 
 
 def steps_of(command: str) -> list[dict]:
@@ -167,7 +168,7 @@ def _step(rest: str, body: str) -> dict | None:
         step["files"] = [Path(f).name for f in a[1:]]
     elif cmd == "tab" and a:
         step["index"] = a[0]
-    elif cmd in ("profile", "signed-out") and a:
+    elif cmd in ("profile", "signed-out", "route", "sync") and a:
         step["site"] = a[0]
     elif cmd == "report" and len(a) >= 3:
         step.update(site=a[0], id=a[1], state=a[2], note=str(flags.get("note") or "")[:200])
@@ -410,7 +411,7 @@ class ManagedBrowser:
             self.contexts[sid] = ctx
         return ctx
 
-    def _js(self, call: str, *, by_value: bool = True) -> Any:
+    def _js(self, call: str, *, by_value: bool = True, timeout: float = 30.0) -> Any:
         """Run `__rs.<call>` in the isolated world (installing it there first)."""
         with self.lock:
             sid = self._session()
@@ -419,7 +420,8 @@ class ManagedBrowser:
                 ctx = self._context(sid)
                 try:
                     r = self.conn.send("Runtime.evaluate", {"expression": SNAPSHOT_JS + "\n;__rs." + call, "contextId": ctx,
-                                                            "returnByValue": by_value, "awaitPromise": True}, session=sid)
+                                                            "returnByValue": by_value, "awaitPromise": True}, session=sid,
+                                       timeout=timeout)
                 except CdpError as e:
                     if attempt == 0 and "context" in str(e).lower():
                         self.contexts.pop(sid, None)   # the page navigated: a new world
@@ -498,6 +500,20 @@ class ManagedBrowser:
     def text(self) -> dict:
         with self.lock:
             return {**self.here(), "text": self._eval_page("document.body ? document.body.innerText : ''") or ""}
+
+    def run_script(self, script: str, timeout: float = 60.0) -> Any:
+        """A read route's script on the open page: `async (h) => data`, where h are the helpers in
+        snapshot.js. It runs in the isolated world (the page's own scripts never see it); the answer
+        comes back as JSON."""
+        body = ("helpers.sleep(0).then(async () => { const fn = (" + script + "\n);"
+                " if (typeof fn !== 'function') throw new Error('the script must be a function: async (h) => ({...})');"
+                " const out = await fn(__rs.helpers); return JSON.stringify(out === undefined ? null : out); })")
+        with self.lock:
+            raw = self._js(body, timeout=timeout)
+        try:
+            return json.loads(raw) if isinstance(raw, str) else raw
+        except ValueError as e:
+            raise BrowserError(f"the script's answer isn't JSON: {e}") from e
 
     def _mouse_click(self, x: float, y: float, count: int = 1) -> None:
         base = {"x": x, "y": y, "button": "left", "clickCount": count}

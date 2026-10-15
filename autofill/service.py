@@ -1,10 +1,12 @@
-"""Per data file: which version goes to which site, what was last read there, the user's ticks and
-edits, and how applying went. Kept in `.studio/autofill/<site>.json` next to the data file (personal
-data: git-ignored like the rest of `.studio`)."""
+"""Per data file: the user's sites, and per site the local copy of its profile, what the site said at
+the last sync, the recorded read route, which resume version it is compared with, and how pushing
+went. Kept in `.studio/autofill/` next to the data file (personal data: git-ignored like the rest of
+`.studio`)."""
 from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -13,7 +15,7 @@ from typing import Any
 from resume import model
 from resume.service import Studio
 
-from . import profile, sites
+from . import profile, route, sites, sync
 from .sites import Site
 
 APPLY_STATES = ("doing", "done", "failed", "skipped")
@@ -194,31 +196,111 @@ class Autofill:
         version, lang = self.target(site, st)
         return profile.desired(doc, version, lang, site)
 
+    # ---- the local copy and its sync with the site ----------------------------------
+    def copies(self, site_id: str, st: dict | None = None) -> tuple[dict | None, dict | None]:
+        """(base, local). A file from before the local copy existed has only what was last read."""
+        st = self.load(site_id) if st is None else st
+        if st.get("base") is None and st.get("current"):
+            m = sync.merge(None, None, st["current"])
+            st = self.save(site_id, base=m["base"], local=m["local"])
+        return st.get("base"), st.get("local")
+
+    def _limits(self, site: Site, it: dict) -> None:
+        for f in it["fields"]:
+            lim = site.limits.get(f"{it['section']}.{f['name']}")
+            if lim:
+                f["limit"], f["over"] = lim, len(f["to"] or "") > lim
+
+    def pending(self, site: Site, st: dict | None = None) -> list[dict]:
+        st = self.load(site.id) if st is None else st
+        base, local = self.copies(site.id, st)
+        ticks = st.get("ticks") or {}
+        applied = st.get("applied") or {}
+        out = sync.pending(base, local)
+        for it in out:
+            it["checked"] = bool(ticks.get(it["id"], True))
+            self._limits(site, it)
+            if it["id"] in applied:
+                it["applied"] = applied[it["id"]]
+        return out
+
+    def reference(self, site: Site, local: dict | None, st: dict) -> dict:
+        """What the chosen resume version says, next to the local copy: per item the fields the resume
+        words differently, the resume's entries the copy lacks, and its skills not there yet."""
+        if local is None:
+            return {"items": {}, "basics": {}, "missing": [], "skills": []}
+        want = self.desired(site, st)
+        items = local.get("items") or []
+        m = sync.match(items, [{"section": w["section"], "fields": w["fields"]} for w in want["items"]])
+        per: dict[str, dict] = {}
+        missing = []
+        for j, w in enumerate(want["items"]):
+            if j not in m:
+                missing.append({"key": w["key"], "section": w["section"], "label": w["label"], "fields": w["fields"]})
+                continue
+            it = items[m[j]]
+            diff = {k: v for k, v in w["fields"].items() if v and not profile.same(k, v, str(it["fields"].get(k) or ""))}
+            per[it["id"]] = {"key": w["key"], "fields": diff}
+        basics = {k: v for k, v in want["basics"].items()
+                  if v and not profile.same(k, v, str((local.get("basics") or {}).get(k) or ""))}
+        have = {s.lower() for s in local.get("skills") or []}
+        return {"items": per, "basics": basics, "missing": missing, "skills": [s for s in want["skills"] if s.lower() not in have]}
+
     def view(self, site: Site) -> dict:
         st = self.load(site.id)
         version, lang = self.target(site, st)
-        want = self.desired(site, st)
-        plan = profile.make_plan(site, want, st.get("current"), st.get("choices"))
-        applied = st.get("applied") or {}
-        for it in plan["items"]:
-            if it["id"] in applied:
-                it["applied"] = applied[it["id"]]
+        base, local = self.copies(site.id, st)
+        st = self.load(site.id)
+        r = st.get("route")
         return {"site": site.public(), "version_id": str(version.get("id")), "lang": lang,
-                "desired": want, "current": st.get("current"), "read_at": st.get("read_at"),
-                "plan": plan, "signed_out": bool(st.get("signed_out")), "read_chat": st.get("read_chat"),
-                "apply_chat": st.get("apply_chat"), "applying": st.get("applying") or []}
+                "local": local, "base": base, "synced": base is not None, "synced_at": st.get("synced_at"),
+                "conflicts": st.get("conflicts") or {}, "notes": st.get("notes") or [],
+                "last_check": st.get("last_check"), "checking": st.get("checking"),
+                "route": {"recorded": bool(r), "pages": len((r or {}).get("pages") or []), "covers": route.covers(r),
+                          "at": st.get("route_at"), "broken": st.get("route_broken")},
+                "pending": self.pending(site, st), "reference": self.reference(site, local, st),
+                "signed_out": bool(st.get("signed_out")), "read_chat": st.get("read_chat"),
+                "apply_chat": st.get("apply_chat"), "applying": st.get("applying") or [], "applied": st.get("applied") or {}}
 
     def summary(self) -> list[dict]:
         out = []
         for site in self.sites():
             st = self.load(site.id)
-            plan = profile.make_plan(site, self.desired(site, st), st.get("current"), st.get("choices")) if st.get("current") else None
-            out.append({**site.public(), "read_at": st.get("read_at"), "signed_out": bool(st.get("signed_out")),
-                        "changes": plan["checked"] if plan else None})
+            pend = [p for p in self.pending(site, st) if p["checked"]] if st.get("base") or st.get("current") else None
+            out.append({**site.public(), "synced_at": st.get("synced_at"), "signed_out": bool(st.get("signed_out")),
+                        "changes": len(pend) if pend is not None else None, "conflicts": len(st.get("conflicts") or {})})
         return out
 
-    # ---- what Claude reports ---------------------------------------------------------
+    # ---- a fresh read of the site comes in (by the route, or from Claude) ---------------
+    def take_reading(self, site: Site, reading: dict, scope: list[str] | None, mode: str) -> dict:
+        reading = {**reading, "items": [{**i, "fields": _dates(i.get("fields") or {})} for i in reading.get("items") or []]}
+        with self.lock:
+            st = self.load(site.id)
+            base, local = self.copies(site.id, st)
+            m = sync.merge(base, local, reading, scope)
+            # an unsettled conflict stays while neither side moved on
+            old = st.get("conflicts") or {}
+            keep = {}
+            for k, c in old.items():
+                if k in m["conflicts"]:
+                    continue
+                if _value(m["local"], k) == c.get("local") and _value(m["base"], k) == c.get("site"):
+                    keep[k] = c
+            conflicts = {**keep, **m["conflicts"]}
+            now = time.time()
+            check = {"at": now, "mode": mode, "synced": m["synced"], "conflicts": len(m["conflicts"]), "notes": m["notes"]}
+            self.save(site.id, base=m["base"], local=m["local"], conflicts=conflicts, notes=m["notes"], synced_at=now,
+                      last_check=check, signed_out=False, checking=None, route_broken=None,
+                      current={**reading, "url": reading.get("url", "")})
+            return check
+
+    def check_failed(self, site: Site, err: str, signed_out: bool = False) -> None:
+        self.save(site.id, checking=None, signed_out=signed_out or self.load(site.id).get("signed_out", False),
+                  last_check={"at": time.time(), "mode": "route", "error": err, "signed_out": signed_out},
+                  route_broken=None if signed_out else err)
+
     def set_current(self, site: Site, data: Any) -> tuple[dict, list[str]]:
+        """What Claude read (`browser.py profile`): the whole profile, into the local copy."""
         if isinstance(data, dict) and "site" in data:
             site, errs = self.learn(site, data.get("site"))
             if errs:
@@ -228,29 +310,136 @@ class Autofill:
         cur, errs = profile.validate_current(data, site)
         if errs:
             return {}, errs
-        st = self.save(site.id, current=cur, read_at=time.time(), signed_out=False, applied={})
-        plan = profile.make_plan(site, self.desired(site, st), cur, st.get("choices"))
-        return plan, []
+        return self.take_reading(site, cur, None, "claude"), []
 
-    def report(self, site: Site, item_id: str, state: str, note: str = "") -> dict:
+    def set_route(self, site: Site, data: Any) -> tuple[dict, list[str]]:
+        if isinstance(data, dict) and data.get("site") is not None:
+            site, errs = self.learn(site, data.get("site"))
+            if errs:
+                return {}, errs
+        r, errs = route.validate(data, site)
+        if errs:
+            return {}, errs
+        self.save(site.id, route=r, route_at=time.time(), route_broken=None)
+        return r, []
+
+    # ---- the user's edits to the local copy --------------------------------------------
+    def edit(self, site: Site, op: dict) -> dict:
+        """One change to the local copy: set a field, add / remove / restore an item, settle a conflict,
+        take the resume's wording, undo a pending change."""
+        with self.lock:
+            st = self.load(site.id)
+            base, local = self.copies(site.id, st)
+            if local is None:
+                raise ValueError("check for updates first: there is no local copy yet")
+            local = sync.clean(local)
+            conflicts = dict(st.get("conflicts") or {})
+            kind = op.get("op")
+            item = str(op.get("item") or "")
+            field = str(op.get("field") or "")
+            find = lambda: next((i for i in local["items"] if i["id"] == item), None)   # noqa: E731
+            if kind == "set":
+                value = str(op.get("value") if op.get("value") is not None else "")
+                if item == "basics":
+                    local["basics"][field] = value
+                    conflicts.pop(f"basics.{field}", None)   # typed over: the user's answer to it
+                elif item == "skills":
+                    local["skills"] = [s.strip() for s in value.split("\n") if s.strip()]
+                else:
+                    it = find()
+                    if it is None:
+                        raise KeyError(item)
+                    if field not in site.fields(it["section"]):
+                        raise ValueError(f"{field} isn't a field of {it['section']} on {site.name}")
+                    it["fields"][field] = value
+                    conflicts.pop(f"{item}.{field}", None)
+            elif kind == "add":
+                section = str(op.get("section") or "")
+                if section not in site.sections or section == "skills":
+                    raise ValueError(f"{site.name} has no {section}")
+                fields = {k: str(v) for k, v in (op.get("fields") or {}).items() if k in site.fields(section)}
+                iid = sync.new_id(base, local)
+                at = max((n + 1 for n, i in enumerate(local["items"]) if i["section"] == section), default=len(local["items"]))
+                local["items"].insert(at, {"id": iid, "section": section, "fields": fields})
+                item = iid
+            elif kind == "remove":
+                if find() is None:
+                    raise KeyError(item)
+                local["items"] = [i for i in local["items"] if i["id"] != item]
+                conflicts = {k: v for k, v in conflicts.items() if not k.startswith(item + ".")}
+            elif kind == "revert":
+                local = sync.revert(base or sync.empty(), local, str(op.get("change") or ""))
+                pre = str(op.get("change") or "").removeprefix("item.")
+                conflicts = {k: v for k, v in conflicts.items() if not (k.startswith(pre + ".") or k == pre)}
+            elif kind == "settle":
+                key, take = str(op.get("key") or ""), op.get("take")
+                c = conflicts.pop(key, None)
+                if c is None:
+                    raise KeyError(key)
+                if take == "site":
+                    _set_value(local, key, c["site"])
+            elif kind == "add_skills":
+                have = {s.lower() for s in local["skills"]}
+                local["skills"] += [s for s in op.get("skills") or [] if isinstance(s, str) and s.lower() not in have]
+            else:
+                raise ValueError(f"unknown op {kind!r}")
+            self.save(site.id, local=local, conflicts=conflicts)
+            return {"item": item}
+
+    # ---- pushing to the site (Claude, in the browser) ------------------------------------
+    def report(self, site: Site, change_id: str, state: str, note: str = "") -> dict:
         if state not in APPLY_STATES:
             raise ValueError(f"state must be one of {', '.join(APPLY_STATES)}")
         with self.lock:
             st = self.load(site.id)
-            known = {i["id"] for i in profile.make_plan(site, self.desired(site, st), st.get("current"), st.get("choices"))["items"]}
-            if item_id not in known:
-                raise KeyError(item_id)
+            base, local = self.copies(site.id, st)
+            pend = {p["id"]: p for p in sync.pending(base, local)}
             applied = dict(st.get("applied") or {})
-            applied[item_id] = {"state": state, "note": note, "at": time.time()}
-            return self.save(site.id, applied=applied)
+            if change_id not in pend and not (state == "done" and change_id in (st.get("applying") or [])):
+                raise KeyError(change_id)
+            applied[change_id] = {"state": state, "note": note, "at": time.time()}
+            fields: dict[str, Any] = {"applied": applied}
+            if state == "done" and change_id in pend:
+                fields["base"] = sync.pushed(base or sync.empty(), local or sync.empty(), pend[change_id])
+            return self.save(site.id, **fields)
 
     def choose(self, site: Site, *, version_id: str | None = None, lang: str | None = None,
-               choices: dict | None = None) -> dict:
+               ticks: dict | None = None) -> dict:
         fields: dict[str, Any] = {}
         if version_id is not None:
             fields["version_id"] = version_id
         if lang is not None:
             fields["lang"] = lang
-        if choices is not None:
-            fields["choices"] = choices
+        if ticks is not None:
+            fields["ticks"] = {str(k): bool(v) for k, v in ticks.items()}
         return self.save(site.id, **fields)
+
+
+def _dates(fields: dict) -> dict:
+    """Dates the way the copy keeps them: YYYY-MM (or YYYY, or "present"), whatever the site wrote."""
+    out = dict(fields)
+    for k in ("start", "end", "date"):
+        if out.get(k):
+            d = profile.norm_date(str(out[k]))
+            if re.fullmatch(r"\d{4}(-\d{2})?|present", d):
+                out[k] = d
+    return out
+
+
+def _value(p: dict, key: str) -> str:
+    """A conflict's field in a profile: "basics.<name>" or "<item id>.<field>"."""
+    a, _, f = key.partition(".")
+    if a == "basics":
+        return str((p.get("basics") or {}).get(f) or "")
+    it = next((i for i in p.get("items") or [] if i["id"] == a), None)
+    return str((it or {}).get("fields", {}).get(f) or "")
+
+
+def _set_value(p: dict, key: str, value: str) -> None:
+    a, _, f = key.partition(".")
+    if a == "basics":
+        p["basics"][f] = value
+        return
+    it = next((i for i in p["items"] if i["id"] == a), None)
+    if it is not None:
+        it["fields"][f] = value

@@ -62,12 +62,14 @@
 </div>
 
 <script>
-  // what "the server" holds
-  const DB = {
+  // what "the server" holds (kept in localStorage, so it outlives a reload like a real site's data)
+  const DB = JSON.parse(localStorage.getItem("db") || "null") || {
     headline: "Student at ANU",
     positions: [{ title: "Research Intern", company: "CSIRO", month: "February", year: "2024", current: false, desc: "Mapped flood risk." }],
     saves: 0,
   };
+  // a "redesign": tests rename the Experience heading
+  if (localStorage.getItem("exp-heading")) document.querySelector("#experience h2").textContent = localStorage.getItem("exp-heading");
   // React-like: a field's state changes only through input events, never by setting .value in a script
   const state = {};
   for (const id of ["f-headline", "f-title", "f-company", "f-desc"]) {
@@ -85,6 +87,7 @@
   let editing = null;
 
   function paint() {
+    localStorage.setItem("db", JSON.stringify(DB));
     document.getElementById("headline").textContent = DB.headline;
     const ul = document.getElementById("exp-list");
     ul.replaceChildren(...DB.positions.map((p, i) => {

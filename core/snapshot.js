@@ -282,5 +282,35 @@
     return `${k} ${q(clip(name(e, k), 80))}`;
   }
 
-  globalThis.__rs = { snapshot, point, focus, choose, read, el, target, kind: (ref) => kind(el(ref)), rich: (ref) => !!el(ref).isContentEditable };
+  // what a recorded read route's script gets (autofill): reading helpers; the script only reads, apart
+  // from opening "see more" and scrolling so that lazy lists load
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const helpers = {
+    sleep,
+    text: (e) => (e ? String(e.innerText || e.textContent || "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim() : ""),
+    all: (sel, root = document) => [...root.querySelectorAll(sel)],
+    one: (sel, root = document) => root.querySelector(sel),
+    async waitFor(sel, ms = 10000) {
+      const end = Date.now() + ms;
+      while (Date.now() < end) { const e = document.querySelector(sel); if (e) return e; await sleep(200); }
+      return null;
+    },
+    async scrollToEnd(rounds = 10) {
+      let h = -1;
+      for (let i = 0; i < rounds && document.documentElement.scrollHeight !== h; i++) {
+        h = document.documentElement.scrollHeight;
+        window.scrollTo(0, h);
+        await sleep(500);
+      }
+      window.scrollTo(0, 0);
+    },
+    // the part of the page under a heading whose text matches (a string or a RegExp)
+    section(heading, root = document) {
+      const ok = (s) => (heading instanceof RegExp ? heading.test(s) : norm(s).toLowerCase() === String(heading).toLowerCase());
+      const hd = [...root.querySelectorAll("h1,h2,h3,h4,[role=heading]")].find((x) => ok(norm(x.innerText || x.textContent)));
+      return hd ? hd.closest("section") || hd.parentElement : null;
+    },
+  };
+
+  globalThis.__rs = { snapshot, point, focus, choose, read, el, target, helpers, kind: (ref) => kind(el(ref)), rich: (ref) => !!el(ref).isContentEditable };
 })();

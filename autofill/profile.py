@@ -1,11 +1,10 @@
-"""What a site's profile should say (from a resume version), what it says now (read by Claude), and
-the plan between the two that the user ticks.
+"""A profile's shape, what a resume version would put on a site, and when two values are the same.
 
 The resume side is worked out here, not by Claude: the same resume version always gives the same
-profile, and the user sees exactly where each value came from. Claude reads the site (snapshots) and
-hands back what it found in the same shape (`validate_current`); `make_plan` compares them field by
-field. Only the profile's "about" text has no field in resume.yaml: Claude drafts it from the
-visible layer and the user edits it in the plan before anything is changed.
+profile (`desired`), and the window shows it next to the local copy as a suggestion. What a site says
+comes in the shape `validate_current` checks (from the recorded route, or from Claude), and `same`
+decides whether two values differ in a way worth showing (dates written differently, an organisation's
+longer official name).
 """
 from __future__ import annotations
 
@@ -199,7 +198,7 @@ def validate_current(data: Any, site: Site) -> tuple[dict, list[str]]:
     return out, errs
 
 
-# ---- the plan --------------------------------------------------------------------------------
+# ---- when two values are the same ---------------------------------------------------------------
 _MONTHS = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
 
 
@@ -236,87 +235,3 @@ def same(field: str, a: str, b: str) -> bool:
         x, y = norm_text(a), norm_text(b)
         return x == y or bool(x and y and (x in y or y in x))
     return norm_text(a) == norm_text(b)
-
-
-def _match(want: dict, have: list[dict], used: set[int]) -> int | None:
-    for i, h in enumerate(have):
-        if i not in used and h["section"] == want["section"] and h.get("key") == want["key"]:
-            return i
-    name_field = {"experience": "org", "education": "org", "projects": "name", "awards": "title"}[want["section"]]
-    second = {"experience": "title", "education": "degree"}.get(want["section"])
-    named = [i for i, h in enumerate(have)
-             if i not in used and h["section"] == want["section"] and not h.get("key")
-             and (a := norm_text(want["fields"].get(name_field, ""))) and (b := norm_text(h["fields"].get(name_field, "")))
-             and (a == b or a in b or b in a)]
-    for i in named:   # same place and same role / degree
-        if not second or not want["fields"].get(second) or same(second, want["fields"][second], have[i]["fields"].get(second, "")):
-            return i
-    # same place, the role worded differently: the same item when it is the only one there
-    return named[0] if len(named) == 1 else None
-
-
-def make_plan(site: Site, want: dict, have: dict | None, choices: dict | None = None) -> dict:
-    """Every change between the resume (`want`) and the site (`have`), each one tickable.
-
-    An item: {id, op: add | update | remove | same, section, key, label, fields: [{name, from, to,
-    limit, over}], checked}. `choices` ({id: {checked, fields: {name: text}}}) are the user's ticks and
-    edits, kept across reads."""
-    choices = choices or {}
-    out: list[dict] = []
-    if have is None:
-        return {"items": [], "read": False}
-
-    def add(item: dict, default_checked: bool) -> None:
-        ch = choices.get(item["id"]) or {}
-        for f in item["fields"]:
-            edited = (ch.get("fields") or {}).get(f["name"])
-            if edited is not None and item["op"] != "remove":
-                f["edited"], f["to"] = True, edited
-            lim = site.limits.get(f"{item['section']}.{f['name']}")
-            if lim:
-                f["limit"], f["over"] = lim, len(f["to"] or "") > lim
-        item["checked"] = bool(ch["checked"]) if "checked" in ch else default_checked
-        out.append(item)
-
-    for name in site.basics:
-        to = want["basics"].get(name)
-        if to is None:
-            to = (have.get("drafts") or {}).get(name)
-        cur = (have.get("basics") or {}).get(name, "")
-        if not to:
-            continue
-        op = "same" if same(name, to, cur) else "update"
-        add({"id": f"basics.{name}", "op": op, "section": "basics", "key": name, "label": name,
-             "fields": [{"name": name, "from": cur, "to": to}], "drafted": name not in want["basics"]}, op != "same")
-
-    have_items = have.get("items") or []
-    used: set[int] = set()
-    for w in want["items"]:
-        i = _match(w, have_items, used)
-        iid = f"{w['section']}:{w['key']}"
-        if i is None:
-            add({"id": iid, "op": "add", "section": w["section"], "key": w["key"], "label": w["label"],
-                 "fields": [{"name": k, "from": "", "to": v} for k, v in w["fields"].items() if v]}, True)
-            continue
-        used.add(i)
-        h = have_items[i]["fields"]
-        diffs = [{"name": k, "from": h.get(k, ""), "to": v} for k, v in w["fields"].items()
-                 if not same(k, v, h.get(k, "")) and (v or h.get(k))]
-        add({"id": iid, "op": "update" if diffs else "same", "section": w["section"], "key": w["key"], "label": w["label"],
-             "fields": diffs, "site_label": label_of(w["section"], h)}, bool(diffs))
-    for i, h in enumerate(have_items):
-        if i in used:
-            continue
-        add({"id": f"{h['section']}:site{i}", "op": "remove", "section": h["section"], "key": None,
-             "label": label_of(h["section"], h["fields"]),
-             "fields": [{"name": k, "from": v, "to": ""} for k, v in h["fields"].items() if v]}, False)
-
-    if "skills" in site.sections and want["skills"]:
-        on_site = {s.lower() for s in have.get("skills") or []}
-        missing = [s for s in want["skills"] if s.lower() not in on_site]
-        add({"id": "skills", "op": "add" if missing else "same", "section": "skills", "key": "skills", "label": "skills",
-             "fields": [{"name": "skills", "from": ", ".join(have.get("skills") or []), "to": ", ".join(missing)}]},
-            bool(missing))
-
-    counts = {op: sum(1 for x in out if x["op"] == op) for op in ("add", "update", "remove", "same")}
-    return {"items": out, "read": True, "counts": counts, "checked": sum(1 for x in out if x["checked"] and x["op"] != "same")}

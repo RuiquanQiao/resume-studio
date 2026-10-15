@@ -17,7 +17,7 @@ import pytest
 
 from conftest import ROOT, calls
 
-from autofill import profile
+from autofill import profile, sync
 from autofill.sites import PRESETS
 from core.store import YamlStore
 
@@ -60,61 +60,88 @@ def test_desired_follows_the_job_and_the_language(data_file):
     assert want["basics"] == {} and want["skills"] == []                 # BOSS has no headline or skills list
 
 
-def plan_for(data_file, current, site=LI, choices=None):
-    doc = load(data_file)
-    want = profile.desired(doc, next(v for v in doc["versions"] if v["id"] == "ALL"), "en", site)
-    cur, errs = profile.validate_current(current, site)
-    assert errs == []
-    return profile.make_plan(site, want, cur, choices)
-
-
 SITE_NOW = {
     "url": "https://www.linkedin.com/in/alex/",
     "basics": {"headline": "Student at ANU", "about": ""},
     "items": [
-        {"section": "education", "key": "EXP-001", "fields": {"org": "The Australian National University", "degree": "Master of Computing",
-                                                           "start": "Jul 2025", "end": "Jun 2027",
-                                                           "description": "Coursework: Statistical ML, Deep Learning, Computer Vision, Software Engineering"}},
+        {"section": "education", "key": None, "fields": {"org": "The Australian National University", "degree": "Master of Computing",
+                                                       "start": "Jul 2025", "end": "Jun 2027",
+                                                       "description": "Coursework: Statistical ML, Deep Learning, Computer Vision, Software Engineering"}},
         {"section": "projects", "key": None, "fields": {"name": "Paper2Exam", "start": "2025-08", "end": "present",
                                                        "description": "Turns papers into exams"}},
         {"section": "projects", "key": None, "fields": {"name": "Old hackathon thing", "start": "2022-03"}},
     ],
     "skills": ["python", "React"],
-    "drafts": {"about": "MSc Computing student building LLM tools."},
 }
 
 
-def test_plan_compares_field_by_field(data_file):
-    plan = plan_for(data_file, SITE_NOW)
-    items = {i["id"]: i for i in plan["items"]}
-    assert items["basics.headline"]["op"] == "update" and items["basics.headline"]["checked"]
-    about = items["basics.about"]
-    assert about["op"] == "update" and about["drafted"] and about["fields"][0]["to"].startswith("MSc Computing student building")
-    assert about["fields"][0]["limit"] == 2600
-    # same school, dates written differently on the site: nothing to change
-    assert items["education:EXP-001"]["op"] == "same" and not items["education:EXP-001"]["checked"]
-    # matched by name although Claude gave no key; only the description differs
-    p2e = items["projects:EXP-002"]
-    assert p2e["op"] == "update" and [f["name"] for f in p2e["fields"]] == ["link", "description"]
-    assert p2e["fields"][1]["from"] == "Turns papers into exams"
-    assert items["projects:EXP-003"]["op"] == "add" and items["projects:EXP-003"]["checked"]
-    # only on the site: offered, never ticked by default
-    gone = items["projects:site2"]
-    assert gone["op"] == "remove" and not gone["checked"] and gone["label"] == "Old hackathon thing"
-    skills = items["skills"]
-    assert skills["op"] == "add" and "Python" not in skills["fields"][0]["to"] and "TypeScript" in skills["fields"][0]["to"]
-    assert plan["counts"] == {"add": 2, "update": 3, "remove": 1, "same": 1}
+# ---- the local copy and its sync with the site --------------------------------------------
+def _p(*items, basics=None, skills=None):
+    return {"basics": basics or {}, "skills": skills or [],
+            "items": [{"section": s, "fields": f} for s, f in items]}
 
 
-def test_choices_tick_and_edit(data_file):
-    long = "x" * 2601
-    plan = plan_for(data_file, SITE_NOW, choices={"projects:site2": {"checked": True},
-                                                  "basics.about": {"fields": {"about": long}},
-                                                  "basics.headline": {"checked": False}})
-    items = {i["id"]: i for i in plan["items"]}
-    assert items["projects:site2"]["checked"] and not items["basics.headline"]["checked"]
-    f = items["basics.about"]["fields"][0]
-    assert f["edited"] and f["over"] and f["to"] == long
+def test_sync_brings_site_changes_in_and_keeps_mine():
+    first = sync.merge(None, None, _p(("experience", {"title": "Intern", "org": "CSIRO", "start": "2024-02", "description": "Flood maps."}),
+                                      ("projects", {"name": "P2E", "description": "old"}),
+                                      basics={"headline": "Student"}, skills=["Python", "Go"]))
+    base, local = first["base"], first["local"]
+    assert [i["id"] for i in local["items"]] == ["i1", "i2"] and sync.pending(base, local) == []
+    # mine: the headline, P2E's description, a new award, Go off the skills
+    local["basics"]["headline"] = "ML engineer"
+    local["items"][1]["fields"]["description"] = "new"
+    local["items"].append({"id": "i9", "section": "awards", "fields": {"title": "Prize"}})
+    local["skills"].remove("Go")
+    # the site's: the internship's description, the headline too, a skill, a new project; dates written its own way
+    m = sync.merge(base, local, _p(("experience", {"title": "Intern", "org": "CSIRO", "start": "Feb 2024", "description": "Flood risk maps."}),
+                                   ("projects", {"name": "P2E", "description": "old"}),
+                                   ("projects", {"name": "EuroSAT", "description": "z"}),
+                                   basics={"headline": "Student at ANU"}, skills=["Python", "Go", "Rust"]))
+    assert m["conflicts"] == {"basics.headline": {"site": "Student at ANU", "local": "ML engineer"}}
+    loc = {i["id"]: i for i in m["local"]["items"]}
+    assert loc["i1"]["fields"]["description"] == "Flood risk maps."          # only the site changed it: in
+    assert loc["i1"]["fields"]["start"] == "2024-02"                         # the same date written differently: no change
+    assert loc["i2"]["fields"]["description"] == "new"                       # only I changed it: mine stays
+    assert loc["i3"]["fields"]["name"] == "EuroSAT" and "i9" in loc          # new on the site: in; my new one stays
+    assert m["local"]["skills"] == ["Python", "Rust"] and m["synced"] == 3
+    pend = {p["id"]: p for p in sync.pending(m["base"], m["local"])}
+    assert set(pend) == {"basics.headline", "item.i2", "item.i9", "skills"}
+    assert pend["item.i9"]["op"] == "add" and pend["skills"]["remove"] == ["Go"] and pend["skills"]["add"] == []
+    # pushed: the base moves on, the change is no longer pending
+    b2 = sync.pushed(m["base"], m["local"], pend["item.i9"])
+    assert "item.i9" not in {p["id"] for p in sync.pending(b2, m["local"])}
+    # undone: the copy says what the site says again
+    assert sync.revert(m["base"], m["local"], "item.i2")["items"][1]["fields"]["description"] == "old"
+
+
+def test_sync_removals_and_items_added_on_both_sides():
+    first = sync.merge(None, None, _p(("projects", {"name": "A", "description": "a"}), ("projects", {"name": "B", "description": "b"})))
+    base, local = first["base"], first["local"]
+    local["items"] = [i for i in local["items"] if i["fields"]["name"] != "A"]            # I removed A
+    local["items"].append({"id": "i7", "section": "projects", "fields": {"name": "C", "description": "c"}})   # and added C
+    # the site: B is gone, and C is there now (the user added it there too)
+    m = sync.merge(base, local, _p(("projects", {"name": "A", "description": "a"}), ("projects", {"name": "C", "description": "c"})))
+    names = [i["fields"]["name"] for i in m["local"]["items"]]
+    assert names == ["C"]                                       # B: gone there, untouched here: gone; A: still removed here
+    assert [p["op"] for p in sync.pending(m["base"], m["local"])] == ["remove"]   # only A's removal waits
+    # gone from the site but edited here: kept, with a note
+    first = sync.merge(None, None, _p(("projects", {"name": "A", "description": "a"})))
+    first["local"]["items"][0]["fields"]["description"] = "mine"
+    m = sync.merge(first["base"], first["local"], _p())
+    assert m["local"]["items"][0]["fields"]["description"] == "mine" and m["notes"][0]["kind"] == "removed_there_changed_here"
+
+
+def test_a_read_covers_only_its_sections():
+    first = sync.merge(None, None, _p(("experience", {"title": "Intern", "org": "CSIRO"}), ("projects", {"name": "A"}), basics={"headline": "H"}))
+    m = sync.merge(first["base"], first["local"], _p(("projects", {"name": "A"}), ("projects", {"name": "B"})), scope=["projects"])
+    assert [i["section"] for i in m["local"]["items"]] == ["experience", "projects", "projects"]   # experience wasn't read: kept
+    assert m["local"]["basics"] == {"headline": "H"}
+
+
+def test_same_school_with_the_degree_worded_differently_is_one_item():
+    old = [{"section": "education", "fields": {"org": "Australian National University", "degree": "Master of Computing"}}]
+    new = [{"section": "education", "fields": {"org": "The Australian National University", "degree": "Master's degree, Computing"}}]
+    assert sync.match(old, new) == {0: 0}   # not "removed one, added another"
 
 
 def test_current_is_checked():
@@ -137,36 +164,92 @@ def test_signed_out_by_address():
 
 
 # ---- the routes Claude and the window use ---------------------------------------------------
-def test_routes_from_choice_to_plan_to_report(server, data_file):
+def test_routes_from_a_read_to_edits_to_report(server, data_file):
     st, r = server.req("GET", "/api/autofill")
     assert st == 200 and [s["id"] for s in r["sites"]] == ["linkedin", "boss"]
     assert r["sites"][0]["changes"] is None and r["browser"]["state"] == "off"
     st, v = server.req("GET", "/api/autofill/linkedin")
-    assert v["version_id"] == "ALL" and v["lang"] == "en" and v["plan"]["read"] is False
-    st, v = server.req("GET", "/api/autofill/boss")
-    assert v["lang"] == "zh"   # the site's usual language when the file has it
+    assert v["version_id"] == "ALL" and v["lang"] == "en" and v["synced"] is False and not v["route"]["recorded"]
+    assert server.req("GET", "/api/autofill/boss")[1]["lang"] == "zh"   # the site's usual language when the file has it
     st, v = server.req("PUT", "/api/autofill/linkedin", {"version_id": "RES-TECH-EN", "lang": "zh"})
     assert st == 200 and v["version_id"] == "RES-TECH-EN" and v["lang"] == "zh"
     assert server.req("PUT", "/api/autofill/linkedin", {"version_id": "NOPE"})[0] == 404
     assert server.req("PUT", "/api/autofill/linkedin", {"lang": "fr"})[0] == 400
     server.req("PUT", "/api/autofill/linkedin", {"version_id": "ALL", "lang": "en"})
     assert server.req("POST", "/api/autofill/linkedin/apply", {})[0] == 409   # nothing read yet
+    assert server.req("PUT", "/api/autofill/linkedin/local", {"op": "set", "item": "basics", "field": "headline", "value": "x"})[0] == 400
 
+    # Claude's reading: the first copy of the profile
     st, r = server.req("POST", "/api/autofill/linkedin/current", {"items": [{"section": "pets"}]})
     assert st == 400 and "items[0].section" in r["error"]
     st, r = server.req("POST", "/api/autofill/linkedin/current", SITE_NOW)
-    assert st == 200 and "2 to add, 3 to change, 1 only on LinkedIn, 1 already the same" in r["text"]
-    st, v = server.req("GET", "/api/autofill/linkedin")
-    assert v["plan"]["read"] and v["read_at"] and v["current"]["url"] == SITE_NOW["url"]
-    # state lives next to the data file
-    assert (data_file.parent / ".studio" / "autofill" / "linkedin.json").is_file()
+    assert st == 200 and "synced." in r["text"] and "projects: Paper2Exam" in r["text"]
+    v = server.req("GET", "/api/autofill/linkedin")[1]
+    assert v["synced"] and v["synced_at"] and v["pending"] == [] and v["local"] == v["base"]
+    assert [i["fields"].get("start") for i in v["local"]["items"]] == ["2025-07", "2025-08", "2022-03"]   # dates as YYYY-MM
+    assert (data_file.parent / ".studio" / "autofill" / "linkedin.json").is_file()   # next to the data file
+    # the resume, next to the copy: wording it differs in, entries and skills the copy lacks
+    ref = v["reference"]
+    p2e = next(i for i in v["local"]["items"] if i["fields"].get("name") == "Paper2Exam")
+    assert ref["items"][p2e["id"]]["key"] == "EXP-002" and "description" in ref["items"][p2e["id"]]["fields"]
+    assert any(m["key"] == "EXP-003" for m in ref["missing"]) and "TypeScript" in ref["skills"]
+    assert ref["basics"]["headline"] == "MSc Computing student"
 
+    # the user's edits: each one a change to push
+    def edit(**op):
+        st, v = server.req("PUT", "/api/autofill/linkedin/local", op)
+        assert st == 200, v
+        return v
+    edit(op="set", item="basics", field="headline", value="ML engineer in training")
+    edit(op="set", item=p2e["id"], field="description", value=ref["items"][p2e["id"]]["fields"]["description"])
+    old = next(i for i in v["local"]["items"] if i["fields"].get("name") == "Old hackathon thing")
+    edit(op="remove", item=old["id"])
+    v = edit(op="add", section="projects", fields=next(m for m in ref["missing"] if m["key"] == "EXP-003")["fields"])
+    new_id = v["item"]
+    v = edit(op="add_skills", skills=["TypeScript"])
+    assert server.req("PUT", "/api/autofill/linkedin/local", {"op": "set", "item": p2e["id"], "field": "company", "value": "x"})[0] == 400
+    assert server.req("PUT", "/api/autofill/linkedin/local", {"op": "remove", "item": "nope"})[0] == 404
+    ops = {p["id"]: p["op"] for p in v["pending"]}
+    assert ops == {"basics.headline": "update", f"item.{p2e['id']}": "update", f"item.{new_id}": "add",
+                   f"item.{old['id']}": "remove", "skills": "update"}
+    assert all(p["checked"] for p in v["pending"])
+    # untick one, undo one
+    v = server.req("PUT", "/api/autofill/linkedin", {"ticks": {"skills": False}})[1]
+    assert not next(p for p in v["pending"] if p["id"] == "skills")["checked"]
+    v = edit(op="revert", change=f"item.{old['id']}")
+    assert f"item.{old['id']}" not in {p["id"] for p in v["pending"]}
+
+    # reports from the push: done moves the site's side on
     assert server.req("POST", "/api/autofill/linkedin/report", {"id": "nope", "state": "done"})[0] == 404
-    assert server.req("POST", "/api/autofill/linkedin/report", {"id": "skills", "state": "great"})[0] == 400
-    assert server.req("POST", "/api/autofill/linkedin/report", {"id": "skills", "state": "done", "note": "added 7"})[0] == 200
-    st, v = server.req("GET", "/api/autofill/linkedin")
-    assert next(i for i in v["plan"]["items"] if i["id"] == "skills")["applied"]["state"] == "done"
+    assert server.req("POST", "/api/autofill/linkedin/report", {"id": "basics.headline", "state": "great"})[0] == 400
+    assert server.req("POST", "/api/autofill/linkedin/report", {"id": "basics.headline", "state": "done"})[0] == 200
+    v = server.req("GET", "/api/autofill/linkedin")[1]
+    assert v["base"]["basics"]["headline"] == "ML engineer in training"
+    assert "basics.headline" not in {p["id"] for p in v["pending"]}
     assert server.req("GET", "/api/autofill/nowhere")[0] == 404
+
+    # the site changed the same field meanwhile: a conflict, and pushing waits for it
+    now = json.loads(json.dumps(SITE_NOW))
+    now["basics"]["headline"] = "ML engineer in training"
+    now["items"][1]["fields"]["description"] = "Turns research papers into exams"
+    server.req("POST", "/api/autofill/linkedin/current", now)
+    v = server.req("GET", "/api/autofill/linkedin")[1]
+    key = f"{p2e['id']}.description"
+    assert list(v["conflicts"]) == [key] and v["conflicts"][key]["site"] == "Turns research papers into exams"
+    st, r = server.req("POST", "/api/autofill/linkedin/apply", {})
+    assert st == 409 and "冲突" in r["error"]
+    v = edit(op="settle", key=key, take="site")
+    assert v["conflicts"] == {} and f"item.{p2e['id']}" not in {p["id"] for p in v["pending"]}
+
+
+def test_over_the_limit_blocks_apply(server):
+    server.req("POST", "/api/autofill/linkedin/current", SITE_NOW)
+    server.req("PUT", "/api/autofill/linkedin/local", {"op": "set", "item": "basics", "field": "about", "value": "y" * 3000})
+    v = server.req("GET", "/api/autofill/linkedin")[1]
+    about = next(p for p in v["pending"] if p["id"] == "basics.about")
+    assert about["fields"][0]["limit"] == 2600 and about["fields"][0]["over"]
+    st, r = server.req("POST", "/api/autofill/linkedin/apply", {})
+    assert st == 409 and "about" in r["error"]
 
 
 def test_the_user_picks_the_sites(server, data_file):
@@ -180,7 +263,7 @@ def test_the_user_picks_the_sites(server, data_file):
     assert server.req("GET", "/api/autofill/linkedin")[0] == 404
     st, r = server.req("POST", "/api/autofill/sites", {"preset": "linkedin"})
     assert st == 200 and r["site"]["id"] == "linkedin" and [s["id"] for s in r["sites"]] == ["boss", "linkedin"]
-    assert server.req("GET", "/api/autofill/linkedin")[1]["plan"]["read"]
+    assert server.req("GET", "/api/autofill/linkedin")[1]["synced"]
 
     # any other site, by its address: every section until a read says what it has
     assert server.req("POST", "/api/autofill/sites", {"name": "x", "home": "not an address"})[0] == 400
@@ -191,13 +274,13 @@ def test_the_user_picks_the_sites(server, data_file):
     assert seek["id"] == "seek" and seek["home"] == "https://www.seek.com.au/profile/me" and not seek["preset"]
     assert seek["sections"] == ["experience", "education", "projects", "awards", "skills"] and not seek["learned"]
     v = server.req("GET", "/api/autofill/seek")[1]
-    assert v["lang"] == "en" and v["plan"]["read"] is False
+    assert v["lang"] == "en" and v["synced"] is False
     # a second site on the same domain gets an id of its own
     assert server.req("POST", "/api/autofill/sites", {"name": "SEEK 2", "home": "https://seek.com.au"})[1]["site"]["id"] == "seek-2"
     server.req("DELETE", "/api/autofill/seek-2")
 
-    # the first read has to say what the site has; the plan then fits it
-    now = {"url": "https://www.seek.com.au/profile/me", "basics": {"about": ""}, "drafts": {"about": "MSc student."},
+    # the first read has to say what the site has; the copy then fits it
+    now = {"url": "https://www.seek.com.au/profile/me", "basics": {"about": ""},
            "items": [{"section": "experience", "key": None, "fields": {"title": "Tutor", "org": "ANU", "start": "2026-02"}}]}
     st, r = server.req("POST", "/api/autofill/seek/current", now)
     assert st == 400 and "`site`" in r["error"]
@@ -210,9 +293,7 @@ def test_the_user_picks_the_sites(server, data_file):
     v = server.req("GET", "/api/autofill/seek")[1]
     assert v["site"]["learned"] and v["site"]["sections"] == ["experience", "education", "skills"]
     assert v["site"]["fields"]["experience"] == ["title", "org", "start", "end", "description"]
-    assert {i["section"] for i in v["plan"]["items"]} <= {"basics", "experience", "education", "skills"}
-    about = next(i for i in v["plan"]["items"] if i["id"] == "basics.about")
-    assert about["fields"][0]["limit"] == 500
+    assert v["site"]["limits"] == {"basics.about": 500} and v["local"]["items"][0]["fields"]["title"] == "Tutor"
     # later reads may leave `site` out
     assert server.req("POST", "/api/autofill/seek/current", now)[0] == 200
 
@@ -231,22 +312,15 @@ def test_the_user_picks_the_sites(server, data_file):
     from resume.service import Studio
     a = Autofill(Studio(data_file))
     li = a.site("linkedin")
-    assert "Skip the Featured card." in prompts.read_context(li, "d.yaml", {"items": []}, "en")
-    assert "new to Resume Studio" not in prompts.read_context(li, "d.yaml", {"items": []}, "en")
-    ctx = prompts.read_context(a.site("seek"), "d.yaml", {"items": []}, "en")
+    assert "Skip the Featured card." in prompts.learn_context(li, "d.yaml", None, "", False)
+    assert "new to Resume Studio" not in prompts.learn_context(li, "d.yaml", None, "", False)
+    ctx = prompts.learn_context(a.site("seek"), "d.yaml", None, "", True)
     assert "Profile → Career history." in ctx and '"site":' in ctx and "Last time it had" in ctx
 
     # every site can go, presets too: the page then asks which to add
     for sid in ("linkedin", "boss", "seek"):
         server.req("DELETE", "/api/autofill/" + sid)
     assert server.req("GET", "/api/autofill")[1]["sites"] == []
-
-
-def test_over_the_limit_blocks_apply(server):
-    server.req("POST", "/api/autofill/linkedin/current", SITE_NOW)
-    server.req("PUT", "/api/autofill/linkedin", {"choices": {"basics.about": {"fields": {"about": "y" * 3000}}}})
-    st, r = server.req("POST", "/api/autofill/linkedin/apply", {})
-    assert st == 409 and "about" in r["error"]
 
 
 def run_steps(server, data_file, steps: dict):
@@ -335,58 +409,94 @@ def test_browser_command_drives_a_real_page(live, data_file, fake_site):
     assert live.req("GET", "/api/browser")[1]["state"] == "off"
 
 
-def test_read_then_apply_with_claude(live, data_file, fake_claude):
+FAKE_ROUTE_SCRIPT = """async (h) => ({
+  basics: { headline: h.text(h.one('#headline')) },
+  items: [
+    ...h.all('li', h.section('Experience')).map((li) => ({ section: 'experience', fields: {
+      title: h.text(h.one('b', li)), org: h.text(h.one('.co', li)),
+      start: h.text(h.one('.dt', li)).split('–')[0].trim(), description: h.text(h.one('.ds', li)) } })),
+    ...h.all('li', h.section('Education')).map((li) => ({ section: 'education', fields: {
+      org: h.text(li.children[0]), degree: h.text(li.children[1]) } })),
+  ],
+  skills: h.all('.pill', h.section('Skills')).map((e) => h.text(e)),
+})"""
+
+
+def test_claude_records_a_route_then_checks_need_no_claude(live, data_file, fake_claude, fake_site):
     b = [sys.executable, str(BROWSER_PY), "--data", str(data_file)]
-    now = {**SITE_NOW, "url": PRESETS["linkedin"].home}
+    page = PRESETS["linkedin"].home
+    route_json = json.dumps({"pages": [{"url": page, "reads": ["basics", "experience", "education", "skills"], "script": FAKE_ROUTE_SCRIPT}]})
     run_steps(live, data_file, {
-        "读取": [{"argv": b + ["open", PRESETS["linkedin"].home]}, {"argv": b + ["snapshot"]},
-                 {"argv": b + ["profile", "linkedin", "--stdin"], "stdin": json.dumps(now)}],
-        "逐条": [{"argv": b + ["report", "linkedin", "basics.headline", "doing"]},
-                 {"argv": b + ["report", "linkedin", "basics.headline", "done"]},
-                 {"argv": b + ["report", "linkedin", "projects:EXP-003", "failed", "--note", "no Projects card"]}],
+        "记录": [{"argv": b + ["open", page]}, {"argv": b + ["extract", "--stdin"], "stdin": FAKE_ROUTE_SCRIPT},
+                 {"argv": b + ["route", "linkedin", "--stdin"], "stdin": route_json}, {"argv": b + ["sync", "linkedin"]}],
     })
-    st, r = live.req("POST", "/api/autofill/linkedin/open", {})
-    assert st == 200 and r["signed_out"] is False and r["title"] == "Alex Chen | Profile"
-    st, r = live.req("POST", "/api/autofill/linkedin/read", {})
-    assert st == 200
+    # the first check: Claude reads the site and records the route
+    st, r = live.req("POST", "/api/autofill/linkedin/check", {})
+    assert st == 200 and r["mode"] == "claude"
     chat = r["chat"]
     assert chat["workspace"] == "autofill" and chat["site"] == "linkedin"
-    live.wait_idle(chat["id"], timeout=60)
+    live.wait_idle(chat["id"], timeout=90)
     first = calls(fake_claude)[-1]
-    assert "LinkedIn" in first["stdin"] and "All entries" not in first["stdin"]
-    # the chat shows only the short message; Claude gets the procedure with it
+    assert "record" in first["stdin"].lower() and "never by generated class names" in first["stdin"]
     st, ch = live.req("GET", "/api/chats/" + chat["id"])
-    assert "READ the" not in ch["messages"][0]["text"] and "LinkedIn" in ch["messages"][0]["text"]
-    ctx = Path(first["argv"][first["argv"].index("--append-system-prompt-file") + 1]).read_text(encoding="utf-8")
-    assert str(BROWSER_PY) in ctx   # every message in these chats: how to use the browser
-    assert "READ the" in first["stdin"] and '"key": "EXP-002"' in first["stdin"] and "Notify network" in first["stdin"]
+    assert "never by generated" not in ch["messages"][0]["text"]   # the chat shows only the short message
     runs = calls(Path(str(fake_claude) + ".run"))
     assert all(x["code"] == 0 for x in runs), runs
-    assert "saved. The window now shows" in runs[-1]["out"]
-    st, v = live.req("GET", "/api/autofill/linkedin")
-    assert v["plan"]["read"] and v["read_chat"] == chat["id"]
+    extracted = json.loads(runs[1]["out"])
+    assert extracted["basics"] == {"headline": "Student at ANU"} and extracted["skills"] == ["Python"]
+    assert "Running it read this" in runs[2]["out"] and "CSIRO" in runs[2]["out"]
+    assert "synced." in runs[3]["out"]
+    v = live.req("GET", "/api/autofill/linkedin")[1]
+    assert v["route"]["recorded"] and v["synced"] and v["last_check"]["mode"] == "route"
+    loc = v["local"]
+    intern = next(i for i in loc["items"] if i["section"] == "experience")
+    assert intern["fields"] == {"title": "Research Intern", "org": "CSIRO", "start": "2024-02", "description": "Mapped flood risk."}
+    assert [i["section"] for i in loc["items"]] == ["experience", "education"] and loc["skills"] == ["Python"]
 
-    # the user unticks two and edits one; only the rest go to Claude, with the edited text
-    live.req("PUT", "/api/autofill/linkedin", {"choices": {"basics.about": {"checked": False}, "skills": {"checked": False},
-                                                           "projects:EXP-002": {"checked": False},
-                                                           "basics.headline": {"fields": {"headline": "ML engineer in training"}}}})
+    # the user edits the copy here, and someone edits the site: "check for updates" runs the route, no Claude
+    live.req("PUT", "/api/autofill/linkedin/local", {"op": "set", "item": "basics", "field": "headline", "value": "ML engineer in training"})
+    live.inst.browser._eval_page("DB.positions[0].desc = 'Mapped flood risk for 3 councils.'; paint(); 1")
+    n_claude = len(calls(fake_claude))
+    st, r = live.req("POST", "/api/autofill/linkedin/check", {"wait": True})
+    assert st == 200 and r["mode"] == "route" and r["ok"] and r["synced"] == 1, r
+    assert len(calls(fake_claude)) == n_claude   # no Claude
+    v = live.req("GET", "/api/autofill/linkedin")[1]
+    intern = next(i for i in v["local"]["items"] if i["section"] == "experience")
+    assert intern["fields"]["description"] == "Mapped flood risk for 3 councils."
+    assert [p["id"] for p in v["pending"]] == ["basics.headline"]   # mine still waits to go up
+
+    # push: Claude gets exactly the ticked changes, then the route checks the site
+    run_steps(live, data_file, {"逐条": [{"argv": b + ["report", "linkedin", "basics.headline", "doing"]},
+                                       {"argv": b + ["report", "linkedin", "basics.headline", "done"]}]})
+    t0 = time.time()
     st, r = live.req("POST", "/api/autofill/linkedin/apply", {})
     assert st == 200, r
     live.wait_idle(r["chat"]["id"], timeout=60)
     last = calls(fake_claude)[-1]
-    block = last["stdin"][last["stdin"].index("## The approved changes"):]
-    approved = json.loads(block.split("```")[1])
-    assert [a["id"] for a in approved] == ["basics.headline", "projects:EXP-003"]
-    assert approved[0]["set"] == {"headline": "ML engineer in training"}
-    st, v = live.req("GET", "/api/autofill/linkedin")
-    items = {i["id"]: i for i in v["plan"]["items"]}
-    assert items["basics.headline"]["applied"]["state"] == "done"
-    assert items["projects:EXP-003"]["applied"] == {**items["projects:EXP-003"]["applied"], "state": "failed", "note": "no Projects card"}
-    assert v["applying"] == []   # cleared when the chat ended
-    # the chat list knows these chats belong to Autofill
+    approved = json.loads(last["stdin"][last["stdin"].index("## The approved changes"):].split("```")[1])
+    assert approved == [{"id": "basics.headline", "op": "update", "section": "basics", "now_on_site": "headline",
+                         "set": {"headline": "ML engineer in training"}}]
+    deadline = time.time() + 30
+    while time.time() < deadline and not (live.req("GET", "/api/autofill/linkedin")[1].get("last_check") or {}).get("at", 0) > t0:
+        time.sleep(0.3)
+    v = live.req("GET", "/api/autofill/linkedin")[1]
+    assert v["applying"] == [] and v["pending"] == []
+    # fake Claude didn't really type it, so the check after the push shows the site still has the old one:
+    # that is a site-side change against what was reported, not a silent loss of the user's text
+    assert v["local"]["basics"]["headline"] == "Student at ANU"
+
+    # a redesign: the route stops reading, and the window offers to let Claude record it anew
+    live.inst.browser._eval_page("localStorage.setItem('exp-heading', 'Work'); 1")
+    st, r = live.req("POST", "/api/autofill/linkedin/check", {"wait": True})
+    assert st == 200 and not r["ok"] and ("experience came back empty" in r["error"] or "the script stopped" in r["error"]), r
+    v = live.req("GET", "/api/autofill/linkedin")[1]
+    assert v["route"]["broken"] and v["local"]["items"][0]["section"] == "experience"   # the copy is untouched
+    st, r = live.req("POST", "/api/autofill/linkedin/learn", {})
+    assert st == 200 and r["mode"] == "claude"
+    live.wait_idle(r["chat"]["id"], timeout=60)
+    assert "stopped working" in calls(fake_claude)[-1]["stdin"] and json.dumps(FAKE_ROUTE_SCRIPT)[1:40] in calls(fake_claude)[-1]["stdin"]
     st, lst = live.req("GET", "/api/chats")
-    mine = [c for c in lst["chats"] if c.get("workspace") == "autofill"]
-    assert len(mine) == 2
+    assert len([c for c in lst["chats"] if c.get("workspace") == "autofill"]) == 3
 
 
 def test_signed_out_shows_up(live, data_file, fake_site, monkeypatch):
@@ -417,14 +527,6 @@ def test_degree_first_resumes_and_fields_a_site_lacks(data_file):
     _, errs = profile.validate_current({"items": [{"section": "projects", "fields": {"role": "x"}}]}, LI)
     assert errs and "not known for projects on LinkedIn" in errs[0]
 
-
-def test_same_school_with_the_degree_worded_differently_is_one_item(data_file):
-    plan = plan_for(data_file, {"items": [{"section": "education", "key": None, "fields": {
-        "org": "Australian National University", "degree": "Master's degree, Computing", "start": "2025-07", "end": "2027-06"}}]})
-    items = {i["id"]: i for i in plan["items"]}
-    assert "education:site0" not in items                     # not "remove this" plus "add that"
-    edu = items["education:EXP-001"]
-    assert edu["op"] == "update" and [f["name"] for f in edu["fields"]] == ["degree", "description"]
 
 def test_browser_commands_become_steps():
     from core.browser import steps_of

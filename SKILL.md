@@ -245,25 +245,35 @@ The window connects a job-posting tool. Today that is
 
 ## Online profiles (the Autofill workspace, Ctrl+3)
 
-The window keeps the user's online profiles saying what a resume version says, on the sites the user
-lists there: LinkedIn and BOSS直聘 come with a guide, and any other site can be added by its address
-(with the user's own notes for you, which every read and apply passes on). There is no
-browser extension: Resume Studio starts **its own browser** (Google Chrome, else Microsoft Edge) with a
-profile of its own in `<skill>/.local/browser/` and drives it over the DevTools protocol
+The window keeps a **local copy** of each of the user's online profiles, on the sites the user lists
+there: LinkedIn and BOSS直聘 come with a guide, and any other site can be added by its address (with
+the user's own notes for you, which every read and push passes on). The user edits the copy in the
+window, or the profile on the site; the two are kept in sync like a working copy with its remote.
+There is no browser extension: Resume Studio starts **its own browser** (Google Chrome, else Microsoft
+Edge) with a profile of its own in `<skill>/.local/browser/` and drives it over the DevTools protocol
 (`core/browser.py`). The user signs in to each site there once, by hand; it stays signed in.
 
-- **What the profile should say is worked out by the window, not by you** (`autofill/profile.py`): the
-  chosen version's entries mapped to the site's sections, bullets as plain lines, dates as `YYYY-MM` /
-  `present`. Only text resume.yaml has no field for (LinkedIn's About, BOSS直聘's 个人优势) is drafted by
-  you, from the visible layer only; `notes` stay private.
-- **Reading** ("Read my … profile"): a chat reads the site with the browser command below and sends what
-  it found as JSON (`browser.py profile <site>`). The window compares it field by field and lists every
-  difference; the user ticks and edits them. Nothing on the site changes in that chat. For a site the
-  user added, the first read also says what the site has (`"site": {sections, basics, limits, lacks}`
-  in the JSON); the window keeps it, so the plan only offers what fits there.
-- **Applying** ("Make these changes"): a chat gets exactly the ticked changes, with the user's edits, and
-  makes them one at a time, reporting each (`browser.py report <site> <id> doing|done|failed`). It never
-  touches anything else: no messages, connections, posts, applications, or 求职状态.
+- **Three versions per site** (`autofill/sync.py`): what the site said at the last sync (`base`), the
+  user's copy (`local`), and a fresh read. "Check for updates" merges a read in: what changed only on
+  the site comes into the copy, what changed only in the copy waits to be pushed, and a field changed
+  on both sides is a conflict the user settles in the window. Dates are kept as `YYYY-MM` / `present`.
+- **The read route** (`autofill/route.py`): the first time (or when the site has changed), a chat reads
+  the site and **records how to read it**: per page, a short read-only script `async (h) => ({basics,
+  items, skills})` that finds things by headings, roles, labels and text, never by generated class
+  names. Test a script on the open page with `browser.py extract`, save the route with `browser.py
+  route <site>` (it runs once and prints what it read), then `browser.py sync <site>`. After that,
+  "Check for updates" runs the route by itself, without you. A route that fails, or reads a section
+  that had items as empty, counts as broken, and the window offers a chat to record it anew. Only when
+  a part can't be scripted, send that reading once with `browser.py profile <site>`. For a site the user
+  added, the route (or the reading) also says what the site has (`"site": {sections, basics, limits,
+  lacks}`); the window keeps it.
+- **Pushing** ("Make these changes"): a chat gets exactly the ticked changes between the copy and the
+  site, and makes them one at a time, reporting each (`browser.py report <site> <id> doing|done|failed`).
+  A change reported done counts as on the site; the route then checks the site again. Never touch
+  anything else: no messages, connections, posts, applications, or 求职状态.
+- **The resume is a reference, not the source.** The window shows, next to the copy, where the chosen
+  resume version words a field differently and which of its entries the copy lacks; the user takes
+  them with a click. A profile may say things the resume doesn't.
 - Sign-ins, verification codes and captchas are always the user's: stop and ask (AskUserQuestion) and
   never type a password. `browser.py signed-out <site>` makes the window show its sign-in banner.
 - **The browser command** (standard library only; the window must be open):
@@ -277,14 +287,16 @@ python <skill>/scripts/browser.py select <ref> "<option>"   # native selects; cu
 python <skill>/scripts/browser.py press Enter       # Escape, Tab, ArrowDown, ctrl+a…
 python <skill>/scripts/browser.py screenshot        # prints a PNG path to open with Read
 python <skill>/scripts/browser.py upload <ref> <file>       # only files inside the data folder (exported PDFs)
+python <skill>/scripts/browser.py extract --file read.js    # run a read script on the open page, print its JSON
+python <skill>/scripts/browser.py route <site> --file route.json   # save the read route and run it once
+python <skill>/scripts/browser.py sync <site>       # check for updates now, by the route
 ```
 
 - Every message in an Autofill chat carries a note on how to use the browser, so a user's own request
   there ("add my newest project to LinkedIn") works the same way: one change, checked, then report.
 - State per data file is in `.studio/autofill/`: `sites.json` (the user's list, in their order) and
-  `<site>.json` per site (what was read, ticks and edits, how applying went; it stays when a site is
-  taken off the list). The presets and their guides are in `autofill/sites.py`; a site has no
-  selectors, so a redesign of it changes nothing here.
+  `<site>.json` per site (the copy, the last sync, the route, ticks, how pushing went; it stays when a
+  site is taken off the list). The presets and their guides are in `autofill/sites.py`.
 
 ## Layout of this folder
 
@@ -300,9 +312,9 @@ python <skill>/scripts/browser.py upload <ref> <file>       # only files inside 
 - `jobs/`: the job-posting tool behind Job search and the Applications tab: the contract any tool implements (`base.py`),
   the career-ops connector (`career_ops.py`), resume.yaml as the Markdown CV such tools read
   (`cv_markdown.py`), and its routes (`api.py`).
-- `autofill/`: online profiles kept in step with a version: the sites (`sites.py`), what a version gives a site and
-  the plan between that and what was read (`profile.py`), per-file state (`service.py`), what Claude is told
-  (`prompts.py`) and the routes (`api.py`).
+- `autofill/`: local copies of online profiles: the sites (`sites.py`), the profile shape and what a resume version
+  suggests (`profile.py`), the sync (`sync.py`), the recorded read routes (`route.py`), per-file state (`service.py`),
+  what Claude is told (`prompts.py`) and the routes (`api.py`).
 - `web/`: the build-free front end; `web/i18n/<lang>.json` are the interface translations (keys are the
   English text). `python scripts/i18n_keys.py` lists missing or broken translations.
 - `scripts/`: `studio.py` (start; `--window` for the native window), `render.py` (command-line render),
