@@ -93,7 +93,7 @@ def main() -> None:
         current["state"].write_text(json.dumps({"url": url, "pid": os.getpid()}), encoding="utf-8")
 
     def cleanup() -> None:
-        inst.chats.cancel_all()
+        inst.shutdown()   # chats, watchers, and career-ops' web interface if it was started
         try:
             current["state"].unlink()
         except OSError:

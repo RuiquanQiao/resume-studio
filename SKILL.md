@@ -133,6 +133,8 @@ versions:
     sections: [education, projects]   # this job's own section order; unlisted sections go last
     hide_sections: [awards]  # optional
     hide_contacts: [phone]   # optional: hide contacts by label
+    postings: [{tool: career-ops, id: '12'}]   # optional: the evaluated postings this resume is sent to
+                                               # (older files may have one `posting: {…}`; same meaning)
     layout: {font_size: 10, margin_x: 1.4, margin_y: 1.2, line_spread: 1.0,
              section_sep: 6, entry_sep: 3, item_sep: 1, accent: 1F4E79, paper: a4,
              font: '', cjk_font: ''}   # keys left out use the defaults
@@ -207,6 +209,40 @@ versions:
 - **A new job**: append to `versions` with the next `JOB-xxx`, a `label` and `headline`, `lang` (usually
   the first of `settings.languages`), ALL's `sections` order, and the chosen entry IDs in `entries`.
 
+## Job postings (Job search and the Applications tab, career-ops)
+
+The window connects a job-posting tool. Today that is
+[career-ops](https://github.com/santifer/career-ops) (MIT, by santifer), installed in
+`<skill>/.local/providers/career-ops` or a folder the user picked. Resume Studio never copies its logic:
+
+- **Two workspaces.** *Resume* is the editor, with an Applications tab (evaluations next to the preview).
+  *Job search* shows career-ops' own web interface (its `web/` app, built and run by the window on loopback,
+  through a proxy that only lets the window's frame in). The user sees everything career-ops' interface
+  shows there; what it lacks runs as chats.
+- **Its chats run in its folder.** Evaluating a posting, setup, any of its modes ("All of career-ops" lists
+  every one, read from `modes/`), interview prep and the like are Claude Code chats whose working directory
+  is the career-ops checkout. Its own CLAUDE.md / AGENTS.md and modes apply there, and the window adds a
+  short note. Those chats may still edit resume.yaml (the data folder is an `--add-dir`); the rules above
+  apply.
+- **`cv.md` and `article-digest.md` in career-ops come from resume.yaml.** Before each message they are
+  written from the library (ALL, in one resume language; the entries' notes become the proof points). They
+  are never written over edits made on career-ops' side: those show as a conflict the user resolves. To
+  change the CV, edit resume.yaml, not those files.
+- **career-ops' targeting profile comes from the fact layer.** Its setup chat fills `config/profile.yml`,
+  `modes/_profile.md` and `portals.yml`'s title filters from `profile` (name, contacts), `profile.notes`
+  (the job-search background, constraints and preferences) and the jobs' labels and headlines (the kinds of
+  role applied for), asking only what is missing. `profile.notes` is private: use it to target and score,
+  never copy it into anything an employer reads. When it or the jobs change, the window offers an update.
+- **A resume is a job for a kind of role, never for one company.** For a posting the user picks one of the
+  existing jobs (the window ranks them by how much of the posting they cover) and it is linked in that job's
+  `postings`; one posting is linked to one job. Only when none fits does a chat adjust a job or start a new
+  one: then the user has asked you to pick its `entries` (an exception to rule 6), write its `headline` for
+  that kind of role and keep it to one page. Never put a company's name, or anything only true of one
+  posting, into a resume. Library bullets stay as they are (every job shares them); propose rewordings and
+  let the user decide.
+- **Statuses go through career-ops' own writer** (`set-status.mjs`); the tracker and reports are read as
+  career-ops documents them.
+
 ## Layout of this folder
 
 - `Resume Studio.exe`: double-click to open the window (source in `launcher/`, icon in `assets/`, rebuilt
@@ -214,9 +250,13 @@ versions:
 - `resume.yaml`, `.studio/`, `exports/`: the user's data, chats, history, preferences and exported PDFs;
   all git-ignored.
 - `core/`: the resume-independent "skill + window" layer: YAML store, file watcher, SSE, HTTP server,
-  Claude Code sessions (`chat.py`), interface language (`i18n.py`).
+  Claude Code sessions (`chat.py`), interface language (`i18n.py`), and hosting a skill's own web interface in
+  the window (`webhost.py`).
 - `resume/`: the resume itself: data model, resume languages (`langs.py`), renderer (`render/`, LaTeX
   today, with room for Typst), templates (`templates/latex/*.tex.j2`), API, app assembly (`app.py`).
+- `jobs/`: the job-posting tool behind Job search and the Applications tab: the contract any tool implements (`base.py`),
+  the career-ops connector (`career_ops.py`), resume.yaml as the Markdown CV such tools read
+  (`cv_markdown.py`), and its routes (`api.py`).
 - `web/`: the build-free front end; `web/i18n/<lang>.json` are the interface translations (keys are the
   English text). `python scripts/i18n_keys.py` lists missing or broken translations.
 - `scripts/`: `studio.py` (start; `--window` for the native window), `render.py` (command-line render).

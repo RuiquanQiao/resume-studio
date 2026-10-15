@@ -18,8 +18,9 @@ Your data lives in this folder: `resume.yaml`, plus `.studio/` (chats, history) 
 All three are git-ignored, so pulling updates never touches them. Settings (the gear, Ctrl+,) shows
 the data file and can open or start another one anywhere; the window remembers it in `.local/prefs.json`.
 
-Needs Python 3.10+, `xelatex` (TeX Live / MiKTeX) and a logged-in Claude Code for the chat.
-Everything is installed into this folder (`.venv`, `.cache`); nothing global.
+Needs Python 3.10+, `xelatex` (TeX Live / MiKTeX) and a logged-in Claude Code for the chat; the
+Applications tab also needs git and Node.js 22+.
+Everything is installed into this folder (`.venv`, `.cache`, `.local/providers`); nothing global.
 The exe is a 16 KB launcher built from `launcher/Launcher.cs` by `scripts/build_launcher.py`
 with the C# compiler that ships with Windows.
 
@@ -37,6 +38,26 @@ with the C# compiler that ships with Windows.
 - **Safe co-editing**: Claude's edits refresh the form and preview; editing the same item from
   two places raises a conflict instead of overwriting; every save keeps a copy in `.studio/history`.
 - **Export** PDF + `.tex` to `settings.export_dir`.
+- **Two workspaces, switched in the top bar (Ctrl+1 / Ctrl+2)**:
+  - **Resume**: the library, the jobs and the preview, plus an **Applications** tab: paste a posting and
+    [career-ops](https://github.com/santifer/career-ops) (MIT, by santifer) evaluates it against your resume (a
+    fit score, what to stress, what's missing). "Resume to send" ranks your job targets by how much of the
+    posting each one already covers and links the one you pick: a resume is for a kind of role, never named
+    after a company. Only when none fits does Claude adjust one or start a new one.
+  - career-ops' targeting profile (roles, location, salary, deal-breakers) is filled by Claude from your
+    profile's fact layer and your job targets, and the window offers an update when they change.
+  - **Job search**: career-ops' own web interface fills the window: its pipeline table, discovery, scheduled
+    scans, follow-ups, portals, analytics and config, exactly as career-ops ships them. Resume Studio adds what
+    only it can: Claude's chat on the left (those chats run in career-ops' folder), "All of career-ops" (every
+    mode it has, found in its own files, each started as a chat), and "Pick a resume" for the posting open in
+    the frame.
+  - You don't need a terminal: Resume Studio installs career-ops into `.local/providers/` on request, builds its
+    web interface there the first time (about a minute; again only after an update), runs it on this computer
+    only, and stops it when the window closes. It reads only the files career-ops documents as canonical and
+    never changes career-ops' code. Updates go through career-ops' own updater; afterwards a check lists
+    anything that changed in what Resume Studio reads. The connector sits behind a small contract
+    (`jobs/base.py`), and hosting a tool's web interface is generic (`core/webhost.py`), so another tool can
+    replace career-ops later without changing the window.
 - **Your languages**: the window speaks your computer's language (English, 简体中文, 日本語, 한국어,
   Español, Français, Deutsch; pick another under the gear in the top bar). A resume can be written in any
   number of languages (Latin, Greek, Cyrillic, Chinese, Japanese, Korean), each with its own text,

@@ -184,6 +184,8 @@ class Studio:
                 v = to_plain(src)
                 v["id"] = vid
                 v["label"] = label or f"{v.get('label') or copy_from} (copy)"
+                v.pop("posting", None)    # the postings stay with the job they were sent with
+                v.pop("postings", None)
                 if model.is_all(src):  # every entry ticked; the job writes its own headline
                     v["entries"] = [str(e.get("id")) for e in doc.get("entries") or []]
                     v["headline"] = ""

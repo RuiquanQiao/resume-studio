@@ -89,6 +89,8 @@ function relTime(epoch) {
   return new Date(epoch * 1000).toLocaleDateString(LOCALE);
 }
 function autosize(ta) { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 200) + "px"; }
+// the chat is on screen: its tab in Resume, or the left pane of Job search (where it has no tab)
+const chatShown = () => ui.tab === "chat" || (W.ws === "jobs" && W.chat === "on");
 const fileUrl = (path) => `/api/chats/${ui.chat.id}/file?path=${encodeURIComponent(path)}`;
 
 // ---------------------------------------------------------------- Claude Code info
@@ -320,8 +322,9 @@ async function loadChats() {
     return;
   }
   ui.chat.list = r.chats;
-  const saved = store("chat");
-  const id = ui.chat.list.some((c) => c.id === saved) ? saved : (ui.chat.list[0] || {}).id || null;
+  const saved = store(chatKey());
+  const list = visibleChats();
+  const id = list.some((c) => c.id === saved) ? saved : (list[0] || {}).id || null;
   if (id) await openChat(id, { quiet: true });
   else { ui.chat.id = null; ui.chat.meta = null; ui.chat.messages = []; renderChatSelect(); renderChat(); renderPickers(); }
   paintChatDot(r.running);
@@ -331,13 +334,18 @@ function paintChatDot(running = ui.chat.running ? [ui.chat.id] : []) {
   const dot = $("#chat-dot");
   dot.classList.toggle("hidden", !running.length && !ui.chat.waiting.size);
   dot.classList.toggle("wait", ui.chat.waiting.size > 0);
+  renderWsTools();   // the dot on Job search's Claude button
 }
 
+// the latest call wins: an older one answering late (a chat that just ended, while the user switched
+// workspaces) must not bring its chat back
+let openSeq = 0;
 async function openChat(id, { quiet = false } = {}) {
+  const seq = ++openSeq;
   let r;
   try { r = await api("GET", "/api/chats/" + id); }
   catch (e) { // deleted elsewhere: fall back to whatever is left
-    store("chat", null);
+    store(chatKey(), null);
     const list = await api("GET", "/api/chats");
     ui.chat.list = list.chats;
     if (list.chats.length && list.chats[0].id !== id) return openChat(list.chats[0].id, { quiet });
@@ -345,6 +353,7 @@ async function openChat(id, { quiet = false } = {}) {
     renderChatSelect(); renderChat(); renderComposerState(); renderPickers();
     return;
   }
+  if (seq !== openSeq) return;
   if (ui.chat.id !== id) askEls.clear();
   ui.chat.id = id;
   ui.chat.meta = r.chat;
@@ -352,9 +361,9 @@ async function openChat(id, { quiet = false } = {}) {
   ui.chat.running = r.running;
   ui.chat.live = r.running ? { blocks: (r.live && r.live.blocks) || [] } : null;
   ui.chat.queue = (r.live && r.live.queue) || [];
-  store("chat", id);
+  store(chatKey(), id);
   renderChatSelect();
-  if (!quiet || ui.tab === "chat") renderChat();
+  if (!quiet || chatShown()) renderChat();
   renderComposerState();
   renderPickers();
   renderTasks();
@@ -364,11 +373,14 @@ async function openChat(id, { quiet = false } = {}) {
 let reloadTimer = 0;
 function reloadChat() {
   clearTimeout(reloadTimer);
-  reloadTimer = setTimeout(() => ui.chat.id && openChat(ui.chat.id, { quiet: ui.tab !== "chat" }), 30);
+  reloadTimer = setTimeout(() => ui.chat.id && openChat(ui.chat.id, { quiet: !chatShown() }), 30);
 }
 
 async function createChat() {
-  const c = await api("POST", "/api/chats", chatSettings());
+  // in Job search a new chat works in the tool's folder
+  const c = W.ws === "jobs" && jobsReady()
+    ? (await api("POST", "/api/jobs/chat", { ...chatSettings(), title: jobsTool().name })).chat
+    : await api("POST", "/api/chats", chatSettings());
   ui.chat.list = [c, ...ui.chat.list];
   return c;
 }
@@ -385,9 +397,9 @@ async function deleteChat() {
   try {
     const r = await api("DELETE", "/api/chats/" + ui.chat.id);
     ui.chat.list = r.chats;
-    const next = ui.chat.list[0];
+    const next = visibleChats()[0];
     if (next) await openChat(next.id);
-    else { ui.chat.id = null; ui.chat.meta = null; ui.chat.messages = []; store("chat", null); renderChatSelect(); renderChat(); renderPickers(); renderTasks(); }
+    else { ui.chat.id = null; ui.chat.meta = null; ui.chat.messages = []; store(chatKey(), null); renderChatSelect(); renderChat(); renderPickers(); renderTasks(); }
   } catch (e) { toast(e.message); }
 }
 
@@ -403,10 +415,33 @@ async function renameChat(title) {
   } catch (e) { toast(e.message); }
 }
 
+// Job search shows the chats that run in the tool's folder; Resume shows every chat
+function visibleChats() {
+  if (W.ws !== "jobs" || !jobsReady()) return ui.chat.list;
+  const id = (J.data.status.tool || {}).id;
+  return ui.chat.list.filter((c) => c.workspace === id);
+}
+const chatKey = () => (W.ws === "jobs" ? "chat-jobs" : "chat");
+
+// each workspace keeps its own open chat
+async function chatForWorkspace() {
+  const list = visibleChats();
+  const saved = store(chatKey());
+  const id = list.some((c) => c.id === saved) ? saved : list.some((c) => c.id === ui.chat.id) ? ui.chat.id : (list[0] || {}).id || null;
+  if (id && id !== ui.chat.id) { await openChat(id, { quiet: true }); return; }
+  if (!id) {
+    ui.chat.id = null; ui.chat.meta = null; ui.chat.messages = []; ui.chat.running = false; ui.chat.live = null;
+    renderComposerState(); renderPickers();
+  }
+  renderChatSelect();
+  renderChat();
+}
+
 function renderChatSelect() {
   const sel = ui.w.chat;
-  sel.disabled = !ui.chat.list.length;
-  sel.setOptions(ui.chat.list.map((c) => ({ value: c.id, label: c.title || t("New chat"),
+  const list = visibleChats();
+  sel.disabled = !list.length;
+  sel.setOptions(list.map((c) => ({ value: c.id, label: c.title || t("New chat"), desc: c.workspace || null,
     hint: ui.chat.waiting.has(c.id) ? t("waiting for you") : relTime(c.updated) })), ui.chat.id);
 }
 
@@ -415,6 +450,18 @@ function renderChat() {
   const log = $("#chat-log");
   log.replaceChildren();
   ui.chat.liveEl = null;
+  if (!ui.chat.messages.length && !ui.chat.running && W.ws === "jobs" && jobsReady()) {
+    const name = jobsTool().name;
+    const suggest = [
+      t("Scan job boards for new postings that fit me"), t("Where do my applications stand, and what should I do next?"),
+      t("Which follow-ups are due this week?"), t("Compare the postings I'm most interested in"),
+    ];
+    log.append(h("div", { class: "chat-welcome" },
+      h("div", { class: "t" }, t("Work with {name} and Claude", { name })),
+      h("div", null, ui.chat.available ? t("These chats run in {name}'s folder: Claude follows its modes and scripts, and still edits your resume when you ask. “All of {name}” above lists every mode.", { name }) : t("The claude command was not found. Install Claude Code and sign in first.")),
+      ui.chat.available && h("div", { class: "suggest" }, suggest.map((s) => h("button", { onclick: () => sendChat(s) }, s)))));
+    return;
+  }
   if (!ui.chat.messages.length && !ui.chat.running) {
     const roots = (doc().settings || {}).project_roots || [];
     const suggest = [
@@ -698,7 +745,7 @@ function renderLive(now = false) {
   const paint = () => {
     liveFrame = 0;
     const log = $("#chat-log");
-    if (ui.tab !== "chat" || !ui.chat.running || !ui.chat.live) return;
+    if (!chatShown() || !ui.chat.running || !ui.chat.live) return;
     const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
     const el = messageEl({ role: "assistant", blocks: ui.chat.live.blocks, live: true });
     if (ui.chat.liveEl && ui.chat.liveEl.isConnected) ui.chat.liveEl.replaceWith(el); else log.append(el);
@@ -717,7 +764,9 @@ function renderComposerState() {
   const parts = [];
   if (ui.versionId) parts.push(isAll() ? `ALL (${t("All entries")})` : t("the job “{name}”", { name: jobName(version()) }));
   if (ui.sel.kind === "entry" && entryById(ui.sel.id)) parts.push(`“${display(entryById(ui.sel.id).title) || entryLabel(entryById(ui.sel.id))}”`);
-  $("#chat-context").textContent = parts.length ? t("Claude knows you're looking at: {what}", { what: parts.join(" · ") }) : "";
+  const ws = (ui.chat.meta && ui.chat.meta.workspace) || (W.ws === "jobs" && jobsReady() ? jobsTool().name : null);
+  $("#chat-context").textContent = ws ? t("This chat runs in {name}'s folder; it can still edit your resume", { name: ws })
+    : parts.length ? t("Claude knows you're looking at: {what}", { what: parts.join(" · ") }) : "";
   paintChatDot();
 }
 
@@ -881,7 +930,7 @@ async function sendChat(text, { action = null, entryId = null, target = null, la
   if (!ui.chat.id) {
     const c = await createChat();
     ui.chat.id = c.id; ui.chat.meta = c; ui.chat.messages = [];
-    store("chat", c.id);
+    store(chatKey(), c.id);
     renderChatSelect();
   }
   setTab("chat");
@@ -952,7 +1001,7 @@ async function onChatEvent(type, ev) {
       renderLive(true);
     }
     updateWaiting(ev.chat, here ? undefined : ev.ask.status === "pending");
-    if (ev.ask.status === "pending" && (ev.chat !== ui.chat.id || ui.tab !== "chat" || document.hidden)) {
+    if (ev.ask.status === "pending" && (ev.chat !== ui.chat.id || !chatShown() || document.hidden)) {
       const what = ev.ask.kind === "question" ? t("Claude has a question") : ev.ask.kind === "plan" ? t("Claude's plan is waiting for your approval") : t("Claude wants to {action}", { action: toolAction(ev.ask.tool) });
       toast(what, { ms: 8000, action: { label: t("Show me"), fn: async () => { if (ev.chat !== ui.chat.id) await openChat(ev.chat); setTab("chat"); } } });
     }
@@ -996,14 +1045,14 @@ async function onChatEvent(type, ev) {
     ui.chat.running = false;
     ui.chat.thinking = 0;
     updateWaiting(ev.chat, false);
-    await openChat(ui.chat.id, { quiet: ui.tab !== "chat" });
+    await openChat(ui.chat.id, { quiet: !chatShown() });
     const r = await api("GET", "/api/chats");
     ui.chat.list = r.chats;
     renderChatSelect();
     renderComposerState();
     await refresh();
     finishAi(ev.chat);
-    if (ev.error && ui.tab !== "chat") toast(isLoginError(ev.error) ? t("Claude Code isn't signed in; see the chat") : t("Claude ran into an error; see the chat"));
+    if (ev.error && !chatShown()) toast(isLoginError(ev.error) ? t("Claude Code isn't signed in; see the chat") : t("Claude ran into an error; see the chat"));
   }
 }
 

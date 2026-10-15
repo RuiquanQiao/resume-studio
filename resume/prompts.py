@@ -172,5 +172,48 @@ def batch_sync_message(parts: list[str], codes: list[str], version_id: str, data
             + "\n\n".join(parts) + "\n\n" + sync_rules(codes, version_id, data_path))
 
 
+def _where(app: dict, report: str) -> str:
+    return (t("The evaluation of this posting is at `{report}`: read it first, especially the requirement-by-requirement "
+              "match, the customization plan and the extracted keywords (the posting itself is archived in it).", report=report)
+            if report else t("This posting has no evaluation report yet; its link: {url}", url=app.get("url") or "?"))
+
+
+def tailor_message(version: dict, app: dict, report: str, data_path: str, new: bool = False) -> str:
+    """Make or adjust a job (a resume for a kind of role) from one evaluated posting."""
+    vid = str(version.get("id"))
+    job = version.get("label") or vid
+    posting = " — ".join(x for x in (app.get("company"), app.get("role")) if x) or f"#{app.get('id')}"
+    first = (t("None of my resume versions fits the posting {posting} well, so the new job “{job}” (`{id}`) starts from it.",
+               posting=posting, job=job, id=vid) if new else
+             t("Adjust the job “{job}” (`{id}`) so it also fits the posting {posting}.", job=job, id=vid, posting=posting))
+    return (first + " " + _where(app, report) + "\n"
+            "- " + t("A job is a resume for a kind of role that I send to many similar postings, not to one company: never "
+                     "put this company's name (or anything only true of this one posting) into the resume, and name the job "
+                     "after the kind of role (its `label`).") + "\n"
+            "- " + t("Pick the library entries that serve this kind of role best and make them this job's `entries`, strongest "
+                     "first within each section; change its section order if another order reads better for it.") + "\n"
+            "- " + t("Write its `headline` for this kind of role, in each resume language.") + "\n"
+            "- " + t("Don't reword library bullets yourself: every job shares them. Where a bullet would clearly land better "
+                     "in the posting's words and notes / evidence back it, list the rewording in your reply and let me decide.") + "\n"
+            "- " + t("Keep it to one page: adjust this job's layout before suggesting fewer entries. Check with {cmd}.",
+                     cmd=f"`{render_cmd(vid, data_path)}`") + "\n"
+            "- " + t("Then tell me which requirements the resume now covers, which gaps remain, and which entries you left out and why."))
+
+
+def choose_message(app: dict, report: str, ranked: list[dict], tool_id: str) -> str:
+    """Which existing job (resume version) to send for one evaluated posting."""
+    posting = " — ".join(x for x in (app.get("company"), app.get("role")) if x) or f"#{app.get('id')}"
+    lines = [f"- `{v['id']}` {v['label']}: " + (t("{score}% by word match", score=v["score"]) if v["score"] is not None else "—")
+             for v in ranked]
+    return (t("Which of my resume versions should I send for the posting {posting}?", posting=posting) + " " + _where(app, report) + "\n"
+            + t("My versions (the jobs in the resume data file), with the window's rough word match:") + "\n" + "\n".join(lines or ["-"]) + "\n"
+            "- " + t("Compare what each version's resume actually says (its headline and chosen entries) with what the posting "
+                     "asks for, and recommend one, with the requirements it covers and the gaps that remain.") + "\n"
+            "- " + t("If none fits well, say whether adjusting one of them or a new version for this kind of role would be better. "
+                     "Don't change any job yet.") + "\n"
+            "- " + t("Once I agree on a version, link it: add `{tool: {tool}, id: '{id}'}` to that job's `postings` list in the "
+                     "data file and remove it from any other job's.", tool=tool_id, id=app.get("id")))
+
+
 def attachments_note(paths: list[str]) -> str:
     return "\n\n" + t("Attachments (open them with Read):") + "\n" + "\n".join(f"- {p}" for p in paths)

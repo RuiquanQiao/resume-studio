@@ -251,6 +251,7 @@ function applyState(s) {
 // state changed elsewhere (Claude, another window): rebuild the form if it is stale
 function syncEditor() {
   const { kind, id } = ui.sel;
+  if (kind === "posting") return;   // not in resume.yaml; jobs.js refreshes it
   if ((kind === "entry" || kind === "version") && !currentItem(kind, id)) { select("profile"); return; }
   if (itemHash(kind, id) === ui.formBase) return;
   if (ui.dirty) { ui.conflict = { current: clone(currentItem(kind, id)) }; buildEditor(); return; }
@@ -412,8 +413,11 @@ function setTab(tab) {
   store("tab", tab);
   for (const b of document.querySelectorAll(".tab")) b.classList.toggle("on", b.dataset.tab === tab);
   $("#library").classList.toggle("hidden", tab !== "library");
+  $("#jobs").classList.toggle("hidden", tab !== "jobs");
   $("#chat").classList.toggle("hidden", tab !== "chat");
   if (tab === "chat") { renderChat(); setTimeout(() => $("#chat-input").focus(), 0); }
+  if (tab === "jobs") { renderJobs(); loadJobs({ quiet: true }); }
+  if (tab === "chat" && W.ws === "jobs" && W.chat !== "on") setJobsChat(true);   // a chat started in Job search
 }
 
 function renderLibrary() {
@@ -533,14 +537,17 @@ async function select(kind, id = null) {
   ui.conflict = null;
   ui.dirty = false;
   renderLibrary();
+  if (kind !== "posting" && typeof renderJobs === "function") renderJobs();   // the open posting is no longer highlighted
   renderComposerState();
   buildEditor();
 }
 
-const BUILDERS = () => ({ entry: entryForm, profile: profileForm, sections: sectionsForm, version: versionForm });
+// "posting" is not part of resume.yaml: an evaluated job posting from the Applications tab (jobs.js)
+const BUILDERS = () => ({ entry: entryForm, profile: profileForm, sections: sectionsForm, version: versionForm, posting: postingView });
 
 function buildEditor(opts = {}) {
   const { kind, id } = ui.sel;
+  if (kind === "posting") { ui.draft = null; ui.formBase = null; ui.dirty = false; paintEditor(opts); return; }
   const item = currentItem(kind, id);
   if (!ui.conflict) {
     ui.draft = clone(item);
@@ -557,7 +564,7 @@ function paintEditor({ flash = false, keepScroll = true } = {}) {
   const scroll = mid.scrollTop;
   const wrap = h("div", { class: "editor" });
   if (ui.conflict) wrap.append(conflictBanner());
-  if (ui.draft == null && ui.sel.kind !== "sections") wrap.append(h("p", { class: "muted" }, t("Nothing here.")));
+  if (ui.draft == null && ui.sel.kind !== "sections" && ui.sel.kind !== "posting") wrap.append(h("p", { class: "muted" }, t("Nothing here.")));
   else wrap.append(...[BUILDERS()[ui.sel.kind]()].flat(Infinity).filter(Boolean));
   mid.replaceChildren(wrap);
   if (keepScroll) mid.scrollTop = scroll;
@@ -1030,16 +1037,18 @@ async function applyUiLang() {
   }
   return uiLangSaved;   // saved but not shown yet: the page still has to reload
 }
-function openSettings() {
+function openSettings(section = null) {
   const root = $("#modal-root");
   if (root.firstChild) return;
   pendingUiLang = undefined;
   const done = async () => {
+    try { await applyJobsSettings(); } catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
     try { if (await applyUiLang()) { await saveDraft(); location.reload(); return; } }
     catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
     close();
   };
   const close = () => {
+    for (const k of Object.keys(jobsPending)) delete jobsPending[k];
     pendingUiLang = undefined; closeSettings = () => {}; root.replaceChildren(); document.removeEventListener("keydown", onKey); $("#settings-btn").focus(); };
   closeSettings = close;
   // bubble phase: an open dropdown takes Escape first (it stops the event in the capture phase)
@@ -1056,8 +1065,12 @@ function openSettings() {
           h("button", { class: "btn sm", onclick: () => api("POST", "/api/reveal", { path: S.data_path }) }, icon("external"), t("Show in the file manager")),
           h("button", { class: "btn sm", onclick: () => changeDataFile("open") }, icon("folderOpen"), t("Open another…")),
           h("button", { class: "btn sm", onclick: () => changeDataFile("new") }, icon("plus"), t("New…")))),
+      jobsSettingsSection(),
       h("div", { class: "acts" }, h("button", { class: "btn primary", onclick: done }, t("Done"))))));
-  setTimeout(() => $(".modal .select", root).focus(), 0);
+  setTimeout(() => {
+    if (section === "jobs") { const el = $("#jobs-settings"); el.scrollIntoView({ block: "start" }); el.classList.add("flash"); }
+    else $(".modal .select", root).focus();
+  }, 0);
 }
 
 // Work on another data file in this same window. Chats and history live next to each file, so
@@ -1162,6 +1175,7 @@ function versionForm() {
   const v = ui.draft;
   return [
     h("div", { class: "ed-head" }, h("h1", null, t("Job settings")), h("span", { class: "id" }, v.id), h("span", { class: "spacer" }), langSwitch()),
+    postingLink(v),
     card(t("Job"), t("Tick entries in the library on the left; template, language and layout are above the preview"), [
       h("div", { class: "grid2" }, tfield(t("Name"), v, "label", { placeholder: t("AI Agent Engineer") }), tfield("ID", v, "id", { hint: t("also the export file name") })),
       tfield(t("Headline / job target"), v, "headline", { i18n: true, placeholder: t("e.g. AI Agent Engineer · LLM tooling & full-stack") }),
@@ -1653,9 +1667,15 @@ function connect() {
       bar.classList.remove("hidden");
     }, 1500);
   };
-  es.addEventListener("file", (m) => { const d = JSON.parse(m.data); if (S && d.digest === S.digest) return; refresh(); });
+  es.addEventListener("file", (m) => {
+    jobsAfterResumeChange();   // the window's own saves too: the tool's CV, version ranking, profile freshness
+    const d = JSON.parse(m.data);
+    if (S && d.digest === S.digest) return;
+    refresh();
+  });
   es.addEventListener("evidence", () => checkEvidence(true));
   listenChat(es);
+  listenJobs(es);
 }
 
 function wire() {
@@ -1687,6 +1707,7 @@ function wire() {
   document.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveDraft(); }
     if ((e.ctrlKey || e.metaKey) && e.key === ",") { e.preventDefault(); openSettings(); }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && ["1", "2"].includes(e.key)) { e.preventDefault(); setWorkspace({ 1: "resume", 2: "jobs" }[e.key]); }
     if (e.key === "Escape" && !Float.cur && ui.layoutOpen) { ui.layoutOpen = false; renderPreviewToolbar(); }
   });
   window.addEventListener("beforeunload", () => { if (ui.dirty) saveDraft(); if (ui.headPending) ui.headPending(); });
@@ -1708,9 +1729,11 @@ function wire() {
     toast(switched === "new" ? t("Started a new data file: {path}", { path: S.data_path }) : t("Opened {path}", { path: S.data_path }), { ms: 5000 });
   }
   select("profile");
-  setTab(store("tab") === "chat" ? "chat" : "library");
+  setTab(["chat", "jobs"].includes(store("tab")) ? store("tab") : "library");
+  initWorkspaces();
   connect();
   loadChats().catch(() => {});
+  loadJobs({ quiet: true });
   loadClaudeInfo();
   checkEvidence();
   scheduleRender(0);

@@ -226,7 +226,8 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         """A new chat that continues from just before message `index` (that message can be rewritten)."""
         meta, msgs, index, point = cut_point(req.params["cid"], req, t("fork"))
         new = chats.store.create(title=t("{title} (fork)", title=meta.get("title") or t("Chat")), model_choice=meta.get("model_choice"),
-                                 effort=meta.get("effort"), mode=meta.get("mode"), tasks=None, fork=point)
+                                 effort=meta.get("effort"), mode=meta.get("mode"), tasks=None, fork=point,
+                                 workspace=meta.get("workspace"))
         chats.store.save_messages(new["id"], msgs[:index])
         return {"chat": new, "text": msgs[index].get("text") or "", "files": msgs[index].get("files") or []}
 

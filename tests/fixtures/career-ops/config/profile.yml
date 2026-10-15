@@ -1,0 +1,7 @@
+candidate:
+  full_name: "Alex Chen"
+  email: "alex@example.com"
+target_roles:
+  - "Graduate AI Engineer"
+language:
+  output: en

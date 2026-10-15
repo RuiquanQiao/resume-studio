@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CATALOGS = ROOT / "web" / "i18n"
-PY_DIRS = [ROOT / "core", ROOT / "resume", ROOT / "scripts"]
+PY_DIRS = [ROOT / "core", ROOT / "resume", ROOT / "jobs", ROOT / "scripts"]
 T_NAMES = {"t", "_t"}
 
 _JS_STR = r'"((?:[^"\\]|\\.)*)"'
@@ -26,7 +26,9 @@ _JS_CALL = re.compile(r"\bt\(\s*" + _JS_STR + r"(?:\s*,\s*\{[^{}]*\}\s*,\s*" + _
 _JS_TABLES = {
     "app.js": ["NOTE_TIPS", "AI_LABELS", "FONT_GROUPS"],
     "chat.js": ["BUILTIN_DESC"],
+    "jobs.js": ["STATE_NAMES", "DECISIONS", "IMPORTANCE", "VALUE_NAMES", "CHECK_NAMES", "STEP_NAMES", "MODE_NAMES", "WEB_STEPS"],
 }
+_JS_GROUPS = {"jobs.js": ["MODE_GROUPS"]}   # [["Group title", [...]], ...]
 
 
 def _py_keys(path: Path) -> dict[str, str | None]:
@@ -54,6 +56,10 @@ def _js_keys(path: Path) -> dict[str, str | None]:
     for table in _JS_TABLES.get(path.name, []):
         m = re.search(r"const " + table + r" = \{(.*?)\};", src, re.S)
         for v in re.findall(r":\s*" + _JS_STR, m.group(1) if m else ""):
+            out.setdefault(_js_unescape(v), None)
+    for table in _JS_GROUPS.get(path.name, []):
+        m = re.search(r"const " + table + r" = \[(.*?)\];", src, re.S)
+        for v in re.findall(r"\[\s*" + _JS_STR + r"\s*,\s*\[", m.group(1) if m else ""):
             out.setdefault(_js_unescape(v), None)
     m = re.search(r"const SLIDERS = \[(.*?)\];", src, re.S)
     for label in re.findall(r'\["\w+",\s*' + _JS_STR, m.group(1) if m else ""):

@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -849,7 +850,8 @@ def test_queue_stop_tasks_and_fork(page, server, fake_claude):
     target = page.locator(".msg-user-wrap").nth(n - 2)                         # "排队的第二条"
     tools = target.locator(".msg-tools")                                      # under the message, like Claude Code
     assert tools.locator(".mt-time").inner_text() == "刚刚"
-    assert tools.bounding_box()["y"] > target.locator(".msg-user").bounding_box()["y"]
+    # the log is drawn again once the stopped turn is saved: measure the element that stays
+    wait_until(lambda: tools.bounding_box()["y"] > target.locator(".msg-user").bounding_box()["y"], msg="tools under the message")
     target.hover()
     tools.locator("button[aria-label^='分叉']").click()
     page.wait_for_selector("#chat-select .sel-label:text-matches('（分叉）')")
@@ -1013,3 +1015,229 @@ def test_screenshots_of_new_parts(page, server, fake_claude, monkeypatch, tmp_pa
     shot_float(page, f"new-context-{scheme}")
     page.keyboard.press("Escape")
     page.click("#chat-stop")
+
+
+# ---------------------------------------------------------------- Applications (career-ops behind the window)
+from core.i18n import Prefs  # noqa: E402
+
+FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "career-ops"
+needs_node = pytest.mark.skipif(not shutil.which("node"), reason="Node.js not installed")
+
+
+@pytest.fixture
+def connected(data_file, tmp_path):
+    target = tmp_path / "career-ops"
+    shutil.copytree(FIXTURE, target)
+    (target / "node_modules" / "js-yaml").mkdir(parents=True)
+    Prefs(data_file.parent / "local").save(career_ops={"path": str(target)})
+    return target
+
+
+def open_jobs(pg):
+    pg.click(".tab[data-tab=jobs]")
+    pg.wait_for_selector("#jobs .app-row")
+
+
+def test_not_connected_offers_install_and_an_existing_copy(page_all):
+    pg = page_all
+    pg.click(".tab[data-tab=jobs]")
+    pg.wait_for_selector("#jobs .connect")
+    assert pg.locator("#jobs .connect .btn.primary").inner_text().startswith("安装 career-ops")
+    assert pg.locator("#jobs .connect").inner_text().count("MIT") == 1
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"jobs-connect-{scheme}.png"))
+
+
+@needs_node
+def test_applications_list_report_status_and_tailor(connected, page_all, server, fake_claude):
+    pg = page_all
+    open_jobs(pg)
+    rows = pg.locator("#jobs .app-row")
+    assert rows.count() == 3 and pg.locator("#jobs .app-row[data-id='1'] .score").inner_text() == "4.3"
+    assert "已投递" in pg.locator("#jobs .app-row[data-id='1']").inner_text()
+    pg.click("#jobs .seg button[data-value='open']")                     # SKIP is not active
+    assert pg.locator("#jobs .app-row").count() == 2
+    pg.click("#jobs .seg button[data-value='all']")
+
+    pg.click("#jobs .app-row[data-id='1']")
+    pg.wait_for_selector("#editor .verdict")
+    assert pg.locator("#editor .v-decision").inner_text() == "值得投递"
+    assert not pg.locator("#editor .v-text").inner_text().startswith("Apply.")   # the bold call isn't repeated
+    assert pg.locator("#editor .req").count() == 5
+    assert pg.locator("#editor .rep-sec").count() >= 5
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"jobs-posting-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+
+    # status goes through career-ops' own writer
+    choose(pg, "#posting-status", "interview")
+    wait_until(lambda: "| Interview |" in (connected / "data" / "applications.md").read_text(encoding="utf-8"), msg="tracker updated")
+    pg.wait_for_selector("#jobs .app-row[data-id='1'] .s-interview")
+
+    # the resume to send: one of the versions, ranked for this posting, linked with one click
+    pg.wait_for_selector("#editor .resume-card .fit-row")
+    assert pg.locator("#editor .resume-card .fit-row").count() == 2
+    pg.click("#editor .resume-card .fit-row[data-version='RES-TECH-ZH'] .fit-acts .btn:not(.icon)")
+    linked = lambda vid: any(p.get("id") == "1" for v in state(server)["doc"]["versions"] if v["id"] == vid for p in v.get("postings") or [])   # noqa: E731
+    wait_until(lambda: linked("RES-TECH-ZH"), msg="linked")
+    pg.wait_for_selector("#editor .resume-card .fit-row.on[data-version='RES-TECH-ZH']")
+    pg.wait_for_selector("#jobs .app-row[data-id='1'] .has-resume")
+    pg.screenshot(path=str(ART / "jobs-resume-to-send-light.png"))
+
+    # none fits: a new version for this kind of role (named by the user, never after the company)
+    pg.click("#editor .resume-card .fit-foot .btn.ghost")
+    pg.fill(".modal input", "AI Engineer")
+    pg.click(".modal .btn.primary")
+    pg.wait_for_selector(".tab.on[data-tab=chat]")
+    wait_until(lambda: any(v.get("label") == "AI Engineer" for v in state(server)["doc"]["versions"]), msg="job created")
+    vid = next(v["id"] for v in state(server)["doc"]["versions"] if v.get("label") == "AI Engineer")
+    wait_until(lambda: linked(vid) and not linked("RES-TECH-ZH"), msg="the posting moved to it")
+    wait_until(lambda: any("001-northwind-ai" in c["stdin"] for c in calls(fake_claude)), msg="tailor message")
+    assert pg.get_attribute("#version-select", "data-value") == vid      # the preview shows the new job
+
+def test_evaluate_starts_a_career_ops_chat(connected, page_all, server, fake_claude):
+    pg = page_all
+    open_jobs(pg)
+    assert pg.locator("#jobs .eval-box .btn.primary").is_disabled()
+    pg.fill("#posting-input", "https://jobs.example.com/77\nAI Engineer, Canberra")
+    pg.click("#jobs .eval-box .btn.primary")
+    pg.wait_for_selector(".tab.on[data-tab=chat]")
+    wait_until(lambda: any("jobs.example.com/77" in c["stdin"] for c in calls(fake_claude)), msg="evaluation sent")
+    c = next(c for c in calls(fake_claude) if "jobs.example.com/77" in c["stdin"])
+    assert Path(c["cwd"]).resolve() == connected.resolve()
+    assert "career-ops" in pg.inner_text("#chat-context")
+    pg.click(".tab[data-tab=jobs]")
+    assert pg.input_value("#posting-input") == ""                       # sent, so the box is empty again
+
+
+def test_a_cv_edited_in_career_ops_is_never_overwritten(connected, page_all, server):
+    pg = page_all
+    open_jobs(pg)
+    cv = connected / "cv.md"
+    wait_until(cv.exists, msg="cv.md written")
+    cv.write_text(cv.read_text(encoding="utf-8") + "\n- added in career-ops\n", encoding="utf-8")
+    pg.click(".tab[data-tab=library]")
+    pg.click(".tab[data-tab=jobs]")
+    pg.wait_for_selector("#jobs .jobs-banner.warn")
+    assert "cv.md" in pg.inner_text("#jobs .jobs-banner.warn")
+    pg.screenshot(path=str(ART / "jobs-cv-conflict-light.png"))
+    pg.click("#jobs .jobs-banner.warn .btn.ghost")                        # use my library
+    pg.click(".modal .btn.danger-soft")
+    wait_until(lambda: "added in career-ops" not in cv.read_text(encoding="utf-8"), msg="cv replaced")
+    pg.wait_for_selector("#jobs .jobs-banner.warn", state="detached")
+
+
+def test_settings_show_the_checks_and_apply_on_done(connected, page_all, server, data_file):
+    pg = page_all
+    open_jobs(pg)
+    pg.click("#jobs .jobs-foot .btn")
+    pg.wait_for_selector("#jobs-settings .chk")
+    assert pg.locator("#jobs-settings .chk.ok").count() >= 6
+    pg.click("#jobs-settings .seg button[data-value='zh']")
+    pg.click("#jobs-settings .check-row >> nth=1")                       # notes off
+    prefs = lambda: Prefs(data_file.parent / "local").load()["career_ops"]   # noqa: E731
+    assert "cv_lang" not in prefs()                                       # nothing saved before Done
+    pg.screenshot(path=str(ART / "jobs-settings-light.png"))
+    pg.click(".modal .acts .btn.primary")
+    wait_until(lambda: prefs().get("cv_lang") == "zh" and prefs().get("notes") is False, msg="settings saved")
+    wait_until(lambda: "澳大利亚国立大学" in (connected / "cv.md").read_text(encoding="utf-8"), msg="cv in Chinese")
+
+
+# ---------------------------------------------------------------- the Job search workspace
+def open_job_search(pg):
+    pg.click(".ws-btn[data-ws=jobs]")
+    pg.wait_for_selector("body[data-ws=jobs] #jobspace iframe.web-frame:not(.hidden)", timeout=30000)
+    frame = pg.frame_locator("#jobspace iframe.web-frame")
+    frame.locator("#page").wait_for()
+    return frame
+
+
+def test_job_search_hosts_the_tools_own_interface(connected, page_all, server, fake_claude):
+    pg = page_all
+    assert pg.is_visible("#editor") and not pg.is_visible("#jobspace")
+    frame = open_job_search(pg)
+    assert not pg.is_visible("#editor") and not pg.is_visible(".pane.right")        # the whole window is the tool's
+    assert not pg.is_visible(".version-switch") and not pg.is_visible(".pane.left")  # Claude's chat starts folded
+    assert frame.locator("#page").inner_text() == "/"
+    assert "career-ops 全部功能" in pg.inner_text("#ws-tools")
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"jobsearch-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+
+    # the frame tells the window which application is open: a real navigation, then an in-app one
+    frame.locator("#to-1").click()
+    pg.wait_for_selector("#ws-tools .ws-here")
+    assert "Northwind AI — Graduate AI Engineer" in pg.inner_text("#ws-tools .ws-here")
+    frame.locator("#push").click()
+    wait_until(lambda: "Kestrel Labs" in pg.inner_text("#ws-tools"), msg="pushState reported")
+    frame.locator("#home").click()
+    pg.wait_for_selector("#ws-tools .ws-here", state="detached")
+    frame.locator("#push").click()
+    pg.wait_for_selector("#ws-tools .ws-here")
+
+    # the resume to send for it, picked without leaving Job search
+    pg.click("#ws-tools .ws-here .btn")
+    pg.wait_for_selector(".resume-picker .fit-row")
+    pg.click(".resume-picker .fit-row[data-version='RES-TECH-EN'] .fit-acts .btn:not(.icon)")
+    pg.wait_for_selector(".resume-picker .fit-row.on[data-version='RES-TECH-EN']")
+    pg.wait_for_timeout(300)
+    pg.screenshot(path=str(ART / "jobsearch-picker-light.png"))
+    assert "false" not in pg.inner_text(".resume-picker")
+    wait_until(lambda: any(p.get("id") == "2" for v in state(server)["doc"]["versions"] if v["id"] == "RES-TECH-EN"
+                           for p in v.get("postings") or []), msg="linked")
+    pg.keyboard.press("Escape")
+    pg.wait_for_selector(".resume-picker", state="detached")
+    wait_until(lambda: "ML 工程（英文）" in pg.inner_text("#ws-tools .ws-here"), msg="the top bar names it")
+
+    # its preview, in Resume
+    pg.click("#ws-tools .ws-here .btn")
+    pg.click(".resume-picker .rp-acts .btn:not(.primary)")
+    pg.wait_for_selector("body[data-ws=resume]")
+    wait_until(lambda: pg.get_attribute("#version-select", "data-value") == "RES-TECH-EN", msg="previewed")
+
+    # back to Job search (Ctrl+2): the same page
+    pg.keyboard.press("Control+2")
+    pg.wait_for_selector("body[data-ws=jobs]")
+    assert frame.locator("#page").inner_text() == "/pipeline/2"                   # not reloaded
+    pg.keyboard.press("Control+1")
+    pg.wait_for_selector("body[data-ws=resume]")
+
+def test_every_mode_starts_from_the_launcher(connected, page_all, server, fake_claude):
+    pg = page_all
+    open_job_search(pg)
+    pg.click("#ws-tools .btn:has-text('career-ops 全部功能')")
+    pg.wait_for_selector(".launcher .lg-item")
+    assert pg.locator(".launcher .lg-item[data-mode='update']").count() == 0     # updates live in Settings
+    assert pg.locator(".launcher .lg-item[data-mode='triage']").count() == 1
+    pg.wait_for_timeout(300)                                                   # fully faded in
+    pg.screenshot(path=str(ART / "jobsearch-launcher-light.png"))
+    pg.keyboard.type("plan")
+    assert pg.locator(".launcher .lg-item:not(.hidden)").count() == 1
+    pg.keyboard.press("Enter")
+    pg.wait_for_selector("body[data-jchat=on] #chat .msg-user")
+    wait_until(lambda: any("interview/plan" in c["stdin"] for c in calls(fake_claude)), msg="mode sent")
+    c = next(c for c in calls(fake_claude) if "interview/plan" in c["stdin"])
+    assert Path(c["cwd"]).resolve() == connected.resolve()
+
+
+def test_chats_follow_the_workspace(connected, page_all, server, fake_claude):
+    pg = page_all
+    pg.click(".tab[data-tab=chat]")
+    pg.click("#chat .suggest button >> nth=0")                                  # a resume chat
+    pg.wait_for_selector("#chat .msg-user")
+    resume_chat = pg.get_attribute("#chat-select", "data-value")
+    open_job_search(pg)
+    pg.click("#ws-tools .btn:has-text('Claude')")
+    pg.wait_for_selector("body[data-jchat=on] #chat .chat-welcome")
+    assert "career-ops" in pg.inner_text("#chat .chat-welcome .t")              # its own suggestions, not the resume's
+    pg.click("#chat .suggest button >> nth=0")
+    wait_until(lambda: any(Path(c["cwd"]).resolve() == connected.resolve() for c in calls(fake_claude)), msg="chat in its folder")
+    jobs_chat = pg.get_attribute("#chat-select", "data-value")
+    assert jobs_chat != resume_chat
+    pg.keyboard.press("Control+1")
+    wait_until(lambda: pg.get_attribute("#chat-select", "data-value") == resume_chat, msg="Resume's chat again")
+    pg.keyboard.press("Control+2")
+    wait_until(lambda: pg.get_attribute("#chat-select", "data-value") == jobs_chat, msg="Job search's chat again")

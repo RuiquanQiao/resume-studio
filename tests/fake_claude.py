@@ -16,7 +16,8 @@ Behaviour switches, read from the message text:
   TASKS  -> TaskCreate x2, TaskUpdate the first to completed
   /context -> answer like a local slash command (synthetic message, no streaming)
 Env:
-  FAKE_CLAUDE_LOG   append one JSON line per user message: argv, stdin (text), content types, cwd
+  FAKE_CLAUDE_LOG   append one JSON line per user message: argv, stdin (text), content types, cwd, and the
+                    environment a connected tool sets (npm's cache, Playwright's browsers)
                     control requests from the app go to <log>.ctl
   FAKE_CLAUDE_EDIT  JSON {"file","from","to"}: apply this edit to the data file
 """
@@ -235,7 +236,8 @@ while True:
         types = [b.get("type") for b in content]
     else:
         prompt, types = str(content or ""), ["text"]
-    note("", {"argv": args, "stdin": prompt, "content": types, "cwd": os.getcwd()})
+    note("", {"argv": args, "stdin": prompt, "content": types, "cwd": os.getcwd(),
+              "env": {k: os.environ.get(k) for k in ("npm_config_cache", "PLAYWRIGHT_BROWSERS_PATH") if os.environ.get(k)}})
     interrupted.clear()
     if not handle(prompt, content):
         sys.exit(1)

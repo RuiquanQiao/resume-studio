@@ -7,14 +7,19 @@ import webbrowser
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
+from urllib.parse import urlparse
 
 from core import dialogs, i18n
 from core.chat import ChatRunner, ChatStore, claude_command
 from core.claude_info import ClaudeInfo
 from core.server import App, HttpError, TextResponse, running_instance
-from core.watcher import FileWatcher
+from core.watcher import FileWatcher, SignatureWatcher
+from core.webhost import WebHost
+from jobs import api as jobs_api
+from jobs import career_ops
+from jobs.base import JobTool
 
-from . import api
+from . import api, prompts
 from .evidence import EvidenceTracker
 from .service import Studio
 
@@ -38,21 +43,48 @@ class Instance:
     switched: dict = field(default_factory=dict)
     window: bool = False
     prefs: i18n.Prefs | None = None
+    jobtool: JobTool | None = None             # the job-posting tool (per computer, survives data switches)
+    jobs_watcher: SignatureWatcher | None = None
+    web: WebHost | None = None                 # the tool's own web interface, hosted in the window
 
     def stop(self) -> None:
+        """Before switching to another data file (the hosted web interface keeps running)."""
         self.chats.cancel_all()
         self.watcher.stop()
+        if self.jobs_watcher:
+            self.jobs_watcher.stop()
+
+    def shutdown(self) -> None:
+        """At exit."""
+        self.stop()
+        if self.web:
+            self.web.shutdown()
 
 
 def create_app(data_path: str | Path, *, window: bool = False, watch_interval: float = 0.5,
                prefs_dir: str | Path | None = None) -> Instance:
     """prefs_dir: where this computer's app preferences live (default <skill>/.local)."""
+    local = Path(prefs_dir) if prefs_dir else LOCAL
     inst = Instance(App(static_dir=WEB), None, None, {}, None, window=window,  # type: ignore[arg-type]
-                    prefs=i18n.Prefs(Path(prefs_dir) if prefs_dir else LOCAL))
+                    prefs=i18n.Prefs(local))
+    # career-ops installs next to the app's own preferences (git-ignored), never in the user profile
+    inst.jobtool = career_ops.CareerOps(inst.prefs, home=local / "providers" / "career-ops",
+                                        cache=ROOT / ".cache", skill_md=prompts.SKILL_MD)
+    inst.web = WebHost(inst.jobtool.id, ROOT / ".cache" / "logs" / f"{inst.jobtool.id}-web.log",
+                       window_ports=lambda: _ports(inst.url.get("url")))
     inst.url["url"] = ""
     inst.focus["fn"] = lambda: webbrowser.open(inst.url["url"]) if inst.url["url"] else None
     _load(inst, inst.app, data_path, watch_interval)
     return inst
+
+
+def _ports(url: str | None) -> set[int]:
+    """The window's own port (the hosted web interface only accepts frames from it)."""
+    try:
+        port = urlparse(url or "").port
+    except ValueError:
+        return set()
+    return {port} if port else set()
 
 
 def switch_data(inst: Instance, path: str | Path) -> None:
@@ -204,3 +236,17 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
     inst.watcher = FileWatcher(studio.store.path, studio.store.digest_text,
                                lambda digest: app.bus.publish("file", {"digest": digest}), interval=watch_interval)
     inst.watcher.start()
+
+    # ---- the job-posting tool: chats in its folder, its tracker and reports in the Applications tab ----
+    tool = inst.jobtool
+    assert tool is not None
+    refresh_ws = lambda: jobs_api.workspace_for(tool, studio, chats, career_ops.TOOLS, tool.env())  # noqa: E731
+    refresh_ws()
+    web = inst.web
+    if web is not None:
+        web.on_change = lambda: app.bus.publish("jobs.web", {})
+    jobs_api.register(app, studio, chats, tool, pick_folder=jobs_api.folder_picker(inst), refresh_workspace=refresh_ws,
+                      web=web)
+    inst.jobs_watcher = SignatureWatcher(tool.signature, lambda: app.bus.publish("jobs", {}),
+                                         interval=max(watch_interval * 3, 1.0))
+    inst.jobs_watcher.start()

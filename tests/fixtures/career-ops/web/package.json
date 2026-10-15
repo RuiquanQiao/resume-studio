@@ -1,0 +1,6 @@
+{
+  "name": "@career-ops/web",
+  "private": true,
+  "description": "fixture: career-ops' web interface (the tests run tests/fake_web.py instead)",
+  "scripts": { "build": "next build", "start": "node server.mjs start" }
+}

@@ -75,14 +75,27 @@ class Server:
         raise TimeoutError("chat still running")
 
 
+FAKE_WEB = Path(__file__).resolve().parent / "fake_web.py"
+
+
+def fake_web(progress, rebuild: bool = False):
+    """Stands in for CareerOps.web(): no npm, no build; tests/fake_web.py plays the web interface."""
+    from core.webhost import WebSpec
+
+    for step in ("web_deps", "web_build"):
+        progress(step, "running")
+        progress(step, "done")
+    return WebSpec(argv=[sys.executable, str(FAKE_WEB), "{port}"], cwd=FAKE_WEB.parent, ready_timeout=20)
+
+
 @pytest.fixture
 def server(data_file: Path, fake_claude: Path):
     from resume.app import create_app
 
     inst = create_app(data_file, watch_interval=0.15, prefs_dir=data_file.parent / "local")
+    inst.jobtool.web = fake_web   # never npm / next build in the suite
     httpd, url = inst.app.start_background(port=18765)
     inst.url["url"] = url
     yield Server(inst, httpd, url)
-    inst.chats.cancel_all()
-    inst.watcher.stop()
+    inst.shutdown()
     httpd.stop()

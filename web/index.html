@@ -14,10 +14,15 @@
       <span class="logo" aria-hidden="true"></span>
       <span>Resume Studio</span>
     </div>
-    <div class="version-switch">
+    <div id="ws-switch" class="ws-switch" role="tablist" aria-label="Workspace">
+      <button class="ws-btn" role="tab" data-ws="resume" title="Resume: library, jobs and preview (Ctrl+1)"><span class="lbl" data-t>Resume</span></button>
+      <button class="ws-btn" role="tab" data-ws="jobs" title="Job search: postings, pipeline, follow-ups (Ctrl+2)"><span class="lbl" data-t>Job search</span><span id="ws-jobs-dot" class="tab-dot hidden"></span></button>
+    </div>
+    <div class="version-switch rs-only">
       <span id="version-slot"></span>
       <button id="version-menu-btn" class="btn icon ghost" title="Job actions" aria-haspopup="menu"></button>
     </div>
+    <div id="ws-tools" class="ws-tools ws-only"></div>
     <span class="spacer"></span>
     <span id="save-status" class="save-status"></span>
     <button id="settings-btn" class="btn icon ghost" title="Settings (Ctrl+,)" aria-label="Settings" aria-haspopup="dialog"></button>
@@ -28,9 +33,11 @@
     <aside class="pane left" aria-label="Library and chat">
       <div class="tabs" role="tablist">
         <button class="tab" role="tab" data-tab="library" data-t>Library</button>
+        <button class="tab" role="tab" data-tab="jobs" data-t>Applications<span id="jobs-dot" class="tab-dot hidden"></span></button>
         <button class="tab" role="tab" data-tab="chat" data-t>Chat<span id="chat-dot" class="tab-dot hidden"></span></button>
       </div>
       <div id="library" class="tabpane" role="tabpanel"></div>
+      <div id="jobs" class="tabpane hidden" role="tabpanel"></div>
       <div id="chat" class="tabpane hidden" role="tabpanel">
         <div class="chat-head">
           <span id="chat-select-slot" class="slot-grow"></span>
@@ -85,6 +92,7 @@
       <div id="render-errors" class="render-errors hidden"></div>
       <div id="canvas" class="canvas"><div id="pages" class="pages"></div></div>
     </section>
+    <section id="jobspace" class="pane jobspace jobs-only" aria-label="Job search"></section>
   </div>
 
   <div id="toast" class="toast" role="status"></div>
@@ -93,6 +101,7 @@
   <script src="ui.js"></script>
   <script>localizeStatic();</script>
   <script src="chat.js"></script>
+  <script src="jobs.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

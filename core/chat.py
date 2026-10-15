@@ -223,14 +223,37 @@ def user_content(text: str, images: list[dict]) -> Any:
     return blocks
 
 
+class Workspace:
+    """Another folder a chat can run in (e.g. a connected tool's checkout), with what it needs there.
+
+    A chat created with `workspace=<name>` runs `claude` in `cwd` instead of the data folder, so
+    that folder's CLAUDE.md and skills load. `context()` replaces the window's note for those
+    chats, `prepare()` runs before every message (e.g. to sync files the tool reads), and `env`
+    is added to the process environment."""
+
+    def __init__(self, name: str, cwd: Path, *, label: str = "", tools: list[str] | None = None,
+                 env: dict[str, str] | None = None, add_dirs: list[str] | None = None,
+                 context: Any = None, prepare: Any = None):
+        self.name, self.cwd, self.label = name, Path(cwd), label or name
+        self.tools = tools or []
+        self.env = env or {}
+        self.add_dirs = add_dirs or []
+        self.context = context      # callable() -> str
+        self.prepare = prepare      # callable() -> None
+
+
 class ChatRunner:
     def __init__(self, bus: EventBus, store: ChatStore, cwd: Path, tools: list[str] | None = None):
         self.bus = bus
         self.store = store
         self.cwd = cwd
         self.tools = tools or DEFAULT_TOOLS
+        self.workspaces: dict[str, Workspace] = {}
         self.turns: dict[str, Turn] = {}
         self.limits: dict = {}         # the plan's usage windows, from Claude Code's rate_limit_event
+
+    def workspace(self, chat: dict | None) -> Workspace | None:
+        return self.workspaces.get(str((chat or {}).get("workspace") or ""))
 
     def available(self) -> bool:
         return claude_command() is not None
@@ -282,6 +305,17 @@ class ChatRunner:
         prefix = claude_command()
         if not prefix:
             raise RuntimeError(t("The claude command was not found. Install Claude Code and sign in first."))
+        ws = self.workspace(chat)
+        if chat.get("workspace") and ws is None:
+            raise RuntimeError(t("This chat runs in {name}, which isn't connected right now.", name=chat["workspace"]))
+        if ws is not None:
+            if ws.prepare:
+                try:
+                    ws.prepare()
+                except Exception:  # noqa: BLE001 - a failed sync shows in the UI; the chat still runs
+                    pass
+            if ws.context:
+                context = ws.context()
         self.store.append(chat_id, msg)
         if chat.get("title") in (None, "", *UNTITLED, t("New chat")):
             self.store.update_meta(chat_id, title=_title_from(text))
@@ -290,7 +324,7 @@ class ChatRunner:
 
         cmd = prefix + ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
                         "--include-partial-messages", "--permission-prompt-tool", "stdio",
-                        "--allowedTools", ",".join(self.tools)]
+                        "--allowedTools", ",".join(dict.fromkeys(self.tools + (ws.tools if ws else [])))]
         if chat.get("mode"):
             cmd += ["--permission-mode", chat["mode"]]
         if chat.get("model_choice"):
@@ -308,7 +342,7 @@ class ChatRunner:
             ctx_file = self.store.root / f"{chat_id}.context.md"
             ctx_file.write_text(context, encoding="utf-8")
             cmd += ["--append-system-prompt-file", str(ctx_file)]
-        dirs = list(add_dirs or [])
+        dirs = list(add_dirs or []) + (ws.add_dirs if ws else [])
         for f in files or []:
             dirs.append(str(Path(f["path"]).parent))
         for d in dict.fromkeys(dirs):
@@ -318,7 +352,9 @@ class ChatRunner:
         turn = Turn(chat_id, on_done)
         self.turns[chat_id] = turn
         self._emit("chat.start", chat_id, meta=meta or {})
-        threading.Thread(target=self._run, args=(turn, cmd, user_content(text, images)), daemon=True).start()
+        cwd = ws.cwd if ws else self.cwd
+        env = {**os.environ, **ws.env} if ws and ws.env else None
+        threading.Thread(target=self._run, args=(turn, cmd, user_content(text, images), cwd, env), daemon=True).start()
         return {"queued": False}
 
     def unqueue(self, chat_id: str, item_id: str) -> bool:
@@ -425,11 +461,11 @@ class ChatRunner:
     def _emit(self, event: str, chat_id: str, **data: Any) -> None:
         self.bus.publish(event, {"chat": chat_id, **data})
 
-    def _run(self, turn: Turn, cmd: list[str], content: Any) -> None:
+    def _run(self, turn: Turn, cmd: list[str], content: Any, cwd: Path | None = None, env: dict | None = None) -> None:
         cost = None
         try:
             turn.proc = subprocess.Popen(
-                cmd, cwd=str(self.cwd), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                cmd, cwd=str(cwd or self.cwd), env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             assert turn.proc.stdout and turn.proc.stderr
             stderr_chunks: list[bytes] = []

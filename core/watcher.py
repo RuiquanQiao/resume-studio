@@ -52,3 +52,37 @@ class FileWatcher:
 
     def stop(self) -> None:
         self._stop.set()
+
+
+class SignatureWatcher:
+    """Poll any cheap signature (e.g. a folder's file names, sizes and times) and report when it
+    changes. For data another program writes, where a whole folder is the thing to watch."""
+
+    def __init__(self, signature: Callable[[], object], on_change: Callable[[], None], interval: float = 1.5):
+        self.signature = signature
+        self.on_change = on_change
+        self.interval = interval
+        self._last: object = None
+        self._stop = threading.Event()
+
+    def _check(self, first: bool = False) -> None:
+        try:
+            sig = self.signature()
+        except OSError:
+            return
+        if sig != self._last:
+            self._last = sig
+            if not first:
+                self.on_change()
+
+    def start(self) -> None:
+        self._check(first=True)
+
+        def loop() -> None:
+            while not self._stop.wait(self.interval):
+                self._check()
+
+        threading.Thread(target=loop, name="signature-watcher", daemon=True).start()
+
+    def stop(self) -> None:
+        self._stop.set()
