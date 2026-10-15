@@ -1272,11 +1272,32 @@ def test_autofill_workspace_plan_ticks_edits_and_apply(page_all, server, fake_cl
         pg.screenshot(path=str(ART / f"autofill-start-{scheme}.png"))
     pg.emulate_media(color_scheme="light")
 
-    # what Claude read arrives: the plan appears by itself
-    assert server.req("POST", "/api/autofill/linkedin/current", FILL_NOW)[0] == 200
+    # what Claude read arrives: the plan appears by itself. Paper2Exam is on the site with one word changed
+    want = next(i for i in server.req("GET", "/api/autofill/linkedin")[1]["desired"]["items"] if i["key"] == "EXP-002")
+    lines = want["fields"]["description"].split("\n")
+    old = lines[:]
+    old[1] = old[1].replace("multi-stage", "two-stage")
+    now = {**FILL_NOW, "items": FILL_NOW["items"] + [{"section": "projects", "key": "EXP-002", "fields": {
+        **want["fields"], "description": "\n".join(old)}}]}
+    assert server.req("POST", "/api/autofill/linkedin/current", now)[0] == 200
     pg.wait_for_selector("#fillspace .fill-plan .fi")
     assert pg.is_visible(".fi[data-id='basics.headline'] .fi-op") and pg.is_visible(".fi.op-remove.off")
     assert pg.inner_text(".fi[data-id='skills'] .fi-was").startswith("TypeScript")   # the skills to add, collapsed
+    # changes read like git: − what goes, + what comes, the changed words marked, long unchanged stretches folded
+    head = ".fi[data-id='basics.headline'] .diff"
+    assert "Student at ANU" in pg.inner_text(head + " .dl-del")
+    assert "MSc Computing student" in pg.inner_text(head + " .dl-add")
+    desc = ".fi[data-id='projects:EXP-002'] .diff"
+    pg.wait_for_selector(desc)
+    assert pg.inner_text(desc + " mark.w-del") == "two" and pg.inner_text(desc + " mark.w-add") == "multi"
+    assert pg.locator(desc + " .dl-del").count() == 1 and pg.locator(desc + " .dl-add").count() == 1
+    if len(lines) - 1 > 2 * 2 + 1:
+        pg.click(desc + " .dl-fold")
+        assert pg.locator(desc + " .dl-fold").count() == 0 and pg.locator(desc + " .dl-same").count() == len(lines) - 1
+    pg.click(".fi.op-add[data-id^='projects'] .fi-label")          # a new item: every line is a +
+    pg.wait_for_selector(".fi.op-add[data-id^='projects'] .diff")
+    assert pg.locator(".fi.op-add .diff .dl-del").count() == 0 and pg.locator(".fi.op-add .diff .dl-add").count() > 0
+    assert not pg.is_visible(".fi[data-id='basics.headline'] textarea")   # the text box only on a click
     for scheme in ("light", "dark"):
         pg.emulate_media(color_scheme=scheme)
         pg.screenshot(path=str(ART / f"autofill-plan-{scheme}.png"), full_page=True)
@@ -1285,13 +1306,17 @@ def test_autofill_workspace_plan_ticks_edits_and_apply(page_all, server, fake_cl
 
     # untick one, edit the drafted About: both saved for this data file
     pg.click(".fi[data-id='skills'] .check")
+    pg.click(".fi[data-id='basics.about'] .diff")
     ta = pg.locator(".fi[data-id='basics.about'] textarea")
-    ta.click()
-    pg.keyboard.press("End")
+    assert ta.evaluate("e => e === document.activeElement")
+    pg.keyboard.press("Control+End")
     pg.keyboard.type(" Open to ML roles.")
     wait_until(lambda: (lambda i: i["fields"][0].get("edited") and i["fields"][0]["to"].endswith("ML roles."))(
         next(i for i in server.req("GET", "/api/autofill/linkedin")[1]["plan"]["items"] if i["id"] == "basics.about")), msg="edit saved")
     assert ta.evaluate("e => e === document.activeElement")   # typing kept the caret
+    pg.screenshot(path=str(ART / "autofill-editing-light.png"))
+    pg.keyboard.press("Escape")                                  # back to the diff, now of the edited text
+    pg.wait_for_selector(".fi[data-id='basics.about'] .diff .dl-add >> text=Open to ML roles.")
     items = {i["id"]: i for i in server.req("GET", "/api/autofill/linkedin")[1]["plan"]["items"]}
     assert items["skills"]["checked"] is False
     assert "处修改" in pg.inner_text("#fill-foot")

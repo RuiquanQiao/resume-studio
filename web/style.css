@@ -916,6 +916,27 @@ button.fg-title { text-transform: none; letter-spacing: 0; font-size: 12.5px; co
 .ff-to:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 .ff-to:disabled { background: var(--panel-2); color: var(--text-2); }
 .ff-warn { font-size: 12px; color: var(--bad); }
+.ff-edit { font-size: 11.5px; font-weight: 500; }
+/* git-style diff of one field: − what goes, + what comes, the changed words marked */
+.diff { border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; background: var(--panel); font-size: 12.5px; line-height: 1.55; }
+.diff.editable { cursor: text; }
+.diff.editable:hover { border-color: var(--line-strong); }
+.diff.editable:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.dl { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; padding: 1px 10px 1px 0; }
+.dl-sign { text-align: center; font: 600 12px var(--mono); line-height: inherit; color: var(--text-3); user-select: none; }
+.dl-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.dl-same .dl-text { color: var(--text-2); }
+.dl-del { background: var(--bad-soft); }
+.dl-del .dl-sign { color: var(--bad); }
+.dl-del .dl-text { color: var(--text); }
+.dl-add { background: var(--ok-soft); }
+.dl-add .dl-sign { color: var(--ok); }
+.dl-text mark { color: inherit; border-radius: 2px; padding: 0 1px; }
+mark.w-del { background: color-mix(in srgb, var(--bad) 28%, transparent); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--bad) 60%, transparent); }
+mark.w-add { background: color-mix(in srgb, var(--ok) 30%, transparent); }
+.dl-del + .dl-add, .dl-same + .dl-del, .dl-same + .dl-add, .dl-fold + .dl, .dl + .dl-fold { border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.dl-fold { width: 100%; border: 0; background: var(--panel-2); color: var(--text-3); font: inherit; font-size: 11.5px; text-align: left; cursor: pointer; }
+.dl-fold:hover { color: var(--accent); background: var(--hover); }
 .fill-foot { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 10px 28px; border-top: 1px solid var(--line); background: var(--panel); }
 .fill-foot .ff-sum { font-weight: 600; }
 @media (max-width: 1100px) { .fill-wrap { padding: 18px 16px 24px; } .fill-foot { padding: 10px 16px; } .fi-body { padding-left: 14px; } .fi-note { margin-left: 14px; } }

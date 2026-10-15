@@ -14,6 +14,8 @@ const F = {
   view: {},              // site id -> GET /api/autofill/<site>
   open: {},              // plan item id -> expanded (or collapsed) by the user
   showSame: false,
+  editing: null,         // "<item id>|<field>": the field whose text box is open (the others show their diff)
+  unfolded: new Set(),   // the same, for diffs the user unfolded
   saveTimer: 0,
   loading: null,
 };
@@ -348,7 +350,7 @@ async function switchFillSite(id) {
   await saveChoices({ now: true });
   F.site = id;
   store("fill-site", id);
-  F.open = {};
+  F.open = {}; F.editing = null;
   paintFill();   // its saved view right away (or "Loading…"), then the fresh one
   await loadFillSite(id);
   renderWsTools();
@@ -504,32 +506,135 @@ function addSummary(i) {
   return dates || t("{n} field", { n: i.fields.length }, "{n} fields");
 }
 
+// One field: what changes on the site, as a diff (git style: − what goes, + what comes). A click on
+// it (or "Edit") turns it into the text box; leaving the box shows the diff of the edited text.
 function fieldRow(v, i, f, busy) {
   const site = fillSite();
   const name = fieldName(i.section, f.name, F.site);
-  const shown = (s) => (["start", "end", "date"].includes(f.name) && s === "present" ? t("present") : s);
+  const shown = (s) => (["start", "end", "date"].includes(f.name) && s === "present" ? t("present") : s || "");
+  const key = i.id + "|" + f.name;
   if (i.op === "remove") {
-    return h("div", { class: "ff" }, h("div", { class: "ff-name" }, name), h("div", { class: "ff-from" }, shown(f.from)));
+    return h("div", { class: "ff" }, h("div", { class: "ff-name" }, name), diffEl(shown(f.from), "", key));
   }
+  const editing = F.editing === key && !busy;
   const count = h("span", { class: "ff-count" + (f.over ? " over" : "") });
   const paintCount = () => {
     count.textContent = f.limit ? `${f.to.length.toLocaleString()} / ${f.limit.toLocaleString()}` : "";
     count.classList.toggle("over", !!f.limit && f.to.length > f.limit);
   };
-  const ta = h("textarea", { class: "ff-to", rows: 1, spellcheck: "false", disabled: busy, "aria-label": name,
-    oninput: (e) => {
-      f.to = e.target.value; f.edited = true; f.over = !!f.limit && f.to.length > f.limit;
-      autosizeFull(e.target); paintCount(); reset.classList.remove("hidden"); saveChoices(); paintFillFoot();
-    } }, f.to);
+  const again = () => { const next = fieldRow(v, i, f, busy); row.replaceWith(next); return next; };
+  const edit = () => {
+    if (busy) return;
+    F.editing = key;
+    const ta = again().querySelector("textarea");
+    autosizeFull(ta); ta.focus();
+  };
   const reset = h("button", { type: "button", class: "linkish ff-reset" + (f.edited ? "" : " hidden"), disabled: busy,
-    title: t("Go back to what the resume says"), onclick: () => { f.edited = false; saveChoices({ now: true }); } }, t("Undo my edit"));
+    title: t("Go back to what the resume says"), onmousedown: (e) => e.preventDefault(),
+    onclick: () => { F.editing = null; f.edited = false; if (document.activeElement) document.activeElement.blur(); saveChoices({ now: true }); } }, t("Undo my edit"));
   paintCount();
-  return h("div", { class: "ff" },
-    h("div", { class: "ff-name" }, name, h("span", { class: "spacer" }), reset, count),
-    i.op === "update" && h("div", { class: "ff-from" }, h("span", { class: "ff-k" }, t("Now on {site}:", { site: site.name })), " ",
-      f.from ? shown(f.from) : h("i", null, t("(empty)"))),
-    ta,
+  let body;
+  if (editing) {
+    const ta = h("textarea", { class: "ff-to", rows: 1, spellcheck: "false", "aria-label": name,
+      oninput: (e) => {
+        f.to = e.target.value; f.edited = true; f.over = !!f.limit && f.to.length > f.limit;
+        autosizeFull(e.target); paintCount(); reset.classList.remove("hidden"); saveChoices(); paintFillFoot();
+      },
+      onkeydown: (e) => { if (e.key === "Escape") { e.stopPropagation(); e.target.blur(); } },
+      onblur: () => { if (F.editing === key) F.editing = null; if (row.isConnected) again(); } }, f.to);
+    body = [i.op === "update" && h("div", { class: "ff-from" }, h("span", { class: "ff-k" }, t("Now on {site}:", { site: site.name })), " ",
+      f.from ? shown(f.from) : h("i", null, t("(empty)"))), ta];
+  } else {
+    const d = diffEl(i.op === "update" ? shown(f.from) : "", shown(f.to), key);
+    if (!busy) {
+      d.classList.add("editable");
+      d.setAttribute("role", "button"); d.setAttribute("tabindex", "0");
+      d.setAttribute("aria-label", t("Edit {field}", { field: name }));
+      d.addEventListener("click", (e) => { if (!e.target.closest(".dl-fold") && !getSelection().toString()) edit(); });
+      d.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target === d) { e.preventDefault(); edit(); } });
+    }
+    body = [d];
+  }
+  const row = h("div", { class: "ff" + (editing ? " editing" : "") },
+    h("div", { class: "ff-name" }, name, h("span", { class: "spacer" }), reset,
+      !editing && !busy && h("button", { type: "button", class: "linkish ff-edit", onclick: edit }, t("Edit text")), count),
+    body,
     f.over && h("div", { class: "ff-warn" }, t("{site} takes at most {n} characters here: shorten it before it goes up.", { site: site.name, n: f.limit.toLocaleString() })));
+  return row;
+}
+
+// ================================================================ the diff (lines, then words inside a changed line)
+const DIFF_CELLS = 400000;   // past this much work, a changed block is shown as replaced without the word marks
+function lcsOps(a, b) {
+  const n = a.length, m = b.length;
+  if (n * m > DIFF_CELLS) return [...a.map((x) => ["del", x]), ...b.map((x) => ["add", x])];
+  const w = m + 1, dp = new Uint32Array((n + 1) * w);
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
+    dp[i * w + j] = a[i] === b[j] ? dp[(i + 1) * w + j + 1] + 1 : Math.max(dp[(i + 1) * w + j], dp[i * w + j + 1]);
+  const out = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { out.push(["same", a[i]]); i++; j++; }
+    else if (dp[(i + 1) * w + j] >= dp[i * w + j + 1]) out.push(["del", a[i++]]);
+    else out.push(["add", b[j++]]);
+  }
+  while (i < n) out.push(["del", a[i++]]);
+  while (j < m) out.push(["add", b[j++]]);
+  return out;
+}
+
+// words for Latin scripts, one character each for Chinese, Japanese and Korean
+const WORD = /[぀-ヿ㐀-鿿豈-﫿가-힯]|[\p{L}\p{N}_]+|\s+|[^\s\p{L}\p{N}_]/gu;
+
+// a changed line next to its replacement: the words that differ are marked on both
+function wordMarks(oldLine, newLine) {
+  const ops = lcsOps(oldLine.match(WORD) || [], newLine.match(WORD) || []);
+  const same = ops.filter(([k, s]) => k === "same" && s.trim()).reduce((n, [, s]) => n + s.length, 0);
+  if (same < 0.4 * Math.max(oldLine.length, newLine.length)) return null;   // hardly alike: a plain replacement
+  const side = (kind) => ops.filter(([k]) => k === "same" || k === kind)
+    .map(([k, s]) => (k === "same" ? s : h("mark", { class: "w-" + kind }, s)));
+  return { del: side("del"), add: side("add") };
+}
+
+function diffRows(from, to) {
+  const ops = lcsOps(from ? from.split("\n") : [], to ? to.split("\n") : []);
+  const rows = [];
+  for (let k = 0; k < ops.length;) {
+    if (ops[k][0] === "same") { rows.push({ kind: "same", text: ops[k][1] }); k++; continue; }
+    const dels = [], adds = [];
+    while (k < ops.length && ops[k][0] !== "same") (ops[k][0] === "del" ? dels : adds).push(ops[k++][1]);
+    const marks = dels.map((d, x) => (x < adds.length ? wordMarks(d, adds[x]) : null));
+    dels.forEach((d, x) => rows.push({ kind: "del", text: d, parts: marks[x] && marks[x].del }));
+    adds.forEach((a, x) => rows.push({ kind: "add", text: a, parts: marks[x] && marks[x].add }));
+  }
+  return rows;
+}
+
+const DIFF_CONTEXT = 2;   // unchanged lines kept around a change; longer stretches fold
+function diffEl(from, to, key) {
+  const rows = diffRows(from, to);
+  const box = h("div", { class: "diff" });
+  const near = rows.map((r, x) => r.kind !== "same" ||
+    rows.slice(Math.max(0, x - DIFF_CONTEXT), x + DIFF_CONTEXT + 1).some((o) => o.kind !== "same"));
+  const line = (r) => h("div", { class: "dl dl-" + r.kind },
+    h("span", { class: "dl-sign", "aria-hidden": "true" }, { del: "−", add: "+", same: " " }[r.kind]),
+    h("span", { class: "dl-text" }, ...(r.parts || [r.text || " "])));
+  const paint = (all) => {
+    const out = [];
+    for (let x = 0; x < rows.length;) {
+      if (all || near[x] || !rows.some((r) => r.kind !== "same")) { out.push(line(rows[x])); x++; continue; }
+      let y = x;
+      while (y < rows.length && !near[y]) y++;
+      if (y - x < 2) { for (; x < y; x++) out.push(line(rows[x])); continue; }
+      out.push(h("button", { type: "button", class: "dl dl-fold", onclick: (e) => { e.stopPropagation(); F.unfolded.add(key); paint(true); } },
+        h("span", { class: "dl-sign" }, "⋯"), h("span", { class: "dl-text" }, t("{n} unchanged line", { n: y - x }, "{n} unchanged lines"))));
+      x = y;
+    }
+    if (!rows.length) out.push(h("div", { class: "dl dl-same" }, h("span", { class: "dl-sign" }, " "), h("span", { class: "dl-text muted" }, t("(empty)"))));
+    box.replaceChildren(...out);
+  };
+  paint(F.unfolded.has(key));
+  return box;
 }
 
 function paintFillFoot() {

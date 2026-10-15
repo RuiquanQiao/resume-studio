@@ -288,6 +288,8 @@
  "Edit": "Modifier",
  "Edit memory files": "Modifier les fichiers mémoire",
  "Edit notebook": "Modifier le notebook",
+ "Edit text": "Modifier le texte",
+ "Edit {field}": "Modifier {field}",
  "Editing {lang}": "Édition en {lang}",
  "Editor": "Éditeur",
  "Edits files directly; still asks before risky commands": "Modifie les fichiers directement ; demande toujours avant les commandes risquées",
@@ -1212,6 +1214,10 @@
  "{n} requirement": [
   "{n} exigence",
   "{n} exigences"
+ ],
+ "{n} unchanged line": [
+  "{n} ligne inchangée",
+  "{n} lignes inchangées"
  ],
  "{n} uncommitted file": [
   "{n} fichier non validé",

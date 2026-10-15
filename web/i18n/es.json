@@ -288,6 +288,8 @@
  "Edit": "Editar",
  "Edit memory files": "Editar archivos de memoria",
  "Edit notebook": "Editar notebook",
+ "Edit text": "Editar el texto",
+ "Edit {field}": "Editar {field}",
  "Editing {lang}": "Editando en {lang}",
  "Editor": "Editor",
  "Edits files directly; still asks before risky commands": "Edita archivos directamente; sigue preguntando antes de comandos arriesgados",
@@ -1212,6 +1214,10 @@
  "{n} requirement": [
   "{n} requisito",
   "{n} requisitos"
+ ],
+ "{n} unchanged line": [
+  "{n} línea sin cambios",
+  "{n} líneas sin cambios"
  ],
  "{n} uncommitted file": [
   "{n} archivo sin confirmar",
