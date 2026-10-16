@@ -478,9 +478,9 @@ function renderChat() {
     const roots = (doc().settings || {}).project_roots || [];
     const suggest = [
       roots.length ? t("Look at my project folders ({folders}) and pick the projects most worth putting on my resume; don't change anything until I confirm", { folders: roots.join(", ") }) : t("Help me add a new experience, one question at a time"),
-      langs().length > 1 ? t("Check every language version: which entries lack a language, which bullets run past one line") : t("Check whether the current job claims anything the fact layer doesn't support"),
-      t("Get the current job onto one page: adjust the layout first, then tighten the wording"),
-      t("Check whether the current job claims anything the fact layer doesn't support"),
+      langs().length > 1 ? t("Check every language version: which entries lack a language, which bullets run past one line") : t("Check whether the current subset claims anything the fact layer doesn't support"),
+      t("Get the current subset onto one page: adjust the layout first, then tighten the wording"),
+      t("Check whether the current subset claims anything the fact layer doesn't support"),
     ].filter((s, i, a) => a.indexOf(s) === i);
     log.append(h("div", { class: "chat-welcome" },
       h("div", { class: "t" }, t("Work on your resume with Claude")),
@@ -850,7 +850,7 @@ function renderComposerState() {
   setTip($("#chat-send"), running ? t("Queue: sent after this reply (Enter)") : t("Send (Enter) · Shift+Enter for a new line"));
   $("#chat-input").disabled = !ui.chat.available;
   const parts = [];
-  if (ui.versionId) parts.push(isAll() ? `ALL (${t("All entries")})` : t("the job “{name}”", { name: jobName(version()) }));
+  if (ui.subsetId) parts.push(isAll() ? `ALL (${t("All entries")})` : t("the subset “{name}”", { name: subsetName(subset()) }));
   if (ui.sel.kind === "entry" && entryById(ui.sel.id)) parts.push(`“${display(entryById(ui.sel.id).title) || entryLabel(entryById(ui.sel.id))}”`);
   const ws = (ui.chat.meta && ui.chat.meta.workspace) || (W.ws === "jobs" && jobsReady() ? jobsTool().name : W.ws === "fill" ? "autofill" : null);
   $("#chat-context").textContent = ws === "autofill" ? t("In this chat Claude can use Resume Studio's browser")
@@ -1025,7 +1025,7 @@ async function sendChat(text, { action = null, entryId = null, target = null, la
   setTab("chat");
   const batch = action && action.startsWith("batch_");
   const attachments = files.map((f) => (f.data ? { name: f.name, data: f.data } : { name: f.name, path: f.path }));
-  const body = { text, version_id: ui.versionId, entry_id: batch ? null : entryId || (ui.sel.kind === "entry" ? ui.sel.id : null), action, target, lang, attachments };
+  const body = { text, subset_id: ui.subsetId, entry_id: batch ? null : entryId || (ui.sel.kind === "entry" ? ui.sel.id : null), action, target, lang, attachments };
   const queued = ui.chat.running;
   if (!queued) {
     ui.chat.running = true;

@@ -42,7 +42,7 @@ def test_rename_entry_updates_versions(data_file):
     e["id"] = "MY-OWN-ID"
     st.update_item("entry", "EXP-003", e, None)
     doc, _ = st.store.load()
-    for v in doc["versions"][1:]:
+    for v in doc["subsets"][1:]:
         assert "EXP-003" not in v["entries"] and "MY-OWN-ID" in v["entries"]
 
 
@@ -51,7 +51,7 @@ def test_delete_entry_removes_references(data_file):
     st.delete_entry("EXP-002")
     doc, _ = st.store.load()
     assert model.get_item(doc, "entry", "EXP-002") is None
-    assert all("EXP-002" not in v.get("entries", []) for v in doc["versions"])
+    assert all("EXP-002" not in v.get("entries", []) for v in doc["subsets"])
 
 
 def test_merge_into_list_reuses_maps():
@@ -76,7 +76,7 @@ def test_text_helpers():
 def test_view_never_contains_fact_layer(data_file):
     st = Studio(data_file)
     doc, _ = st.store.load()
-    for v in doc["versions"]:
+    for v in doc["subsets"]:
         view = model.build_view(doc, to_plain(v))
         flat = str(view)
         for e in doc["entries"]:
@@ -89,7 +89,7 @@ def test_view_never_contains_fact_layer(data_file):
 def test_view_order_hidden_sections_and_accent(data_file):
     st = Studio(data_file)
     doc, _ = st.store.load()
-    v = to_plain(model.get_item(doc, "version", "RES-TECH-EN"))
+    v = to_plain(model.get_item(doc, "subset", "RES-TECH-EN"))
     v["entries"] = ["EXP-003", "EXP-002", "EXP-001", "MISSING"]
     v["sections"] = ["projects", "education"]
     v["hide_sections"] = ["skills"]
@@ -105,7 +105,7 @@ def test_validate_and_ids(data_file):
     doc, _ = st.store.load()
     assert model.validate(doc) == []
     assert model.next_entry_id(doc) == "EXP-006"                      # one counter, whatever the section
-    model.get_item(doc, "version", "RES-TECH-EN")["entries"].append("EXP-404")
+    model.get_item(doc, "subset", "RES-TECH-EN")["entries"].append("EXP-404")
     assert any("EXP-404" in w for w in model.validate(doc))
 
 
@@ -122,12 +122,12 @@ def test_moving_section_keeps_the_id(data_file):
 def test_all_is_the_full_set(data_file):
     st = Studio(data_file)
     doc, _ = st.store.load()
-    all_view = model.build_view(doc, to_plain(model.get_version(doc, "ALL")))
+    all_view = model.build_view(doc, to_plain(model.get_subset(doc, "ALL")))
     ids = [e["id"] for sec in all_view["sections"] for e in sec["entries"]]
     assert sorted(ids) == sorted(str(e["id"]) for e in doc["entries"])
     assert all_view["profile"]["headline"] == "MSc Computing student"
     assert len(all_view["profile"]["contacts"]) == 3
-    zh = model.build_view(doc, to_plain(model.get_version(doc, "RES-TECH-ZH")))
+    zh = model.build_view(doc, to_plain(model.get_subset(doc, "RES-TECH-ZH")))
     assert [c["label"] for c in zh["profile"]["contacts"]] == ["email", "github"]   # hide_contacts
     assert zh["profile"]["headline"].startswith("计算机硕士在读 · ")
 
@@ -140,7 +140,7 @@ def test_deleting_a_job_drops_its_preview_builds(data_file):
         (st.build_root / name / "main.pdf").write_bytes(b"%PDF")
     (data_file.parent / "exports").mkdir()
     (data_file.parent / "exports" / "RES-TECH-EN.pdf").write_bytes(b"%PDF")
-    st.delete_version("RES-TECH-EN")
+    st.delete_subset("RES-TECH-EN")
     assert sorted(p.name for p in st.build_root.iterdir()) == ["ALL", "ALL@zh", "RES-TECH-ZH"]   # RES-OLD: an older leftover
     assert (data_file.parent / "exports" / "RES-TECH-EN.pdf").exists()                        # exports are the user's
 
@@ -150,9 +150,9 @@ def test_renaming_a_job_renames_its_preview_builds(data_file):
     for name in ["RES-TECH-EN", "RES-TECH-EN@zh", "RES-NEW"]:   # RES-NEW: a stale leftover with the new ID
         (st.build_root / name).mkdir(parents=True)
         (st.build_root / name / "main.pdf").write_bytes(name.encode())
-    v = to_plain(model.get_item(st.store.load()[0], "version", "RES-TECH-EN"))
+    v = to_plain(model.get_item(st.store.load()[0], "subset", "RES-TECH-EN"))
     v["id"] = "RES-NEW"
-    st.update_item("version", "RES-TECH-EN", v, None)
+    st.update_item("subset", "RES-TECH-EN", v, None)
     assert sorted(p.name for p in st.build_root.iterdir()) == ["RES-NEW", "RES-NEW@zh"]
     assert (st.build_root / "RES-NEW" / "main.pdf").read_bytes() == b"RES-TECH-EN"
 
@@ -160,37 +160,62 @@ def test_renaming_a_job_renames_its_preview_builds(data_file):
 def test_all_is_reserved(data_file):
     st = Studio(data_file)
     with pytest.raises(ValueError):
-        st.delete_version("ALL")
-    v = to_plain(model.get_item(st.store.load()[0], "version", "RES-TECH-EN"))
+        st.delete_subset("ALL")
+    v = to_plain(model.get_item(st.store.load()[0], "subset", "RES-TECH-EN"))
     v["id"] = "ALL"
     with pytest.raises(ValueError):
-        st.update_item("version", "RES-TECH-EN", v, None)
-    vid, s = st.create_version("ALL", None, "AI Agent 工程师")
-    v = next(x for x in s["doc"]["versions"] if x["id"] == vid)
-    assert vid == "JOB-001" and v["label"] == "AI Agent 工程师"
+        st.update_item("subset", "RES-TECH-EN", v, None)
+    vid, s = st.create_subset("ALL", None, "AI Agent 工程师")
+    v = next(x for x in s["doc"]["subsets"] if x["id"] == vid)
+    assert vid == "SUB-001" and v["label"] == "AI Agent 工程师"
     assert v["entries"] == [e["id"] for e in s["doc"]["entries"]]   # starts with everything ticked
     assert v["headline"] == ""                                        # but not ALL's headline
-    vid, s = st.create_version(None, None, "管培生")
-    assert vid == "JOB-002" and next(x for x in s["doc"]["versions"] if x["id"] == vid)["entries"] == []
+    vid, s = st.create_subset(None, None, "管培生")
+    assert vid == "SUB-002" and next(x for x in s["doc"]["subsets"] if x["id"] == vid)["entries"] == []
 
 
 def test_section_order_belongs_to_the_version(data_file):
     st = Studio(data_file)
     doc = st.store.load()[0]
     ids = [str(s["id"]) for s in doc["sections"]]
-    all_v = to_plain(model.get_version(doc, "ALL"))
+    all_v = to_plain(model.get_subset(doc, "ALL"))
     all_v["sections"] = list(reversed(ids))
-    st.update_item("version", "ALL", all_v, None)
+    st.update_item("subset", "ALL", all_v, None)
     for src in (None, "ALL"):                                   # blank or from ALL: ALL's order
-        vid, s = st.create_version(src, None, "x")
-        assert next(x for x in s["doc"]["versions"] if x["id"] == vid)["sections"] == list(reversed(ids))
-    job = to_plain(model.get_item(st.store.load()[0], "version", vid))
+        vid, s = st.create_subset(src, None, "x")
+        assert next(x for x in s["doc"]["subsets"] if x["id"] == vid)["sections"] == list(reversed(ids))
+    job = to_plain(model.get_item(st.store.load()[0], "subset", vid))
     job["sections"] = [ids[1]]
-    st.update_item("version", vid, job, None)
-    vid2, s = st.create_version(vid, None, "copy")              # a copy keeps its job's order
-    assert next(x for x in s["doc"]["versions"] if x["id"] == vid2)["sections"] == [ids[1]]
+    st.update_item("subset", vid, job, None)
+    vid2, s = st.create_subset(vid, None, "copy")              # a copy keeps its job's order
+    assert next(x for x in s["doc"]["subsets"] if x["id"] == vid2)["sections"] == [ids[1]]
     order = model.section_order(s["doc"], job)                  # unlisted sections go last
     assert order[0] == ids[1] and sorted(order) == sorted(ids)
+
+
+def test_older_files_call_subsets_versions(tmp_path):
+    f = tmp_path / "resume.yaml"
+    f.write_text("schema_version: 1\n"
+                 "profile: {name: X}\n"
+                 "entries: []\n"
+                 "# the resumes I send\n"
+                 "versions:\n"
+                 "  - {id: ALL, label: All entries}\n"
+                 "  - {id: JOB-004, label: Backend}  # mine\n"
+                 "settings: {languages: [en]}\n", encoding="utf-8")
+    st = Studio(f)
+    assert [v["id"] for v in st.state()["doc"]["subsets"]] == ["ALL", "JOB-004"]   # read as subsets in memory
+    assert "versions:" in f.read_text(encoding="utf-8")
+    st.ensure_file()                                      # at startup the file itself is brought up to date
+    text = f.read_text(encoding="utf-8")
+    assert "versions" not in text and "schema_version: 2" in text
+    assert text.index("# the resumes I send\nsubsets:") < text.index("settings:")   # same place, comments kept
+    assert "# mine" in text
+    vid, _ = st.create_subset(None, None, "Data")
+    assert vid == "SUB-005"                               # numbering goes on from the older JOB- ids
+    # an older tool writing the old key again next to the new one loses nothing
+    f.write_text(f.read_text(encoding="utf-8") + "versions:\n  - {id: OLD-1, label: Old}\n", encoding="utf-8")
+    assert [v["id"] for v in st.state()["doc"]["subsets"]] == ["ALL", "JOB-004", "SUB-005", "OLD-1"]
 
 
 def test_files_without_all_still_get_it(tmp_path):
@@ -198,21 +223,21 @@ def test_files_without_all_still_get_it(tmp_path):
     f.write_text("schema_version: 1\n"
                  "profile: {name: X, headline: Old}\n"
                  "entries: []\n"
-                 "versions:\n"
+                 "versions:\n"                                   # the older name, read as subsets
                  "  - {id: RES-A, label: A, entries: []}\n", encoding="utf-8")
     st = Studio(f)
     s = st.state()
-    assert [v["id"] for v in s["doc"]["versions"]] == ["ALL", "RES-A"]
+    assert [v["id"] for v in s["doc"]["subsets"]] == ["ALL", "RES-A"]
     assert "ALL" not in f.read_text(encoding="utf-8")                  # reading never writes
     doc, _ = st.store.load()
-    assert model.build_view(doc, to_plain(model.get_item(doc, "version", "RES-A")))["profile"]["headline"] == "Old"
-    st.update_item("version", "ALL", {"id": "ALL", "template": "modern"}, None)
-    assert model.get_item(st.store.load()[0], "version", "ALL")["template"] == "modern"
+    assert model.build_view(doc, to_plain(model.get_item(doc, "subset", "RES-A")))["profile"]["headline"] == "Old"
+    st.update_item("subset", "ALL", {"id": "ALL", "template": "modern"}, None)
+    assert model.get_item(st.store.load()[0], "subset", "ALL")["template"] == "modern"
 
 
 def test_skeleton_starts_with_all_only():
     sk = model.skeleton()
-    assert [v["id"] for v in sk["versions"]] == ["ALL"] and "headline" not in sk["profile"]
+    assert [v["id"] for v in sk["subsets"]] == ["ALL"] and "headline" not in sk["profile"]
 
 
 def test_move_entry_reorders_library_within_section(data_file):

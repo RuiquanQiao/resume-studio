@@ -30,30 +30,30 @@ def test_state_and_item_update(server, data_file):
 def test_entries_and_versions_lifecycle(server):
     code, r = server.req("POST", "/api/entries", {"section": "projects"})
     assert code == 200 and r["id"] == "EXP-006"
-    code, r = server.req("POST", "/api/versions", {"id": "RES-X", "copy_from": "RES-TECH-EN"})
+    code, r = server.req("POST", "/api/subsets", {"id": "RES-X", "copy_from": "RES-TECH-EN"})
     assert r["id"] == "RES-X"
-    v = next(x for x in r["doc"]["versions"] if x["id"] == "RES-X")
+    v = next(x for x in r["doc"]["subsets"] if x["id"] == "RES-X")
     assert v["entries"] and v["template"] == "classic"
     code, r = server.req("DELETE", "/api/entries/EXP-002")
-    assert all("EXP-002" not in x.get("entries", []) for x in r["doc"]["versions"])
-    code, r = server.req("DELETE", "/api/versions/RES-X")
-    assert all(x["id"] != "RES-X" for x in r["doc"]["versions"])
-    code, r = server.req("DELETE", "/api/versions/ALL")
+    assert all("EXP-002" not in x.get("entries", []) for x in r["doc"]["subsets"])
+    code, r = server.req("DELETE", "/api/subsets/RES-X")
+    assert all(x["id"] != "RES-X" for x in r["doc"]["subsets"])
+    code, r = server.req("DELETE", "/api/subsets/ALL")
     assert code == 400                                                  # ALL can't be deleted
     code, r = server.req("POST", "/api/entries/EXP-003/move", {"dir": 1})
     assert code == 200
-    code, r = server.req("POST", "/api/versions/ALL/render")
-    assert code == 200 and r["version"] == "ALL"
+    code, r = server.req("POST", "/api/subsets/ALL/render")
+    assert code == 200 and r["subset"] == "ALL"
 
 
 @needs_tex
 def test_render_page_images_and_export(server, data_file):
-    code, r = server.req("POST", "/api/versions/RES-TECH-EN/render")
+    code, r = server.req("POST", "/api/subsets/RES-TECH-EN/render")
     assert code == 200 and r["ok"] and r["pages"] == 1
     if r["images"]:
-        code, png = server.req("GET", "/api/versions/RES-TECH-EN/page/1")
+        code, png = server.req("GET", "/api/subsets/RES-TECH-EN/page/1")
         assert code == 200 and png[:8] == b"\x89PNG\r\n\x1a\n"
-    code, r = server.req("POST", "/api/versions/RES-TECH-EN/export")
+    code, r = server.req("POST", "/api/subsets/RES-TECH-EN/export")
     assert r["ok"] and (data_file.parent / "exports" / "RES-TECH-EN.pdf").exists()
 
 
@@ -75,7 +75,7 @@ def _send(server, chat_id, text, **extra):
 def test_chat_is_a_real_resumed_session(server, data_file, fake_claude):
     code, chat = server.req("POST", "/api/chats")
     cid = chat["id"]
-    code, r = _send(server, cid, "你好，帮我看看简历", version_id="RES-TECH-EN", entry_id="EXP-002")
+    code, r = _send(server, cid, "你好，帮我看看简历", subset_id="RES-TECH-EN", entry_id="EXP-002")
     assert code == 200
     server.wait_idle(cid)
     code, r = server.req("GET", f"/api/chats/{cid}")
@@ -378,7 +378,7 @@ def test_bilingual_and_one_line_actions(server, data_file, fake_claude):
     server.req("PUT", "/api/item", {"kind": "entry", "id": "EXP-002", "data": e, "base": s["hashes"]["entry"]["EXP-002"]})
     code, chat = server.req("POST", "/api/chats")
     cid = chat["id"]
-    send = lambda **b: server.req("POST", f"/api/chats/{cid}/send", {"version_id": "RES-TECH-EN", **b})  # noqa: E731
+    send = lambda **b: server.req("POST", f"/api/chats/{cid}/send", {"subset_id": "RES-TECH-EN", **b})  # noqa: E731
 
     code, r = send(action="translate", entry_id="EXP-002", target="zh")
     assert code == 200

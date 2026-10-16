@@ -13,9 +13,9 @@ const J = {
   draft: "",             // the posting being pasted (kept while the tab re-renders)
   filter: "all",
   loading: null,
-  fit: {},               // application id -> GET /api/jobs/app/<id>/fit (the versions ranked for it)
+  fit: {},               // application id -> GET /api/jobs/app/<id>/fit (the subsets ranked for it)
   fitLoading: {},
-  fitAll: {},            // application id -> show every version, not just the best few
+  fitAll: {},            // application id -> show every subset, not just the best few
 };
 
 // the tool's own state names, in the interface language (unknown ones show as the tool writes them)
@@ -72,7 +72,7 @@ async function loadJobs({ quiet = false } = {}) {
     }
     renderJobs();
     if (ui.sel.kind === "posting") refreshPosting();
-    if (ui.sel.kind === "version") buildEditorKeepDraft();   // the posting link in Job settings
+    if (ui.sel.kind === "subset") buildEditorKeepDraft();   // the posting link in Job settings
     paintJobspace();
     renderWsTools();
     if (W.ws === "jobs" && !visibleChats().some((c) => c.id === ui.chat.id)) chatForWorkspace();
@@ -189,22 +189,22 @@ function jobsBanners(st) {
   if (st.needs_setup) {
     out.push(h("div", { class: "jobs-banner" }, icon("user"),
       h("span", { class: "nb-text" }, t("{name} doesn't know what you're looking for yet (roles, location, salary), so its scores would follow someone else's targets.", { name: st.tool.name })),
-      h("button", { class: "btn sm primary", disabled: !ui.chat.available, title: t("Claude fills it from your profile's fact layer and your resume versions, and asks only for what's missing"),
+      h("button", { class: "btn sm primary", disabled: !ui.chat.available, title: t("Claude fills it from your profile's fact layer and your resume subsets, and asks only for what's missing"),
         onclick: () => setupProfile(false) }, icon("sparkle"), t("Fill it from my resume"))));
   } else if (prof.stale) {
     out.push(h("div", { class: "jobs-banner" }, icon("refresh"),
-      h("span", { class: "nb-text" }, t("Your fact layer or resume versions changed since {name}'s profile was filled from them.", { name: st.tool.name })),
+      h("span", { class: "nb-text" }, t("Your fact layer or resume subsets changed since {name}'s profile was filled from them.", { name: st.tool.name })),
       h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => setupProfile(true) }, icon("sparkle"), t("Update its profile"))));
   }
   return out;
 }
 
-// career-ops' targeting profile, filled by Claude from the resume data (profile notes, versions)
+// career-ops' targeting profile, filled by Claude from the resume data (profile notes, subsets)
 function setupProfile(update) {
   return jobChat("/api/jobs/setup", { update });
 }
 
-// the resume changed: the version ranking and the profile's freshness may have too
+// the resume changed: the subset ranking and the profile's freshness may have too
 let jobsResumeTimer = 0;
 function jobsAfterResumeChange() {
   J.fit = {};
@@ -256,7 +256,7 @@ function appRow(a) {
     scorePill(a),
     h("span", { class: "e-main" },
       h("span", { class: "e-title" }, a.company || t("(no company)"),
-        (a.versions || []).length > 0 && h("span", { class: "has-resume", title: t("Sending: {jobs}", { jobs: a.versions.map((v) => v.label).join(", ") }) }, icon("file"))),
+        (a.subsets || []).length > 0 && h("span", { class: "has-resume", title: t("Sending: {jobs}", { jobs: a.subsets.map((v) => v.label).join(", ") }) }, icon("file"))),
       h("span", { class: "e-meta" }, a.role || "")),
     h("span", { class: "app-side" }, stateChip(a), a.date && h("span", { class: "app-date" }, a.date.slice(5))));
 }
@@ -376,30 +376,30 @@ function postingView() {
   return out;
 }
 
-// ---- which resume goes out: one of the user's versions (a resume per kind of role, not per company) ----
+// ---- which resume goes out: one of the user's subsets (a resume per kind of role, not per company) ----
 async function loadFit(id, { force = false } = {}) {
   if (!force && (J.fit[id] || J.fitLoading[id])) return J.fit[id];
   J.fitLoading[id] = true;
   try { J.fit[id] = await api("GET", `/api/jobs/app/${encodeURIComponent(id)}/fit`); }
-  catch (e) { J.fit[id] = { error: e.message, versions: [], linked: [] }; }
+  catch (e) { J.fit[id] = { error: e.message, subsets: [], linked: [] }; }
   finally { delete J.fitLoading[id]; }
   if (ui.sel.kind === "posting" && ui.sel.id === id) paintEditor({ keepScroll: true });
   return J.fit[id];
 }
 
-// the version list, ranked; `onDone` runs after a pick (closes the picker)
-function versionChoices(a, F, { onDone = null, all = false } = {}) {
-  const linkedId = (((F && F.linked) || a.versions || [])[0] || {}).id || null;
+// the subset list, ranked; `onDone` runs after a pick (closes the picker)
+function subsetChoices(a, F, { onDone = null, all = false } = {}) {
+  const linkedId = (((F && F.linked) || a.subsets || [])[0] || {}).id || null;
   if (!F) return [h("p", { class: "muted card-p" }, t("Loading…"))];
   if (F.error) return [h("div", { class: "banner warn" }, icon("alert"), F.error)];
-  const vs = F.versions || [];
-  if (!vs.length) return [h("p", { class: "muted card-p" }, t("You have no resume versions yet: make one for this kind of role."))];
+  const vs = F.subsets || [];
+  if (!vs.length) return [h("p", { class: "muted card-p" }, t("You have no resume subsets yet: make one for this kind of role."))];
   const best = vs[0].score;
   const shown = all || J.fitAll[a.id] ? vs : vs.slice(0, 4);
   const rows = shown.map((v, i) => {
     const on = v.id === linkedId;
     const tip = [v.covered.length && t("Covers: {list}", { list: v.covered.join("; ") }), v.missing.length && t("Missing: {list}", { list: v.missing.join("; ") })].filter(Boolean).join("\n");
-    return h("div", { class: "fit-row" + (on ? " on" : ""), "data-version": v.id },
+    return h("div", { class: "fit-row" + (on ? " on" : ""), "data-subset": v.id },
       h("span", { class: "fit-main" },
         h("span", { class: "fit-name" }, v.label, on && h("span", { class: "chip" }, t("Sending this"))),
         v.headline && h("span", { class: "fit-head" }, v.headline)),
@@ -409,18 +409,18 @@ function versionChoices(a, F, { onDone = null, all = false } = {}) {
           h("span", { class: "fit-pct" }, v.score + "%")],
         F.requirements > 0 && h("span", { class: "fit-req" }, t("{n} of {total} requirements", { n: v.covered.length, total: F.requirements }))),
       h("span", { class: "fit-acts" },
-        on ? h("button", { class: "btn sm ghost", onclick: () => useVersion(a, null, onDone) }, t("Unlink"))
-           : h("button", { class: "btn sm" + (i === 0 && best != null && !linkedId ? " primary" : ""), onclick: () => useVersion(a, v.id, onDone) }, t("Use this")),
-        h("button", { class: "btn icon sm ghost", title: t("More"), onclick: (e) => versionMenu(e.currentTarget, a, v, onDone) }, icon("more"))));
+        on ? h("button", { class: "btn sm ghost", onclick: () => useSubset(a, null, onDone) }, t("Unlink"))
+           : h("button", { class: "btn sm" + (i === 0 && best != null && !linkedId ? " primary" : ""), onclick: () => useSubset(a, v.id, onDone) }, t("Use this")),
+        h("button", { class: "btn icon sm ghost", title: t("More"), onclick: (e) => subsetMenu(e.currentTarget, a, v, onDone) }, icon("more"))));
   });
   return [h("div", { class: "fit-list" }, rows),
     vs.length > shown.length && h("button", { class: "linkish fit-more", onclick: () => { J.fitAll[a.id] = true; onDone ? onDone("redraw") : paintEditor({ keepScroll: true }); } }, t("Show all {n}", { n: vs.length }))]
     .filter(Boolean);
 }
 
-function versionMenu(anchor, a, v, onDone) {
+function subsetMenu(anchor, a, v, onDone) {
   openMenu(anchor, [
-    { label: t("Preview"), icon: "file", onClick: () => { if (onDone) onDone("close"); previewVersion(v.id); } },
+    { label: t("Preview"), icon: "file", onClick: () => { if (onDone) onDone("close"); previewSubset(v.id); } },
     { label: t("Adjust it for this kind of role"), hint: t("a chat"), icon: "sparkle", disabled: !ui.chat.available,
       onClick: () => { if (onDone) onDone("close"); tailor(a, v.id); } },
   ], { align: "end" });
@@ -428,43 +428,43 @@ function versionMenu(anchor, a, v, onDone) {
 
 function fitFoot(a, onDone) {
   return h("div", { class: "fit-foot" },
-    h("button", { class: "btn sm", disabled: !ui.chat.available, title: t("Claude compares what each version says with the evaluation and recommends one"),
+    h("button", { class: "btn sm", disabled: !ui.chat.available, title: t("Claude compares what each subset says with the evaluation and recommends one"),
       onclick: () => { if (onDone) onDone("close"); jobChat(`/api/jobs/app/${encodeURIComponent(a.id)}/choose`); } }, icon("sparkle"), t("Ask Claude which fits")),
-    h("button", { class: "btn sm ghost", disabled: !ui.chat.available, onclick: () => { if (onDone) onDone("close"); newVersionFor(a); } }, icon("plus"), t("New version for this kind of role")),
+    h("button", { class: "btn sm ghost", disabled: !ui.chat.available, onclick: () => { if (onDone) onDone("close"); newSubsetFor(a); } }, icon("plus"), t("New subset for this kind of role")),
     h("span", { class: "fit-note" }, t("Ranked by how many of the posting's requirements and keywords each resume already mentions.")));
 }
 
 function resumeCard(a) {
   const F = J.fit[a.id];
   if (!F) loadFit(a.id);
-  const linked = (F && F.linked) || a.versions || [];
-  return card(t("Resume to send"), linked.length ? t("“{name}”: change it any time", { name: linked[0].label }) : t("one of your versions; no company names needed"),
-    [...versionChoices(a, F), fitFoot(a, null)], { cls: "resume-card" });
+  const linked = (F && F.linked) || a.subsets || [];
+  return card(t("Resume to send"), linked.length ? t("“{name}”: change it any time", { name: linked[0].label }) : t("one of your subsets; no company names needed"),
+    [...subsetChoices(a, F), fitFoot(a, null)], { cls: "resume-card" });
 }
 
-async function useVersion(a, versionId, onDone) {
+async function useSubset(a, subsetId, onDone) {
   try {
-    const r = await api("PUT", `/api/jobs/app/${encodeURIComponent(a.id)}/resume`, { version_id: versionId });
+    const r = await api("PUT", `/api/jobs/app/${encodeURIComponent(a.id)}/resume`, { subset_id: subsetId });
     applyState(r);
     if (J.fit[a.id]) J.fit[a.id].linked = r.linked;
-    if (J.detail && J.detail.id === a.id) J.detail.versions = r.linked;
-    toast(versionId ? t("Linked: you'll send “{name}” for this posting", { name: (r.linked[0] || {}).label || versionId }) : t("Unlinked"));
+    if (J.detail && J.detail.id === a.id) J.detail.subsets = r.linked;
+    toast(subsetId ? t("Linked: you'll send “{name}” for this posting", { name: (r.linked[0] || {}).label || subsetId }) : t("Unlinked"));
     loadJobs({ quiet: true });
     if (onDone) onDone("redraw");
     else paintEditor({ keepScroll: true });
   } catch (e) { toast(e.message); }
 }
 
-async function previewVersion(id) {
+async function previewSubset(id) {
   if (W.ws !== "resume") setWorkspace("resume");
-  if (ui.versionId !== id) await switchVersion(id);
+  if (ui.subsetId !== id) await switchSubset(id);
 }
 
-async function newVersionFor(a) {
+async function newSubsetFor(a) {
   const s = a.summary || {};
-  const label = await modal({ title: t("New version for this kind of role"),
+  const label = await modal({ title: t("New subset for this kind of role"),
     message: t("Name it after the kind of role, not the company: you'll send it to similar postings too. Claude then picks its entries and writes its headline from this evaluation."),
-    input: a.role || s.archetype || "", placeholder: t("Job name, e.g. AI Agent Engineer"), ok: t("Create") });
+    input: a.role || s.archetype || "", placeholder: t("Subset name, e.g. AI Agent Engineer"), ok: t("Create") });
   if (!label || !label.trim()) return;
   await tailor(a, null, label.trim());
 }
@@ -501,19 +501,19 @@ function postingMenu(anchor, a) {
 
 async function setPostingStatus(id, state) {
   try {
-    J.detail = { ...(await api("PUT", `/api/jobs/app/${encodeURIComponent(id)}/status`, { state })), versions: (J.detail || {}).versions };
+    J.detail = { ...(await api("PUT", `/api/jobs/app/${encodeURIComponent(id)}/status`, { state })), subsets: (J.detail || {}).subsets };
     toast(t("Status: {state}", { state: stateName(state) }));
     loadJobs({ quiet: true });
   } catch (e) { toast(e.message, { ms: 8000 }); refreshPosting(); }
 }
 
-// adjust a version for this kind of posting (versionId), or make a new one (label); Claude does the picking
-async function tailor(a, versionId, label = null) {
+// adjust a subset for this kind of posting (subsetId), or make a new one (label); Claude does the picking
+async function tailor(a, subsetId, label = null) {
   if (W.ws !== "resume") setWorkspace("resume");
-  const r = await jobChat(`/api/jobs/app/${encodeURIComponent(a.id)}/tailor`, { version_id: versionId, label });
+  const r = await jobChat(`/api/jobs/app/${encodeURIComponent(a.id)}/tailor`, { subset_id: subsetId, label });
   if (!r) return;
   delete J.fit[a.id];
-  await switchVersion(r.version_id);
+  await switchSubset(r.subset_id);
   loadJobs({ quiet: true });
 }
 
@@ -677,7 +677,7 @@ const MODE_GROUPS = [
   ["Interviews and offers", ["interview-prep", "interview/plan", "interview/practice", "interview/debrief", "offer-prep"]],
   ["Keep track", ["tracker", "followup", "reply-watch", "outcome", "patterns", "calibrate", "upskill"]],
   ["Your profile", ["interview", "master-profile", "intake", "expand", "add", "training", "project", "agent-inbox"]],
-  // career-ops makes CVs of its own too; the resumes you send come from Resume Studio's versions
+  // career-ops makes CVs of its own too; the resumes you send come from Resume Studio's subsets
   ["Its own CV files", ["pdf", "text", "latex", "latex-tex", "ats"]],
 ];
 const HIDDEN_MODES = ["update"];   // Settings updates the tool with its own updater
@@ -828,7 +828,7 @@ function webApp() {
   const m = re.exec(W.path || "");
   if (!m) return null;
   const id = decodeURIComponent(m[1]);
-  return (J.data.applications || []).find((a) => a.id === id) || { id, company: "#" + id, role: "", versions: [] };
+  return (J.data.applications || []).find((a) => a.id === id) || { id, company: "#" + id, role: "", subsets: [] };
 }
 
 function webRoute(kind, id) {
@@ -849,10 +849,10 @@ function renderWsTools() {
   if (jobsReady()) out.push(h("button", { class: "btn ghost", title: t("Every mode of {name}, each one as a chat with Claude", { name }), onclick: (e) => openLauncher(e.currentTarget) }, icon("apps"), h("span", { class: "lbl" }, t("All of {name}", { name }))));
   const a = webUp() ? webApp() : null;
   if (a) {
-    const linked = a.versions || [];
+    const linked = a.subsets || [];
     out.push(h("span", { class: "ws-here" }, h("b", { title: [a.company, a.role].filter(Boolean).join(" — ") }, [a.company, a.role].filter(Boolean).join(" — ")),
       h("button", { class: "btn sm" + (linked.length ? "" : " primary"), "aria-haspopup": "dialog",
-        title: t("Which of your resume versions you send for this posting"), onclick: (e) => openResumePicker(e.currentTarget, a) },
+        title: t("Which of your resume subsets you send for this posting"), onclick: (e) => openResumePicker(e.currentTarget, a) },
       icon("file"), h("span", { class: "lbl" }, linked.length ? t("Resume: {name}", { name: linked[0].label }) : t("Pick a resume")), icon("chev"))));
   }
   out.push(h("span", { class: "spacer" }));
@@ -860,27 +860,27 @@ function renderWsTools() {
   const prof = (st && st.profile) || {};
   if (jobsReady() && (st.needs_setup || prof.stale)) {
     out.push(h("button", { class: "btn sm" + (st.needs_setup ? " primary" : ""), disabled: !ui.chat.available,
-      title: t("Claude fills it from your profile's fact layer and your resume versions, and asks only for what's missing"),
+      title: t("Claude fills it from your profile's fact layer and your resume subsets, and asks only for what's missing"),
       onclick: () => setupProfile(!st.needs_setup) }, icon("user"), st.needs_setup ? t("Fill its profile from my resume") : t("Update its profile")));
   }
   if (jobsReady()) out.push(h("button", { class: "btn icon ghost", title: t("More"), onclick: (e) => webMenu(e.currentTarget) }, icon("more")));
   el.replaceChildren(...out);
 }
 
-// the resume for the posting open in the frame: the same ranked versions as in Applications
+// the resume for the posting open in the frame: the same ranked subsets as in Applications
 function openResumePicker(anchor, a) {
   const panel = h("div", { class: "resume-picker", role: "dialog", "aria-label": t("Resume to send") });
   const paint = () => {
     const F = J.fit[a.id];
     if (!F && !J.fitLoading[a.id]) loadFit(a.id).then(() => { if (panel.isConnected) paint(); });   // the resume just changed
-    const linked = (F && F.linked) || a.versions || [];
+    const linked = (F && F.linked) || a.subsets || [];
     panel.replaceChildren(...[
       h("div", { class: "rp-head" }, h("b", null, t("Resume to send")), h("span", { class: "muted" }, [a.company, a.role].filter(Boolean).join(" — "))),
-      ...versionChoices(a, F, { onDone }),
+      ...subsetChoices(a, F, { onDone }),
       fitFoot(a, onDone),
       linked.length > 0 && h("div", { class: "rp-acts" },
-        h("button", { class: "btn sm", onclick: () => { closeFloat(); previewVersion(linked[0].id); } }, icon("file"), t("Preview in Resume")),
-        h("button", { class: "btn sm primary", onclick: async () => { closeFloat(); await previewVersion(linked[0].id); exportPdf(); } }, t("Export PDF")))]
+        h("button", { class: "btn sm", onclick: () => { closeFloat(); previewSubset(linked[0].id); } }, icon("file"), t("Preview in Resume")),
+        h("button", { class: "btn sm primary", onclick: async () => { closeFloat(); await previewSubset(linked[0].id); exportPdf(); } }, t("Export PDF")))]
       .filter(Boolean));
   };
   const onDone = (kind) => { if (kind === "close") closeFloat(); else paint(); };

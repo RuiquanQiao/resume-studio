@@ -28,24 +28,24 @@ with the C# compiler that ships with Windows.
 
 - **Experience library** with a fact layer (`notes`, `evidence`) that templates never render —
   it exists so Claude knows the real story and never overclaims.
-- **ALL and job targets**: `ALL` shows the full set. Each job target (AI agent engineer,
-  HPC, management trainee…) is a subset: tick which entries go in, reorder, give it its own
+- **ALL and subsets**: `ALL` shows the full set. Each subset is the resume for one kind of role
+  (AI agent engineer, HPC, management trainee…): tick which entries go in, reorder, give it its own
   headline, hide contacts, pick template (Classic / Modern / Timeline), language, and every
   layout knob (font size, spacing, margins, colour, paper, font).
-- **Live preview** as page images; in a job target a second page is flagged as overflow.
+- **Live preview** as page images; in a subset a second page is flagged as overflow.
 - **Chat with Claude Code** in the left sidebar: streamed replies, tool steps, resumable sessions.
   "Polish with Claude" on an entry sends the request there and shows a before/after diff with undo.
 - **Safe co-editing**: Claude's edits refresh the form and preview; editing the same item from
   two places raises a conflict instead of overwriting; every save keeps a copy in `.studio/history`.
 - **Export** PDF + `.tex` to `settings.export_dir`.
 - **Two workspaces, switched in the top bar (Ctrl+1 / Ctrl+2)**:
-  - **Resume**: the library, the jobs and the preview, plus an **Applications** tab: paste a posting and
+  - **Resume**: the library, the subsets and the preview, plus an **Applications** tab: paste a posting and
     [career-ops](https://github.com/santifer/career-ops) (MIT, by santifer) evaluates it against your resume (a
-    fit score, what to stress, what's missing). "Resume to send" ranks your job targets by how much of the
+    fit score, what to stress, what's missing). "Resume to send" ranks your subsets by how much of the
     posting each one already covers and links the one you pick: a resume is for a kind of role, never named
     after a company. Only when none fits does Claude adjust one or start a new one.
   - career-ops' targeting profile (roles, location, salary, deal-breakers) is filled by Claude from your
-    profile's fact layer and your job targets, and the window offers an update when they change.
+    profile's fact layer and your subsets, and the window offers an update when they change.
   - **Job search**: career-ops' own web interface fills the window: its pipeline table, discovery, scheduled
     scans, follow-ups, portals, analytics and config, exactly as career-ops ships them. Resume Studio adds what
     only it can: Claude's chat on the left (those chats run in career-ops' folder), "All of career-ops" (every

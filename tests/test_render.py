@@ -30,7 +30,7 @@ def test_markup_escapes_and_formats():
 def test_every_template_renders_one_page(data_file, template, lang):
     st = Studio(data_file)
     doc, _ = st.store.load()
-    v = to_plain(model.get_item(doc, "version", "RES-TECH-EN"))
+    v = to_plain(model.get_item(doc, "subset", "RES-TECH-EN"))
     v["template"], v["lang"] = template, lang
     out = data_file.parent / f"build-{template}-{lang}"
     r = get_renderer().render(model.build_view(doc, v), out)
@@ -47,7 +47,7 @@ def test_hostile_characters_compile(data_file):
     doc["entries"][1]["bullets"].append({"en": "C# & C++, 100% R&D_ops ~ ^ {x} \\ $5 #1 **bold_x** [a_b](https://x.y/a_b#c)",
                                          "zh": "中文 & 符号 100% 与 [链接](https://x.y)"})
     for lang in ("en", "zh"):
-        v = to_plain(model.get_item(doc, "version", "RES-TECH-EN"))
+        v = to_plain(model.get_item(doc, "subset", "RES-TECH-EN"))
         v["lang"] = lang
         r = get_renderer().render(model.build_view(doc, v), data_file.parent / f"hostile-{lang}")
         assert r.ok, r.errors
@@ -59,7 +59,7 @@ def test_overflow_is_reported(data_file):
     doc, _ = st.store.load()
     long = {"en": "Designed and shipped a thing that did something measurable for real users " * 2}
     doc["entries"][1]["bullets"] = [long] * 60
-    r = get_renderer().render(model.build_view(doc, to_plain(doc["versions"][0])), data_file.parent / "over")
+    r = get_renderer().render(model.build_view(doc, to_plain(doc["subsets"][0])), data_file.parent / "over")
     assert r.ok and r.pages >= 2
 
 
@@ -105,7 +105,7 @@ def test_bullet_line_counts_are_measured(data_file, template):
     doc, _ = st.store.load()
     doc["entries"][1]["bullets"].append({"en": LONG_EN, "zh": "设计评测流程，导出前逐题对照原文打分"})
     st.store.save(doc)
-    v = to_plain(model.get_item(doc, "version", "RES-TECH-EN"))
+    v = to_plain(model.get_item(doc, "subset", "RES-TECH-EN"))
     v["template"] = template
     r = get_renderer().render(model.build_view(doc, v), data_file.parent / f"lines-{template}")
     lines = r.lines["EXP-002"]
@@ -143,7 +143,7 @@ def test_measuring_never_changes_the_page(data_file, tmp_path, template):
     doc, _ = st.store.load()
     doc["entries"][1]["bullets"].append({"en": LONG_EN, "zh": "设计评测流程"})
     for lang in ("en", "zh"):
-        v = to_plain(model.get_item(doc, "version", "RES-TECH-EN"))
+        v = to_plain(model.get_item(doc, "subset", "RES-TECH-EN"))
         v["template"], v["lang"] = template, lang
         view = model.build_view(doc, v)
         measured = LatexRenderer().render(view, tmp_path / f"m-{lang}")

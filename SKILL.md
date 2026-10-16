@@ -1,6 +1,6 @@
 ---
 name: resume-studio
-description: Resume builder with its own window. An experience library with a private fact layer, per-job selections, LaTeX templates, a live one-page preview and PDF export, all in one resume.yaml that the user edits in the window while Claude reads and writes the same file. Resumes can be written in any number of languages; the interface speaks the user's language. Use when the user wants to make or edit a resume / CV, open the resume window, mentions resume studio or resume.yaml, the experience library, exporting a resume PDF, fitting a resume on one page, polishing an entry, or updating their LinkedIn / BOSS直聘 or any other job-site profile from the resume (the Autofill workspace drives its own browser). Triggers also on 简历, 改简历, 经历库, 履歴書, 이력서, Lebenslauf, CV.
+description: Resume builder with its own window. An experience library with a private fact layer, subsets of it per kind of role, LaTeX templates, a live one-page preview and PDF export, all in one resume.yaml that the user edits in the window while Claude reads and writes the same file. Resumes can be written in any number of languages; the interface speaks the user's language. Use when the user wants to make or edit a resume / CV, open the resume window, mentions resume studio or resume.yaml, the experience library, exporting a resume PDF, fitting a resume on one page, polishing an entry, or updating their LinkedIn / BOSS直聘 or any other job-site profile from the resume (the Autofill workspace drives its own browser). Triggers also on 简历, 改简历, 经历库, 履歴書, 이력서, Lebenslauf, CV.
 ---
 
 # Resume Studio
@@ -14,7 +14,7 @@ directly. Both sides change the same file; the window watches it and refreshes a
 
 - **`/resume-studio` with no arguments**, or the user asks to open the resume window: don't ask
   anything first. Open the window (next section), say it is open, and stop there.
-- **`/resume-studio <task>`**, e.g. `/resume-studio polish Paper2Exam` or `/resume-studio fit JOB-001 on one
+- **`/resume-studio <task>`**, e.g. `/resume-studio polish Paper2Exam` or `/resume-studio fit SUB-001 on one
   page`: edit `resume.yaml` following the rules below. If the window is open it refreshes by itself;
   there is no need to open it.
 - Data file: the one the user names (add `--data`); otherwise the one last opened in the window
@@ -51,7 +51,7 @@ python "<skill>/scripts/studio.py" --window
 Every chat in the window's Chat tab is a real Claude Code session: `claude -p --resume <session>`, run
 in the data file's folder, loading the user's CLAUDE.md and installed skills, with no replaced system
 prompt and no forced reply language. The window only appends a short note with
-`--append-system-prompt-file`: whether the user is looking at ALL or a job, which entry is open, and
+`--append-system-prompt-file`: whether the user is looking at ALL or a subset, which entry is open, and
 where the data file and this SKILL.md are. So when called from the window, just follow the rules below.
 
 The window talks to Claude Code over the SDK's two-way stream-json channel (`--input-format
@@ -67,10 +67,10 @@ their request as a message in the user's interface language; follow it like any 
 ## Checking results without the window
 
 ```bash
-python <skill>/scripts/render.py --data <path>                    # render ALL and every job, report pages
-python <skill>/scripts/render.py JOB-001 --data <path>            # one job
-python <skill>/scripts/render.py JOB-001 --lang de --data <path>  # same template and layout, another resume language
-python <skill>/scripts/render.py JOB-001 --export                 # also copy the PDF and .tex to the export folder
+python <skill>/scripts/render.py --data <path>                    # render ALL and every subset, report pages
+python <skill>/scripts/render.py SUB-001 --data <path>            # one subset
+python <skill>/scripts/render.py SUB-001 --lang de --data <path>  # same template and layout, another resume language
+python <skill>/scripts/render.py SUB-001 --export                 # also copy the PDF and .tex to the export folder
 python <skill>/scripts/render.py --check                          # validate the data only
 ```
 
@@ -83,21 +83,22 @@ python <skill>/scripts/render.py --check                          # validate the
 ## Data format (resume.yaml)
 
 The core idea is "full set → subsets": `entries` is the experience library (the full set: everything the
-user really did); every item in `versions` except `ALL` is a **job** (AI Agent Engineer, HPC, graduate
-programme…) that picks part of the library to make a resume for that direction.
+user really did); every item in `subsets` except `ALL` is a **subset**: the resume for one kind of role
+(AI Agent Engineer, HPC, graduate programme…), made by picking part of the library. Files before
+schema 2 called them `versions`; the window renames the key by itself when it opens such a file.
 
 ```yaml
-schema_version: 1
+schema_version: 2
 settings:
-  languages: [en, de]        # resume languages, any number; the first is the default for new jobs
+  languages: [en, de]        # resume languages, any number; the first is the default for new subsets
   export_dir: exports        # export folder, relative to resume.yaml
   project_roots: [E:/Forge]  # optional: where the user keeps their own projects
 profile:
   name: {en: Alex Chen, de: Alex Chen}
-  contacts:                  # every contact; a job can hide some of them
+  contacts:                  # every contact; a subset can hide some of them
     - {label: email, value: a@b.com, url: 'mailto:a@b.com'}
   notes: ...                 # fact layer
-sections:                    # the sections every resume shares; each version decides their order
+sections:                    # the sections every resume shares; each subset decides their order
   - {id: projects, title: {en: Projects, de: Projekte}, kind: timeline}   # timeline | list
 entries:                     # the library: every real experience, never limited to one page
   - id: EXP-002              # internal id: stable, independent of sections, never shown in the window
@@ -116,21 +117,21 @@ entries:                     # the library: every real experience, never limited
     notes: |                 # fact layer: what really happened, never rendered
       ...
     evidence: [E:/Forge/Paper2Exam]   # fact layer: local paths to read (the user adds them with "Choose project folder")
-versions:
+subsets:
   - id: ALL                  # reserved: the full-set preview, always first, can't be deleted or renamed
     label: All entries
     lang: en
     template: classic
     headline: ''             # no entries: always shows every entry (library order) and every contact, any length
-    sections: [skills, experience, projects, education]   # ALL's section order; new jobs copy it
+    sections: [skills, experience, projects, education]   # ALL's section order; new subsets copy it
     layout: {}
-  - id: JOB-001              # a job: refers to entries, never copies them
+  - id: SUB-001              # a subset: refers to entries, never copies them (older files: JOB-001)
     label: AI Agent Engineer
     lang: en                 # the language this resume is previewed and exported in
     template: classic        # classic | modern | timeline (see resume/templates/latex)
     headline: {en: 'AI Agent Engineer · LLM tooling', de: 'KI-Agent-Engineer · LLM-Tooling'}
     entries: [EXP-001, EXP-002]   # the chosen entries; within a section they appear in this order
-    sections: [education, projects]   # this job's own section order; unlisted sections go last
+    sections: [education, projects]   # this subset's own section order; unlisted sections go last
     hide_sections: [awards]  # optional
     hide_contacts: [phone]   # optional: hide contacts by label
     postings: [{tool: career-ops, id: '12'}]   # optional: the evaluated postings this resume is sent to
@@ -169,20 +170,20 @@ versions:
 3. **Don't edit the fact layer**: leave `notes` and `evidence` alone unless the user asks, and never copy
    notes verbatim into bullets.
 4. **Stable IDs**: never change an existing entry's `id`, not even when it moves section. New entries take
-   the next global `EXP-xxx`. When deleting, update every job's `entries`. IDs are for references only and
+   the next global `EXP-xxx`. When deleting, update every subset's `entries`. IDs are for references only and
    the user never sees them: in replies, call entries by name (or "Projects #2", the number inside its
    section), never EXP-xxx.
 5. **Full set and subsets**: new experiences go into the library only (`ALL` includes them by itself);
-   whether a job gets them is the user's call. Never give `ALL` an `entries` list, and don't put the job
-   target into `profile`: it belongs in each job's `headline`.
-6. **One page** applies to jobs only: to fit a job on one page, first adjust its `layout` (font size,
+   whether a subset gets them is the user's call. Never give `ALL` an `entries` list, and don't put the job
+   target into `profile`: it belongs in each subset's `headline`.
+6. **One page** applies to subsets only: to fit a subset on one page, first adjust its `layout` (font size,
    spacing, margins), then tighten the bullets' wording, and only then suggest picking fewer entries.
-   Which entries go in is the user's decision: never drop entries from a job's `entries` yourself. `ALL`
+   Which entries go in is the user's decision: never drop entries from a subset's `entries` yourself. `ALL`
    running to several pages is normal.
 7. Tasks started from the window need no PDF compile from you: the window re-renders by itself. In the
    terminal, check pages with `render.py`.
 8. **Every bullet on one line**: the user's hard rule. After writing or changing bullets, check with
-   `render.py <job> --lang <code>` and keep shortening the bullets it lists until all fit. Order of
+   `render.py <subset> --lang <code>` and keep shortening the bullets it lists until all fit. Order of
    cuts: drop modifiers and repetition → shorter phrasing → drop secondary details. Never change facts.
 9. **Languages are rewritten, not translated**: write each language the way a native resume in it reads
    (English: strong past-tense verbs, no pronouns, quantify where the facts allow; Chinese: start with a
@@ -206,7 +207,7 @@ versions:
   what is worth it into the visible layer, and update every resume language.
 - **Write another language**: rule 9. The window's buttons send the request together with the check
   command.
-- **A new job**: append to `versions` with the next `JOB-xxx`, a `label` and `headline`, `lang` (usually
+- **A new subset**: append to `subsets` with the next `SUB-xxx`, a `label` and `headline`, `lang` (usually
   the first of `settings.languages`), ALL's `sections` order, and the chosen entry IDs in `entries`.
 
 ## Job postings (Job search and the Applications tab, career-ops)
@@ -230,15 +231,15 @@ The window connects a job-posting tool. Today that is
   change the CV, edit resume.yaml, not those files.
 - **career-ops' targeting profile comes from the fact layer.** Its setup chat fills `config/profile.yml`,
   `modes/_profile.md` and `portals.yml`'s title filters from `profile` (name, contacts), `profile.notes`
-  (the job-search background, constraints and preferences) and the jobs' labels and headlines (the kinds of
-  role applied for), asking only what is missing. `profile.notes` is private: use it to target and score,
-  never copy it into anything an employer reads. When it or the jobs change, the window offers an update.
-- **A resume is a job for a kind of role, never for one company.** For a posting the user picks one of the
-  existing jobs (the window ranks them by how much of the posting they cover) and it is linked in that job's
-  `postings`; one posting is linked to one job. Only when none fits does a chat adjust a job or start a new
-  one: then the user has asked you to pick its `entries` (an exception to rule 6), write its `headline` for
+  (the job-search background, constraints and preferences) and the subsets' labels and headlines (the kinds
+  of role applied for), asking only what is missing. `profile.notes` is private: use it to target and score,
+  never copy it into anything an employer reads. When it or the subsets change, the window offers an update.
+- **A subset is a resume for a kind of role, never for one company.** For a posting the user picks one of
+  the existing subsets (the window ranks them by how much of the posting they cover) and it is linked in that
+  subset's `postings`; one posting is linked to one subset. Only when none fits does a chat adjust a subset or
+  start a new one: then the user has asked you to pick its `entries` (an exception to rule 6), write its `headline` for
   that kind of role and keep it to one page. Never put a company's name, or anything only true of one
-  posting, into a resume. Library bullets stay as they are (every job shares them); propose rewordings and
+  posting, into a resume. Library bullets stay as they are (every subset shares them); propose rewordings and
   let the user decide.
 - **Statuses go through career-ops' own writer** (`set-status.mjs`); the tracker and reports are read as
   career-ops documents them.
@@ -253,7 +254,7 @@ There is no browser extension: Resume Studio starts **its own browser** (Google 
 Edge) with a profile of its own in `<skill>/.local/browser/` and drives it over the DevTools protocol
 (`core/browser.py`). The user signs in to each site there once, by hand; it stays signed in.
 
-- **Three versions per site** (`autofill/sync.py`): what the site said at the last sync (`base`), the
+- **Three copies per site** (`autofill/sync.py`): what the site said at the last sync (`base`), the
   user's copy (`local`), and a fresh read. "Check for updates" merges a read in: what changed only on
   the site comes into the copy, what changed only in the copy waits to be pushed, and a field changed
   on both sides is a conflict the user settles in the window. Dates are kept as `YYYY-MM` / `present`.
@@ -272,7 +273,7 @@ Edge) with a profile of its own in `<skill>/.local/browser/` and drives it over 
   A change reported done counts as on the site; the route then checks the site again. Never touch
   anything else: no messages, connections, posts, applications, or 求职状态.
 - **The resume is a reference, not the source.** The window shows, next to the copy, where the chosen
-  resume version words a field differently and which of its entries the copy lacks; the user takes
+  resume subset words a field differently and which of its entries the copy lacks; the user takes
   them with a click. A profile may say things the resume doesn't.
 - Sign-ins, verification codes and captchas are always the user's: stop and ask (AskUserQuestion) and
   never type a password. `browser.py signed-out <site>` makes the window show its sign-in banner.
@@ -312,7 +313,7 @@ python <skill>/scripts/browser.py sync <site>       # check for updates now, by 
 - `jobs/`: the job-posting tool behind Job search and the Applications tab: the contract any tool implements (`base.py`),
   the career-ops connector (`career_ops.py`), resume.yaml as the Markdown CV such tools read
   (`cv_markdown.py`), and its routes (`api.py`).
-- `autofill/`: local copies of online profiles: the sites (`sites.py`), the profile shape and what a resume version
+- `autofill/`: local copies of online profiles: the sites (`sites.py`), the profile shape and what a resume subset
   suggests (`profile.py`), the sync (`sync.py`), the recorded read routes (`route.py`), per-file state (`service.py`),
   what Claude is told (`prompts.py`) and the routes (`api.py`).
 - `web/`: the build-free front end; `web/i18n/<lang>.json` are the interface translations (keys are the

@@ -1,6 +1,6 @@
 # Resume Studio sample data. Everything under `notes` / `evidence` is the fact
 # layer: it is never rendered, it exists so the AI knows the real story.
-schema_version: 1
+schema_version: 2
 settings:
   languages: [en, zh]
   export_dir: exports
@@ -60,7 +60,7 @@ entries:
     section: skills
     title: {en: Frameworks, zh: 框架工具}
     tech: [PyTorch, scikit-learn, React, Next.js, Git]
-versions:
+subsets:
   # ALL is the full set: every entry, every contact, in library order (no `entries` list).
   - id: ALL
     label: 全部经历
@@ -68,7 +68,7 @@ versions:
     template: classic
     headline: {en: 'MSc Computing student', zh: 计算机硕士在读}
     layout: {}
-  # Every other version is one job target: a subset of the library.
+  # Every other subset is the resume for one kind of role: some of the library's entries.
   - id: RES-TECH-EN
     label: ML 工程（英文）
     lang: en

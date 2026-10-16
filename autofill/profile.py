@@ -1,6 +1,6 @@
-"""A profile's shape, what a resume version would put on a site, and when two values are the same.
+"""A profile's shape, what a resume subset would put on a site, and when two values are the same.
 
-The resume side is worked out here, not by Claude: the same resume version always gives the same
+The resume side is worked out here, not by Claude: the same resume subset always gives the same
 profile (`desired`), and the window shows it next to the local copy as a suggestion. What a site says
 comes in the shape `validate_current` checks (from the recorded route, or from Claude), and `same`
 decides whether two values differ in a way worth showing (dates written differently, an organisation's
@@ -92,14 +92,14 @@ def label_of(section: str, fields: dict) -> str:
     return " · ".join(str(fields.get(p) or "") for p in parts if fields.get(p)) or "—"
 
 
-def desired(doc: Any, version: Any, lang: str, site: Site) -> dict:
-    """The profile this resume version gives on `site`, in resume language `lang`."""
+def desired(doc: Any, subset: Any, lang: str, site: Site) -> dict:
+    """The profile this resume subset gives on `site`, in resume language `lang`."""
     view_sections = {str(s.get("id")): s for s in doc.get("sections") or []}
-    order = model.section_order(doc, version)
-    hidden = {str(s) for s in version.get("hide_sections") or []}
+    order = model.section_order(doc, subset)
+    hidden = {str(s) for s in subset.get("hide_sections") or []}
     by_id = {str(e.get("id")): e for e in doc.get("entries") or []}
-    chosen = list(doc.get("entries") or []) if model.is_all(version) else \
-        [by_id[str(i)] for i in version.get("entries") or [] if str(i) in by_id]
+    chosen = list(doc.get("entries") or []) if model.is_all(subset) else \
+        [by_id[str(i)] for i in subset.get("entries") or [] if str(i) in by_id]
     rank = {sid: i for i, sid in enumerate(order)}
     chosen.sort(key=lambda e: rank.get(str(e.get("section")), 999))   # stable: the job's order within a section
 
@@ -128,11 +128,11 @@ def desired(doc: Any, version: Any, lang: str, site: Site) -> dict:
                 f["description"] = extra + ("\n" + f["description"] if f.get("description") else "")
         items.append({"section": target, "key": str(e.get("id")), "label": label_of(target, f), "fields": f})
 
-    headline = version.get("headline") if "headline" in version else (doc.get("profile") or {}).get("headline")
+    headline = subset.get("headline") if "headline" in subset else (doc.get("profile") or {}).get("headline")
     basics = {}
     if "headline" in site.basics:
         basics["headline"] = plain(model.tr(headline, lang))
-    return {"site": site.id, "version": str(version.get("id")), "lang": lang, "basics": basics,
+    return {"site": site.id, "subset": str(subset.get("id")), "lang": lang, "basics": basics,
             "items": items, "skills": skills, "skipped": skipped}
 
 

@@ -199,7 +199,7 @@ def test_overview_lists_applications_and_syncs_the_cv(jobs, checkout):
     assert {a["id"] for a in r["actions"]} == {"interview", "research", "cover", "outreach"}
     assert (checkout / "cv.md").exists()                                    # written from resume.yaml on the way
     code, d = jobs.req("GET", "/api/jobs/app/1")
-    assert d["summary"]["decision"] == "Apply" and d["versions"] == []
+    assert d["summary"]["decision"] == "Apply" and d["subsets"] == []
     assert jobs.req("GET", "/api/jobs/app/42")[0] == 404
 
 
@@ -251,7 +251,7 @@ def test_setup_fills_its_profile_from_the_fact_layer_and_follows_changes(jobs, d
     code, r = jobs.req("POST", "/api/jobs/setup", {"mode": "plan"})
     jobs.wait_idle(r["chat"]["id"])
     c = calls(fake_claude)[-1]
-    assert str(data_file) in c["stdin"] and "profile.notes" in c["stdin"] and "versions" in c["stdin"]
+    assert str(data_file) in c["stdin"] and "profile.notes" in c["stdin"] and "subsets" in c["stdin"]
     assert "config/profile.yml" in c["stdin"] and c["argv"][c["argv"].index("--permission-mode") + 1] == "plan"
     assert jobs.req("GET", "/api/jobs")[1]["status"]["profile"] == {"filled": True, "stale": False}
     text = data_file.read_text(encoding="utf-8").replace("可接受远程。", "可接受远程，最低 90k。")   # the fact layer changed
@@ -266,20 +266,20 @@ def test_setup_fills_its_profile_from_the_fact_layer_and_follows_changes(jobs, d
 def test_versions_are_ranked_for_a_posting_and_one_is_linked(jobs, data_file, fake_claude):
     code, f = jobs.req("GET", "/api/jobs/app/1/fit")
     assert code == 200 and f["linked"] == [] and f["requirements"] == 5
-    ids = [v["id"] for v in f["versions"]]
+    ids = [v["id"] for v in f["subsets"]]
     assert "ALL" not in ids and set(ids) == {"RES-TECH-EN", "RES-TECH-ZH"}
-    top = f["versions"][0]
+    top = f["subsets"][0]
     assert 0 <= top["score"] <= 100 and len(top["covered"]) + len(top["missing"]) == 5
-    code, r = jobs.req("PUT", "/api/jobs/app/1/resume", {"version_id": "RES-TECH-EN"})
+    code, r = jobs.req("PUT", "/api/jobs/app/1/resume", {"subset_id": "RES-TECH-EN"})
     assert code == 200 and r["linked"] == [{"id": "RES-TECH-EN", "label": "ML 工程（英文）"}]
-    jobs.req("PUT", "/api/jobs/app/2/resume", {"version_id": "RES-TECH-EN"})       # one version, many postings
-    v = next(x for x in jobs.req("GET", "/api/state")[1]["doc"]["versions"] if x["id"] == "RES-TECH-EN")
+    jobs.req("PUT", "/api/jobs/app/2/resume", {"subset_id": "RES-TECH-EN"})       # one subset, many postings
+    v = next(x for x in jobs.req("GET", "/api/state")[1]["doc"]["subsets"] if x["id"] == "RES-TECH-EN")
     assert v["postings"] == [{"tool": "career-ops", "id": "1"}, {"tool": "career-ops", "id": "2"}]
-    code, r = jobs.req("PUT", "/api/jobs/app/1/resume", {"version_id": "RES-TECH-ZH"})   # one posting, one version
+    code, r = jobs.req("PUT", "/api/jobs/app/1/resume", {"subset_id": "RES-TECH-ZH"})   # one posting, one subset
     assert r["linked"] == [{"id": "RES-TECH-ZH", "label": "ML 工程（中文）"}]
-    assert jobs.req("GET", "/api/jobs")[1]["applications"][-1]["versions"][0]["id"] == "RES-TECH-ZH"
-    assert jobs.req("PUT", "/api/jobs/app/1/resume", {"version_id": None})[1]["linked"] == []
-    assert jobs.req("PUT", "/api/jobs/app/1/resume", {"version_id": "ALL"})[0] == 404
+    assert jobs.req("GET", "/api/jobs")[1]["applications"][-1]["subsets"][0]["id"] == "RES-TECH-ZH"
+    assert jobs.req("PUT", "/api/jobs/app/1/resume", {"subset_id": None})[1]["linked"] == []
+    assert jobs.req("PUT", "/api/jobs/app/1/resume", {"subset_id": "ALL"})[0] == 404
     code, r = jobs.req("POST", "/api/jobs/app/1/choose", {})
     jobs.wait_idle(r["chat"]["id"])
     c = calls(fake_claude)[-1]
@@ -289,17 +289,17 @@ def test_versions_are_ranked_for_a_posting_and_one_is_linked(jobs, data_file, fa
 def test_an_older_single_posting_still_counts(jobs, data_file):
     text = data_file.read_text(encoding="utf-8").replace("  - id: RES-TECH-ZH\n", "  - id: RES-TECH-ZH\n    posting: {tool: career-ops, id: '2'}\n")
     data_file.write_text(text, encoding="utf-8")
-    assert jobs.req("GET", "/api/jobs/app/2")[1]["versions"] == [{"id": "RES-TECH-ZH", "label": "ML 工程（中文）"}]
-    jobs.req("PUT", "/api/jobs/app/2/resume", {"version_id": "RES-TECH-EN"})
-    vs = {x["id"]: x for x in jobs.req("GET", "/api/state")[1]["doc"]["versions"]}
+    assert jobs.req("GET", "/api/jobs/app/2")[1]["subsets"] == [{"id": "RES-TECH-ZH", "label": "ML 工程（中文）"}]
+    jobs.req("PUT", "/api/jobs/app/2/resume", {"subset_id": "RES-TECH-EN"})
+    vs = {x["id"]: x for x in jobs.req("GET", "/api/state")[1]["doc"]["subsets"]}
     assert "posting" not in vs["RES-TECH-ZH"] and vs["RES-TECH-EN"]["postings"] == [{"tool": "career-ops", "id": "2"}]
 
 
 def test_a_new_version_is_for_a_kind_of_role_not_a_company(jobs, data_file, checkout, fake_claude):
     code, r = jobs.req("POST", "/api/jobs/app/1/tailor", {"label": "AI Engineer"})
     assert code == 200
-    vid = r["version_id"]
-    v = next(x for x in r["doc"]["versions"] if x["id"] == vid)
+    vid = r["subset_id"]
+    v = next(x for x in r["doc"]["subsets"] if x["id"] == vid)
     assert v["label"] == "AI Engineer" and v["postings"] == [{"tool": "career-ops", "id": "1"}]
     assert v["entries"] == []                                               # Claude picks them, the user reviews
     assert r["chat"].get("workspace") is None                               # a resume chat, in the data folder
@@ -309,15 +309,15 @@ def test_a_new_version_is_for_a_kind_of_role_not_a_company(jobs, data_file, chec
     assert vid in c["stdin"] and "001-northwind-ai-2026-10-02.md" in c["stdin"]
     assert any(Path(c["argv"][i + 1]).resolve() == checkout.resolve() for i, a in enumerate(c["argv"]) if a == "--add-dir")
     code, d = jobs.req("GET", "/api/jobs/app/1")
-    assert d["versions"] == [{"id": vid, "label": "AI Engineer"}]
+    assert d["subsets"] == [{"id": vid, "label": "AI Engineer"}]
     # without a name it is named after the role, never the company
     code, r = jobs.req("POST", "/api/jobs/app/2/tailor", {})
-    assert next(x for x in r["doc"]["versions"] if x["id"] == r["version_id"])["label"] == "Machine Learning Engineer Intern"
+    assert next(x for x in r["doc"]["subsets"] if x["id"] == r["subset_id"])["label"] == "Machine Learning Engineer Intern"
     jobs.wait_idle(r["chat"]["id"])
-    # adjusting an existing version links it instead
-    code, r2 = jobs.req("POST", "/api/jobs/app/1/tailor", {"version_id": "RES-TECH-EN"})
+    # adjusting an existing subset links it instead
+    code, r2 = jobs.req("POST", "/api/jobs/app/1/tailor", {"subset_id": "RES-TECH-EN"})
     jobs.wait_idle(r2["chat"]["id"])
-    assert jobs.req("GET", "/api/jobs/app/1")[1]["versions"] == [{"id": "RES-TECH-EN", "label": "ML 工程（英文）"}]
+    assert jobs.req("GET", "/api/jobs/app/1")[1]["subsets"] == [{"id": "RES-TECH-EN", "label": "ML 工程（英文）"}]
 
 def test_cv_conflict_is_resolved_in_a_chat_without_overwriting(jobs, checkout, fake_claude):
     jobs.req("GET", "/api/jobs")

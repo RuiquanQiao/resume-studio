@@ -154,12 +154,12 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
 
     @app.route("PUT", "/api/autofill/{site}")
     def choose(req: Request):
-        """Which resume version and language the copy is compared with, and the ticks on the changes to push."""
+        """Which resume subset and language the copy is compared with, and the ticks on the changes to push."""
         site, b = site_of(req), body(req)
         doc, _ = studio.store.load()
-        vid = b.get("version_id")
-        if vid is not None and model.get_version(doc, str(vid)) is None:
-            raise HttpError(404, t("Job {id} doesn't exist", id=vid))
+        vid = b.get("subset_id")
+        if vid is not None and model.get_subset(doc, str(vid)) is None:
+            raise HttpError(404, t("Subset {id} doesn't exist", id=vid))
         lang = b.get("lang")
         langs = [str(x) for x in (doc.get("settings") or {}).get("languages") or []]
         if lang is not None and str(lang) not in langs:
@@ -167,7 +167,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         ticks = b.get("ticks")
         if ticks is not None and not isinstance(ticks, dict):
             raise HttpError(400, "ticks must be an object")
-        fill.choose(site, version_id=str(vid) if vid is not None else None, lang=str(lang) if lang is not None else None,
+        fill.choose(site, subset_id=str(vid) if vid is not None else None, lang=str(lang) if lang is not None else None,
                     ticks=ticks)
         if vid is not None or lang is not None:   # ticks come from this window only: no echo
             publish(site.id)

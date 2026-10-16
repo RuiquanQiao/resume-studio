@@ -1,7 +1,7 @@
-"""Render or export a resume version from the command line (for Claude Code).
+"""Render or export a resume subset from the command line (for Claude Code).
 
-    python scripts/render.py                      # render every version, report pages
-    python scripts/render.py RES-TECH-EN          # render one version
+    python scripts/render.py                      # render every subset, report pages
+    python scripts/render.py RES-TECH-EN          # render one subset
     python scripts/render.py RES-TECH-EN --export # also copy PDF + .tex to the export dir
     python scripts/render.py --check              # only validate resume.yaml
     python scripts/render.py JOB-001 --lang de    # same template and layout, in another resume language
@@ -27,15 +27,15 @@ from resume.service import Studio  # noqa: E402
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("versions", nargs="*")
+    ap.add_argument("subsets", nargs="*")
     ap.add_argument("--data")
     ap.add_argument("--export", action="store_true")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--json", action="store_true")
-    ap.add_argument("--lang", help="render in this resume language instead of the version's own (any code in settings.languages)")
+    ap.add_argument("--lang", help="render in this resume language instead of the subset's own (any code in settings.languages)")
     args = ap.parse_args()
     if args.lang and args.export:
-        ap.error("--lang only checks; to export in another language, set that version's lang")
+        ap.error("--lang only checks; to export in another language, set that subset's lang")
 
     studio = Studio(resolve_data(args.data))
     if not studio.store.exists():
@@ -48,7 +48,7 @@ def main() -> int:
     if args.check:
         return 1 if warnings else 0
 
-    ids = args.versions or [str(v.get("id")) for v in doc.get("versions") or []]
+    ids = args.subsets or [str(v.get("id")) for v in doc.get("subsets") or []]
     results, worst = [], 0
     for vid in ids:
         r = studio.export(vid) if args.export else studio.render(vid, lang=args.lang, images=False)

@@ -73,7 +73,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tool: JobTool, *, pick
         return tool.sync_cv(doc, force=force, source=str(studio.store.path))
 
     def links(v: Any) -> list[dict]:
-        """The postings a version is sent to: `postings` (a list), plus the older single `posting`."""
+        """The postings a subset is sent to: `postings` (a list), plus the older single `posting`."""
         out = [dict(p) for p in (v.get("postings") or []) if isinstance(p, dict)]
         if isinstance(v.get("posting"), dict):
             out.insert(0, dict(v["posting"]))
@@ -84,16 +84,16 @@ def register(app: App, studio: Studio, chats: ChatRunner, tool: JobTool, *, pick
 
     def linked(doc: Any, app_id: str) -> list[dict]:
         return [{"id": str(v.get("id")), "label": str(v.get("label") or v.get("id"))}
-                for v in doc.get("versions") or [] if any(is_this(p, app_id) for p in links(v))]
+                for v in doc.get("subsets") or [] if any(is_this(p, app_id) for p in links(v))]
 
-    def link(app_id: str, version_id: str | None) -> None:
-        """One resume per application: the posting is linked to `version_id` and to no other version."""
+    def link(app_id: str, subset_id: str | None) -> None:
+        """One resume per application: the posting is linked to `subset_id` and to no other subset."""
         doc, _ = studio.store.load()
-        for v in doc.get("versions") or []:
+        for v in doc.get("subsets") or []:
             vid = str(v.get("id"))
             cur = links(v)
             want = [p for p in cur if not is_this(p, app_id)]
-            if vid == version_id:
+            if vid == subset_id:
                 want.append({"tool": tool.id, "id": str(app_id)})
             if want == cur and v.get("posting") is None:
                 continue
@@ -103,7 +103,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tool: JobTool, *, pick
                 new["postings"] = want
             else:
                 new.pop("postings", None)
-            studio.update_item("version", vid, new, None)
+            studio.update_item("subset", vid, new, None)
 
     def settings_of(b: dict) -> dict:
         """The model / effort / permission mode the user last picked in the chat, for new chats."""
@@ -142,7 +142,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tool: JobTool, *, pick
         doc, _ = studio.store.load()
         apps = tool.applications() if st.get("installed") else []
         for a in apps:
-            a["versions"] = linked(doc, a["id"])
+            a["subsets"] = linked(doc, a["id"])
         if st.get("installed"):
             st["profile"] = tool.profile_state(doc)
         return {"status": st, "applications": apps, "states": tool.states() if st.get("installed") else [],
@@ -185,7 +185,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tool: JobTool, *, pick
         need_installed()
         a = guard(lambda: tool.application(req.params["aid"]))
         doc, _ = studio.store.load()
-        a["versions"] = linked(doc, a["id"])
+        a["subsets"] = linked(doc, a["id"])
         return a
 
     @app.route("PUT", "/api/jobs/app/{aid}/status")
@@ -238,34 +238,34 @@ def register(app: App, studio: Studio, chats: ChatRunner, tool: JobTool, *, pick
         text = guard(lambda: tool.prompt("action", app=a, action=kind))
         return {"chat": start_chat(b, f"{label}: {a.get('company') or a['id']}", text, in_tool=True, action="jobs_" + kind)}
 
-    # ---- which resume goes out: one of the user's versions, linked to the posting ----
+    # ---- which resume goes out: one of the user's subsets, linked to the posting ----
     @app.route("GET", "/api/jobs/app/{aid}/fit")
     def fit_rank(req: Request):
-        """The user's versions ranked by how much of this posting they already cover."""
+        """The user's subsets ranked by how much of this posting they already cover."""
         need_installed()
         a = guard(lambda: tool.application(req.params["aid"]))
         doc, _ = studio.store.load()
-        return {"versions": fit.rank(doc, a), "linked": linked(doc, a["id"]),
+        return {"subsets": fit.rank(doc, a), "linked": linked(doc, a["id"]),
                 "requirements": len((a.get("summary") or {}).get("requirements") or []),
                 "keywords": len(fit.keywords(a))}
 
     @app.route("PUT", "/api/jobs/app/{aid}/resume")
     def use_resume(req: Request):
-        """Send this version for this posting ({version_id: null} unlinks it)."""
+        """Send this subset for this posting ({subset_id: null} unlinks it)."""
         b = body(req)
         need_installed()
         a = guard(lambda: tool.application(req.params["aid"]))
-        vid = str(b.get("version_id") or "") or None
+        vid = str(b.get("subset_id") or "") or None
         doc, _ = studio.store.load()
-        if vid and (vid == model.ALL_ID or model.get_item(doc, "version", vid) is None):
-            raise HttpError(404, t("Job {id} doesn't exist", id=vid))
+        if vid and (vid == model.ALL_ID or model.get_item(doc, "subset", vid) is None):
+            raise HttpError(404, t("Subset {id} doesn't exist", id=vid))
         link(a["id"], vid)
         doc, _ = studio.store.load()
         return {"linked": linked(doc, a["id"]), **studio.state()}
 
     @app.route("POST", "/api/jobs/app/{aid}/choose")
     def choose_resume(req: Request):
-        """Ask Claude which version to send (it links it in resume.yaml once the user agrees)."""
+        """Ask Claude which subset to send (it links it in resume.yaml once the user agrees)."""
         b = body(req)
         need_installed()
         a = guard(lambda: tool.application(req.params["aid"]))
@@ -279,29 +279,29 @@ def register(app: App, studio: Studio, chats: ChatRunner, tool: JobTool, *, pick
 
     @app.route("POST", "/api/jobs/app/{aid}/tailor")
     def tailor(req: Request):
-        """Adjust a version for this kind of posting, or start a new one; then a resume chat picks the
-        entries and writes the headline. A version is for a kind of role, never for one company."""
+        """Adjust a subset for this kind of posting, or start a new one; then a resume chat picks the
+        entries and writes the headline. A subset is for a kind of role, never for one company."""
         b = body(req)
         need_installed()
         a = guard(lambda: tool.application(req.params["aid"]))
         doc, _ = studio.store.load()
-        vid = str(b.get("version_id") or "")
-        if vid and (vid == model.ALL_ID or model.get_item(doc, "version", vid) is None):
-            raise HttpError(404, t("Job {id} doesn't exist", id=vid))
+        vid = str(b.get("subset_id") or "")
+        if vid and (vid == model.ALL_ID or model.get_item(doc, "subset", vid) is None):
+            raise HttpError(404, t("Subset {id} doesn't exist", id=vid))
         new = not vid
         if new:
             s = a.get("summary") or {}
             label = str(b.get("label") or "").strip() or a.get("role") or s.get("archetype") or t("Application #{id}", id=a["id"])
-            vid, _ = studio.create_version(None, None, label[:60])
+            vid, _ = studio.create_subset(None, None, label[:60])
         link(a["id"], vid)
         doc, _ = studio.store.load()
-        version = model.get_version(doc, vid)
-        text = prompts.tailor_message(version, a, a.get("report_path") or "", str(studio.store.path), new=new)
+        subset = model.get_subset(doc, vid)
+        text = prompts.tailor_message(subset, a, a.get("report_path") or "", str(studio.store.path), new=new)
         roots = [str(p) for p in (doc.get("settings") or {}).get("project_roots") or []]
-        context = prompts.ui_context(str(studio.store.path), version, None, roots)
-        chat = start_chat(b, t("Tailor: {job}", job=version.get("label") or vid), text, in_tool=False, context=context,
+        context = prompts.ui_context(str(studio.store.path), subset, None, roots)
+        chat = start_chat(b, t("Tailor: {job}", job=subset.get("label") or vid), text, in_tool=False, context=context,
                           add_dirs=[str(tool.data_folder())], action="jobs_tailor")
-        return {"version_id": vid, "chat": chat, **studio.state()}
+        return {"subset_id": vid, "chat": chat, **studio.state()}
 
     # ---- the CV the tool reads ----------------------------------------------------
     @app.route("POST", "/api/jobs/cv/sync")

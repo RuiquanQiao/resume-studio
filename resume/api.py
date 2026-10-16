@@ -61,24 +61,24 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
     def del_entry(req: Request):
         return studio.delete_entry(req.params["entry_id"])
 
-    @app.route("POST", "/api/versions")
-    def new_version(req: Request):
+    @app.route("POST", "/api/subsets")
+    def new_subset(req: Request):
         b = body(req)
         try:
-            vid, s = studio.create_version(b.get("copy_from"), b.get("id"), b.get("label"))
+            vid, s = studio.create_subset(b.get("copy_from"), b.get("id"), b.get("label"))
         except ValueError as e:
             raise HttpError(400, str(e))
         return {"id": vid, **s}
 
-    @app.route("DELETE", "/api/versions/{vid}")
-    def del_version(req: Request):
+    @app.route("DELETE", "/api/subsets/{vid}")
+    def del_subset(req: Request):
         try:
-            return studio.delete_version(req.params["vid"])
+            return studio.delete_subset(req.params["vid"])
         except ValueError as e:
             raise HttpError(400, str(e))
 
     # ---- rendering -------------------------------------------------------
-    @app.route("POST", "/api/versions/{vid}/render")
+    @app.route("POST", "/api/subsets/{vid}/render")
     def render(req: Request):
         with render_lock:
             try:
@@ -86,7 +86,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
             except KeyError as e:
                 raise HttpError(404, str(e))
 
-    @app.route("POST", "/api/versions/{vid}/measure")
+    @app.route("POST", "/api/subsets/{vid}/measure")
     def measure(req: Request):
         """Line counts for the language being edited when the preview shows the other one."""
         lang = str(body(req).get("lang") or "")
@@ -99,14 +99,14 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
                 raise HttpError(404, str(e))
         return {"ok": r["ok"], "lang": r["lang"], "lines": r["lines"], "missing": r["missing"]}
 
-    @app.route("GET", "/api/versions/{vid}/pdf")
+    @app.route("GET", "/api/subsets/{vid}/pdf")
     def pdf(req: Request):
         path = studio.pdf_path(req.params["vid"])
         if not path.exists():
             raise HttpError(404, t("Not rendered yet"))
         return FileResponse(path, "application/pdf")
 
-    @app.route("GET", "/api/versions/{vid}/page/{n}")
+    @app.route("GET", "/api/subsets/{vid}/page/{n}")
     def page(req: Request):
         try:
             n = int(req.params["n"])
@@ -117,7 +117,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
             raise HttpError(404, "no such page")
         return FileResponse(path, "image/png")
 
-    @app.route("POST", "/api/versions/{vid}/export")
+    @app.route("POST", "/api/subsets/{vid}/export")
     def export(req: Request):
         with render_lock:
             return studio.export(req.params["vid"])
@@ -308,17 +308,17 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         tracker.mark_synced(str(entry.get("id")), [str(p) for p in entry.get("evidence") or []])
         return {"status": tracker.status([entry], force=True)}
 
-    def version_entries(doc, version) -> list:
-        if version is None:
+    def subset_entries(doc, subset) -> list:
+        if subset is None:
             return []
-        if model.is_all(version):
+        if model.is_all(subset):
             return list(doc.get("entries") or [])
         by_id = {str(e.get("id")): e for e in doc.get("entries") or []}
-        return [by_id[str(i)] for i in version.get("entries") or [] if str(i) in by_id]
+        return [by_id[str(i)] for i in subset.get("entries") or [] if str(i) in by_id]
 
-    def long_bullets(version_id: str, lang: str) -> list[dict]:
+    def long_bullets(subset_id: str, lang: str) -> list[dict]:
         with render_lock:
-            r = studio.render(version_id, lang=lang, images=False)
+            r = studio.render(subset_id, lang=lang, images=False)
         if not r["ok"]:
             raise HttpError(409, t("Rendering failed; see the error above the preview first"))
         return studio.bullet_report(r)
@@ -332,9 +332,9 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         cid = req.params["cid"]
         doc, _ = studio.store.load()
         data_path = str(studio.store.path)
-        version = model.get_version(doc, b.get("version_id")) if b.get("version_id") else None
-        vid = str((version or {}).get("id") or model.ALL_ID)
-        vlang = str((version or {}).get("lang") or "en")
+        subset = model.get_subset(doc, b.get("subset_id")) if b.get("subset_id") else None
+        vid = str((subset or {}).get("id") or model.ALL_ID)
+        vlang = str((subset or {}).get("lang") or "en")
         langs = [str(l) for l in (doc.get("settings") or {}).get("languages") or ["en"]]
         entry = model.get_item(doc, "entry", b.get("entry_id")) if b.get("entry_id") else None
         action = "polish" if b.get("polish") else b.get("action")
@@ -375,10 +375,10 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
             target = str(b.get("target") or "")
             if target not in langs:
                 raise HttpError(400, t("{lang} isn't one of this file's resume languages", lang=target or "?"))
-            involved = [e for e in version_entries(doc, version) if model.missing_text(e, target)]
+            involved = [e for e in subset_entries(doc, subset) if model.missing_text(e, target)]
             if not involved:
-                raise HttpError(409, t("Every entry in the current job already has {lang}", lang=prompts.lang_name(target)))
-            text = prompts.batch_message("translate", version, data_path, [name(e) for e in involved], target,
+                raise HttpError(409, t("Every entry in the current subset already has {lang}", lang=prompts.lang_name(target)))
+            text = prompts.batch_message("translate", subset, data_path, [name(e) for e in involved], target,
                                          [x for x in langs if x != target])
         elif action == "batch_fit":
             ids = []
@@ -388,7 +388,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
             involved = [model.get_item(doc, "entry", i) for i in ids]
             if not involved:
                 raise HttpError(409, t("Every bullet in the current preview already fits on one line"))
-            text = prompts.batch_message("fit", version, data_path, [name(e) for e in involved])
+            text = prompts.batch_message("fit", subset, data_path, [name(e) for e in involved])
         elif action == "batch_sync":
             st = tracker.status(doc.get("entries") or [], force=True)
             involved = [e for e in doc.get("entries") or [] if (st.get(str(e.get("id"))) or {}).get("state") == "changed"]
@@ -411,7 +411,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
                 path = Path(str(p))
                 add_dirs.append(str(path.parent if path.is_file() else path))
         roots = [str(p) for p in (doc.get("settings") or {}).get("project_roots") or []]
-        context = prompts.ui_context(data_path, version, entry, roots)
+        context = prompts.ui_context(data_path, subset, entry, roots)
         targets = [(str(e.get("id")), [str(p) for p in e.get("evidence") or []]) for e in synced]
 
         def done(ok: bool) -> None:

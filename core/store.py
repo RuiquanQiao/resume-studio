@@ -73,8 +73,9 @@ def merge_into(target: Any, new: Any) -> Any:
 
 
 class YamlStore:
-    def __init__(self, path: str | os.PathLike, history_keep: int = 50):
+    def __init__(self, path: str | os.PathLike, history_keep: int = 50, upgrade=None):
         self.path = Path(path).resolve()
+        self.upgrade = upgrade  # brings an older document up to date in memory, on every read
         self.state_dir = self.path.parent / ".studio"
         self.history_dir = self.state_dir / "history"
         self.history_keep = history_keep
@@ -101,10 +102,15 @@ class YamlStore:
         with self.lock:
             text = self.read_text()
             doc = self._yaml.load(text)
+            if self.upgrade:
+                self.upgrade(doc)
             return doc, self.digest_text(text)
 
     def parse(self, text: str) -> Any:
-        return self._yaml.load(text)
+        doc = self._yaml.load(text)
+        if self.upgrade:
+            self.upgrade(doc)
+        return doc
 
     def dump(self, doc: Any) -> str:
         buf = io.StringIO()
@@ -118,7 +124,7 @@ class YamlStore:
             self._snapshot()
             tmp = self.path.with_name(self.path.name + ".tmp")
             tmp.write_text(text, encoding="utf-8", newline="\n")
-            os.replace(tmp, self.path)
+            self._replace(tmp)
             return self.digest_text(text)
 
     def write_text(self, text: str) -> str:
@@ -126,8 +132,19 @@ class YamlStore:
             self._snapshot()
             tmp = self.path.with_name(self.path.name + ".tmp")
             tmp.write_text(text, encoding="utf-8", newline="\n")
-            os.replace(tmp, self.path)
+            self._replace(tmp)
             return self.digest_text(text)
+
+    def _replace(self, tmp: Path) -> None:
+        """Move the new text into place. On Windows a reader that has the file open for a moment (the
+        window's watcher, an editor, a virus scanner) makes the swap fail, so it is retried briefly."""
+        for wait in (0.02, 0.05, 0.1, 0.2, 0.4):
+            try:
+                os.replace(tmp, self.path)
+                return
+            except PermissionError:
+                time.sleep(wait)
+        os.replace(tmp, self.path)
 
     def _snapshot(self) -> None:
         if not self.path.exists():

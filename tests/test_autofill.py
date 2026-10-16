@@ -1,5 +1,5 @@
 """Autofill: the browser Resume Studio drives (core/browser.py, against tests/fake_sites in a headless
-Edge), the profile a resume version gives a site, the plan between that and what Claude read there, and
+Edge), the profile a resume subset gives a site, the plan between that and what Claude read there, and
 the routes plus scripts/browser.py that Claude works through."""
 from __future__ import annotations
 
@@ -30,10 +30,10 @@ def load(path: Path):
     return YamlStore(path).load()[0]
 
 
-# ---- what a resume version gives a site ----------------------------------------------------
+# ---- what a resume subset gives a site ----------------------------------------------------
 def test_desired_profile_from_a_version(data_file):
     doc = load(data_file)
-    all_v = next(v for v in doc["versions"] if v["id"] == "ALL")
+    all_v = next(v for v in doc["subsets"] if v["id"] == "ALL")
     want = profile.desired(doc, all_v, "en", LI)
     assert want["basics"] == {"headline": "MSc Computing student"}
     by_key = {i["key"]: i for i in want["items"]}
@@ -52,7 +52,7 @@ def test_desired_profile_from_a_version(data_file):
 
 def test_desired_follows_the_job_and_the_language(data_file):
     doc = load(data_file)
-    job = next(v for v in doc["versions"] if v["id"] == "RES-TECH-ZH")
+    job = next(v for v in doc["subsets"] if v["id"] == "RES-TECH-ZH")
     job["entries"] = ["EXP-003", "EXP-001"]
     want = profile.desired(doc, job, "zh", PRESETS["boss"])
     assert [i["key"] for i in want["items"]] == ["EXP-001", "EXP-003"]   # the job's section order: education first
@@ -169,13 +169,13 @@ def test_routes_from_a_read_to_edits_to_report(server, data_file):
     assert st == 200 and [s["id"] for s in r["sites"]] == ["linkedin", "boss"]
     assert r["sites"][0]["changes"] is None and r["browser"]["state"] == "off"
     st, v = server.req("GET", "/api/autofill/linkedin")
-    assert v["version_id"] == "ALL" and v["lang"] == "en" and v["synced"] is False and not v["route"]["recorded"]
+    assert v["subset_id"] == "ALL" and v["lang"] == "en" and v["synced"] is False and not v["route"]["recorded"]
     assert server.req("GET", "/api/autofill/boss")[1]["lang"] == "zh"   # the site's usual language when the file has it
-    st, v = server.req("PUT", "/api/autofill/linkedin", {"version_id": "RES-TECH-EN", "lang": "zh"})
-    assert st == 200 and v["version_id"] == "RES-TECH-EN" and v["lang"] == "zh"
-    assert server.req("PUT", "/api/autofill/linkedin", {"version_id": "NOPE"})[0] == 404
+    st, v = server.req("PUT", "/api/autofill/linkedin", {"subset_id": "RES-TECH-EN", "lang": "zh"})
+    assert st == 200 and v["subset_id"] == "RES-TECH-EN" and v["lang"] == "zh"
+    assert server.req("PUT", "/api/autofill/linkedin", {"subset_id": "NOPE"})[0] == 404
     assert server.req("PUT", "/api/autofill/linkedin", {"lang": "fr"})[0] == 400
-    server.req("PUT", "/api/autofill/linkedin", {"version_id": "ALL", "lang": "en"})
+    server.req("PUT", "/api/autofill/linkedin", {"subset_id": "ALL", "lang": "en"})
     assert server.req("POST", "/api/autofill/linkedin/apply", {})[0] == 409   # nothing read yet
     assert server.req("PUT", "/api/autofill/linkedin/local", {"op": "set", "item": "basics", "field": "headline", "value": "x"})[0] == 400
 
@@ -514,7 +514,7 @@ def test_degree_first_resumes_and_fields_a_site_lacks(data_file):
     doc = load(data_file)
     edu = next(e for e in doc["entries"] if e["id"] == "EXP-001")
     edu["title"], edu["subtitle"] = edu["subtitle"], edu["title"]   # "Master of Computing" on top, the school under it
-    want = profile.desired(doc, next(v for v in doc["versions"] if v["id"] == "ALL"), "en", LI)
+    want = profile.desired(doc, next(v for v in doc["subsets"] if v["id"] == "ALL"), "en", LI)
     by_key = {i["key"]: i for i in want["items"]}
     assert by_key["EXP-001"]["fields"]["org"] == "Australian National University"
     assert by_key["EXP-001"]["fields"]["degree"] == "Master of Computing"
@@ -522,7 +522,7 @@ def test_degree_first_resumes_and_fields_a_site_lacks(data_file):
     p2e = by_key["EXP-002"]["fields"]
     assert "role" not in p2e and p2e["description"].startswith("Solo developer\n• Built")
     assert by_key["EXP-002"]["label"] == "Paper2Exam"
-    boss = profile.desired(doc, next(v for v in doc["versions"] if v["id"] == "ALL"), "zh", PRESETS["boss"])
+    boss = profile.desired(doc, next(v for v in doc["subsets"] if v["id"] == "ALL"), "zh", PRESETS["boss"])
     assert next(i for i in boss["items"] if i["key"] == "EXP-002")["fields"]["role"] == "独立开发"
     _, errs = profile.validate_current({"items": [{"section": "projects", "fields": {"role": "x"}}]}, LI)
     assert errs and "not known for projects on LinkedIn" in errs[0]

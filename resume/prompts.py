@@ -23,11 +23,11 @@ def lang_name(code: str) -> str:
     return langs.info(code)["name"]
 
 
-def render_cmd(version_id: str, data_path: str, lang: str | None = None) -> str:
-    return f'python "{RENDER}" {version_id}' + (f" --lang {lang}" if lang else "") + f' --data "{data_path}"'
+def render_cmd(subset_id: str, data_path: str, lang: str | None = None) -> str:
+    return f'python "{RENDER}" {subset_id}' + (f" --lang {lang}" if lang else "") + f' --data "{data_path}"'
 
 
-def ui_context(data_path: str, version: dict | None, entry: dict | None, project_roots: list[str] | None = None) -> str:
+def ui_context(data_path: str, subset: dict | None, entry: dict | None, project_roots: list[str] | None = None) -> str:
     lines = [
         "# Resume Studio",
         "",
@@ -38,20 +38,20 @@ def ui_context(data_path: str, version: dict | None, entry: dict | None, project
         "  refresh by themselves, so there is no need to compile or tell the user to reload.",
         f"- Data format, the multilingual rules and the fact-boundary editing rules: `{SKILL_MD}` (the",
         "  resume-studio skill). Read it before your first edit of the data file in this conversation.",
-        f"- To check pages and which bullets wrap onto a second line: `{render_cmd('<VERSION-ID>', data_path)}`",
+        f"- To check pages and which bullets wrap onto a second line: `{render_cmd('<SUBSET-ID>', data_path)}`",
         "  (add `--lang <code>` to check another resume language with the same template and layout).",
     ]
     if project_roots:
         lines.append("- The user's own projects live under: " + ", ".join(f"`{p}`" for p in project_roots)
                      + ". You may read them (code, README, git log) as evidence.")
-    if version and str(version.get("id")) == "ALL":
+    if subset and str(subset.get("id")) == "ALL":
         lines.append(f"- The user is looking at `ALL`, the full set: every entry in the library"
-                     f" (language `{version.get('lang')}`, template `{version.get('template')}`)."
-                     " Job targets are the other `versions`; each one is a subset.")
-    elif version:
-        lines.append(f"- The user is currently looking at the job target (version) `{version.get('id')}`"
-                     f" ({version.get('label') or ''}, language `{version.get('lang')}`,"
-                     f" template `{version.get('template')}`).")
+                     f" (language `{subset.get('lang')}`, template `{subset.get('template')}`)."
+                     " The other `subsets` are the resumes the user sends, one per kind of role.")
+    elif subset:
+        lines.append(f"- The user is currently looking at the subset `{subset.get('id')}` (a resume for one kind of role)"
+                     f" ({subset.get('label') or ''}, language `{subset.get('lang')}`,"
+                     f" template `{subset.get('template')}`).")
     if entry:
         lines.append(f"- The entry open in the editor is `{entry.get('id')}` (section `{entry.get('section')}`)."
                      " Entry ids are internal: the user never sees them, so in replies call entries by"
@@ -88,7 +88,7 @@ def _extra(instruction: str) -> str:
     return "\n" + t("Also: {text}", text=instruction.strip()) if instruction.strip() else ""
 
 
-def polish_message(name: str, instruction: str, lang: str | None = None, version_id: str | None = None,
+def polish_message(name: str, instruction: str, lang: str | None = None, subset_id: str | None = None,
                    data_path: str = "") -> str:
     """Polish: rewrite the visible layer from the facts, in the language being edited."""
     msg = (t("Using the fact layer (notes and evidence; read the project's code and README when needed), polish the "
@@ -96,12 +96,12 @@ def polish_message(name: str, instruction: str, lang: str | None = None, version
              name=name, lang=lang_name(lang)) if lang else
            t("Using the fact layer (notes and evidence; read the project's code and README when needed), polish the "
              "visible layer of the entry “{name}”. Change only this entry and leave notes and evidence alone.", name=name))
-    if version_id and data_path:
-        msg += "\n" + one_line(f"`{render_cmd(version_id, data_path, lang)}`")
+    if subset_id and data_path:
+        msg += "\n" + one_line(f"`{render_cmd(subset_id, data_path, lang)}`")
     return msg + _extra(instruction)
 
 
-def _translate_rules(target: str, others: list[str], version_id: str, data_path: str) -> str:
+def _translate_rules(target: str, others: list[str], subset_id: str, data_path: str) -> str:
     keep = ", ".join(f"`{o}`" for o in others) or "`en`"
     return ("- " + t("This is not a sentence-by-sentence translation.") + " " + writing_style(target) + "\n"
             "- " + t("Bullets line up by position (each one is a map like {example}). When a bullet isn't needed in the "
@@ -111,19 +111,19 @@ def _translate_rules(target: str, others: list[str], version_id: str, data_path:
                      lang=lang_name(target), code=target) + "\n"
             "- " + t("Don't change {keep}, notes or evidence; the fact boundary stays: write only what notes / evidence "
                      "support.", keep=keep) + "\n"
-            "- " + one_line(f"`{render_cmd(version_id, data_path, target)}`"))
+            "- " + one_line(f"`{render_cmd(subset_id, data_path, target)}`"))
 
 
-def translate_message(name: str, target: str, others: list[str], version_id: str, data_path: str,
+def translate_message(name: str, target: str, others: list[str], subset_id: str, data_path: str,
                       instruction: str = "") -> str:
     """Write another language's version: a native rewrite, not a translation."""
     msg = (t("Write the {lang} version of “{name}”: from its existing text and the fact layer (notes, evidence), fill "
              "in or rewrite `{code}` in every text field of this entry.", lang=lang_name(target), name=name, code=target)
-           + "\n" + _translate_rules(target, others, version_id, data_path))
+           + "\n" + _translate_rules(target, others, subset_id, data_path))
     return msg + _extra(instruction)
 
 
-def fit_message(name: str, lang: str, version_id: str, data_path: str, long_bullets: list[dict]) -> str:
+def fit_message(name: str, lang: str, subset_id: str, data_path: str, long_bullets: list[dict]) -> str:
     """Fit on one line: shorten only the bullets that wrap."""
     lines = "\n".join("  - " + t("bullet {n} ({lines} lines, the text fills {pct}% of a line): {text}",
                                  n=b["index"] + 1, lines=b["lines"], pct=round(b["fill"] * 100), text=b["text"])
@@ -132,44 +132,44 @@ def fit_message(name: str, lang: str, version_id: str, data_path: str, long_bull
             + t("Change only `{code}` of these bullets and bring each onto one line: keep the strongest actions and "
                 "results, drop modifiers and repetition, don't change the facts, and don't touch other languages or "
                 "other entries.", code=lang) + " "
-            + one_line(f"`{render_cmd(version_id, data_path, lang)}`"))
+            + one_line(f"`{render_cmd(subset_id, data_path, lang)}`"))
 
 
-def sync_rules(codes: list[str], version_id: str, data_path: str) -> str:
+def sync_rules(codes: list[str], subset_id: str, data_path: str) -> str:
     names = ", ".join(lang_name(c) for c in codes)
     return (t("Look at these changes (commits, changed files, README), decide what is worth putting on the resume, then "
               "update the visible layer (bullets, tech, subtitle if needed). Update every language ({langs}), each "
               "written its own way rather than translated from another. If the changes aren't worth adding, don't "
               "change anything and tell me why. Leave notes and evidence alone.", langs=names) + "\n"
-            + one_line(", ".join(f"`{render_cmd(version_id, data_path, c)}`" for c in codes)))
+            + one_line(", ".join(f"`{render_cmd(subset_id, data_path, c)}`" for c in codes)))
 
 
-def sync_message(name: str, change_text: str, codes: list[str], version_id: str, data_path: str) -> str:
+def sync_message(name: str, change_text: str, codes: list[str], subset_id: str, data_path: str) -> str:
     """Update from the project: the folder changed since Claude last read it."""
     return (t("The project folder of “{name}” changed since the last sync:", name=name) + f"\n{change_text}\n\n"
-            + sync_rules(codes, version_id, data_path))
+            + sync_rules(codes, subset_id, data_path))
 
 
-def batch_message(kind: str, version: dict, data_path: str, names: list[str], target: str | None = None,
+def batch_message(kind: str, subset: dict, data_path: str, names: list[str], target: str | None = None,
                   others: list[str] | None = None) -> str:
-    """Whole-version actions from the job menu."""
-    vid = str(version.get("id"))
-    job = version.get("label") or vid
+    """Whole-subset actions from the subset menu."""
+    vid = str(subset.get("id"))
+    job = subset.get("label") or vid
     lst = ", ".join(f"“{n}”" for n in names)
     if kind == "translate":
-        return (t("Write the {lang} version of these entries in the current job ({job}): {list}. One at a time, each "
+        return (t("Write the {lang} version of these entries in the current subset ({job}): {list}. One at a time, each "
                   "following these rules:", lang=lang_name(target), job=job, list=lst) + "\n"
                 + _translate_rules(target, others or [], vid, data_path))
     if kind == "fit":
-        return (t("These entries in the current job ({job}) have bullets running past one line: {list}. Bring every "
+        return (t("These entries in the current subset ({job}) have bullets running past one line: {list}. Bring every "
                   "such bullet onto one line, entry by entry, without changing facts or other languages.", job=job, list=lst)
                 + " " + one_line(f"`{render_cmd(vid, data_path)}`"))
     raise ValueError(kind)
 
 
-def batch_sync_message(parts: list[str], codes: list[str], version_id: str, data_path: str) -> str:
+def batch_sync_message(parts: list[str], codes: list[str], subset_id: str, data_path: str) -> str:
     return (t("The project folders of these entries changed since the last sync; handle them one by one:") + "\n\n"
-            + "\n\n".join(parts) + "\n\n" + sync_rules(codes, version_id, data_path))
+            + "\n\n".join(parts) + "\n\n" + sync_rules(codes, subset_id, data_path))
 
 
 def _where(app: dict, report: str) -> str:
@@ -178,41 +178,41 @@ def _where(app: dict, report: str) -> str:
             if report else t("This posting has no evaluation report yet; its link: {url}", url=app.get("url") or "?"))
 
 
-def tailor_message(version: dict, app: dict, report: str, data_path: str, new: bool = False) -> str:
-    """Make or adjust a job (a resume for a kind of role) from one evaluated posting."""
-    vid = str(version.get("id"))
-    job = version.get("label") or vid
+def tailor_message(subset: dict, app: dict, report: str, data_path: str, new: bool = False) -> str:
+    """Make or adjust a subset (a resume for a kind of role) from one evaluated posting."""
+    vid = str(subset.get("id"))
+    job = subset.get("label") or vid
     posting = " — ".join(x for x in (app.get("company"), app.get("role")) if x) or f"#{app.get('id')}"
-    first = (t("None of my resume versions fits the posting {posting} well, so the new job “{job}” (`{id}`) starts from it.",
+    first = (t("None of my resume subsets fits the posting {posting} well, so the new subset “{job}” (`{id}`) starts from it.",
                posting=posting, job=job, id=vid) if new else
-             t("Adjust the job “{job}” (`{id}`) so it also fits the posting {posting}.", job=job, id=vid, posting=posting))
+             t("Adjust the subset “{job}” (`{id}`) so it also fits the posting {posting}.", job=job, id=vid, posting=posting))
     return (first + " " + _where(app, report) + "\n"
-            "- " + t("A job is a resume for a kind of role that I send to many similar postings, not to one company: never "
-                     "put this company's name (or anything only true of this one posting) into the resume, and name the job "
+            "- " + t("A subset is a resume for a kind of role that I send to many similar postings, not to one company: never "
+                     "put this company's name (or anything only true of this one posting) into the resume, and name the subset "
                      "after the kind of role (its `label`).") + "\n"
-            "- " + t("Pick the library entries that serve this kind of role best and make them this job's `entries`, strongest "
+            "- " + t("Pick the library entries that serve this kind of role best and make them this subset's `entries`, strongest "
                      "first within each section; change its section order if another order reads better for it.") + "\n"
             "- " + t("Write its `headline` for this kind of role, in each resume language.") + "\n"
-            "- " + t("Don't reword library bullets yourself: every job shares them. Where a bullet would clearly land better "
+            "- " + t("Don't reword library bullets yourself: every subset shares them. Where a bullet would clearly land better "
                      "in the posting's words and notes / evidence back it, list the rewording in your reply and let me decide.") + "\n"
-            "- " + t("Keep it to one page: adjust this job's layout before suggesting fewer entries. Check with {cmd}.",
+            "- " + t("Keep it to one page: adjust this subset's layout before suggesting fewer entries. Check with {cmd}.",
                      cmd=f"`{render_cmd(vid, data_path)}`") + "\n"
             "- " + t("Then tell me which requirements the resume now covers, which gaps remain, and which entries you left out and why."))
 
 
 def choose_message(app: dict, report: str, ranked: list[dict], tool_id: str) -> str:
-    """Which existing job (resume version) to send for one evaluated posting."""
+    """Which existing subset to send for one evaluated posting."""
     posting = " — ".join(x for x in (app.get("company"), app.get("role")) if x) or f"#{app.get('id')}"
     lines = [f"- `{v['id']}` {v['label']}: " + (t("{score}% by word match", score=v["score"]) if v["score"] is not None else "—")
              for v in ranked]
-    return (t("Which of my resume versions should I send for the posting {posting}?", posting=posting) + " " + _where(app, report) + "\n"
-            + t("My versions (the jobs in the resume data file), with the window's rough word match:") + "\n" + "\n".join(lines or ["-"]) + "\n"
-            "- " + t("Compare what each version's resume actually says (its headline and chosen entries) with what the posting "
+    return (t("Which of my resume subsets should I send for the posting {posting}?", posting=posting) + " " + _where(app, report) + "\n"
+            + t("My subsets (`subsets` in the resume data file), with the window's rough word match:") + "\n" + "\n".join(lines or ["-"]) + "\n"
+            "- " + t("Compare what each subset's resume actually says (its headline and chosen entries) with what the posting "
                      "asks for, and recommend one, with the requirements it covers and the gaps that remain.") + "\n"
-            "- " + t("If none fits well, say whether adjusting one of them or a new version for this kind of role would be better. "
-                     "Don't change any job yet.") + "\n"
-            "- " + t("Once I agree on a version, link it: add `{tool: {tool}, id: '{id}'}` to that job's `postings` list in the "
-                     "data file and remove it from any other job's.", tool=tool_id, id=app.get("id")))
+            "- " + t("If none fits well, say whether adjusting one of them or a new subset for this kind of role would be better. "
+                     "Don't change any subset yet.") + "\n"
+            "- " + t("Once I agree on a subset, link it: add `{tool: {tool}, id: '{id}'}` to that subset's `postings` list in the "
+                     "data file and remove it from any other subset's.", tool=tool_id, id=app.get("id")))
 
 
 def attachments_note(paths: list[str]) -> str:

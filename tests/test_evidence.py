@@ -114,7 +114,7 @@ def test_update_from_project_flow(server, data_file, fake_claude, repo):
     code, r = server.req("POST", "/api/evidence/EXP-002/synced")      # "标记为已同步"
     assert r["status"]["EXP-002"]["state"] == "same"
     code, chat = server.req("POST", "/api/chats")
-    code, r = server.req("POST", f"/api/chats/{chat['id']}/send", {"action": "sync", "entry_id": "EXP-002", "version_id": "RES-TECH-EN"})
+    code, r = server.req("POST", f"/api/chats/{chat['id']}/send", {"action": "sync", "entry_id": "EXP-002", "subset_id": "RES-TECH-EN"})
     assert code == 409                                                  # nothing changed: nothing to do
 
     (repo / "eval.py").write_text("x = 1\n", encoding="utf-8")
@@ -122,7 +122,7 @@ def test_update_from_project_flow(server, data_file, fake_claude, repo):
     git(repo, "commit", "-qm", "feat: evaluation harness")
     st = server.req("GET", "/api/evidence?force=1")[1]["status"]["EXP-002"]
     assert st["state"] == "changed"
-    code, r = server.req("POST", f"/api/chats/{chat['id']}/send", {"action": "sync", "entry_id": "EXP-002", "version_id": "RES-TECH-EN"})
+    code, r = server.req("POST", f"/api/chats/{chat['id']}/send", {"action": "sync", "entry_id": "EXP-002", "subset_id": "RES-TECH-EN"})
     assert code == 200 and "feat: evaluation harness" in r["text"] and "eval.py" in r["text"]
     assert "--lang zh" in r["text"] and "--lang en" in r["text"]       # both languages get checked
     server.wait_idle(chat["id"])

@@ -70,9 +70,9 @@ def test_a_new_file_starts_in_the_computers_language(tmp_path, monkeypatch):
     doc = st.state()["doc"]
     assert doc["settings"]["languages"] == ["de"]
     assert [s["title"] for s in doc["sections"]][:3] == ["Ausbildung", "Berufserfahrung", "Projekte"]
-    assert doc["versions"][0]["id"] == "ALL" and doc["versions"][0]["lang"] == "de"
-    vid, s = st.create_version(None, None, "Backend")
-    assert next(v for v in s["doc"]["versions"] if v["id"] == vid)["lang"] == "de"
+    assert doc["subsets"][0]["id"] == "ALL" and doc["subsets"][0]["lang"] == "de"
+    vid, s = st.create_subset(None, None, "Backend")
+    assert next(v for v in s["doc"]["subsets"] if v["id"] == vid)["lang"] == "de"
 
 
 def test_dates_follow_each_resume_language():
@@ -106,7 +106,7 @@ def test_app_language_can_be_picked_and_reset(server):
     assert data["lang"] == "zh" and data["chosen"] is None and data["system"] == "zh" and "dict" in data
     assert server.req("PUT", "/api/prefs", {"ui_lang": "ko"})[1]["ui_lang"] == "ko"
     assert '"lang": "ko"' in server.req("GET", "/i18n.js")[1].decode("utf-8")
-    code, err = server.req("DELETE", "/api/versions/ALL")          # the API speaks the chosen language too
+    code, err = server.req("DELETE", "/api/subsets/ALL")          # the API speaks the chosen language too
     assert code == 400 and err["error"] == i18n.t("ALL (the full set) can't be deleted", ui="ko")
     assert server.req("PUT", "/api/prefs", {"ui_lang": None})[1] == {"ui_lang": "zh", "chosen": None}
 
@@ -123,7 +123,7 @@ def test_other_scripts_compile(data_file, lang, text):
     doc, _ = st.store.load()
     doc["entries"][1]["bullets"].append({lang: text})
     doc["entries"][1]["title"] = {"en": "Paper2Exam", lang: "Paper2Exam " + text.split()[0]}
-    v = to_plain(model.get_item(doc, "version", "RES-TECH-EN"))
+    v = to_plain(model.get_item(doc, "subset", "RES-TECH-EN"))
     v["lang"] = lang
     view = model.build_view(doc, v)
     r = get_renderer().render(view, data_file.parent / f"script-{lang}")

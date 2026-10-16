@@ -1,5 +1,5 @@
 """Per data file: the user's sites, and per site the local copy of its profile, what the site said at
-the last sync, the recorded read route, which resume version it is compared with, and how pushing
+the last sync, the recorded read route, which resume subset it is compared with, and how pushing
 went. Kept in `.studio/autofill/` next to the data file (personal data: git-ignored like the rest of
 `.studio`)."""
 from __future__ import annotations
@@ -179,22 +179,23 @@ class Autofill:
 
     # ---- which resume, in which language ------------------------------------------
     def target(self, site: Site, st: dict | None = None) -> tuple[Any, str]:
-        """(version, lang) for this site: the user's choice, else ALL in the site's usual language."""
+        """(subset, lang) for this site: the user's choice, else ALL in the site's usual language."""
         st = self.load(site.id) if st is None else st
         doc, _ = self.studio.store.load()
-        version = model.get_version(doc, str(st.get("version_id") or model.ALL_ID))
-        if version is None:
-            version = model.get_version(doc, model.ALL_ID)
+        chosen = st.get("subset_id") or st.get("version_id")   # version_id: saved before subsets were named
+        subset = model.get_subset(doc, str(chosen or model.ALL_ID))
+        if subset is None:
+            subset = model.get_subset(doc, model.ALL_ID)
         langs = [str(x) for x in (doc.get("settings") or {}).get("languages") or [model.first_lang(doc)]]
         lang = str(st.get("lang") or "")
         if lang not in langs:
             lang = next((x for x in langs if x == site.lang or x.split("-")[0] == site.lang), langs[0])
-        return version, lang
+        return subset, lang
 
     def desired(self, site: Site, st: dict | None = None) -> dict:
         doc, _ = self.studio.store.load()
-        version, lang = self.target(site, st)
-        return profile.desired(doc, version, lang, site)
+        subset, lang = self.target(site, st)
+        return profile.desired(doc, subset, lang, site)
 
     # ---- the local copy and its sync with the site ----------------------------------
     def copies(self, site_id: str, st: dict | None = None) -> tuple[dict | None, dict | None]:
@@ -225,7 +226,7 @@ class Autofill:
         return out
 
     def reference(self, site: Site, local: dict | None, st: dict) -> dict:
-        """What the chosen resume version says, next to the local copy: per item the fields the resume
+        """What the chosen resume subset says, next to the local copy: per item the fields the resume
         words differently, the resume's entries the copy lacks, and its skills not there yet."""
         if local is None:
             return {"items": {}, "basics": {}, "missing": [], "skills": []}
@@ -248,11 +249,11 @@ class Autofill:
 
     def view(self, site: Site) -> dict:
         st = self.load(site.id)
-        version, lang = self.target(site, st)
+        subset, lang = self.target(site, st)
         base, local = self.copies(site.id, st)
         st = self.load(site.id)
         r = st.get("route")
-        return {"site": site.public(), "version_id": str(version.get("id")), "lang": lang,
+        return {"site": site.public(), "subset_id": str(subset.get("id")), "lang": lang,
                 "local": local, "base": base, "synced": base is not None, "synced_at": st.get("synced_at"),
                 "conflicts": st.get("conflicts") or {}, "notes": st.get("notes") or [],
                 "last_check": st.get("last_check"), "checking": st.get("checking"),
@@ -403,11 +404,11 @@ class Autofill:
                 fields["base"] = sync.pushed(base or sync.empty(), local or sync.empty(), pend[change_id])
             return self.save(site.id, **fields)
 
-    def choose(self, site: Site, *, version_id: str | None = None, lang: str | None = None,
+    def choose(self, site: Site, *, subset_id: str | None = None, lang: str | None = None,
                ticks: dict | None = None) -> dict:
         fields: dict[str, Any] = {}
-        if version_id is not None:
-            fields["version_id"] = version_id
+        if subset_id is not None:
+            fields["subset_id"] = subset_id
         if lang is not None:
             fields["lang"] = lang
         if ticks is not None:

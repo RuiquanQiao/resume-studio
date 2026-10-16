@@ -135,7 +135,7 @@ function md(src) {
 let S = null; // last server state
 const ui = {
   tab: "library",
-  versionId: null,
+  subsetId: null,
   sel: { kind: "profile", id: null },
   draft: null, formBase: null, dirty: false, editSeq: 0,
   saving: false, refreshAfterSave: false, saveTimer: null, conflict: null,
@@ -145,24 +145,24 @@ const ui = {
   layoutOpen: false,
   ai: {},        // entryId -> {chat, action, snapshot, done}: what Claude was asked to change, for the diff + undo
   lines: {},     // lang -> {entryId: {bulletIndex: {n, fill}}}: measured by the last render in that language
-  linesFor: {},  // lang -> version id the measurement belongs to
+  linesFor: {},  // lang -> subset id the measurement belongs to
   missing: [],   // entries lacking text in the previewed language (from the last render)
   evidence: {},  // entryId -> {state, paths: [...]}: have the project folders changed since Claude read them
   chat: { list: [], id: null, meta: null, messages: [], running: false, live: null, liveEl: null, available: false,
           queue: [], files: [], waiting: new Set(), thinking: 0 },
   claude: { info: null, limits: {}, modes: [] },   // what the user's Claude Code offers (GET /api/claude)
-  w: {},         // custom controls created once: version, chat, tpl
+  w: {},         // custom controls created once: subset, chat, tpl
 };
 
 const doc = () => S.doc;
 const langs = () => (doc().settings && doc().settings.languages) || ["en"];
 const sections = () => doc().sections || [];
 const entries = () => doc().entries || [];
-const versions = () => doc().versions || [];
-const version = () => versions().find((v) => v.id === ui.versionId) || null;
+const subsets = () => doc().subsets || [];
+const subset = () => subsets().find((v) => v.id === ui.subsetId) || null;
 const ALL = "ALL";
-const isAll = () => ui.versionId === ALL;
-const jobName = (v) => (v && v.id === ALL ? t("All entries") : (v && (v.label || v.id)) || "");
+const isAll = () => ui.subsetId === ALL;
+const subsetName = (v) => (v && v.id === ALL ? t("All entries") : (v && (v.label || v.id)) || "");
 const entryById = (id) => entries().find((e) => e.id === id) || null;
 // what people see: the entry's number inside its own section (library order); ids stay internal
 function localNo(e) { return entries().filter((x) => x.section === e.section).findIndex((x) => x.id === e.id) + 1; }
@@ -174,7 +174,7 @@ function entryLabel(e) {
 const sectionById = (id) => sections().find((s) => s.id === id) || null;
 // a copy of `list` with the item at `from` taken out and put back at `to`
 const moved = (list, from, to) => { const o = [...list]; o.splice(to, 0, ...o.splice(from, 1)); return o; };
-// every section id in this version's order (same rule as model.section_order: unlisted ones go last)
+// every section id in this subset's order (same rule as model.section_order: unlisted ones go last)
 function sectionOrder(v) {
   const all = sections().map((s) => s.id);
   return [...new Set([...((v && v.sections) || []).filter((id) => all.includes(id)), ...all])];
@@ -182,12 +182,12 @@ function sectionOrder(v) {
 
 function itemHash(kind, id) {
   if (!S) return null;
-  if (kind === "entry" || kind === "version") return (S.hashes[kind] || {})[id] || null;
+  if (kind === "entry" || kind === "subset") return (S.hashes[kind] || {})[id] || null;
   return S.hashes[kind] || null;
 }
 function currentItem(kind, id) {
   if (kind === "entry") return entryById(id);
-  if (kind === "version") return versions().find((v) => v.id === id) || null;
+  if (kind === "subset") return subsets().find((v) => v.id === id) || null;
   return doc()[kind];
 }
 
@@ -202,7 +202,7 @@ function setT(old, lang, val) {
   return obj;
 }
 function display(v) {
-  const L = (version() && version().lang) || langs()[0];
+  const L = (subset() && subset().lang) || langs()[0];
   return getT(v, L) || (v && typeof v === "object" ? Object.values(v).find(Boolean) : "") || "";
 }
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -230,12 +230,12 @@ async function refresh() {
 
 function applyState(s) {
   S = s;
-  if (!versions().some((v) => v.id === ui.versionId)) {
-    const saved = store("version");
-    ui.versionId = versions().some((v) => v.id === saved) ? saved : ALL;
+  if (!subsets().some((v) => v.id === ui.subsetId)) {
+    const saved = store("subset") || store("version");   // "version": remembered before subsets were named
+    ui.subsetId = subsets().some((v) => v.id === saved) ? saved : ALL;
   }
   if (!ui.editLang || !langs().includes(ui.editLang)) {
-    ui.editLang = (version() && langs().includes(version().lang) && version().lang) || langs()[0];
+    ui.editLang = (subset() && langs().includes(subset().lang) && subset().lang) || langs()[0];
   }
   ui.chat.available = !!(s.claude && s.claude.available);
   // evidence paths changed (picked here, typed, or edited by Claude): look at the folders again
@@ -252,7 +252,7 @@ function applyState(s) {
 function syncEditor() {
   const { kind, id } = ui.sel;
   if (kind === "posting") return;   // not in resume.yaml; jobs.js refreshes it
-  if ((kind === "entry" || kind === "version") && !currentItem(kind, id)) { select("profile"); return; }
+  if ((kind === "entry" || kind === "subset") && !currentItem(kind, id)) { select("profile"); return; }
   if (itemHash(kind, id) === ui.formBase) return;
   if (ui.dirty) { ui.conflict = { current: clone(currentItem(kind, id)) }; buildEditor(); return; }
   buildEditor({ flash: true });
@@ -281,8 +281,8 @@ async function saveDraft(force = false) {
   setSaveStatus(t("Saving…"));
   try {
     const s = await api("PUT", "/api/item", { kind, id, data: ui.draft, base: force ? null : ui.formBase });
-    if (kind === "entry" || kind === "version") ui.sel.id = ui.draft.id;
-    if (kind === "version") { ui.versionId = ui.draft.id; store("version", ui.versionId); }
+    if (kind === "entry" || kind === "subset") ui.sel.id = ui.draft.id;
+    if (kind === "subset") { ui.subsetId = ui.draft.id; store("subset", ui.subsetId); }
     applyState(s);
     ui.formBase = itemHash(ui.sel.kind, ui.sel.id);
     if (ui.conflict) { ui.conflict = null; buildEditorKeepDraft(); }
@@ -301,14 +301,14 @@ async function saveDraft(force = false) {
   }
 }
 
-// version tweaks from the sidebar / preview toolbar: re-read, apply, retry once on conflict
-async function mutateVersion(fn) {
+// subset tweaks from the sidebar / preview toolbar: re-read, apply, retry once on conflict
+async function mutateSubset(fn) {
   for (let attempt = 0; attempt < 2; attempt++) {
-    const v = clone(version() || (isAll() ? { id: ALL, label: "All entries", lang: langs()[0], template: "classic", headline: "", layout: {} } : null));
+    const v = clone(subset() || (isAll() ? { id: ALL, label: "All entries", lang: langs()[0], template: "classic", headline: "", layout: {} } : null));
     if (!v) return;   // ALL may not be in the file yet; the server adds it on first save
     fn(v);
     try {
-      const s = await api("PUT", "/api/item", { kind: "version", id: ui.versionId, data: v, base: itemHash("version", ui.versionId) });
+      const s = await api("PUT", "/api/item", { kind: "subset", id: ui.subsetId, data: v, base: itemHash("subset", ui.subsetId) });
       applyState(s);
       syncEditor();
       scheduleRender(200);
@@ -324,27 +324,27 @@ async function mutateVersion(fn) {
 const TEMPLATE_NAMES = (id) => ((S.templates || []).find((t) => t.id === id) || {}).name || id;
 
 function renderTopbar() {
-  const jobs = versions().filter((v) => v.id !== ALL);
+  const jobs = subsets().filter((v) => v.id !== ALL);
   const all = `ALL · ${t("All entries")}`;
   const opts = [{ value: ALL, label: all, short: all, desc: t("The whole library, not limited to one page") }];
-  for (const v of jobs) opts.push({ value: v.id, label: v.label || v.id, group: t("Jobs"), hint: `${langShort(v.lang)} · ${TEMPLATE_NAMES(v.template)}` });
-  if (!jobs.length) opts.push({ value: "__none", label: t("No jobs yet"), desc: t("Click ··· on the right to create one"), group: t("Jobs"), disabled: true });
-  ui.w.version.setOptions(opts, ui.versionId);
+  for (const v of jobs) opts.push({ value: v.id, label: v.label || v.id, group: t("Subsets"), hint: `${langShort(v.lang)} · ${TEMPLATE_NAMES(v.template)}` });
+  if (!jobs.length) opts.push({ value: "__none", label: t("No subsets yet"), desc: t("Click ··· on the right to create one"), group: t("Subsets"), disabled: true });
+  ui.w.subset.setOptions(opts, ui.subsetId);
 }
 
-function openVersionMenu() {
-  const v = version();
+function openSubsetMenu() {
+  const v = subset();
   const job = v && v.id !== ALL;
   const bilingual = langs().length > 1;
   const inV = job ? (v.entries || []).map(entryById).filter(Boolean) : entries();
   const lacking = (l) => inV.filter((e) => missingIn(e, l)).length;
   const long = longBullets().length;
-  openMenu($("#version-menu-btn"), [
-    job && { label: t("Job settings"), hint: t("Name, ID, headline"), icon: "settings", onClick: () => select("version", ui.versionId) },
-    { label: t("New job"), hint: t("Blank, tick entries yourself"), icon: "plus", onClick: () => newVersion(null) },
-    v && { label: job ? t("Duplicate this job") : t("New job (with every entry ticked)"), icon: "copy", onClick: () => newVersion(ui.versionId) },
+  openMenu($("#subset-menu-btn"), [
+    job && { label: t("Subset settings"), hint: t("Name, ID, headline"), icon: "settings", onClick: () => select("subset", ui.subsetId) },
+    { label: t("New subset"), hint: t("Blank, tick entries yourself"), icon: "plus", onClick: () => newSubset(null) },
+    v && { label: job ? t("Duplicate this subset") : t("New subset (with every entry ticked)"), icon: "copy", onClick: () => newSubset(ui.subsetId) },
     "sep",
-    { header: job ? t("Ask Claude about this job") : t("Ask Claude about all entries") },
+    { header: job ? t("Ask Claude about this subset") : t("Ask Claude about all entries") },
     ...(bilingual ? langs().map((l) => ({ label: t("Fill in the {lang} version", { lang: langName(l) }),
       hint: lacking(l) ? t("{n} entry lacks it", { n: lacking(l) }, "{n} entries lack it") : t("All done"), icon: "translate", disabled: !ui.chat.available || !lacking(l),
       onClick: () => aiBatch("batch_translate", { target: l }) })) : []),
@@ -353,48 +353,48 @@ function openVersionMenu() {
     "sep",
     { label: t("Open the export folder"), icon: "folder", onClick: revealExports },
     job && "sep",
-    job && { label: t("Delete this job"), icon: "trash", danger: true, onClick: deleteVersion },
+    job && { label: t("Delete this subset"), icon: "trash", danger: true, onClick: deleteSubset },
   ], { align: "start", focusFirst: false });
 }
 
-async function switchVersion(id) {
+async function switchSubset(id) {
   await saveDraft();
-  if (ui.headPending) await ui.headPending();   // a headline being typed belongs to the version it was typed in
-  ui.versionId = id;
-  store("version", id);
-  const v = version();
+  if (ui.headPending) await ui.headPending();   // a headline being typed belongs to the subset it was typed in
+  ui.subsetId = id;
+  store("subset", id);
+  const v = subset();
   if (v && langs().includes(v.lang)) ui.editLang = v.lang;
   ui.missing = [];
   renderTopbar();
   renderLibrary();
   renderPreviewToolbar();
   renderComposerState();
-  if (ui.sel.kind === "version") select(id === ALL ? "profile" : "version", id === ALL ? null : id);   // ALL has no job settings
+  if (ui.sel.kind === "subset") select(id === ALL ? "profile" : "subset", id === ALL ? null : id);   // ALL has no job settings
   else buildEditorKeepDraft();
   clearPages();
   scheduleRender(0);
 }
 
-async function newVersion(copyFrom) {
+async function newSubset(copyFrom) {
   const fromAll = copyFrom === ALL;
   const label = await modal({
-    title: copyFrom && !fromAll ? t("Duplicate job") : t("New job"),
-    message: fromAll ? t("Every entry starts ticked; untick the ones this job doesn't need.") : copyFrom ? t("Copies this job's entries, headline and layout.") : t("Starts blank; tick the entries for this job in the library on the left."),
-    input: copyFrom && !fromAll ? t("{name} (copy)", { name: jobName(version()) }) : "", placeholder: t("Job name, e.g. AI Agent Engineer"), ok: t("Create"),
+    title: copyFrom && !fromAll ? t("Duplicate subset") : t("New subset"),
+    message: fromAll ? t("Every entry starts ticked; untick the ones this subset doesn't need.") : copyFrom ? t("Copies this subset's entries, headline and layout.") : t("Starts blank; tick the entries for this subset in the library on the left."),
+    input: copyFrom && !fromAll ? t("{name} (copy)", { name: subsetName(subset()) }) : "", placeholder: t("Subset name, e.g. AI Agent Engineer"), ok: t("Create"),
   });
   if (!label || !label.trim()) return;
   try {
-    const r = await api("POST", "/api/versions", { label: label.trim(), copy_from: copyFrom });
+    const r = await api("POST", "/api/subsets", { label: label.trim(), copy_from: copyFrom });
     applyState(r);
-    switchVersion(r.id);
-    toast(fromAll || copyFrom ? t("Created the job “{name}”", { name: label.trim() }) : t("Created the job “{name}”; tick its entries on the left", { name: label.trim() }));
+    switchSubset(r.id);
+    toast(fromAll || copyFrom ? t("Created the subset “{name}”", { name: label.trim() }) : t("Created the subset “{name}”; tick its entries on the left", { name: label.trim() }));
   } catch (e) { toast(e.message); }
 }
 
-async function deleteVersion() {
-  if (!(await modal({ title: t("Delete the job “{name}”?", { name: jobName(version()) }), message: t("Only this job's setup goes (which entries, headline, template and layout); the library itself is untouched."), ok: t("Delete"), danger: true }))) return;
-  applyState(await api("DELETE", "/api/versions/" + encodeURIComponent(ui.versionId)));
-  ui.versionId = null;
+async function deleteSubset() {
+  if (!(await modal({ title: t("Delete the subset “{name}”?", { name: subsetName(subset()) }), message: t("Only this subset's setup goes (which entries, headline, template and layout); the library itself is untouched."), ok: t("Delete"), danger: true }))) return;
+  applyState(await api("DELETE", "/api/subsets/" + encodeURIComponent(ui.subsetId)));
+  ui.subsetId = null;
   applyState(S);
   select("profile");
   clearPages();
@@ -424,14 +424,14 @@ function renderLibrary() {
   const lib = $("#library");
   const scroll = lib.scrollTop;
   lib.replaceChildren();
-  const v = version();
+  const v = subset();
   const nav = (kind, label, ic, id = null) => h("button", { class: "nav-row" + (ui.sel.kind === kind ? " on" : ""), onclick: () => select(kind, id) }, icon(ic), label);
   const job = v && v.id !== ALL;
   lib.append(nav("profile", t("Profile"), "user"), nav("sections", t("Sections & resume settings"), "grid"));
-  if (job) lib.append(nav("version", t("Job settings"), "settings", v.id));
+  if (job) lib.append(nav("subset", t("Subset settings"), "settings", v.id));
   lib.append(h("div", { class: "lib-hint" + (job ? " job" : "") }, job
-    ? [h("b", null, jobName(v)), ": " + t("tick = on this job's resume")]
-    : [h("b", null, "ALL"), ": " + t("every entry lives here. Create a job, then tick the ones it needs")]));
+    ? [h("b", null, subsetName(v)), ": " + t("tick = in this subset's resume")]
+    : [h("b", null, "ALL"), ": " + t("every entry lives here. Create a subset, then tick the ones it needs")]));
   const changed = entries().filter((e) => (ui.evidence[e.id] || {}).state === "changed");
   if (changed.length) {
     lib.append(h("div", { class: "lib-update" },
@@ -446,7 +446,7 @@ function renderLibrary() {
 
   const included = new Set(job ? v.entries || [] : entries().map((e) => e.id));
   const order = job ? v.entries || [] : entries().map((e) => e.id);
-  for (const sec of sectionOrder(v).map(sectionById)) {   // same order as this version's resume
+  for (const sec of sectionOrder(v).map(sectionById)) {   // same order as this subset's resume
     const mine = entries().filter((e) => e.section === sec.id);
     const inV = order.map(entryById).filter((e) => e && e.section === sec.id);
     const outV = mine.filter((e) => !included.has(e.id));
@@ -471,15 +471,15 @@ function renderLibrary() {
   lib.scrollTop = scroll;
 }
 
-function entryRow(e, isIn, idx, nIn, hasVersion) {
+function entryRow(e, isIn, idx, nIn, hasSubset) {
   const active = ui.sel.kind === "entry" && ui.sel.id === e.id;
   const meta = entryMeta(e);
   const ev = (ui.evidence[e.id] || {}).state;
   const gaps = langs().length > 1 ? langs().filter((l) => missingIn(e, l)) : [];
   return h("div", { class: "entry" + (isIn ? "" : " out") + (active ? " on" : ""), "data-id": e.id, onclick: () => select("entry", e.id) },
-    hasVersion && h("button", {
+    hasSubset && h("button", {
       class: "check" + (isIn ? " on" : ""), role: "checkbox", "aria-checked": String(isIn),
-      title: isIn ? t("Remove from this job") : t("Add to this job"),
+      title: isIn ? t("Remove from this subset") : t("Add to this subset"),
       onclick: (ev) => { ev.stopPropagation(); toggleInclude(e.id, !isIn); },
     }),
     h("span", { class: "e-no" }, localNo(e)),
@@ -490,19 +490,19 @@ function entryRow(e, isIn, idx, nIn, hasVersion) {
       (meta || gaps.length > 0) && h("span", { class: "e-meta" }, meta,
         gaps.map((l) => h("span", { class: "e-gap", title: t("Some text has no {lang} yet; the {lang} resume shows another language there for now", { lang: langName(l) }) }, t("No {lang}", { lang: langShort(l) }))))),
     isIn && h("span", { class: "e-tools" },
-      h("button", { class: "btn icon sm ghost", title: t("Move up"), disabled: idx === 0, onclick: (ev) => { ev.stopPropagation(); hasVersion ? moveInVersion(e.id, -1) : moveInLibrary(e.id, -1); } }, icon("up")),
-      h("button", { class: "btn icon sm ghost", title: t("Move down"), disabled: idx >= nIn - 1, onclick: (ev) => { ev.stopPropagation(); hasVersion ? moveInVersion(e.id, 1) : moveInLibrary(e.id, 1); } }, icon("down"))));
+      h("button", { class: "btn icon sm ghost", title: t("Move up"), disabled: idx === 0, onclick: (ev) => { ev.stopPropagation(); hasSubset ? moveInSubset(e.id, -1) : moveInLibrary(e.id, -1); } }, icon("up")),
+      h("button", { class: "btn icon sm ghost", title: t("Move down"), disabled: idx >= nIn - 1, onclick: (ev) => { ev.stopPropagation(); hasSubset ? moveInSubset(e.id, 1) : moveInLibrary(e.id, 1); } }, icon("down"))));
 }
 
 function toggleInclude(id, on) {
-  mutateVersion((v) => {
+  mutateSubset((v) => {
     v.entries = (v.entries || []).filter((x) => x !== id);
     if (on) v.entries.push(id);
   });
 }
 
-function moveInVersion(id, dir) {
-  mutateVersion((v) => {
+function moveInSubset(id, dir) {
+  mutateSubset((v) => {
     const list = v.entries || [];
     const sec = (entryById(id) || {}).section;
     const same = list.map((x, i) => [x, i]).filter(([x]) => (entryById(x) || {}).section === sec);
@@ -524,7 +524,7 @@ async function newEntry(section) {
   await saveDraft();
   const r = await api("POST", "/api/entries", { section });
   applyState(r);
-  if (version() && !isAll()) await mutateVersion((v) => { v.entries = [...(v.entries || []), r.id]; });
+  if (subset() && !isAll()) await mutateSubset((v) => { v.entries = [...(v.entries || []), r.id]; });
   select("entry", r.id);
   const title = () => $("#editor input[data-key=title]");
   if (title()) title().focus(); else setTimeout(() => title() && title().focus(), 30);
@@ -543,7 +543,7 @@ async function select(kind, id = null) {
 }
 
 // "posting" is not part of resume.yaml: an evaluated job posting from the Applications tab (jobs.js)
-const BUILDERS = () => ({ entry: entryForm, profile: profileForm, sections: sectionsForm, version: versionForm, posting: postingView });
+const BUILDERS = () => ({ entry: entryForm, profile: profileForm, sections: sectionsForm, subset: subsetForm, posting: postingView });
 
 function buildEditor(opts = {}) {
   const { kind, id } = ui.sel;
@@ -585,7 +585,7 @@ function langSwitch() {
       if (l === ui.editLang) return;
       ui.editLang = l;
       buildEditorKeepDraft();
-      if (ui.linesFor[l] !== ui.versionId && !ui.render.busy) measureEditLang(ui.versionId);
+      if (ui.linesFor[l] !== ui.subsetId && !ui.render.busy) measureEditLang(ui.subsetId);
     } }, langShort(l))));
 }
 
@@ -682,7 +682,7 @@ function bulletNotes(e) {
     out.push(noteBar("compress", t("{n} bullet runs past one line", { n: long }, "{n} bullets run past one line"),
       ui.chat.available && h("button", { class: "btn sm", onclick: () => aiEntry("fit", e.id, { lang: L }) }, icon("sparkle"), t("Let Claude fit them on one line")), "warn"));
   } else if (m === null && e.bullets.some((b) => getT(b, L))) {
-    out.push(h("div", { class: "note-line" }, icon("alert"), isAll() ? t("This entry's section is hidden, so it isn't in the preview and its lines can't be measured.") : t("This entry isn't ticked in “{job}”, so it isn't in the preview and its lines can't be measured.", { job: jobName(version()) })));
+    out.push(h("div", { class: "note-line" }, icon("alert"), isAll() ? t("This entry's section is hidden, so it isn't in the preview and its lines can't be measured.") : t("This entry isn't ticked in “{job}”, so it isn't in the preview and its lines can't be measured.", { job: subsetName(subset()) })));
   }
   return out;
 }
@@ -917,7 +917,7 @@ function paintEvidence() {
 }
 
 async function deleteEntry(id) {
-  if (!(await modal({ title: t("Delete “{name}”?", { name: display((entryById(id) || {}).title) || entryLabel(entryById(id)) }), message: t("It is removed from the library and every job. You can get it back from .studio/history if needed."), ok: t("Delete"), danger: true }))) return;
+  if (!(await modal({ title: t("Delete “{name}”?", { name: display((entryById(id) || {}).title) || entryLabel(entryById(id)) }), message: t("It is removed from the library and every subset. You can get it back from .studio/history if needed."), ok: t("Delete"), danger: true }))) return;
   ui.dirty = false;
   applyState(await api("DELETE", "/api/entries/" + encodeURIComponent(id)));
   select("profile");
@@ -931,15 +931,15 @@ function profileForm() {
   // per country) changes only in the language being edited
   const editT = (old, val) => isNeutral(old) ? val : { ...old, [ui.editLang]: val };
   const rows = h("div", { class: "list-rows contacts" });
-  const v = version();
+  const v = subset();
   const job = v && v.id !== ALL;
   const hiddenC = new Set(job ? v.hide_contacts || [] : []);
   p.contacts.forEach((c, i) => {
     const shown = !hiddenC.has(c.label || "");
     rows.append(h("div", { class: "lr" + (job ? " job" : "") },
       job && h("button", { class: "check c-check" + (shown ? " on" : ""), role: "checkbox", "aria-checked": String(shown),
-        title: shown ? t("Hide in “{job}”", { job: jobName(v) }) : t("Show in “{job}”", { job: jobName(v) }),
-        onclick: () => mutateVersion((x) => {
+        title: shown ? t("Hide in “{job}”", { job: subsetName(v) }) : t("Show in “{job}”", { job: subsetName(v) }),
+        onclick: () => mutateSubset((x) => {
           const set = new Set(x.hide_contacts || []);
           if (shown) set.add(c.label || ""); else set.delete(c.label || "");
           x.hide_contacts = [...set];
@@ -957,7 +957,7 @@ function profileForm() {
       tfield(t("Name"), p, "name", { i18n: true }),
       headlineField(v, job),
     ]),
-    card(t("Contacts"), job ? t("Shown in order under the name; ticked = shown in “{job}”", { job: jobName(v) }) : t("Shown in order under the name; switch to a job to hide some of them"), rows),
+    card(t("Contacts"), job ? t("Shown in order under the name; ticked = shown in “{job}”", { job: subsetName(v) }) : t("Shown in order under the name; switch to a subset to hide some of them"), rows),
     card(t("Fact layer"), t("Only Claude sees this"), tfield(t("Job search background, constraints, preferences"), p, "notes", { multiline: true, rows: 5 }), { cls: "fact" }),
   ];
 }
@@ -970,7 +970,7 @@ function headlineField(v, job) {
   const neutral = multi && isNeutral(cur) && cur;
   const tag = multi ? h("span", { class: "lang-tag" + (neutral ? " neutral" : "") }, neutral ? t("Shared") : langShort(ui.editLang)) : null;
   return h("div", { class: "field" },
-    h("label", null, t("Headline / job target"), tag, h("span", { class: "hint" }, t("Belongs to “{job}”; each job has its own", { job: job ? jobName(v) : "ALL" }))),
+    h("label", null, t("Headline / job target"), tag, h("span", { class: "hint" }, t("Belongs to “{job}”; each subset has its own", { job: job ? subsetName(v) : "ALL" }))),
     h("input", { value: getT(cur, ui.editLang), "data-key": "headline", spellcheck: "false",
       placeholder: job ? t("e.g. AI Agent Engineer · LLM tooling & full-stack") : t("can be empty"),
       oninput: (ev) => queueHeadline(ui.editLang, ev.target.value) }));
@@ -982,7 +982,7 @@ function queueHeadline(lang, val) {
   ui.headPending = () => {
     clearTimeout(ui.headTimer);
     ui.headPending = null;
-    return mutateVersion((x) => { x.headline = setT(x.headline, lang, val); }).then(() => setSaveStatus(t("Saved")));
+    return mutateSubset((x) => { x.headline = setT(x.headline, lang, val); }).then(() => setSaveStatus(t("Saved")));
   };
   ui.headTimer = setTimeout(() => ui.headPending && ui.headPending(), 500);
 }
@@ -1107,10 +1107,10 @@ function sectionsForm() {
   const rows = h("div", { class: "list-rows section-rows" });
   // shown and moved in the order of the resume picked at the top (ALL or a job): the order belongs to it
   const ids = list.map((s) => s.id);
-  const order = [...new Set([...((version() || {}).sections || []).filter((id) => ids.includes(id)), ...ids])];
-  const move = (from, to) => mutateVersion((v) => { v.sections = moved(order, from, to); }).then(buildEditorKeepDraft);
-  const hidden = new Set((version() || {}).hide_sections || []);
-  const where = isAll() ? "ALL" : jobName(version());
+  const order = [...new Set([...((subset() || {}).sections || []).filter((id) => ids.includes(id)), ...ids])];
+  const move = (from, to) => mutateSubset((v) => { v.sections = moved(order, from, to); }).then(buildEditorKeepDraft);
+  const hidden = new Set((subset() || {}).hide_sections || []);
+  const where = isAll() ? "ALL" : subsetName(subset());
   order.map((id) => list.find((s) => s.id === id)).forEach((s) => {
     const i = list.indexOf(s);
     const used = entries().some((e) => e.section === s.id);
@@ -1119,7 +1119,7 @@ function sectionsForm() {
       dragHandle(move),
       h("button", { class: "check" + (shown ? " on" : ""), role: "checkbox", "aria-checked": String(shown),
         title: shown ? t("Hide in “{job}”", { job: where }) : t("Show in “{job}”", { job: where }),
-        onclick: () => mutateVersion((v) => {
+        onclick: () => mutateSubset((v) => {
           const set = new Set(v.hide_sections || []);
           if (shown) set.add(s.id); else set.delete(s.id);
           v.hide_sections = [...set];
@@ -1153,10 +1153,10 @@ function sectionsForm() {
       h("button", { class: "btn icon sm ghost danger", title: t("Remove (doesn't delete any files)"), onclick: () => { st.project_roots = roots.filter((_, j) => j !== i); if (!st.project_roots.length) delete st.project_roots; saveSettings(); } }, icon("x"))))));
   return [
     h("div", { class: "ed-head" }, h("h1", null, t("Sections & resume settings")), h("span", { class: "spacer" }), langSwitch()),
-    card(t("Sections"), t("Order and ticks belong to “{job}”; new jobs start from ALL's order", { job: isAll() ? "ALL" : jobName(version()) }), [
+    card(t("Sections"), t("Order and ticks belong to “{job}”; new subsets start from ALL's order", { job: isAll() ? "ALL" : subsetName(subset()) }), [
       h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, t("Timeline = title + dates + bullets; List = “Category: items”, one per line, good for skills.")), rows]),
     card(t("Resume settings"), t("Saved in resume.yaml"), [
-      h("div", { class: "field" }, h("label", null, t("Resume languages"), h("span", { class: "hint" }, t("Each language keeps its own text; the first one is the default for new jobs"))), langEditor),
+      h("div", { class: "field" }, h("label", null, t("Resume languages"), h("span", { class: "hint" }, t("Each language keeps its own text; the first one is the default for new subsets"))), langEditor),
       h("div", { class: "field" }, h("label", null, t("Export folder"), h("span", { class: "hint" }, t("relative to resume.yaml"))),
         h("input", { value: st.export_dir || "exports", spellcheck: "false", onchange: (ev) => { st.export_dir = ev.target.value.trim() || "exports"; saveSettings(); } })),
     ]),
@@ -1171,12 +1171,12 @@ function sectionsForm() {
 
 // A job's own name, ID and headline. Which entries: ticks in the library; section order and
 // visibility: Sections & resume settings; template, language, layout: above the preview.
-function versionForm() {
+function subsetForm() {
   const v = ui.draft;
   return [
-    h("div", { class: "ed-head" }, h("h1", null, t("Job settings")), h("span", { class: "id" }, v.id), h("span", { class: "spacer" }), langSwitch()),
+    h("div", { class: "ed-head" }, h("h1", null, t("Subset settings")), h("span", { class: "id" }, v.id), h("span", { class: "spacer" }), langSwitch()),
     postingLink(v),
-    card(t("Job"), t("Tick entries in the library on the left; template, language and layout are above the preview"), [
+    card(t("Subset"), t("Tick entries in the library on the left; template, language and layout are above the preview"), [
       h("div", { class: "grid2" }, tfield(t("Name"), v, "label", { placeholder: t("AI Agent Engineer") }), tfield("ID", v, "id", { hint: t("also the export file name") })),
       tfield(t("Headline / job target"), v, "headline", { i18n: true, placeholder: t("e.g. AI Agent Engineer · LLM tooling & full-stack") }),
     ]),
@@ -1230,7 +1230,7 @@ async function aiEntry(action, entryId, extra = {}) {
   if (ok) ui.ai[entryId] = { chat: ui.chat.id, action, snapshot, done: false };
 }
 
-// a whole version: snapshot every entry; each one Claude touches gets its own diff + undo
+// a whole subset: snapshot every entry; each one Claude touches gets its own diff + undo
 async function aiBatch(action, extra = {}) {
   await saveDraft();
   const snaps = Object.fromEntries(entries().map((e) => [e.id, clone(e)]));
@@ -1277,7 +1277,7 @@ function missingIn(e, lang) {
 
 // ---- line measurement ----
 function inPreview(id) {
-  const v = version();
+  const v = subset();
   if (!v) return false;
   const e = entryById(id);
   if (!e || (v.hide_sections || []).includes(e.section)) return false;
@@ -1285,12 +1285,12 @@ function inPreview(id) {
 }
 // {bulletIndex: {n, fill}}; undefined = not measured yet; null = not in the preview, cannot be measured
 function measuredFor(id, lang) {
-  if (ui.linesFor[lang] !== ui.versionId) return undefined;
+  if (ui.linesFor[lang] !== ui.subsetId) return undefined;
   if (!inPreview(id)) return null;
   return (ui.lines[lang] || {})[id] || {};
 }
-function longBullets(lang = (version() || {}).lang) {
-  if (ui.linesFor[lang] !== ui.versionId) return [];
+function longBullets(lang = (subset() || {}).lang) {
+  if (ui.linesFor[lang] !== ui.subsetId) return [];
   const out = [];
   for (const [id, by] of Object.entries(ui.lines[lang] || {})) {
     for (const [i, x] of Object.entries(by)) if (x.n > 1) out.push({ id, index: +i, ...x });
@@ -1325,19 +1325,19 @@ const SLIDERS = [
 ];
 
 function layoutValue(key) {
-  const v = version();
+  const v = subset();
   const L = (v && v.layout) || {};
   return L[key] ?? S.layout_defaults[key];
 }
 
 let layoutBuiltFor = null;
 function renderPreviewToolbar() {
-  const v = version();
+  const v = subset();
   ui.w.tpl.setOptions((S.templates || []).map((tp) => ({ value: tp.id, label: tp.name, desc: t(tp.description) })), v ? v.template : null);
   ui.w.tpl.disabled = !v;
   const shown = [...new Set([...langs(), ...(v && v.lang ? [v.lang] : [])])];
   $("#lang-seg").replaceChildren(...shown.map((l) => h("button", { class: v && v.lang === l ? "on" : "", disabled: !v,
-    title: v ? t("Preview and export in {lang}", { lang: langName(l) }) : "", onclick: () => mutateVersion((x) => { x.lang = l; }) }, langShort(l))),
+    title: v ? t("Preview and export in {lang}", { lang: langName(l) }) : "", onclick: () => mutateSubset((x) => { x.lang = l; }) }, langShort(l))),
     h("button", { class: "seg-add", title: t("Add or manage resume languages"), "aria-label": t("Add or manage resume languages"), "aria-haspopup": "menu",
       onclick: (e) => openLangMenu(e.currentTarget) }, icon("plus")));
   $("#layout-toggle").classList.toggle("on", ui.layoutOpen);
@@ -1351,11 +1351,11 @@ function renderPreviewToolbar() {
 }
 
 function buildLayoutPanel() {
-  layoutBuiltFor = ui.versionId;
+  layoutBuiltFor = ui.subsetId;
   const reset = (key) => h("button", { class: "btn icon sm ghost", title: t("Reset to default"), "data-reset": key, onclick: () => queueLayout(key, undefined, 0) }, icon("undo"));
   ui.w.accent = colorField({
     value: layoutValue("accent"), onChange: (c) => queueLayout("accent", c, 0), onReset: () => queueLayout("accent", undefined, 0),
-    isDefault: () => !((version() || {}).layout || {}).accent,
+    isDefault: () => !((subset() || {}).layout || {}).accent,
   });
   $("#layout-panel").replaceChildren(
     ...SLIDERS.map(([key, label, min, max, step, unit]) => {
@@ -1415,7 +1415,7 @@ function updateFontControls(v) {
 }
 
 function updateLayoutPanel() {
-  const v = version();
+  const v = subset();
   if (!v) return;
   const active = document.activeElement;
   const set = (el, value) => { if (el && el !== active) el.value = value; };
@@ -1442,7 +1442,7 @@ function queueLayout(key, value, delay = 300) {
   layoutTimer = setTimeout(() => {
     const patch = { ...pendingLayout };
     for (const k in pendingLayout) delete pendingLayout[k];
-    mutateVersion((x) => {
+    mutateSubset((x) => {
       x.layout = x.layout || {};
       for (const [k, val] of Object.entries(patch)) { if (val === undefined) delete x.layout[k]; else x.layout[k] = val; }
     }).then(updateLayoutPanel);
@@ -1456,17 +1456,17 @@ function scheduleRender(delay = 600) {
 
 async function doRender() {
   const r = ui.render;
-  if (!ui.versionId) { clearPages(); setBadge(null); return; }
+  if (!ui.subsetId) { clearPages(); setBadge(null); return; }
   if (r.busy) { r.again = true; return; }
   r.busy = true;
-  const vid = ui.versionId;
+  const vid = ui.subsetId;
   // an unchanged resume comes back at once without compiling: don't flash "Rendering" for it
   // (another job's badge is wrong right away, so that one is cleared at once)
-  const busyTimer = setTimeout(() => setBadge({ busy: true }), r.last && r.last.version === vid ? 250 : 0);
+  const busyTimer = setTimeout(() => setBadge({ busy: true }), r.last && r.last.subset === vid ? 250 : 0);
   try {
-    const res = await api("POST", `/api/versions/${encodeURIComponent(vid)}/render`);
+    const res = await api("POST", `/api/subsets/${encodeURIComponent(vid)}/render`);
     clearTimeout(busyTimer);
-    if (vid === ui.versionId) {
+    if (vid === ui.subsetId) {
       r.last = res;
       if (res.ok) { ui.lines[res.lang] = res.lines || {}; ui.linesFor[res.lang] = vid; ui.missing = res.missing || []; }
       await showPages(res);
@@ -1486,19 +1486,19 @@ async function doRender() {
 // The preview shows one language; when the form edits the other one, measure that too
 // (same template and layout, no images), so every bullet's line count matches what is typed.
 async function measureEditLang(vid) {
-  const v = version();
+  const v = subset();
   const L = ui.editLang;
   if (!v || v.id !== vid || langs().length < 2 || L === v.lang) return;
   try {
-    const res = await api("POST", `/api/versions/${encodeURIComponent(vid)}/measure`, { lang: L });
-    if (vid === ui.versionId && res.ok) { ui.lines[L] = res.lines || {}; ui.linesFor[L] = vid; paintLines(); }
+    const res = await api("POST", `/api/subsets/${encodeURIComponent(vid)}/measure`, { lang: L });
+    if (vid === ui.subsetId && res.ok) { ui.lines[L] = res.lines || {}; ui.linesFor[L] = vid; paintLines(); }
   } catch (_) { /* the preview's own errors are shown already */ }
 }
 
-// The strip under the toolbar: what still needs attention in this version, each with a fix.
+// The strip under the toolbar: what still needs attention in this subset, each with a fix.
 function renderIssues() {
   const box = $("#issues");
-  const v = version();
+  const v = subset();
   if (!v || !S) { box.classList.add("hidden"); return; }
   const lang = v.lang;
   const long = longBullets(lang);
@@ -1537,15 +1537,15 @@ function setBadge(res) {
   errs.classList.add("hidden");
   if (!res) { b.className = "badge"; b.textContent = ""; return; }
   if (res.busy) { b.className = "badge busy"; b.textContent = t("Rendering"); return; }
-  if (res.ok && res.version === ALL) {
+  if (res.ok && res.subset === ALL) {
     b.className = "badge info";
     b.replaceChildren(`${t("All entries")} · ${t("{n} page", { n: res.pages }, "{n} pages")}`);
-    setTip(b, t("ALL isn't limited to one page; make the resumes you send in jobs"));
+    setTip(b, t("ALL isn't limited to one page; make the resumes you send as subsets"));
   } else if (res.ok) {
     const one = res.pages === 1;
     b.className = "badge " + (one ? "ok" : "bad");
     b.replaceChildren(icon(one ? "check" : "alert"), one ? t("{n} page", { n: 1 }, "{n} pages") : `${t("{n} page", { n: res.pages }, "{n} pages")} · ${t("over one page")}`);
-    setTip(b, one ? t("Rendered in {s}s", { s: res.seconds }) : t("Try a smaller font size, margins or spacing under Layout, or one entry fewer in this job"));
+    setTip(b, one ? t("Rendered in {s}s", { s: res.seconds }) : t("Try a smaller font size, margins or spacing under Layout, or one entry fewer in this subset"));
   } else {
     b.className = "badge bad";
     b.replaceChildren(icon("alert"), t("Rendering failed"));
@@ -1584,21 +1584,21 @@ function currentZoomFactor() { return ui.zoom === "fit" ? pageWidth() / paperWid
 async function showPages(res) {
   const box = $("#pages");
   if (!res.ok) return; // keep the last good preview on errors
-  if (res.cached && box.dataset.version === res.version && box.children.length) return; // same pages already shown
-  box.dataset.version = res.version;
-  const vid = encodeURIComponent(res.version);
+  if (res.cached && box.dataset.subset === res.subset && box.children.length) return; // same pages already shown
+  box.dataset.subset = res.subset;
+  const vid = encodeURIComponent(res.subset);
   if (!res.images) { // no pdftoppm: fall back to the browser's PDF viewer
-    box.replaceChildren(h("iframe", { class: "pdf-frame", src: `/api/versions/${vid}/pdf?t=${res.stamp}#view=FitH`, style: "height:calc(100vh - 150px)" }));
+    box.replaceChildren(h("iframe", { class: "pdf-frame", src: `/api/subsets/${vid}/pdf?t=${res.stamp}#view=FitH`, style: "height:calc(100vh - 150px)" }));
     return;
   }
   const imgs = await Promise.all(Array.from({ length: res.images }, (_, i) => new Promise((resolve) => {
     const img = new Image();
     img.alt = t("Page {n}", { n: i + 1 });
     img.onload = img.onerror = () => resolve(img);
-    img.src = `/api/versions/${vid}/page/${i + 1}?t=${res.stamp}`;
+    img.src = `/api/subsets/${vid}/page/${i + 1}?t=${res.stamp}`;
   })));
   const w = pageWidth();
-  const all = res.version === ALL;
+  const all = res.subset === ALL;
   box.replaceChildren(...imgs.map((img, i) => h("div", { class: "page" + (i > 0 && !all ? " overflow" : ""), style: `width:${w}px` },
     res.images > 1 ? h("span", { class: "plabel" }, i === 0 || all ? t("Page {n}", { n: i + 1 }) : `${t("Page {n}", { n: i + 1 })} · ${t("over one page")}`) : null, img)));
 }
@@ -1607,7 +1607,7 @@ async function exportPdf() {
   await saveDraft();
   $("#export-btn").disabled = true;
   try {
-    const r = await api("POST", `/api/versions/${encodeURIComponent(ui.versionId)}/export`);
+    const r = await api("POST", `/api/subsets/${encodeURIComponent(ui.subsetId)}/export`);
     if (!r.ok) { setBadge(r); toast(t("Export failed; see the error above the preview")); return; }
     setBadge(r);
     await showPages(r);
@@ -1615,7 +1615,7 @@ async function exportPdf() {
     toast(r.pages > 1 ? t("Exported {file} (note: {n} pages)", { file, n: r.pages }) : t("Exported {file}", { file }),
       { ms: 6000, action: { label: t("Open folder"), fn: () => api("POST", "/api/reveal", { path: r.exported.pdf }) } });
   } catch (e) { toast(t("Export failed: {error}", { error: e.message })); }
-  finally { $("#export-btn").disabled = !version(); }
+  finally { $("#export-btn").disabled = !subset(); }
 }
 
 // ================================================================ layout: resizable panes
@@ -1669,7 +1669,7 @@ function connect() {
     }, 1500);
   };
   es.addEventListener("file", (m) => {
-    jobsAfterResumeChange();   // the window's own saves too: the tool's CV, version ranking, profile freshness
+    jobsAfterResumeChange();   // the window's own saves too: the tool's CV, subset ranking, profile freshness
     fillAfterResumeChange();   // what each online profile should say
     const d = JSON.parse(m.data);
     if (S && d.digest === S.digest) return;
@@ -1686,13 +1686,13 @@ function wire() {
   initContextMenu();
   for (const b of document.querySelectorAll(".tab")) b.onclick = () => setTab(b.dataset.tab);
 
-  ui.w.version = uiSelect({ id: "version-select", cls: "version", label: t("ALL or a job"), menuWidth: 300,
-    title: t("ALL = every entry; the others are each job's resume"), onChange: (v) => switchVersion(v) });
-  $("#version-slot").replaceWith(ui.w.version.el);
-  $("#version-menu-btn").append(icon("more"));
-  $("#version-menu-btn").onclick = openVersionMenu;
+  ui.w.subset = uiSelect({ id: "subset-select", cls: "subset", label: t("ALL or a subset"), menuWidth: 300,
+    title: t("ALL = every entry; the others are subsets of it"), onChange: (v) => switchSubset(v) });
+  $("#subset-slot").replaceWith(ui.w.subset.el);
+  $("#subset-menu-btn").append(icon("more"));
+  $("#subset-menu-btn").onclick = openSubsetMenu;
 
-  ui.w.tpl = uiSelect({ id: "tpl-select", label: t("Template"), menuWidth: 300, onChange: (tp) => mutateVersion((x) => { x.template = tp; }) });
+  ui.w.tpl = uiSelect({ id: "tpl-select", label: t("Template"), menuWidth: 300, onChange: (tp) => mutateSubset((x) => { x.template = tp; }) });
   $("#tpl-slot").replaceWith(ui.w.tpl.el);
   $("#layout-toggle").prepend(icon("sliders"));
   $("#settings-btn").append(icon("settings"));

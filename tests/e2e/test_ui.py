@@ -37,8 +37,8 @@ def browser_ctx():
 
 @pytest.fixture
 def page(page_all):
-    """Most tests work on one job target (岗位)."""
-    choose(page_all, "#version-select", "RES-TECH-EN")
+    """Most tests work on one subset (子集)."""
+    choose(page_all, "#subset-select", "RES-TECH-EN")
     page_all.wait_for_selector(".lib-hint.job")
     wait_rendered(page_all)
     return page_all
@@ -100,8 +100,8 @@ def state(server):
     return server.req("GET", "/api/state")[1]
 
 
-def version(server, vid="RES-TECH-EN"):
-    return next(v for v in state(server)["doc"]["versions"] if v["id"] == vid)
+def subset(server, vid="RES-TECH-EN"):
+    return next(v for v in state(server)["doc"]["subsets"] if v["id"] == vid)
 
 
 def open_entry(pg, eid):
@@ -118,8 +118,8 @@ def page_src(pg):
 @needs_tex
 def test_opens_on_all_the_full_set(page_all, server):
     pg = page_all
-    assert value_of(pg, "#version-select") == "ALL"
-    assert pg.inner_text("#version-select .sel-label") == "ALL · 全部经历"
+    assert value_of(pg, "#subset-select") == "ALL"
+    assert pg.inner_text("#subset-select .sel-label") == "ALL · 全部经历"
     assert pg.locator(".entry .check").count() == 0                  # nothing to tick in the full set
     assert pg.locator("#page-badge").inner_text().strip().startswith("全部经历")
     assert pg.locator("#pages .page.overflow").count() == 0
@@ -154,13 +154,13 @@ def test_edit_autosaves_and_rerenders(page, server, data_file):
 @needs_tex
 def test_include_toggle_and_reorder(page, server):
     page.click(".entry[data-id='EXP-003'] .check")
-    wait_until(lambda: "EXP-003" not in version(server)["entries"], msg="removed from version")
+    wait_until(lambda: "EXP-003" not in subset(server)["entries"], msg="removed from subset")
     assert "out" in page.get_attribute(".entry[data-id='EXP-003']", "class")
     page.click(".entry[data-id='EXP-003'] .check")
-    wait_until(lambda: version(server)["entries"][-1] == "EXP-003", msg="re-added at the end")
+    wait_until(lambda: subset(server)["entries"][-1] == "EXP-003", msg="re-added at the end")
     page.hover(".entry[data-id='EXP-003']")
     page.click(".entry[data-id='EXP-003'] .e-tools button[data-tip='上移']")
-    wait_until(lambda: version(server)["entries"].index("EXP-003") < version(server)["entries"].index("EXP-002"), msg="moved up")
+    wait_until(lambda: subset(server)["entries"].index("EXP-003") < subset(server)["entries"].index("EXP-002"), msg="moved up")
     wait_rendered(page)
 
 
@@ -170,16 +170,16 @@ def test_layout_template_and_language(page, server):
     page.wait_for_selector("#layout-panel:not(.hidden)")
     page.eval_on_selector("#layout-panel input[data-key=font_size]",
                           "el => { el.value = '11'; el.dispatchEvent(new Event('input', {bubbles: true})); }")
-    wait_until(lambda: version(server)["layout"].get("font_size") == 11, msg="font size saved")
+    wait_until(lambda: subset(server)["layout"].get("font_size") == 11, msg="font size saved")
     choose(page, "#tpl-select", "modern")
-    wait_until(lambda: version(server)["template"] == "modern", msg="template saved")
+    wait_until(lambda: subset(server)["template"] == "modern", msg="template saved")
     page.click("#lang-seg button:text('中文')")
-    wait_until(lambda: version(server)["lang"] == "zh", msg="language saved")
+    wait_until(lambda: subset(server)["lang"] == "zh", msg="language saved")
     wait_rendered(page)
     assert page.locator("#page-badge").inner_text().strip().startswith("1 页")
     # reset one knob back to default
     page.click("#layout-panel .ctl:has(input[data-key=font_size]) button[data-tip='恢复默认']")
-    wait_until(lambda: "font_size" not in version(server)["layout"], msg="font size reset")
+    wait_until(lambda: "font_size" not in subset(server)["layout"], msg="font size reset")
 
 
 def test_external_edit_syncs_open_form(page, server, data_file):
@@ -208,7 +208,7 @@ def test_add_and_delete_entry(page, server, data_file):
     page.wait_for_function("() => document.activeElement.dataset.key === 'title'")   # ready to type the name
     page.keyboard.type("New Project")
     wait_until(lambda: "New Project" in data_file.read_text(encoding="utf-8"), msg="title saved")
-    assert "EXP-006" in version(server)["entries"]                    # new entries join the current version
+    assert "EXP-006" in subset(server)["entries"]                    # new entries join the current subset
     page.click("button:text('删除这条经历')")
     page.click(".modal button:text('删除')")
     wait_until(lambda: "EXP-006" not in data_file.read_text(encoding="utf-8"), msg="entry deleted")
@@ -232,9 +232,9 @@ def test_profile_contacts_and_sections(page, server, data_file):
     page.mouse.down()
     page.mouse.move(grip["x"] + grip["width"] / 2, third["y"] + third["height"] - 2, steps=8)
     page.mouse.up()
-    vid = value_of(page, "#version-select")
-    wait_until(lambda: next(v for v in state(server)["doc"]["versions"] if v["id"] == vid).get("sections", [None] * 3)[2] == first,
-               msg="order saved on the version")
+    vid = value_of(page, "#subset-select")
+    wait_until(lambda: next(v for v in state(server)["doc"]["subsets"] if v["id"] == vid).get("sections", [None] * 3)[2] == first,
+               msg="order saved on the subset")
     page.wait_for_function(f"() => document.querySelectorAll('.card .lr input')[0].value !== {first!r}")
     page.click("button:text('添加板块')")
     wait_until(lambda: any(s["id"].startswith("section-") for s in state(server)["doc"]["sections"]), msg="section added")
@@ -344,47 +344,47 @@ def test_add_resume_language_from_the_preview(page, server):
 
 
 def test_jobs_create_switch_delete(page, server):
-    page.click("#version-menu-btn")
+    page.click("#subset-menu-btn")
     page.click(".float .menu-item:has(.mi-hint:text('空白，自己勾选'))")
     page.fill(".modal input", "管培生")
     page.click(".modal button:text('创建')")
-    wait_until(lambda: value_of(page, "#version-select") == "JOB-001", msg="switched to new job")
-    assert page.inner_text("#version-select .sel-label") == "管培生"
+    wait_until(lambda: value_of(page, "#subset-select") == "SUB-001", msg="switched to new job")
+    assert page.inner_text("#subset-select .sel-label") == "管培生"
     assert page.locator(".entry.out").count() == 5                    # blank job: nothing ticked
-    page.click("#version-menu-btn")
-    page.click(".float .menu-item:has-text('删除当前岗位')")
+    page.click("#subset-menu-btn")
+    page.click(".float .menu-item:has-text('删除当前子集')")
     page.click(".modal button:text('删除')")
-    wait_until(lambda: all(v["id"] != "JOB-001" for v in state(server)["doc"]["versions"]), msg="job deleted")
-    wait_until(lambda: value_of(page, "#version-select") == "ALL", msg="back on ALL")
+    wait_until(lambda: all(v["id"] != "SUB-001" for v in state(server)["doc"]["subsets"]), msg="job deleted")
+    wait_until(lambda: value_of(page, "#subset-select") == "ALL", msg="back on ALL")
 
 
 def test_job_from_all_starts_full_and_has_own_headline(page_all, server):
     pg = page_all
-    pg.click("#version-menu-btn")
+    pg.click("#subset-menu-btn")
     pg.click(".float .menu-item:has-text('先勾上全部经历')")
     pg.fill(".modal input", "AI Agent 工程师")
     pg.click(".modal button:text('创建')")
-    wait_until(lambda: value_of(pg, "#version-select") == "JOB-001", msg="new job")
+    wait_until(lambda: value_of(pg, "#subset-select") == "SUB-001", msg="new job")
     assert pg.locator(".entry.out").count() == 0
     # the headline is typed right on the profile page, into the job picked at the top
     pg.click(".nav-row:text('个人信息')")
     pg.click(".ed-head .seg button:text('EN')")
     pg.fill("#editor input[data-key=headline]", "AI Agent Engineer")
-    wait_until(lambda: version(server, "JOB-001").get("headline") in ("AI Agent Engineer", {"en": "AI Agent Engineer"}), msg="headline saved")
+    wait_until(lambda: subset(server, "SUB-001").get("headline") in ("AI Agent Engineer", {"en": "AI Agent Engineer"}), msg="headline saved")
     assert "headline" not in state(server)["doc"]["profile"]
-    assert version(server, "ALL").get("headline") != "AI Agent Engineer"
+    assert subset(server, "ALL").get("headline") != "AI Agent Engineer"
     pg.fill("#editor input[data-key=headline]", "AI Agent Engineer · LLM")
-    choose(pg, "#version-select", "ALL")                              # switching right away still saves into the job
-    wait_until(lambda: "LLM" in json.dumps(version(server, "JOB-001").get("headline")), msg="typed headline kept in the job")
-    assert "LLM" not in json.dumps(version(server, "ALL").get("headline"))
+    choose(pg, "#subset-select", "ALL")                              # switching right away still saves into the job
+    wait_until(lambda: "LLM" in json.dumps(subset(server, "SUB-001").get("headline")), msg="typed headline kept in the job")
+    assert "LLM" not in json.dumps(subset(server, "ALL").get("headline"))
     # job settings: in the sidebar for a job, absent for ALL
-    assert pg.locator(".nav-row:text('岗位设置')").count() == 0
-    choose(pg, "#version-select", "JOB-001")
-    pg.click(".nav-row:text('岗位设置')")
-    pg.wait_for_selector(".ed-head h1:text('岗位设置')")
-    choose(pg, "#version-select", "ALL")
+    assert pg.locator(".nav-row:text('子集设置')").count() == 0
+    choose(pg, "#subset-select", "SUB-001")
+    pg.click(".nav-row:text('子集设置')")
+    pg.wait_for_selector(".ed-head h1:text('子集设置')")
+    choose(pg, "#subset-select", "ALL")
     pg.wait_for_selector(".ed-head h1:text('个人信息')")
-    pg.click("#version-menu-btn")
+    pg.click("#subset-menu-btn")
     assert pg.locator(".float .menu-item:has-text('设置')").count() == 0
     pg.keyboard.press("Escape")
 
@@ -393,18 +393,18 @@ def test_sections_can_be_hidden_per_resume(page, server):
     page.click(".nav-row:text('板块与简历设置')")
     first = page.locator(".card:has(h3:text-is('板块')) .lr .check").first
     first.click()
-    wait_until(lambda: len(version(server).get("hide_sections") or []) == 1, msg="section hidden in this job")
-    assert not version(server, "ALL").get("hide_sections")
+    wait_until(lambda: len(subset(server).get("hide_sections") or []) == 1, msg="section hidden in this job")
+    assert not subset(server, "ALL").get("hide_sections")
     page.wait_for_selector(".card:has(h3:text-is('板块')) .lr.off")
     page.locator(".card:has(h3:text-is('板块')) .lr .check").first.click()
-    wait_until(lambda: not version(server).get("hide_sections"), msg="shown again")
+    wait_until(lambda: not subset(server).get("hide_sections"), msg="shown again")
 
 
 def test_contacts_can_be_hidden_per_job(page, server):
     page.click(".nav-row:text('个人信息')")
     rows = page.locator(".card:has(h3:text('联系方式')) .lr")
     rows.nth(2).locator(".check").click()                             # phone
-    wait_until(lambda: version(server).get("hide_contacts") == ["phone"], msg="hidden in this job")
+    wait_until(lambda: subset(server).get("hide_contacts") == ["phone"], msg="hidden in this job")
     page.wait_for_selector(".card:has(h3:text('联系方式')) .lr >> nth=2 >> .check:not(.on)")
 
 
@@ -497,11 +497,11 @@ def test_screenshots_for_review(page, server, fake_claude, scheme, size):
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     tag = f"{scheme}-{size[0]}"
     page.screenshot(path=str(ART / f"editor-{tag}.png"))
-    choose(page, "#version-select", "ALL")
+    choose(page, "#subset-select", "ALL")
     page.wait_for_selector(".lib-hint:not(.job)")
     wait_rendered(page)
     page.screenshot(path=str(ART / f"all-{tag}.png"))
-    choose(page, "#version-select", "RES-TECH-EN")
+    choose(page, "#subset-select", "RES-TECH-EN")
     page.wait_for_selector(".lib-hint.job")
     wait_rendered(page)
     page.click("#layout-toggle")
@@ -544,27 +544,27 @@ def test_no_native_controls_anywhere(page, server, fake_claude):
 
 
 def test_custom_select_mouse_and_keyboard(page, server):
-    page.click("#version-select")
+    page.click("#subset-select")
     lb = page.locator(".float.listbox")
-    assert lb.locator(".lb-group").first.inner_text() == "岗位"
+    assert lb.locator(".lb-group").first.inner_text() == "子集"
     assert lb.locator("[role=option][aria-selected=true]").get_attribute("data-value") == "RES-TECH-EN"
     assert "中文" in lb.locator("[data-value='RES-TECH-ZH'] .lb-hint").inner_text()   # language + template at a glance
     page.keyboard.press("Escape")
     page.wait_for_selector(".float", state="detached")
-    assert page.evaluate("document.activeElement.id") == "version-select"            # focus returns to the trigger
+    assert page.evaluate("document.activeElement.id") == "subset-select"            # focus returns to the trigger
     page.keyboard.press("ArrowDown")                                                  # opens
     page.wait_for_selector(".float.listbox")
     page.keyboard.press("ArrowDown")
     page.keyboard.press("Enter")
-    wait_until(lambda: value_of(page, "#version-select") == "RES-TECH-ZH", msg="picked with the keyboard")
-    page.click("#version-select")
+    wait_until(lambda: value_of(page, "#subset-select") == "RES-TECH-ZH", msg="picked with the keyboard")
+    page.click("#subset-select")
     page.mouse.click(5, 880)                                                          # click outside closes
     page.wait_for_selector(".float", state="detached")
 
 
 def test_tooltips_are_the_apps_own(page):
-    page.hover("#version-menu-btn")
-    page.wait_for_selector(".tip.show:text('岗位操作')")
+    page.hover("#subset-menu-btn")
+    page.wait_for_selector(".tip.show:text('子集操作')")
     page.mouse.move(700, 600)
     page.wait_for_selector(".tip.show", state="detached", timeout=2000) if page.locator(".tip.show").count() else None
 
@@ -584,16 +584,16 @@ def test_layout_colour_picker_and_paper(page, server):
     page.click("#layout-toggle")
     page.click("#ctl-accent")
     page.click(".color-pop .cp-sw[aria-label='酒红']")
-    wait_until(lambda: version(server)["layout"].get("accent") == "7A1F2B", msg="accent saved")
+    wait_until(lambda: subset(server)["layout"].get("accent") == "7A1F2B", msg="accent saved")
     page.click("#ctl-accent")
     page.fill(".color-pop .cp-hex", "#12ab34")
     page.keyboard.press("Enter")
-    wait_until(lambda: version(server)["layout"].get("accent") == "12AB34", msg="typed hex saved")
+    wait_until(lambda: subset(server)["layout"].get("accent") == "12AB34", msg="typed hex saved")
     page.click("#ctl-paper button:text('Letter')")
-    wait_until(lambda: version(server)["layout"].get("paper") == "letter", msg="paper saved")
+    wait_until(lambda: subset(server)["layout"].get("paper") == "letter", msg="paper saved")
     page.click("#ctl-accent")
     page.click(".color-pop .cp-reset")
-    wait_until(lambda: "accent" not in version(server)["layout"], msg="accent reset")
+    wait_until(lambda: "accent" not in subset(server)["layout"], msg="accent reset")
 
 
 # ---------------------------------------------------------------- bilingual + one line per bullet
@@ -964,7 +964,7 @@ def test_screenshots_of_new_parts(page, server, fake_claude, monkeypatch, tmp_pa
     page.wait_for_function("() => document.querySelectorAll('#bullets .line-chip.ok').length === 2", timeout=40000)
     page.locator("#bullets").scroll_into_view_if_needed()
     page.screenshot(path=str(ART / f"new-zh-{scheme}.png"))
-    page.click("#version-select")
+    page.click("#subset-select")
     shot_float(page, f"new-select-{scheme}")
     page.keyboard.press("Escape")
     page.click("#issues .issue.warn")
@@ -1076,26 +1076,26 @@ def test_applications_list_report_status_and_tailor(connected, page_all, server,
     wait_until(lambda: "| Interview |" in (connected / "data" / "applications.md").read_text(encoding="utf-8"), msg="tracker updated")
     pg.wait_for_selector("#jobs .app-row[data-id='1'] .s-interview")
 
-    # the resume to send: one of the versions, ranked for this posting, linked with one click
+    # the resume to send: one of the subsets, ranked for this posting, linked with one click
     pg.wait_for_selector("#editor .resume-card .fit-row")
     assert pg.locator("#editor .resume-card .fit-row").count() == 2
-    pg.click("#editor .resume-card .fit-row[data-version='RES-TECH-ZH'] .fit-acts .btn:not(.icon)")
-    linked = lambda vid: any(p.get("id") == "1" for v in state(server)["doc"]["versions"] if v["id"] == vid for p in v.get("postings") or [])   # noqa: E731
+    pg.click("#editor .resume-card .fit-row[data-subset='RES-TECH-ZH'] .fit-acts .btn:not(.icon)")
+    linked = lambda vid: any(p.get("id") == "1" for v in state(server)["doc"]["subsets"] if v["id"] == vid for p in v.get("postings") or [])   # noqa: E731
     wait_until(lambda: linked("RES-TECH-ZH"), msg="linked")
-    pg.wait_for_selector("#editor .resume-card .fit-row.on[data-version='RES-TECH-ZH']")
+    pg.wait_for_selector("#editor .resume-card .fit-row.on[data-subset='RES-TECH-ZH']")
     pg.wait_for_selector("#jobs .app-row[data-id='1'] .has-resume")
     pg.screenshot(path=str(ART / "jobs-resume-to-send-light.png"))
 
-    # none fits: a new version for this kind of role (named by the user, never after the company)
+    # none fits: a new subset for this kind of role (named by the user, never after the company)
     pg.click("#editor .resume-card .fit-foot .btn.ghost")
     pg.fill(".modal input", "AI Engineer")
     pg.click(".modal .btn.primary")
     pg.wait_for_selector(".tab.on[data-tab=chat]")
-    wait_until(lambda: any(v.get("label") == "AI Engineer" for v in state(server)["doc"]["versions"]), msg="job created")
-    vid = next(v["id"] for v in state(server)["doc"]["versions"] if v.get("label") == "AI Engineer")
+    wait_until(lambda: any(v.get("label") == "AI Engineer" for v in state(server)["doc"]["subsets"]), msg="job created")
+    vid = next(v["id"] for v in state(server)["doc"]["subsets"] if v.get("label") == "AI Engineer")
     wait_until(lambda: linked(vid) and not linked("RES-TECH-ZH"), msg="the posting moved to it")
     wait_until(lambda: any("001-northwind-ai" in c["stdin"] for c in calls(fake_claude)), msg="tailor message")
-    assert pg.get_attribute("#version-select", "data-value") == vid      # the preview shows the new job
+    assert pg.get_attribute("#subset-select", "data-value") == vid      # the preview shows the new job
 
 def test_evaluate_starts_a_career_ops_chat(connected, page_all, server, fake_claude):
     pg = page_all
@@ -1159,7 +1159,7 @@ def test_job_search_hosts_the_tools_own_interface(connected, page_all, server, f
     assert pg.is_visible("#editor") and not pg.is_visible("#jobspace")
     frame = open_job_search(pg)
     assert not pg.is_visible("#editor") and not pg.is_visible(".pane.right")        # the whole window is the tool's
-    assert not pg.is_visible(".version-switch") and not pg.is_visible(".pane.left")  # Claude's chat starts folded
+    assert not pg.is_visible(".subset-switch") and not pg.is_visible(".pane.left")  # Claude's chat starts folded
     assert frame.locator("#page").inner_text() == "/"
     assert "career-ops 全部功能" in pg.inner_text("#ws-tools")
     for scheme in ("light", "dark"):
@@ -1181,12 +1181,12 @@ def test_job_search_hosts_the_tools_own_interface(connected, page_all, server, f
     # the resume to send for it, picked without leaving Job search
     pg.click("#ws-tools .ws-here .btn")
     pg.wait_for_selector(".resume-picker .fit-row")
-    pg.click(".resume-picker .fit-row[data-version='RES-TECH-EN'] .fit-acts .btn:not(.icon)")
-    pg.wait_for_selector(".resume-picker .fit-row.on[data-version='RES-TECH-EN']")
+    pg.click(".resume-picker .fit-row[data-subset='RES-TECH-EN'] .fit-acts .btn:not(.icon)")
+    pg.wait_for_selector(".resume-picker .fit-row.on[data-subset='RES-TECH-EN']")
     pg.wait_for_timeout(300)
     pg.screenshot(path=str(ART / "jobsearch-picker-light.png"))
     assert "false" not in pg.inner_text(".resume-picker")
-    wait_until(lambda: any(p.get("id") == "2" for v in state(server)["doc"]["versions"] if v["id"] == "RES-TECH-EN"
+    wait_until(lambda: any(p.get("id") == "2" for v in state(server)["doc"]["subsets"] if v["id"] == "RES-TECH-EN"
                            for p in v.get("postings") or []), msg="linked")
     pg.keyboard.press("Escape")
     pg.wait_for_selector(".resume-picker", state="detached")
@@ -1196,7 +1196,7 @@ def test_job_search_hosts_the_tools_own_interface(connected, page_all, server, f
     pg.click("#ws-tools .ws-here .btn")
     pg.click(".resume-picker .rp-acts .btn:not(.primary)")
     pg.wait_for_selector("body[data-ws=resume]")
-    wait_until(lambda: pg.get_attribute("#version-select", "data-value") == "RES-TECH-EN", msg="previewed")
+    wait_until(lambda: pg.get_attribute("#subset-select", "data-value") == "RES-TECH-EN", msg="previewed")
 
     # back to Job search (Ctrl+2): the same page
     pg.keyboard.press("Control+2")

@@ -1,4 +1,4 @@
-"""The sites whose profile Resume Studio keeps in step with a resume version.
+"""The sites whose profile Resume Studio keeps in step with a resume subset.
 
 A site says where its profile is, which of the resume's sections it has, the field limits it is known
 to enforce, and a short guide for Claude about its editor. No selectors: Claude reads the page with

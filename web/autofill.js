@@ -355,12 +355,12 @@ async function addItem(section, fields) {
   if (r && r.item) { F.open[r.item] = true; paintFill(); }
 }
 
-// which resume version and language the copy is compared with (its suggestions)
+// which resume subset and language the copy is compared with (its suggestions)
 function compareCard(v) {
-  const vs = versions();
-  const sel = uiSelect({ id: "fill-version", label: t("Resume version"), menuWidth: 300, value: v.version_id,
-    options: vs.map((x) => ({ value: x.id, label: jobName(x), hint: x.id === ALL ? t("every entry") : null })),
-    onChange: (id) => chooseTarget({ version_id: id }) });
+  const vs = subsets();
+  const sel = uiSelect({ id: "fill-subset", label: t("Resume subset"), menuWidth: 300, value: v.subset_id,
+    options: vs.map((x) => ({ value: x.id, label: subsetName(x), hint: x.id === ALL ? t("every entry") : null })),
+    onChange: (id) => chooseTarget({ subset_id: id }) });
   const ls = langs();
   return h("div", { class: "fill-compare" },
     h("span", { class: "muted" }, t("Suggestions from your resume:")), sel.el,

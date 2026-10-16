@@ -260,6 +260,6 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
                                          interval=max(watch_interval * 3, 1.0))
     inst.jobs_watcher.start()
 
-    # ---- autofill: online profiles kept in step with a resume version, in the browser ----
+    # ---- autofill: online profiles kept in step with a resume subset, in the browser ----
     assert inst.browser is not None
     autofill_api.register(app, studio, chats, inst.browser)

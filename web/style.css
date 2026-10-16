@@ -89,8 +89,8 @@ kbd { font: 11px var(--mono); padding: 1px 5px; border: 1px solid var(--line-str
 .brand { display: flex; align-items: center; gap: 9px; font-weight: 650; letter-spacing: .1px; }
 .logo { width: 24px; height: 24px; border-radius: 7px; background: linear-gradient(135deg, var(--accent), #8b5cf6); position: relative; box-shadow: var(--shadow-sm); }
 .logo::after { content: ""; position: absolute; inset: 6px 7px; border-radius: 2px; background: rgba(255,255,255,.92); box-shadow: inset 0 3px 0 -1px rgba(61,90,254,.55), inset 0 7px 0 -5px rgba(61,90,254,.35); }
-.version-switch { display: flex; align-items: center; gap: 4px; position: relative; padding-left: 14px; border-left: 1px solid var(--line); }
-.version-switch .select { width: 260px; font-weight: 550; }
+.subset-switch { display: flex; align-items: center; gap: 4px; position: relative; padding-left: 14px; border-left: 1px solid var(--line); }
+.subset-switch .select { width: 260px; font-weight: 550; }
 .save-status { font-size: 12px; color: var(--text-3); min-width: 56px; text-align: right; }
 .save-status.bad { color: var(--bad); }
 .offline { flex: none; display: flex; align-items: center; gap: 8px; padding: 7px 16px; background: var(--bad-soft); color: var(--bad); font-size: 12.5px; border-bottom: 1px solid var(--line); }
@@ -768,7 +768,7 @@ body[data-ws="jobs"] .pane.left #chat { display: flex !important; }
 .js-card .connect-err { max-height: 260px; overflow: auto; }
 .js-card .row { margin-top: 12px; }
 
-/* which resume goes out: the user's versions ranked for a posting (Applications card and Job search picker) */
+/* which resume goes out: the user's subsets ranked for a posting (Applications card and Job search picker) */
 .fit-list { display: flex; flex-direction: column; gap: 2px; }
 .fit-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; align-items: center; gap: 12px; padding: 8px 8px 8px 10px; border-radius: var(--r-sm); }
 .fit-row:hover { background: var(--hover); }

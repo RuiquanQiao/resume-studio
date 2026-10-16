@@ -24,15 +24,20 @@ class Conflict(Exception):
 
 class Studio:
     def __init__(self, data_path: str | Path):
-        self.store = YamlStore(data_path)
+        self.store = YamlStore(data_path, upgrade=model.migrate)
         self.data_dir = self.store.path.parent
         self.build_root = self.store.state_dir / "build"
         self.extra_state = lambda: {}  # the UI layer adds runtime info (e.g. Claude availability)
 
     # ---- setup ---------------------------------------------------------
     def ensure_file(self) -> bool:
-        """Create a skeleton resume.yaml if missing. Returns True if created."""
+        """Create a skeleton resume.yaml if missing. Returns True if created. An existing file in
+        an older format is rewritten in the current one, so Claude reads the same keys as SKILL.md."""
         if self.store.exists():
+            with self.store.lock:
+                doc = self.store._yaml.load(self.store.read_text())
+                if model.migrate(doc):
+                    self.store.save(doc)
             return False
         self.store.path.parent.mkdir(parents=True, exist_ok=True)
         self.store.write_text(self.store.dump(model.skeleton(langs.match(system_locale()))))
@@ -42,7 +47,7 @@ class Studio:
     def state(self) -> dict:
         doc, digest = self.store.load()
         plain = to_plain(doc)
-        plain["versions"] = model.with_all(plain.get("versions") or [], model.first_lang(doc))
+        plain["subsets"] = model.with_all(plain.get("subsets") or [], model.first_lang(doc))
         return {
             "doc": plain,
             "digest": digest,
@@ -61,23 +66,23 @@ class Studio:
         with self.store.lock:
             doc, _ = self.store.load()
             current = model.get_item(doc, kind, item_id)
-            if current is None and kind == "version" and str(item_id) == model.ALL_ID:
-                current = self._add_all_version(doc)
-            if current is None and kind in ("entry", "version"):
+            if current is None and kind == "subset" and str(item_id) == model.ALL_ID:
+                current = self._add_all_subset(doc)
+            if current is None and kind in ("entry", "subset"):
                 raise KeyError(t("{kind} {id} doesn't exist", kind=kind, id=item_id))
             if base and current is not None and fingerprint(current) != base:
                 raise Conflict(to_plain(current))
-            if kind in ("entry", "version"):
+            if kind in ("entry", "subset"):
                 data = dict(data)
                 new_id = str(data.get("id") or item_id)
-                if kind == "version" and model.ALL_ID in (str(item_id), new_id) and new_id != str(item_id):
-                    raise ValueError(t("ALL is reserved for the full set: it can't be renamed or used for a job"))
+                if kind == "subset" and model.ALL_ID in (str(item_id), new_id) and new_id != str(item_id):
+                    raise ValueError(t("ALL is reserved for the full set: it can't be renamed or used for a subset"))
                 if new_id != str(item_id) and model.get_item(doc, kind, new_id) is not None:
                     raise ValueError(t("ID {id} already exists", id=new_id))
                 data["id"] = new_id
                 merge_into(current, data)
-                if kind == "entry" and new_id != str(item_id):  # keep versions pointing at it
-                    for v in doc.get("versions") or []:
+                if kind == "entry" and new_id != str(item_id):  # keep subsets pointing at it
+                    for v in doc.get("subsets") or []:
                         refs = v.get("entries") or []
                         for i, ref in enumerate(refs):
                             if str(ref) == str(item_id):
@@ -92,7 +97,7 @@ class Studio:
                         if str(lang) not in before:
                             model.add_language_titles(doc, str(lang))
             self.store.save(doc)
-            if kind == "version" and str(data["id"]) != str(item_id):
+            if kind == "subset" and str(data["id"]) != str(item_id):
                 self._rename_builds(str(item_id), str(data["id"]))
         return self.state()
 
@@ -112,11 +117,11 @@ class Studio:
                     pass  # busy (a render is writing it): the next render rebuilds it, a later delete prunes it
 
     @staticmethod
-    def _add_all_version(doc: Any) -> Any:
-        if doc.get("versions") is None:
-            doc["versions"] = []
-        doc["versions"].insert(0, model.default_all_version(model.first_lang(doc)))
-        return doc["versions"][0]
+    def _add_all_subset(doc: Any) -> Any:
+        if doc.get("subsets") is None:
+            doc["subsets"] = []
+        doc["subsets"].insert(0, model.default_all_subset(model.first_lang(doc)))
+        return doc["subsets"][0]
 
     def create_entry(self, section: str, after: str | None = None) -> tuple[str, dict]:
         with self.store.lock:
@@ -156,7 +161,7 @@ class Studio:
             for i in range(len(entries) - 1, -1, -1):
                 if str(entries[i].get("id")) == entry_id:
                     del entries[i]
-            for v in doc.get("versions") or []:
+            for v in doc.get("subsets") or []:
                 refs = v.get("entries") or []
                 for i in range(len(refs) - 1, -1, -1):
                     if str(refs[i]) == entry_id:
@@ -164,22 +169,22 @@ class Studio:
             self.store.save(doc)
         return self.state()
 
-    def create_version(self, copy_from: str | None, new_id: str | None, label: str | None = None) -> tuple[str, dict]:
+    def create_subset(self, copy_from: str | None, new_id: str | None, label: str | None = None) -> tuple[str, dict]:
         """A new job target. Copying ALL starts it with every entry ticked; a copy of a job keeps
         that job's section order, anything else starts from ALL's."""
         with self.store.lock:
             doc, _ = self.store.load()
-            if not any(model.is_all(v) for v in doc.get("versions") or []):
-                self._add_all_version(doc)
-            versions = doc["versions"]
-            existing = {str(v.get("id")) for v in versions}
-            base_id = (new_id or "").strip() or model.next_version_id(doc)
+            if not any(model.is_all(v) for v in doc.get("subsets") or []):
+                self._add_all_subset(doc)
+            subsets = doc["subsets"]
+            existing = {str(v.get("id")) for v in subsets}
+            base_id = (new_id or "").strip() or model.next_subset_id(doc)
             if base_id == model.ALL_ID:
                 raise ValueError(t("ALL is reserved for the full set"))
             vid, n = base_id, 2
             while vid in existing:
                 vid, n = f"{base_id}-{n}", n + 1
-            src = model.get_version(doc, copy_from) if copy_from else None
+            src = model.get_subset(doc, copy_from) if copy_from else None
             if src is not None:
                 v = to_plain(src)
                 v["id"] = vid
@@ -193,20 +198,20 @@ class Studio:
                 v = {"id": vid, "label": label or vid, "lang": model.first_lang(doc), "template": "classic", "headline": "",
                      "entries": [], "layout": {}}
             if src is None or model.is_all(src):  # a new resume starts from ALL's section order
-                v["sections"] = model.section_order(doc, model.get_version(doc, model.ALL_ID))
-            versions.append(v)
+                v["sections"] = model.section_order(doc, model.get_subset(doc, model.ALL_ID))
+            subsets.append(v)
             self.store.save(doc)
         return vid, self.state()
 
-    def delete_version(self, version_id: str) -> dict:
-        if version_id == model.ALL_ID:
+    def delete_subset(self, subset_id: str) -> dict:
+        if subset_id == model.ALL_ID:
             raise ValueError(t("ALL (the full set) can't be deleted"))
         with self.store.lock:
             doc, _ = self.store.load()
-            versions = doc.get("versions") or []
-            for i in range(len(versions) - 1, -1, -1):
-                if str(versions[i].get("id")) == version_id:
-                    del versions[i]
+            subsets = doc.get("subsets") or []
+            for i in range(len(subsets) - 1, -1, -1):
+                if str(subsets[i].get("id")) == subset_id:
+                    del subsets[i]
             self.store.save(doc)
             self._prune_builds(doc)
         return self.state()
@@ -214,7 +219,7 @@ class Studio:
     def _prune_builds(self, doc: Any) -> None:
         """Drop preview builds of jobs that are gone (this one, and any left by a rename or an
         edit to the file). Exports are the user's and stay."""
-        keep = {self._safe(str(v.get("id"))) for v in doc.get("versions") or []} | {self._safe(model.ALL_ID)}
+        keep = {self._safe(str(v.get("id"))) for v in doc.get("subsets") or []} | {self._safe(model.ALL_ID)}
         if not self.build_root.is_dir():
             return
         for d in self.build_root.iterdir():
@@ -223,21 +228,21 @@ class Studio:
 
     # ---- rendering -----------------------------------------------------
     def _safe(self, name: str) -> str:
-        return re.sub(r"[^A-Za-z0-9._-]+", "_", name) or "version"
+        return re.sub(r"[^A-Za-z0-9._-]+", "_", name) or "subset"
 
-    def render(self, version_id: str, lang: str | None = None, images: bool = True) -> dict:
-        """Render one version. `lang` renders it in another language (same template and layout),
+    def render(self, subset_id: str, lang: str | None = None, images: bool = True) -> dict:
+        """Render one subset. `lang` renders it in another language (same template and layout),
         e.g. to check that the Chinese bullets fit on one line; that build goes to its own folder."""
         doc, digest = self.store.load()
-        version = model.get_version(doc, version_id)
-        if version is None:
-            raise KeyError(t("Job {id} doesn't exist", id=version_id))
-        v = to_plain(version)
+        subset = model.get_subset(doc, subset_id)
+        if subset is None:
+            raise KeyError(t("Subset {id} doesn't exist", id=subset_id))
+        v = to_plain(subset)
         if lang:
             v["lang"] = lang
         view = model.build_view(doc, v)
-        engine = str(version.get("engine") or "latex")
-        build_dir = self.build_root / (self._safe(version_id) + (f"@{self._safe(lang)}" if lang else ""))
+        engine = str(subset.get("engine") or "latex")
+        build_dir = self.build_root / (self._safe(subset_id) + (f"@{self._safe(lang)}" if lang else ""))
         result = get_renderer(engine).render(view, build_dir)
         pngs = []
         if images and result.ok and result.pdf:
@@ -245,7 +250,7 @@ class Studio:
             pdf_time = result.pdf.stat().st_mtime
             if not (result.cached and len(pngs) == result.pages and all(p.stat().st_mtime >= pdf_time for p in pngs)):
                 pngs = rasterize(result.pdf, build_dir)
-        return {**result.to_json(), "version": version_id, "lang": view["lang"], "digest": digest,
+        return {**result.to_json(), "subset": subset_id, "lang": view["lang"], "digest": digest,
                 "missing": view["missing"], "images": len(pngs), "stamp": int(time.time() * 1000)}
 
     def bullet_report(self, result: dict) -> list[dict]:
@@ -263,24 +268,24 @@ class Studio:
                                 "lines": m["n"], "fill": m["fill"], "text": model.bullet_text(b, result["lang"])})
         return out
 
-    def pdf_path(self, version_id: str) -> Path:
-        return self.build_root / self._safe(version_id) / "main.pdf"
+    def pdf_path(self, subset_id: str) -> Path:
+        return self.build_root / self._safe(subset_id) / "main.pdf"
 
-    def page_image(self, version_id: str, page: int) -> Path | None:
-        build_dir = self.build_root / self._safe(version_id)
+    def page_image(self, subset_id: str, page: int) -> Path | None:
+        build_dir = self.build_root / self._safe(subset_id)
         for p in build_dir.glob("page-*.png"):
             if int(p.stem.split("-")[-1]) == page:
                 return p
         return None
 
-    def export(self, version_id: str) -> dict:
-        result = self.render(version_id)
+    def export(self, subset_id: str) -> dict:
+        result = self.render(subset_id)
         if not result["ok"]:
             return result
         doc, _ = self.store.load()
         export_dir = self.data_dir / str((doc.get("settings") or {}).get("export_dir") or "exports")
         export_dir.mkdir(parents=True, exist_ok=True)
-        name = self._safe(version_id)
+        name = self._safe(subset_id)
         out_pdf = export_dir / f"{name}.pdf"
         shutil.copyfile(result["pdf"], out_pdf)
         exported = {"pdf": str(out_pdf)}

@@ -820,11 +820,11 @@ class CareerOps(JobTool):
     # ---- its targeting profile, filled from the resume data by a chat ------------------
     @staticmethod
     def profile_source(doc: Any) -> str:
-        """What the profile chat reads: who (name, contacts), the targets (every job's label and
+        """What the profile chat reads: who (name, contacts), the targets (every subset's label and
         headline) and the fact layer about the search (profile notes)."""
         prof = to_plain((doc or {}).get("profile") or {})
         jobs = [(str(v.get("label") or ""), to_plain(v.get("headline") or ""))
-                for v in (doc or {}).get("versions") or [] if v.get("id") != "ALL"]
+                for v in (doc or {}).get("subsets") or [] if v.get("id") != "ALL"]
         return json.dumps({"name": prof.get("name"), "contacts": prof.get("contacts"), "notes": prof.get("notes"),
                            "jobs": jobs}, ensure_ascii=False, sort_keys=True, default=str)
 
@@ -876,13 +876,13 @@ class CareerOps(JobTool):
             f"  (`{data_path}`; its format and editing rules: `{self.skill_md}`) before each message, so edits",
             "  to them would not last. When a mode would add to or change the CV (add, expand, intake…),",
             "  propose the change and, once the user agrees, make it in the resume library instead.",
-            "- The resumes the user sends are the jobs (`versions`) in the resume library: each is a resume for a",
+            "- The resumes the user sends are the subsets (`subsets`) of the resume library: each is a resume for a",
             "  kind of role, sent to many similar postings, and never names a company. For a posting, recommend",
-            "  the version that fits best (the window links it: a `postings` entry on that job), or suggest",
+            "  the subset that fits best (the window links it: a `postings` entry on that subset), or suggest",
             "  adjusting one or adding one for that kind of role. PDFs come from Resume Studio (its templates,",
             "  one page): skip career-ops' PDF / HTML / LaTeX CV generation unless the user asks for it.",
             "- The user's targets, constraints and preferences are in the library's `profile.notes` (the private",
-            "  fact layer) and its job labels and headlines; career-ops' profile files are filled from them.",
+            "  fact layer) and its subsets' labels and headlines; career-ops' profile files are filled from them.",
             "- The window shows the tracker and the reports by reading `data/applications.md` and `reports/`:",
             "  keep writing them through career-ops' own scripts so they stay in its canonical format.",
             "- The user can't see a terminal; when they need to decide something, ask with AskUserQuestion.",
@@ -909,7 +909,7 @@ class CareerOps(JobTool):
             return (first + "\n"
                     + t("The data file `{data}` (format: `{skill}`) has: my name and contacts under `profile`; my "
                         "job-search background, constraints and preferences in `profile.notes` (the fact layer); the kinds "
-                        "of role I apply for as the jobs in `versions` (each one's `label` and `headline`; ignore `ALL`); and "
+                        "of role I apply for as the subsets in `subsets` (each one's `label` and `headline`; ignore `ALL`); and "
                         "the real story of each experience in `entries[].notes`.", data=kw["data_path"], skill=self.skill_md) + "\n"
                     + "- " + t("From them, fill career-ops' profile files the way its onboarding describes (config/profile.yml, "
                                "modes/_profile.md, and the title filters in portals.yml for my target roles).") + "\n"

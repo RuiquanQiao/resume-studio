@@ -3,9 +3,10 @@
 See SKILL.md for the documented schema. Principles:
   - `entries` is the experience library: append-only in spirit, never limited to one page.
   - Every entry has a fact layer (`notes`, `evidence`) that no template ever renders.
-  - A `version` is one job target (岗位): it references entry ids plus its own headline,
-    template and layout; it never copies content. The reserved version `ALL` is the full
-    set: every entry and every contact, in library order (its `entries` are ignored).
+  - A `subset` is the resume for one kind of role: it references entry ids plus its own
+    headline, template and layout; it never copies content. The reserved subset `ALL` is the
+    full set: every entry and every contact, in library order (its `entries` are ignored).
+    Files before schema 2 called subsets `versions`; `migrate` renames the key.
   - Any text field may be a plain string or a per-language map like {en: ..., zh: ...}.
 """
 from __future__ import annotations
@@ -18,7 +19,33 @@ from core.store import fingerprint, to_plain
 
 from . import langs as L
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+
+def migrate(doc: Any) -> bool:
+    """Bring an older file up to date in place (keys keep their place and comments).
+    Schema 2: `versions` became `subsets`. True when something changed."""
+    if not isinstance(doc, dict) or "versions" not in doc:
+        return False
+    old = doc["versions"]
+    if doc.get("subsets"):  # both (an older tool wrote the old key again): keep every subset once
+        have = {str(v.get("id")) for v in doc["subsets"]}
+        doc["subsets"].extend(v for v in old or [] if str(v.get("id")) not in have)
+        del doc["versions"]
+    elif hasattr(doc, "insert"):  # ruamel map: the new key takes the old one's place
+        pos = list(doc.keys()).index("versions")
+        comment = doc.ca.items.pop("versions", None)   # a comment line above the key is kept under its name
+        doc.pop("subsets", None)
+        del doc["versions"]
+        doc.insert(pos, "subsets", old)
+        if comment:
+            doc.ca.items["subsets"] = comment
+    else:
+        doc.pop("subsets", None)
+        doc["subsets"] = doc.pop("versions")
+    if "schema_version" in doc and (doc.get("schema_version") or 0) < SCHEMA_VERSION:
+        doc["schema_version"] = SCHEMA_VERSION
+    return True
 
 DEFAULT_SECTIONS = [
     {"id": "education", "kind": "timeline"},
@@ -60,12 +87,12 @@ def add_language_titles(doc: Any, lang: str) -> None:
 ALL_ID = "ALL"
 
 
-def default_all_version(lang: str = "en") -> dict:
+def default_all_subset(lang: str = "en") -> dict:
     return {"id": ALL_ID, "label": "All entries", "lang": lang, "template": "classic", "headline": "", "layout": {}}
 
 
-def is_all(version: Any) -> bool:
-    return bool(version) and str(version.get("id")) == ALL_ID
+def is_all(subset: Any) -> bool:
+    return bool(subset) and str(subset.get("id")) == ALL_ID
 
 
 DEFAULT_LAYOUT = {
@@ -85,14 +112,14 @@ DEFAULT_LAYOUT = {
 
 def skeleton(lang: str = "en") -> dict:
     """A new, empty file whose resume language is `lang` (the computer's language by default)."""
-    all_v = default_all_version(lang)
+    all_v = default_all_subset(lang)
     return {
         "schema_version": SCHEMA_VERSION,
         "settings": {"languages": [lang], "export_dir": "exports"},
         "profile": {"name": "Your Name", "contacts": [], "notes": ""},
         "sections": default_sections([lang]),
         "entries": [],
-        "versions": [all_v],
+        "subsets": [all_v],
     }
 
 
@@ -191,24 +218,24 @@ def date_range(entry: dict, lang: str) -> str:
 
 
 # ---- lookup --------------------------------------------------------------
-KINDS = ("profile", "settings", "sections", "entry", "version")
+KINDS = ("profile", "settings", "sections", "entry", "subset")
 
 
 def get_item(doc: Any, kind: str, item_id: str | None = None) -> Any:
     if kind in ("profile", "settings", "sections"):
         return doc.get(kind)
-    coll = doc.get("entries" if kind == "entry" else "versions") or []
+    coll = doc.get("entries" if kind == "entry" else "subsets") or []
     for item in coll:
         if str(item.get("id")) == str(item_id):
             return item
     return None
 
 
-def get_version(doc: Any, version_id: str) -> Any:
+def get_subset(doc: Any, subset_id: str) -> Any:
     """Like get_item, but ALL always exists (a file may not have saved it yet)."""
-    v = get_item(doc, "version", version_id)
-    if v is None and version_id == ALL_ID:
-        return default_all_version(first_lang(doc))
+    v = get_item(doc, "subset", subset_id)
+    if v is None and subset_id == ALL_ID:
+        return default_all_subset(first_lang(doc))
     return v
 
 
@@ -217,19 +244,19 @@ def first_lang(doc: Any) -> str:
     return str(((doc.get("settings") or {}).get("languages") or ["en"])[0])
 
 
-def section_order(doc: Any, version: Any) -> list[str]:
-    """Every section id in the order this version shows them. The order belongs to the version;
+def section_order(doc: Any, subset: Any) -> list[str]:
+    """Every section id in the order this subset shows them. The order belongs to the subset;
     ids it doesn't list yet (sections added later) go last, in the order of the sections list."""
     ids = [str(s.get("id")) for s in doc.get("sections") or []]
-    listed = [str(s) for s in (version or {}).get("sections") or [] if str(s) in ids]
+    listed = [str(s) for s in (subset or {}).get("sections") or [] if str(s) in ids]
     return list(dict.fromkeys(listed + ids))
 
 
-def with_all(versions: list, lang: str = "en") -> list:
-    """Versions as the UI sees them: ALL first, then the job targets."""
-    rest = [v for v in versions if not is_all(v)]
-    found = next((v for v in versions if is_all(v)), None)
-    return [found if found is not None else default_all_version(lang), *rest]
+def with_all(subsets: list, lang: str = "en") -> list:
+    """Subsets as the UI sees them: ALL first, then the others."""
+    rest = [v for v in subsets if not is_all(v)]
+    found = next((v for v in subsets if is_all(v)), None)
+    return [found if found is not None else default_all_subset(lang), *rest]
 
 
 def hashes(doc: Any) -> dict:
@@ -238,7 +265,7 @@ def hashes(doc: Any) -> dict:
         "settings": fingerprint(doc.get("settings")),
         "sections": fingerprint(doc.get("sections")),
         "entry": {str(e.get("id")): fingerprint(e) for e in doc.get("entries") or []},
-        "version": {str(v.get("id")): fingerprint(v) for v in doc.get("versions") or []},
+        "subset": {str(v.get("id")): fingerprint(v) for v in doc.get("subsets") or []},
     }
 
 
@@ -250,10 +277,10 @@ def next_entry_id(doc: Any) -> str:
     return f"EXP-{(max(nums) + 1) if nums else 1:03d}"
 
 
-def next_version_id(doc: Any) -> str:
-    nums = [int(m.group(1)) for v in doc.get("versions") or []
-            if (m := re.fullmatch(r"JOB-(\d+)", str(v.get("id", ""))))]
-    return f"JOB-{(max(nums) + 1) if nums else 1:03d}"
+def next_subset_id(doc: Any) -> str:
+    nums = [int(m.group(1)) for v in doc.get("subsets") or []
+            if (m := re.fullmatch(r"(?:SUB|JOB)-(\d+)", str(v.get("id", ""))))]   # JOB-: older files
+    return f"SUB-{(max(nums) + 1) if nums else 1:03d}"
 
 
 def validate(doc: Any) -> list[str]:
@@ -267,45 +294,45 @@ def validate(doc: Any) -> list[str]:
         if str(e.get("section")) not in section_ids:
             warn.append(t("{id} is in section “{section}”, which isn't in the sections list", id=e.get("id"), section=e.get("section")))
     known = set(ids)
-    for v in doc.get("versions") or []:
+    for v in doc.get("subsets") or []:
         if is_all(v):
             continue
         for ref in v.get("entries") or []:
             if str(ref) not in known:
-                warn.append(t("Job {job} refers to entry {ref}, which doesn't exist", job=v.get("id"), ref=ref))
+                warn.append(t("Subset {job} refers to entry {ref}, which doesn't exist", job=v.get("id"), ref=ref))
     return warn
 
 
 # ---- view (engine-agnostic) ---------------------------------------------
-def build_view(doc: Any, version: dict) -> dict:
-    """Resolve one version into plain, single-language data for a renderer.
+def build_view(doc: Any, subset: dict) -> dict:
+    """Resolve one subset into plain, single-language data for a renderer.
 
     Text keeps the tiny inline markup (**bold**, *italic*, [text](url)); each
     renderer converts it to its own syntax. The fact layer is dropped here, so no
     template can leak it.
     """
-    lang = str(version.get("lang") or "en")
+    lang = str(subset.get("lang") or "en")
     layout = dict(DEFAULT_LAYOUT)
-    layout.update(to_plain(version.get("layout") or {}))
+    layout.update(to_plain(subset.get("layout") or {}))
     accent = str(layout.get("accent") or "").lstrip("#").upper()
     layout["accent"] = accent if re.fullmatch(r"[0-9A-F]{6}", accent) else DEFAULT_LAYOUT["accent"]
     if layout.get("paper") not in ("a4", "letter"):
         layout["paper"] = "a4"
 
-    everything = is_all(version)
+    everything = is_all(subset)
     by_id = {str(e.get("id")): e for e in doc.get("entries") or []}
     if everything:
         chosen = list(doc.get("entries") or [])
     else:
-        chosen = [by_id[str(i)] for i in version.get("entries") or [] if str(i) in by_id]
+        chosen = [by_id[str(i)] for i in subset.get("entries") or [] if str(i) in by_id]
 
-    rank = {sid: i for i, sid in enumerate(section_order(doc, version))}
+    rank = {sid: i for i, sid in enumerate(section_order(doc, subset))}
     sections = sorted(doc.get("sections") or [], key=lambda s: rank[str(s.get("id"))])
-    hidden = {str(s) for s in version.get("hide_sections") or []}
+    hidden = {str(s) for s in subset.get("hide_sections") or []}
 
     p = doc.get("profile") or {}
-    hidden_contacts = set() if everything else {str(c) for c in version.get("hide_contacts") or []}
-    headline = version.get("headline") if "headline" in version else p.get("headline")  # older files
+    hidden_contacts = set() if everything else {str(c) for c in subset.get("hide_contacts") or []}
+    headline = subset.get("headline") if "headline" in subset else p.get("headline")  # older files
     profile = {
         "name": tr(p.get("name"), lang),
         "headline": tr(headline, lang),
@@ -354,4 +381,4 @@ def build_view(doc: Any, version: dict) -> dict:
             missing.append({"id": str(e.get("id")), **gap})
 
     return {"lang": lang, "profile": profile, "sections": out_sections, "layout": layout,
-            "template": str(version.get("template") or "classic"), "missing": missing}
+            "template": str(subset.get("template") or "classic"), "missing": missing}

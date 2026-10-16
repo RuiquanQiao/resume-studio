@@ -1,8 +1,8 @@
-"""Which of the user's resume versions fits a posting best: a quick, explainable ranking.
+"""Which of the user's resume subsets fits a posting best: a quick, explainable ranking.
 
 A resume is made for a kind of role (AI engineer, product engineer…), not for one company, so a posting
-is answered with the version that already covers most of what it asks for. This counts, per version,
-the posting's requirements and keywords whose words appear in that version's resume (headline, the
+is answered with the subset that already covers most of what it asks for. This counts, per subset,
+the posting's requirements and keywords whose words appear in that subset's resume (headline, the
 chosen entries' titles, tech and bullets, in every resume language). It is a word match, shown as such;
 Claude can be asked for a judgement when it is close.
 """
@@ -25,12 +25,12 @@ def words(text: str) -> set[str]:
     return {w for w in _WORD.findall(str(text or "").lower()) if w not in _STOP and len(w) > 1}
 
 
-def version_text(doc: Any, version: dict) -> str:
-    """Everything a version's resume says, in every resume language."""
+def subset_text(doc: Any, subset: dict) -> str:
+    """Everything a subset's resume says, in every resume language."""
     langs = [str(x) for x in ((doc.get("settings") or {}).get("languages") or ["en"])]
-    parts: list[str] = [str(version.get("label") or "")]
+    parts: list[str] = [str(subset.get("label") or "")]
     for lang in langs:
-        view = model.build_view(doc, {**to_plain(version), "lang": lang})
+        view = model.build_view(doc, {**to_plain(subset), "lang": lang})
         parts.append(view["profile"].get("headline") or "")
         for sec in view["sections"]:
             for e in sec["entries"]:
@@ -58,10 +58,10 @@ def rank(doc: Any, detail: dict) -> list[dict]:
     reqs = (detail.get("summary") or {}).get("requirements") or []
     kws = keywords(detail)
     out = []
-    for v in doc.get("versions") or []:
+    for v in doc.get("subsets") or []:
         if v.get("id") == model.ALL_ID:
             continue
-        have = words(version_text(doc, v))
+        have = words(subset_text(doc, v))
         covered, missing, got, total = [], [], 0.0, 0.0
         for r in reqs:
             w = WEIGHT.get(str(r.get("importance") or "").lower(), 1.0)
