@@ -17,6 +17,7 @@ from core.claude_info import ClaudeInfo
 from core.server import App, HttpError, TextResponse, running_instance
 from core.watcher import FileWatcher, SignatureWatcher
 from core.webhost import WebHost
+from jobhunt import api as hunt_api
 from jobs import api as jobs_api
 from jobs import career_ops
 from jobs.base import JobTool
@@ -262,4 +263,7 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
 
     # ---- autofill: online profiles kept in step with a resume subset, in the browser ----
     assert inst.browser is not None
-    autofill_api.register(app, studio, chats, inst.browser)
+    fill = autofill_api.register(app, studio, chats, inst.browser)
+
+    # ---- the job hunt: applications, companies and platforms (Resume Studio's own tracker) ----
+    hunt_api.register(app, studio, tool, prefs, platforms=fill.summary)

@@ -1,6 +1,6 @@
 ---
 name: resume-studio
-description: Resume builder with its own window. An experience library with a private fact layer, subsets of it per kind of role (each with its own version history), LaTeX templates, a live one-page preview and PDF export, all in one resume.yaml that the user edits in the window while Claude reads and writes the same file. Resumes can be written in any number of languages; the interface speaks the user's language. Use when the user wants to make or edit a resume / CV, open the resume window, mentions resume studio or resume.yaml, the experience library, exporting a resume PDF, fitting a resume on one page, polishing an entry, or updating their LinkedIn / BOSS直聘 or any other job-site profile from the resume (the Autofill workspace drives its own browser). Triggers also on 简历, 改简历, 经历库, 履歴書, 이력서, Lebenslauf, CV.
+description: Resume builder with its own window. An experience library with a private fact layer, subsets of it per kind of role (each with its own version history), LaTeX templates, a live one-page preview and PDF export, all in one resume.yaml that the user edits in the window while Claude reads and writes the same file. Resumes can be written in any number of languages; the interface speaks the user's language. Use when the user wants to make or edit a resume / CV, open the resume window, mentions resume studio or resume.yaml, the experience library, exporting a resume PDF, fitting a resume on one page, polishing an entry, or updating their LinkedIn / BOSS直聘 or any other job-site profile from the resume (the Applying workspace drives its own browser), or tracking applications, companies and 网申 sign-ups. Triggers also on 简历, 改简历, 经历库, 履歴書, 이력서, Lebenslauf, CV.
 ---
 
 # Resume Studio
@@ -250,19 +250,42 @@ The window connects a job-posting tool. Today that is
   let the user decide.
 - **Statuses go through career-ops' own writer** (`set-status.mjs`); the tracker and reports are read as
   career-ops documents them.
-- **Sign-ups (网申) and what went out** are Resume Studio's own records, in `.studio/applications.json`
-  next to the data file (kept apart from the tool, so they survive switching tools; don't edit it):
-  - A **sign-up** is one account on one company's careers site: the profile is filled there once and
-    several roles are applied to from it, in an order of preference (志愿). Each sign-up has a company,
-    the site, the subset it is filled from, and its roles.
-  - When the user marks it **sent**, the subset is kept as a version (unless it already is one), the roles
-    become career-ops rows through its own path (`reserve-report-num.mjs`, a headed TSV per row in
-    `batch/tracker-additions/`, `merge-tracker.mjs`) as Applied, and that version is pinned on each row. An
-    ordinary posting is marked sent the same way, with its linked subset.
-  - So "which resume did X get" is answered by the pin `{subset, n}`: read that version in
-    `.studio/subsets/<subset>.json`.
+- **What went out to a career-ops posting** is pinned in `.studio/applications.json` (don't edit it): when the
+  user marks a posting sent, its linked subset is kept as a version (unless it already is one) and `{subset, n}`
+  is pinned on it. Read that version in `.studio/subsets/<subset>.json`.
 
-## Online profiles (the Autofill workspace, Ctrl+3)
+## The job-hunt tracker (the Applying workspace, Ctrl+3)
+
+Resume Studio's own tracker (design and the user's vision: `docs/JOB_HUNT.md`). Three tables under tabs:
+**applications** (one per company + role, with its status, how it goes in, what was sent and the next step),
+**companies** (what each is, its roles in the user's order of preference, its own careers site and the subset
+it is filled from) and **platforms** (the online profiles below). The data lives in `.studio/hunt/`
+(`companies.json`, `applications.json`, and `events.tsv`, an append-only ledger of status changes, notes and
+sends). Work it only through `scripts/hunt.py`, with the window open (every command prints what is there now):
+
+```bash
+python scripts/hunt.py list [--status interview]          # applications
+python scripts/hunt.py show 星河科技                         # a company (or 星河科技/服务端 for one application)
+python scripts/hunt.py add-company 星河科技 --site https://careers.xinghe.example/campus --alias Xinghe
+python scripts/hunt.py add-role 星河科技 服务端研发工程师      # --channel site|platform|referral|other
+python scripts/hunt.py status 星河科技/服务端 interview --note "一面 周三 14:00"
+python scripts/hunt.py note 星河科技/服务端 "二面约在下周二"
+python scripts/hunt.py about 星河科技 --stdin <<'JSON' ... JSON   # research, with a source for every point
+python scripts/hunt.py sent 星河科技                         # the user submitted the sign-up on its site
+```
+
+- **Statuses**: saved (wants to apply), applied, assessment (测评/笔试), interview, offer, hired, rejected,
+  withdrawn; the user's own words work (一面 → interview). Interview rounds are notes, not statuses.
+- **A company's own site (网申)** is one profile filled once there, with several roles applied to from it in
+  an order of preference (志愿, `order` 1, 2, …). `sent <company>` keeps the company's subset as a version
+  (unless it already is one) and pins `{subset, n}` on every role there not sent yet. Submitting on the site
+  is always the user's own click; mark it sent only when they say so.
+- **Which tracker**: Settings → Applications tracker. With career-ops chosen, roles marked sent also get a
+  row in its tracker through its own path (`reserve-report-num.mjs`, a headed TSV per row in
+  `batch/tracker-additions/`, `merge-tracker.mjs`); the Applying workspace shows Resume Studio's either way.
+- Never delete a company or an application yourself: that is the user's, in the window.
+
+## Online profiles (the Applying workspace's Platforms tab)
 
 The window keeps a **local copy** of each of the user's online profiles, on the sites the user lists
 there: LinkedIn and BOSS直聘 come with a guide, and any other site can be added by its address (with

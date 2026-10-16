@@ -259,7 +259,7 @@ function applyState(s) {
 function syncEditor() {
   const { kind, id } = ui.sel;
   if (kind === "posting") return;   // not in resume.yaml; jobs.js refreshes it
-  if (kind === "versions" || kind === "signup") return;   // applyState / loadJobs keep them current
+  if (kind === "versions") return;   // applyState keeps it current
   if ((kind === "entry" || kind === "subset") && !currentItem(kind, id)) { select("profile"); return; }
   if (itemHash(kind, id) === ui.formBase) return;
   if (ui.dirty) { ui.conflict = { current: clone(currentItem(kind, id)) }; buildEditor(); return; }
@@ -564,8 +564,8 @@ async function select(kind, id = null) {
 }
 
 // "posting" is not part of resume.yaml: an evaluated job posting from the Applications tab (jobs.js)
-const BUILDERS = () => ({ entry: entryForm, profile: profileForm, sections: sectionsForm, subset: subsetForm, posting: postingView, versions: versionsView, signup: signupView });
-const NOT_IN_FILE = new Set(["posting", "versions", "signup"]);   // editor pages that aren't one item of resume.yaml
+const BUILDERS = () => ({ entry: entryForm, profile: profileForm, sections: sectionsForm, subset: subsetForm, posting: postingView, versions: versionsView });
+const NOT_IN_FILE = new Set(["posting", "versions"]);   // editor pages that aren't one item of resume.yaml
 
 function buildEditor(opts = {}) {
   const { kind, id } = ui.sel;
@@ -1064,13 +1064,14 @@ function openSettings(section = null) {
   if (root.firstChild) return;
   pendingUiLang = undefined;
   const done = async () => {
-    try { await applyJobsSettings(); } catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
+    try { await applyJobsSettings(); await applyTracker(); } catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
     try { if (await applyUiLang()) { await saveDraft(); location.reload(); return; } }
     catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
     close();
   };
   const close = () => {
     for (const k of Object.keys(jobsPending)) delete jobsPending[k];
+    pendingTracker = undefined;
     pendingUiLang = undefined; closeSettings = () => {}; root.replaceChildren(); document.removeEventListener("keydown", onKey); $("#settings-btn").focus(); };
   closeSettings = close;
   // bubble phase: an open dropdown takes Escape first (it stops the event in the capture phase)
@@ -1087,6 +1088,7 @@ function openSettings(section = null) {
           h("button", { class: "btn sm", onclick: () => api("POST", "/api/reveal", { path: S.data_path }) }, icon("external"), t("Show in the file manager")),
           h("button", { class: "btn sm", onclick: () => changeDataFile("open") }, icon("folderOpen"), t("Open another…")),
           h("button", { class: "btn sm", onclick: () => changeDataFile("new") }, icon("plus"), t("New…")))),
+      trackerField(),
       jobsSettingsSection(),
       h("div", { class: "acts" }, h("button", { class: "btn primary", onclick: done }, t("Done"))))));
   setTimeout(() => {
@@ -1941,6 +1943,7 @@ function connect() {
   listenChat(es);
   listenJobs(es);
   listenFill(es);
+  listenHunt(es);
 }
 
 function wire() {

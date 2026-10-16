@@ -237,23 +237,24 @@ function fillAfterResumeChange() {
   fillResumeTimer = setTimeout(() => { if (F.sites && F.sites.length) loadFillSite(F.site, { quiet: true }); }, 1200);
 }
 
-// ================================================================ the page
-function paintFill() {
+// ================================================================ a platform's page (hunt.js's Platforms tab opens it)
+function paintPlatform() {
   const el = $("#fillspace");
   if (!el) return;
-  if (F.sites && !F.sites.length) { el.replaceChildren(h("div", { class: "fill-scroll" }, h("div", { class: "fill-wrap" }, noSitesCard()))); return; }
   if (!F.sites || !fillView()) {
-    el.replaceChildren(h("div", { class: "fill-wrap" }, h("div", { class: "muted" }, t("Loading…"))));
+    el.replaceChildren(huntBar(), h("div", { class: "fill-wrap" }, backTo("platforms"), h("div", { class: "muted" }, t("Loading…"))));
     return;
   }
   const wrap = el.querySelector(".fill-scroll");
   const scroll = wrap ? wrap.scrollTop : 0;
   const v = fillView();
   el.replaceChildren(
+    huntBar(),
     h("div", { class: "fill-scroll" },
       h("div", { class: "fill-wrap" },
+        backTo("platforms"),
         h("div", { class: "fill-head" },
-          h("div", { class: "fh-text" }, h("h1", null, t("Your online profiles")),
+          h("div", { class: "fh-text" }, h("h1", null, t("Your profile on {site}", { site: fillSite().name })),
             h("p", null, t("Resume Studio keeps a copy of each profile. Edit it here or on the site: “Check for updates” brings the site's changes in, and yours go up when you say so."))),
           h("div", { id: "fill-sites", class: "fill-sites" })),
         h("div", { id: "fill-browser" }),
@@ -595,8 +596,13 @@ async function removeSite(s) {
 
 // the list gained or lost a site: show one that is on it (a new one, if given)
 async function fillSitesChanged(pick = null) {
-  if (pick) F.site = pick;
+  if (pick) { F.site = pick; H.tab = "platforms"; H.page = { kind: "platform", id: pick }; storeHunt(); }
   if (F.sites.length && !F.sites.some((s) => s.id === F.site)) F.site = F.sites[0].id;
+  // the platform whose page was open is gone: the next one's page (none left: the table)
+  if (H.page && H.page.kind === "platform" && !F.sites.some((s) => s.id === H.page.id)) {
+    H.page = F.sites.length ? { kind: "platform", id: F.site } : null;
+    storeHunt();
+  }
   store("fill-site", F.sites.length ? F.site : null);
   F.open = {};
   if (W.ws !== "fill") return;
@@ -770,13 +776,20 @@ function renderFillTools(el) {
 
 function fillWelcome() {
   const site = fillSite();
-  const suggest = F.sites && !F.sites.length ? [] : [   // no site on the list: nothing to name
+  const onPlatform = H.tab === "platforms" && H.page && H.page.kind === "platform";
+  const company = H.page && H.page.kind === "company" && H.view && H.view.company ? H.view.company.name : "";
+  const suggest = onPlatform ? [
     t("Does my {site} profile sell me well for the roles I want?", { site: site.name }),
     t("Add my newest project to {site}", { site: site.name }),
+  ] : [
+    t("What's next this week, and what's overdue?"),
+    company ? t("Tell me about {company}: how it is doing and its prospects", { company }) : t("Which of my applications have gone quiet?"),
+    t("I passed the first interview at {company}; the second is next Tuesday", { company: company || "Xinghe" }),
   ];
   return h("div", { class: "chat-welcome" },
-    h("div", { class: "t" }, t("Claude, with Resume Studio's browser")),
-    h("div", null, ui.chat.available ? t("In these chats Claude can look at and work in the browser on the right: reading a profile, changing one thing, checking a page. It changes a site only when you ask.")
-      : t("The claude command was not found. Install Claude Code and sign in first.")),
+    h("div", { class: "t" }, onPlatform ? t("Claude, with Resume Studio's browser") : t("Claude, with your applications")),
+    h("div", null, !ui.chat.available ? t("The claude command was not found. Install Claude Code and sign in first.")
+      : onPlatform ? t("In these chats Claude can look at and work in the browser on the right: reading a profile, changing one thing, checking a page. It changes a site only when you ask.")
+      : t("Tell Claude what happened and it updates the tables; ask about a company and it finds out, with sources. It can also work in Resume Studio's browser.")),
     ui.chat.available && h("div", { class: "suggest" }, suggest.map((s) => h("button", { onclick: () => sendChat(s) }, s))));
 }

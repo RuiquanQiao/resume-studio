@@ -452,7 +452,7 @@ function renderChatSelect() {
   const sel = ui.w.chat;
   const list = visibleChats();
   sel.disabled = !list.length;
-  sel.setOptions(list.map((c) => ({ value: c.id, label: c.title || t("New chat"), desc: c.workspace === "autofill" ? t("Autofill") : c.workspace || null,
+  sel.setOptions(list.map((c) => ({ value: c.id, label: c.title || t("New chat"), desc: c.workspace === "autofill" ? t("Applying") : c.workspace || null,
     hint: ui.chat.waiting.has(c.id) ? t("waiting for you") : relTime(c.updated) })), ui.chat.id);
 }
 

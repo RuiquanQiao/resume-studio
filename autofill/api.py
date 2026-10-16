@@ -14,6 +14,7 @@ from core.browser import BrowserError, ManagedBrowser
 from core.chat import ChatRunner, Workspace, valid_effort, valid_mode, valid_model
 from core.i18n import t
 from core.server import App, FileResponse, HttpError, Request
+from jobhunt import prompts as hunt_prompts
 from resume import model
 from resume import prompts as rp
 from resume.service import Studio
@@ -65,11 +66,12 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
     def note() -> str:
         doc, _ = studio.store.load()
         roots = [str(p) for p in (doc.get("settings") or {}).get("project_roots") or []]
-        return rp.ui_context(str(studio.store.path), None, None, roots) + "\n" + prompts.tools_note(str(studio.store.path)) + "\n"
+        data = str(studio.store.path)
+        return rp.ui_context(data, None, None, roots) + "\n" + hunt_prompts.tools_note(data) + "\n" + prompts.tools_note(data) + "\n"
 
     # Autofill's chats run in the data folder like any resume chat, and every message in them (the
     # user's follow-ups too) tells Claude how to use the browser
-    chats.workspaces[KIND] = Workspace(KIND, studio.data_dir, label="Autofill", context=note)
+    chats.workspaces[KIND] = Workspace(KIND, studio.data_dir, label="Applying", context=note)
 
     def start_chat(b: dict, site: Site | None, title: str, text: str = "", procedure: str = "",
                    on_done: Callable[[bool], None] | None = None, action: str = "") -> dict:
@@ -89,7 +91,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         """A chat in the Autofill workspace (the user types the first message)."""
         b = body(req)
         site = fill.site(str(b.get("site") or ""))
-        return {"chat": start_chat(b, site, str(b.get("title") or t("Autofill")))}
+        return {"chat": start_chat(b, site, str(b.get("title") or t("Applying")))}
 
     # ---- the workspace -----------------------------------------------------------------
     @app.route("GET", "/api/autofill")

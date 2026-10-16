@@ -17,7 +17,7 @@
     <div id="ws-switch" class="ws-switch" role="tablist" aria-label="Workspace">
       <button class="ws-btn" role="tab" data-ws="resume" title="Resume: library, subsets and preview (Ctrl+1)"><span class="lbl" data-t>Resume</span></button>
       <button class="ws-btn" role="tab" data-ws="jobs" title="Job search: postings, pipeline, follow-ups (Ctrl+2)"><span class="lbl" data-t>Job search</span><span id="ws-jobs-dot" class="tab-dot hidden"></span></button>
-      <button class="ws-btn" role="tab" data-ws="fill" title="Autofill: keep your online profiles in step with your resume (Ctrl+3)"><span class="lbl" data-t>Autofill</span></button>
+      <button class="ws-btn" role="tab" data-ws="fill" title="Applying: your applications, the companies and the platforms (Ctrl+3)"><span class="lbl" data-t>Applying</span></button>
     </div>
     <div class="subset-switch rs-only">
       <span id="subset-slot"></span>
@@ -97,7 +97,7 @@
       <div id="canvas" class="canvas"><div id="pages" class="pages"></div></div>
     </section>
     <section id="jobspace" class="pane jobspace jobs-only" aria-label="Job search"></section>
-    <section id="fillspace" class="pane fillspace fill-only" aria-label="Autofill"></section>
+    <section id="fillspace" class="pane fillspace fill-only" aria-label="Applying"></section>
   </div>
 
   <div id="toast" class="toast" role="status"></div>
@@ -108,6 +108,7 @@
   <script src="chat.js"></script>
   <script src="jobs.js"></script>
   <script src="autofill.js"></script>
+  <script src="hunt.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

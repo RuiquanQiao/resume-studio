@@ -78,7 +78,6 @@ async function loadJobs({ quiet = false } = {}) {
     }
     renderJobs();
     if (ui.sel.kind === "posting") refreshPosting();
-    if (ui.sel.kind === "signup") paintEditor({ keepScroll: true });
     if (ui.sel.kind === "subset") buildEditorKeepDraft();   // the posting link in Job settings
     paintJobspace();
     renderWsTools();
@@ -140,7 +139,7 @@ function jobsPane() {
   if (!J.data) return [h("div", { class: "jobs-loading muted" }, t("Loading…"))];
   const st = J.data.status;
   const busy = J.progress.install && J.progress.install.state === "running";
-  if (!st.installed || busy) return [connectCard(st)];
+  if (!st.installed || busy) return [connectCard(st), huntHint()];
   return [
     ...jobsBanners(st),
     evaluateBox(),
@@ -240,28 +239,29 @@ async function evaluatePosting() {
 
 function applicationsList() {
   const apps = J.data.applications || [];
-  const signups = J.data.signups || [];
   const open = (a) => !["rejected", "discarded", "skip"].includes(a.status);
-  const inSignup = new Set(signups.flatMap((s) => s.roles.map((r) => r.app).filter(Boolean)));
-  const loose = apps.filter((a) => !inSignup.has(a.id));
-  const shown = J.filter === "open" ? loose.filter(open) : loose;
-  const byId = Object.fromEntries(apps.map((a) => [a.id, a]));
+  const shown = J.filter === "open" ? apps.filter(open) : apps;
   const head = h("div", { class: "lib-head apps-head" },
     h("span", null, h("span", { class: "t" }, t("Applications")), apps.length ? h("span", { class: "n" }, apps.length) : null),
     h("span", { class: "row", style: "gap:2px" },
       apps.length > 0 && uiSeg([{ value: "all", label: t("All") }, { value: "open", label: t("Active") }], J.filter, (v) => { J.filter = v; renderJobs(); }, { cls: "sm", label: t("Show") }),
-      h("button", { class: "btn icon sm ghost", id: "signup-new", title: t("New sign-up"), "aria-label": t("New sign-up"), onclick: newSignup }, icon("plus")),
       h("button", { class: "btn icon sm ghost", title: t("More"), onclick: (e) => jobsMenu(e.currentTarget) }, icon("more"))));
-  if (!apps.length && !signups.length) {
+  if (!apps.length) {
     return h("div", { class: "lib-section" }, head, h("div", { class: "empty" },
       h("div", { class: "t" }, t("No applications yet")),
       h("div", null, t("Paste a posting above: its evaluation and score appear here, and you can make a resume for it.")),
-      h("div", null, t("Applying on a company's own careers site, to several roles at once? Start a sign-up with +."))));
+      huntHint()));
   }
   return h("div", { class: "lib-section" }, head,
-    signups.map((s) => signupGroup(s, byId, open)),
     shown.map(appRow),
-    !shown.length && !signups.length && h("div", { class: "muted", style: "padding:8px 10px;font-size:12.5px" }, t("Nothing active right now")));
+    !shown.length && h("div", { class: "muted", style: "padding:8px 10px;font-size:12.5px" }, t("Nothing active right now")),
+    huntHint());
+}
+
+// sign-ups on companies' own sites (网申) and the progress of every application live in the 网申 workspace
+function huntHint() {
+  return h("button", { class: "hunt-hint linkish", onclick: () => setWorkspace("fill") }, icon("globe"),
+    t("Applying on companies' own sites (网申), and tracking every application: the Applying workspace (Ctrl+3)"));
 }
 
 // what went out to an application: the subset and version pinned when it was sent
@@ -284,103 +284,6 @@ function appRow(a, { inGroup = false } = {}) {
     h("span", { class: "app-side" }, stateChip(a), !inGroup && a.date && h("span", { class: "app-date" }, a.date.slice(5))));
 }
 
-// ================================================================ sign-ups (网申): one careers-site account, several roles in order
-function signupGroup(s, byId, open) {
-  const on = ui.sel.kind === "signup" && ui.sel.id === s.id;
-  const roles = s.roles.map((r) => ({ r, a: r.app ? byId[r.app] : null }))
-    .filter(({ a }) => J.filter !== "open" || !a || open(a));
-  return h("div", { class: "su-group" + (on ? " on" : ""), "data-signup": s.id },
-    h("div", { class: "app-row su-head" + (on ? " on" : ""), role: "button", tabindex: "0",
-      onclick: () => openSignup(s.id), onkeydown: (e) => { if (e.key === "Enter") openSignup(s.id); } },
-      h("span", { class: "su-ic" }, icon("globe")),
-      h("span", { class: "e-main" },
-        h("span", { class: "e-title" }, s.company),
-        h("span", { class: "e-meta" }, s.roles.length ? t("Sign-up · {n} role", { n: s.roles.length }, "Sign-up · {n} roles") : t("Sign-up · no roles yet"),
-          s.last && sentChip(s.last))),
-      h("span", { class: "app-side" }, s.last ? null : h("span", { class: "state-chip s-unknown" }, t("Not sent")))),
-    roles.map(({ r, a }, i) => (a ? appRow(a, { inGroup: true }) :
-      h("div", { class: "app-row in-group pending", role: "button", tabindex: "0", onclick: () => openSignup(s.id) },
-        h("span", { class: "e-main" }, h("span", { class: "e-title" }, r.role)),
-        h("span", { class: "app-side" }, h("span", { class: "su-order" }, t("Choice {n}", { n: s.roles.indexOf(r) + 1 })))))));
-}
-
-const signupById = (id) => ((J.data && J.data.signups) || []).find((s) => s.id === id) || null;
-
-async function openSignup(id) {
-  if (!S) return;
-  await select("signup", id);
-  renderJobs();
-}
-
-async function newSignup() {
-  const company = await modal({ title: t("New sign-up"), input: "", ok: t("Create"), placeholder: t("Company name"),
-    message: t("One account on a company's careers site: you fill your profile there once and apply to several roles from it. Add the site, the subset you fill it from and the roles next.") });
-  if (!company) return;
-  try {
-    const s = await api("POST", "/api/jobs/signups", { company, subset: isAll() ? null : ui.subsetId });
-    await loadJobs({ quiet: true });
-    await openSignup(s.id);
-  } catch (e) { toast(e.message); }
-}
-
-async function editSignup(id, fields, { quiet = true, repaint = true } = {}) {
-  try {
-    const s = await api("PUT", `/api/jobs/signups/${encodeURIComponent(id)}`, fields);
-    if (J.data) J.data.signups = (J.data.signups || []).map((x) => (x.id === id ? s : x));
-    renderJobs();
-    if (repaint && ui.sel.kind === "signup" && ui.sel.id === id) paintEditor({ keepScroll: true });   // a typed field needs none: it shows itself
-    if (!quiet) toast(t("Saved"));
-    return s;
-  } catch (e) { toast(e.message); return null; }
-}
-
-function moveRole(s, i, dir) {
-  const roles = [...s.roles];
-  const j = i + dir;
-  if (j < 0 || j >= roles.length) return;
-  [roles[i], roles[j]] = [roles[j], roles[i]];
-  editSignup(s.id, { roles });
-}
-
-async function removeRole(s, r) {
-  if (r.app && !(await modal({ title: t("Take “{role}” off this sign-up?", { role: r.role }),
-    message: t("Its row stays in {name}'s tracker (with its status); only this sign-up stops listing it.", { name: jobsTool().name }), ok: t("Take it off") }))) return;
-  editSignup(s.id, { roles: s.roles.filter((x) => x.key !== r.key) });
-}
-
-async function roleLink(s, r) {
-  const url = await modal({ title: t("Link of “{role}”", { role: r.role }), input: r.url || "", optional: true, ok: t("Save"),
-    placeholder: "https://…", message: t("The role's own page on the site, if it has one. Leave it empty when the site only has one application page.") });
-  if (url === null) return;
-  editSignup(s.id, { roles: s.roles.map((x) => (x.key === r.key ? { ...x, url } : x)) });
-}
-
-async function sendSignup(s) {
-  const st = versionStatus(s.subset) || {};
-  const fresh = s.roles.filter((r) => !r.app).length;
-  const lines = [
-    st.same_as ? t("“{name}” goes out as v{n}, as it is now.", { name: s.subset_label, n: st.same_as })
-      : t("“{name}” is kept as v{n} first, so you'll always know what this site got.", { name: s.subset_label, n: (st.latest || 0) + 1 }),
-    fresh ? t("{n} role is added to {name}'s tracker as Applied.", { n: fresh, name: jobsTool().name }, "{n} roles are added to {name}'s tracker as Applied.") : null,
-  ].filter(Boolean);
-  if (!(await modal({ title: t("Mark “{company}” as sent?", { company: s.company }), message: h("div", { class: "modal-lines" }, lines.map((l) => h("p", null, l))), ok: t("Mark as sent") }))) return;
-  try {
-    const r = await api("POST", `/api/jobs/signups/${encodeURIComponent(s.id)}/sent`, {});
-    if (J.data) J.data.signups = (J.data.signups || []).map((x) => (x.id === s.id ? r.signup : x));
-    applyState(r);
-    await loadJobs({ quiet: true });
-    toast(t("Sent with “{name}” v{n}", { name: r.signup.subset_label, n: r.n }));
-    if (ui.sel.kind === "signup") paintEditor({ keepScroll: true });
-  } catch (e) { toast(e.message, { ms: 9000 }); }
-}
-
-async function deleteSignup(s) {
-  if (!(await modal({ title: t("Delete the sign-up “{company}”?", { company: s.company }),
-    message: t("Only Resume Studio's record of it goes. The rows in {name}'s tracker and the versions that were sent stay.", { name: jobsTool().name }), ok: t("Delete"), danger: true }))) return;
-  try { await api("DELETE", `/api/jobs/signups/${encodeURIComponent(s.id)}`); await loadJobs({ quiet: true }); select("profile"); }
-  catch (e) { toast(e.message); }
-}
-
 // a version that went out: its page in Resume, shown as it was
 async function showSent(subsetId, n) {
   if (!subsets().some((x) => x.id === subsetId)) { toast(t("That subset is gone; its versions are kept in .studio/subsets")); return; }
@@ -388,83 +291,6 @@ async function showSent(subsetId, n) {
   if (ui.subsetId !== subsetId) await switchSubset(subsetId);
   await select("versions", subsetId);
   viewVersion(subsetId, n);
-}
-
-function signupView() {
-  const s = signupById(ui.sel.id);
-  if (!s) return [h("p", { class: "muted" }, J.data ? t("This sign-up is gone.") : t("Loading…"))];
-  const byId = Object.fromEntries(((J.data && J.data.applications) || []).map((a) => [a.id, a]));
-  const field = (label, key, { placeholder = "", hint = "" } = {}) => h("div", { class: "field" },
-    h("label", null, label, hint && h("span", { class: "hint" }, hint)),
-    h("input", { value: s[key] || "", placeholder, spellcheck: "false", "data-key": key,
-      onchange: (e) => { const v = e.target.value.trim(); if (v !== (s[key] || "")) {
-        editSignup(s.id, { [key]: v }, { repaint: false });
-        const head = key === "company" && document.querySelector("#editor .ed-head h1");
-        if (head && v) head.textContent = v;
-      } } }));
-  const choices = subsets().filter((x) => x.id !== ALL);
-  const pick = uiSelect({ id: "signup-subset", label: t("Subset"), menuWidth: 300, value: s.subset || null, placeholder: t("Pick a subset"),
-    options: choices.map((x) => ({ value: x.id, label: subsetName(x), hint: (versionStatus(x.id) || {}).latest ? "v" + versionStatus(x.id).latest : "" })),
-    onChange: (v) => editSignup(s.id, { subset: v }) });
-  const st = s.subset ? versionStatus(s.subset) : null;
-  const add = h("input", { class: "su-add-input", placeholder: t("Add a role and press Enter (several at once: separate them with commas)"), spellcheck: "false",
-    onkeydown: (e) => {
-      if (e.key !== "Enter" || e.isComposing) return;
-      const names = e.target.value.split(/[\n,，;；]/).map((x) => x.trim()).filter(Boolean);
-      if (names.length) editSignup(s.id, { roles: [...s.roles, ...names.map((role) => ({ role }))] });
-    } });
-  const roles = s.roles.map((r, i) => {
-    const a = r.app ? byId[r.app] : null;
-    return h("div", { class: "su-role", "data-key": r.key },
-      h("span", { class: "su-n" }, i + 1),
-      h("span", { class: "su-main" }, h("span", { class: "su-name" }, r.role), r.url && h("span", { class: "su-url" }, r.url)),
-      a ? h("button", { class: "linkish", onclick: () => openPosting(a.id), title: t("Open it in the tracker") }, stateChip(a))
-        : h("span", { class: "state-chip s-unknown" }, r.app ? t("Not in the tracker") : t("Not sent")),
-      h("span", { class: "su-acts" },
-        h("button", { class: "btn icon sm ghost", title: t("Move up"), disabled: i === 0, onclick: () => moveRole(s, i, -1) }, icon("up")),
-        h("button", { class: "btn icon sm ghost", title: t("Move down"), disabled: i === s.roles.length - 1, onclick: () => moveRole(s, i, 1) }, icon("down")),
-        h("button", { class: "btn icon sm ghost", title: t("More"), onclick: (e) => openMenu(e.currentTarget, [
-          { label: t("Link of the role…"), icon: "external", onClick: () => roleLink(s, r) },
-          r.url && { label: t("Open the role's page"), icon: "external", onClick: () => openInBrowser(r.url) },
-          "sep",
-          { label: t("Take it off this sign-up"), icon: "trash", danger: true, onClick: () => removeRole(s, r) },
-        ], { align: "end" }) }, icon("more"))));
-  });
-  const ready = s.subset && s.subset_exists && s.roles.length > 0 && jobsReady();
-  return [
-    h("div", { class: "ed-head" }, h("h1", null, s.company), h("span", { class: "id" }, t("Sign-up")), h("span", { class: "spacer" }),
-      s.site && h("button", { class: "btn sm", onclick: () => openInBrowser(s.site) }, icon("external"), t("Open the site")),
-      h("button", { class: "btn icon ghost", title: t("More"), onclick: (e) => openMenu(e.currentTarget, [
-        s.site && { label: t("Sign in to it in Resume Studio's browser"), icon: "user", onClick: () => signInMode(s.site) },
-        { label: t("Delete this sign-up"), icon: "trash", danger: true, onClick: () => deleteSignup(s) }], { align: "end" }) }, icon("more"))),
-    card(t("The site"), t("where you fill your profile once"), [
-      h("div", { class: "grid2" }, field(t("Company"), "company"), field(t("Careers site"), "site", { placeholder: "https://careers.example.com/campus" })),
-      field(t("Notes"), "note", { placeholder: t("e.g. account phone, deadline, which batch") }),
-    ]),
-    card(t("Resume"), t("the subset this site is filled from"), [
-      h("div", { class: "su-subset" }, pick.el,
-        st && h("span", { class: "chip" + (st.latest && !st.same_as ? " vd-changed" : "") }, !st.latest ? t("No versions yet") : st.same_as ? `v${st.same_as}` : t("v{n} · changed", { n: st.latest })),
-        s.subset && s.subset_exists && h("button", { class: "btn sm ghost", onclick: () => previewSubset(s.subset) }, icon("file"), t("Preview"))),
-      s.subset && !s.subset_exists && h("p", { class: "muted card-p" }, t("This subset is gone; pick another.")),
-    ]),
-    card(t("Roles, in order"), t("in your order of preference"), [
-      roles.length ? h("div", { class: "su-roles" }, roles) : h("p", { class: "muted card-p" }, t("No roles yet: add the ones you apply for below.")),
-      add,
-    ]),
-    card(t("Sent"), s.sent.length ? t("{n} time", { n: s.sent.length }, "{n} times") : t("not yet"), [
-      h("p", { class: "card-p muted" }, t("When you submit on the site, mark it here: the subset is kept as a version (if it changed), the roles go into {name}'s tracker as Applied, and the version is pinned on each.", { name: jobsTool().name })),
-      h("div", { class: "row" }, h("button", { class: "btn primary", id: "signup-send", disabled: !ready, onclick: () => sendSignup(s) }, icon("check"), s.sent.length ? t("Mark as sent again") : t("Mark as sent")),
-        !jobsReady() && h("span", { class: "muted" }, t("{name} isn't connected yet", { name: jobsTool().name }))),
-      s.sent.length > 0 && h("div", { class: "su-sent" }, [...s.sent].reverse().map((x) => {
-        const v = subsets().find((y) => y.id === x.subset);
-        return h("div", { class: "su-sent-row" },
-          h("span", { class: "su-info" },
-            h("span", { class: "su-what" }, `${subsetName(v) || x.subset} · v${x.n}`),
-            h("span", { class: "su-when" }, fmtWhen(x.at), " · ", t("{n} role", { n: x.roles.length }, "{n} roles"))),
-          h("button", { class: "btn sm ghost", onclick: () => showSent(x.subset, x.n) }, icon("history"), t("See what went out")));
-      })),
-    ]),
-  ];
 }
 
 function openInBrowser(url) {
@@ -960,6 +786,7 @@ function setWorkspace(ws, { path = null } = {}) {
   } else if (ws === "fill") {
     paintFill();
     loadFill();
+    loadHunt();
   } else if (typeof applyZoom === "function" && ui.zoom === "fit") applyZoom();
   renderWsTools();
 }
@@ -1192,5 +1019,6 @@ function initWorkspaces() {
   document.body.dataset.jchat = W.chat;
   F.site = store("fill-site") || F.site;
   F.tab = store("fill-tab") === "push" ? "push" : "copy";
+  restoreHunt();
   setWorkspace(["jobs", "fill"].includes(store("ws")) ? store("ws") : "resume");
 }

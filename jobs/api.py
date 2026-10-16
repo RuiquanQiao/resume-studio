@@ -18,6 +18,7 @@ from resume.service import Studio
 from . import fit
 from .base import JobTool, ToolError
 from .signups import Signups
+from jobhunt import api as hunt_api
 
 
 def workspace_for(tool: JobTool, studio: Studio, chats: ChatRunner, extra_tools: list[str], env: dict) -> None:
@@ -139,39 +140,13 @@ def register(app: App, studio: Studio, chats: ChatRunner, tool: JobTool, *, pick
         """An application plus what was sent to it: the subset and version, newest last."""
         sent = signups.sent_to(tool.id, a["id"])
         a["sent"] = sent[-1] if sent else None
-        a["signup"] = signups.signup_of(a["id"])
         return a
 
-    def signup_view(s: dict, apps: dict[str, dict] | None = None, doc: Any = None) -> dict:
-        if apps is None:
-            apps = {a["id"]: a for a in (tool.applications() if tool.installed() else [])}
-        if doc is None:
-            doc, _ = studio.store.load()
-        sub = model.get_item(doc, "subset", s["subset"]) if s.get("subset") else None
-        roles = []
-        for r in s["roles"]:
-            a = apps.get(str(r.get("app"))) if r.get("app") else None
-            roles.append({**r, "status": (a or {}).get("status", ""), "status_label": (a or {}).get("status_label", ""),
-                          "in_tracker": a is not None})
-        return {**s, "roles": roles, "subset_label": str((sub or {}).get("label") or s.get("subset") or ""),
-                "subset_exists": sub is not None, "last": s["sent"][-1] if s["sent"] else None}
-
     def subset_to_send(subset_id: str | None) -> str:
-        doc, _ = studio.store.load()
-        if not subset_id:
-            raise HttpError(409, t("Pick the subset this goes out with first"))
-        if subset_id == model.ALL_ID or model.get_item(doc, "subset", subset_id) is None:
-            raise HttpError(404, t("Subset {id} doesn't exist", id=subset_id))
-        return subset_id
+        return hunt_api.subset_to_send(studio, subset_id)
 
     def keep_version(subset_id: str, where: str) -> int:
-        """The version that goes out: what the subset says now, kept as one if it isn't already (after
-        going back to v1, it goes out as v1, not as a copy of it)."""
-        st = studio.subset_versions(subset_id)["status"] or {}
-        if st.get("same_as"):
-            return int(st["same_as"])
-        r = studio.commit_subset(subset_id, t("Sent: {where}", where=where))
-        return int(r["made"]["n"])
+        return hunt_api.keep_version(studio, subset_id, where)
 
     # ---- what the tab shows --------------------------------------------------
     @app.route("GET", "/api/jobs")
@@ -189,74 +164,8 @@ def register(app: App, studio: Studio, chats: ChatRunner, tool: JobTool, *, pick
             with_sent(a)
         if st.get("installed"):
             st["profile"] = tool.profile_state(doc)
-        by_id = {a["id"]: a for a in apps}
         return {"status": st, "applications": apps, "states": tool.states() if st.get("installed") else [],
-                "signups": [signup_view(s, by_id, doc) for s in signups.all()],
                 "actions": tool.actions(), "modes": tool.modes() if st.get("installed") else [], "web": web_status()}
-
-    @app.route("GET", "/api/jobs/signups/{sid}")
-    def signup_get(req: Request):
-        return guard_signup(lambda: signup_view(signups.get(req.params["sid"])))
-
-    def guard_signup(fn: Callable[[], Any]) -> Any:
-        try:
-            return fn()
-        except ToolError as e:
-            raise HttpError(409, str(e))
-        except KeyError as e:
-            raise HttpError(404, str(e).strip("'\""))
-        except ValueError as e:
-            raise HttpError(400, str(e))
-
-    @app.route("POST", "/api/jobs/signups")
-    def signup_new(req: Request):
-        """A sign-up on one company's careers site, with the roles applied to from it (志愿, in order)."""
-        b = body(req)
-        if b.get("subset"):
-            subset_to_send(str(b["subset"]))
-        s = guard_signup(lambda: signups.create(b))
-        app.bus.publish("jobs", {})
-        return signup_view(s)
-
-    @app.route("PUT", "/api/jobs/signups/{sid}")
-    def signup_edit(req: Request):
-        b = body(req)
-        if b.get("subset"):
-            subset_to_send(str(b["subset"]))
-        s = guard_signup(lambda: signups.update(req.params["sid"], b))
-        app.bus.publish("jobs", {})
-        return signup_view(s)
-
-    @app.route("DELETE", "/api/jobs/signups/{sid}")
-    def signup_delete(req: Request):
-        signups.delete(req.params["sid"])
-        app.bus.publish("jobs", {})
-        return {"ok": True}
-
-    @app.route("POST", "/api/jobs/signups/{sid}/sent")
-    def signup_sent(req: Request):
-        """The sign-up went out: the subset is kept as a version (if it changed), its roles become rows of
-        the tool's tracker (Applied, through the tool's own writer), and the version is pinned on each."""
-        need_installed()
-        s = guard_signup(lambda: signups.get(req.params["sid"]))
-        sub = subset_to_send(s.get("subset"))
-        if not s["roles"]:
-            raise HttpError(409, t("Add the roles you apply for first"))
-        n = keep_version(sub, s["company"])
-        new = [r for r in s["roles"] if not r.get("app")]
-        label = signup_view(s)["subset_label"]
-        rows = [{"company": s["company"], "role": r["role"], "status": "applied", "url": r.get("url") or "",
-                 "notes": t("Sign-up {where} · choice {k} · {subset} v{n}", where=s.get("site") or s["company"],
-                            k=s["roles"].index(r) + 1, subset=label, n=n)} for r in new]
-        ids = guard_signup(lambda: tool.add_applications(rows))
-        apps = {r["key"]: i for r, i in zip(new, ids)}
-        for r in s["roles"]:
-            aid = apps.get(r["key"]) or r.get("app")
-            if aid:
-                link(aid, sub)
-        s = signups.mark_sent(s["id"], sub, n, apps, tool.id)
-        app.bus.publish("jobs", {})
-        return {"signup": signup_view(s), "n": n, "added": len(ids), **studio.state()}
 
     @app.route("POST", "/api/jobs/app/{aid}/sent")
     def app_sent(req: Request):

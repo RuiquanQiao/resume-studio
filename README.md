@@ -48,10 +48,8 @@ with the C# compiler that ships with Windows.
     fit score, what to stress, what's missing). "Resume to send" ranks your subsets by how much of the
     posting each one already covers and links the one you pick: a resume is for a kind of role, never named
     after a company. Only when none fits does Claude adjust one or start a new one.
-  - **Sign-ups (网申)**: one account on a company's careers site, applied to several roles from in your
-    order of preference. Mark it sent when you submit: the subset is kept as a version, the roles go into
-    career-ops' tracker through its own writer, and every application records which subset and version it
-    got (an ordinary posting too).
+  - Mark a posting sent when you submit: its subset is kept as a version and pinned on it, so you always know
+    what it got.
   - career-ops' targeting profile (roles, location, salary, deal-breakers) is filled by Claude from your
     profile's fact layer and your subsets, and the window offers an update when they change.
   - **Job search**: career-ops' own web interface fills the window: its pipeline table, discovery, scheduled
@@ -66,7 +64,17 @@ with the C# compiler that ships with Windows.
     anything that changed in what Resume Studio reads. The connector sits behind a small contract
     (`jobs/base.py`), and hosting a tool's web interface is generic (`core/webhost.py`), so another tool can
     replace career-ops later without changing the window.
-- **Autofill (Ctrl+3)**: a local copy of each online profile (LinkedIn and BOSS直聘 come with notes for
+- **Applying (Ctrl+3)**: Resume Studio's own job-hunt tracker, in three tables:
+  - **Progress**: every application (company and role), how it goes in (the company's own site, a platform, a
+    referral), its status, the subset version it got, the latest event and the next step. Each has a timeline.
+  - **Companies**: what each is (Claude finds out, with a source for every point), your notes, its careers
+    site and the roles there in your order of preference (网申 / 志愿). Mark the sign-up sent when you submit:
+    the subset is kept as a version and pinned on every role.
+  - **Platforms**: your online profiles (below).
+  - Tell Claude in the chat on the left what happened ("Xinghe 一面过了") and it updates the tables through
+    `scripts/hunt.py`. Settings → Applications tracker can also copy sent roles into career-ops' tracker.
+    The design and where it is going: [docs/JOB_HUNT.md](docs/JOB_HUNT.md).
+- **Platforms**: a local copy of each online profile (LinkedIn and BOSS直聘 come with notes for
   Claude; add any other site by its address). Edit the copy here or the profile on the site: "Check for
   updates" brings the site's changes in, your edits wait as git-style diffs until you push them, and a
   field changed on both sides asks which to keep. The first time, Claude reads the site and records a
@@ -82,3 +90,4 @@ with the C# compiler that ships with Windows.
   section titles, date format and fonts; a new file starts in your computer's language.
 
 Data format and Claude's editing rules: [SKILL.md](SKILL.md). How changes are verified: [TESTING.md](TESTING.md).
+Where the job-hunt side is going (applications, companies and platforms, a tracker of our own): [docs/JOB_HUNT.md](docs/JOB_HUNT.md).

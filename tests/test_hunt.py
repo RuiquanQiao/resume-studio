@@ -1,0 +1,195 @@
+"""The job-hunt tracker (hunt/, scripts/hunt.py): companies, applications, the events ledger, sending."""
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from conftest import ROOT
+from core.i18n import Prefs
+from jobhunt.store import Hunt, state_of
+
+HUNT_PY = ROOT / "scripts" / "hunt.py"
+FIXTURE = Path(__file__).parent / "fixtures" / "career-ops"
+
+
+@pytest.fixture
+def hunt(tmp_path: Path) -> Hunt:
+    return Hunt(tmp_path / ".studio")
+
+
+# ---------------------------------------------------------------- the store
+def test_companies_and_roles_by_name_alias_or_id(hunt):
+    c = hunt.add_company({"name": "星河科技", "aliases": "Xinghe, Nebula", "site": "careers.xinghe.example/campus"})
+    assert c["id"] == "C1" and c["site"] == "https://careers.xinghe.example/campus" and c["aliases"] == ["Xinghe", "Nebula"]
+    assert hunt.company("xinghe")["id"] == hunt.company("星河科技")["id"] == hunt.company("C1")["id"] == "C1"
+    with pytest.raises(ValueError):
+        hunt.add_company({"name": " 星河科技 "})                        # already on the list
+    hunt.add_company({"name": "字节跳动"})
+    a1 = hunt.add_application("Xinghe", {"role": "服务端研发工程师"})
+    a2 = hunt.add_application("Xinghe", {"role": "算法工程师"})
+    a3 = hunt.add_application("Xinghe", {"role": "数据分析", "order": 1})
+    assert [a["order"] for a in (a1, a2, a3)] == [1, 2, 1]
+    order = {a["role"]: a["order"] for a in hunt.applications("Xinghe")}
+    assert order == {"数据分析": 1, "服务端研发工程师": 2, "算法工程师": 3}   # the 志愿 order, as asked
+    assert hunt.application("xinghe/服务端")["id"] == a1["id"]                # a unique part of the role is enough
+    assert hunt.application("A2")["role"] == "算法工程师"
+    with pytest.raises(KeyError, match=r"\(A1\).*\(A2\)"):
+        hunt.application("Xinghe/工程师")                                     # two roles match: say which
+    with pytest.raises(ValueError):
+        hunt.add_application("Xinghe", {"role": "算法工程师"})                # already there
+    hunt.delete_application(a3["id"])
+    assert {a["role"]: a["order"] for a in hunt.applications("Xinghe")} == {"服务端研发工程师": 1, "算法工程师": 2}
+    assert hunt.add_application("Xinghe", {"role": "测试"})["id"] == "A4"    # ids are never reused
+
+
+def test_statuses_take_the_users_words_and_land_in_the_ledger(hunt):
+    assert [state_of(w) for w in ("一面", "笔试", "挂", "OA", "已投递", "Interview")] == \
+           ["interview", "assessment", "rejected", "assessment", "applied", "interview"]
+    with pytest.raises(ValueError, match="saved"):
+        state_of("maybe")
+    hunt.add_company({"name": "Xinghe"})
+    a = hunt.add_application("Xinghe", {"role": "后端"})
+    assert a["status"] == "saved" and not a["applied"]
+    hunt.set_status(a["id"], "已投递", on="2026-10-10")
+    hunt.set_status(a["id"], "一面", note="一面 周三 14:00\n问了\tRedis")
+    hunt.set_status(a["id"], "interview")                                # the same again, no note: no line
+    hunt.add_note(a["id"], "二面约在下周二")
+    a = hunt.application(a["id"])
+    assert a["status"] == "interview" and a["applied"] == "2026-10-10"
+    evs = hunt.events(a["id"])
+    # by when it happened: the status dated back to 10-10 comes before today's "added"
+    assert [(e["kind"], e["from"], e["to"]) for e in evs] == [("status", "saved", "applied"), ("created", "", "saved"),
+                                                              ("status", "applied", "interview"), ("note", "", "")]
+    assert evs[0]["at"].startswith("2026-10-10") and evs[2]["note"] == "一面 周三 14:00\n问了 Redis"   # lines survive; a tab never splits a cell
+    with pytest.raises(ValueError, match="2026-10-25"):
+        hunt.update_application(a["id"], {"due": "next tuesday"})
+    assert hunt.update_application(a["id"], {"due": "2026/10/25", "next": "等二面"})["due"] == "2026-10-25"
+
+
+def test_the_old_sign_ups_move_in_once(tmp_path, data_file):
+    old = {"signups": [{"id": "S1", "company": "星河科技", "site": "https://careers.xinghe.example/campus", "subset": "RES-TECH-ZH",
+                        "note": "手机号登录", "roles": [{"key": "r1", "role": "服务端", "url": "", "app": "4"},
+                                                    {"key": "r2", "role": "算法", "url": "", "app": None}],
+                        "sent": [{"at": "2026-10-12T10:00:00", "subset": "RES-TECH-ZH", "n": 1, "roles": ["r1"]}]}], "sent": {}}
+    state = data_file.parent / ".studio"
+    state.mkdir(exist_ok=True)
+    (state / "applications.json").write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
+    from resume.app import create_app
+    inst = create_app(data_file, watch_interval=0.15, prefs_dir=data_file.parent / "local")
+    try:
+        h = Hunt(state)
+        c = h.company("星河科技")
+        assert c["site"].endswith("/campus") and c["subset"] == "RES-TECH-ZH" and c["note"] == "手机号登录"
+        apps = {a["role"]: a for a in h.applications(c["id"])}
+        assert apps["服务端"]["status"] == "applied" and apps["服务端"]["sent"][0]["n"] == 1 and apps["服务端"]["co_app"] == "4"
+        assert apps["算法"]["status"] == "saved" and not apps["算法"]["sent"] and [a["order"] for a in apps.values()] == [1, 2]
+    finally:
+        inst.shutdown()
+    inst = create_app(data_file, watch_interval=0.15, prefs_dir=data_file.parent / "local")   # not twice
+    inst.shutdown()
+    assert len(Hunt(state).applications()) == 2
+
+
+# ---------------------------------------------------------------- over HTTP and from Claude's command
+def cli(data_file, *args, stdin: str = "") -> tuple[int, str]:
+    p = subprocess.run([sys.executable, str(HUNT_PY), "--data", str(data_file), *args], input=stdin.encode("utf-8"),
+                       capture_output=True, timeout=60)
+    return p.returncode, (p.stdout + p.stderr).decode("utf-8", errors="replace")
+
+
+@pytest.fixture
+def live(server, data_file):
+    (data_file.parent / ".studio").mkdir(exist_ok=True)
+    (data_file.parent / ".studio" / "server.json").write_text(json.dumps({"url": server.url}), encoding="utf-8")
+    return server
+
+
+def test_claude_works_the_tracker_from_its_command(live, data_file):
+    code, out = cli(data_file, "add-company", "星河科技", "--site", "https://careers.xinghe.example/campus", "--alias", "Xinghe")
+    assert code == 0 and "C1 星河科技 (also: Xinghe)" in out and "careers site: https://careers.xinghe.example/campus" in out
+    assert cli(data_file, "add-role", "Xinghe", "服务端研发工程师")[0] == 0
+    code, out = cli(data_file, "add-role", "Xinghe", "算法工程师", "--order", "1")
+    assert "A2    星河科技 / 算法工程师  [saved]  (its own site, choice 1)" in out
+    code, out = cli(data_file, "status", "Xinghe/服务端", "一面", "--note", "一面 周三 14:00")
+    assert code == 0 and "[interview]" in out and "saved → interview: 一面 周三 14:00  [chat]" in out
+    code, out = cli(data_file, "next", "Xinghe/服务端", "等二面通知", "--due", "2026-10-25")
+    assert "next: 等二面通知 (due 2026-10-25)" in out
+    code, out = cli(data_file, "list", "--status", "interview")
+    assert out.strip().splitlines() == ["A1    星河科技 / 服务端研发工程师  [interview]  (its own site, choice 2)  next: 等二面通知 (due 2026-10-25)"]
+    code, out = cli(data_file, "status", "Xinghe/服务端", "maybe")
+    assert code != 0 and out.startswith("error:")
+    about = {"summary": "电商平台", "points": [{"topic": "业务", "text": "星河科技与 Nebula", "sources": ["https://example.com/r"]}]}
+    code, out = cli(data_file, "about", "Xinghe", "--stdin", stdin=json.dumps(about, ensure_ascii=False))
+    assert code == 0 and "about (read " in out and "- 业务: 星河科技与 Nebula  [https://example.com/r]" in out
+    # the window sees the same, with its last event
+    tab = live.req("GET", "/api/hunt")[1]
+    assert tab["tracker"] == "studio" and [s["id"] for s in tab["states"]][:2] == ["saved", "applied"]
+    row = next(a for a in tab["applications"] if a["id"] == "A1")
+    assert row["company_name"] == "星河科技" and row["last"]["kind"] == "status"
+    c = tab["companies"][0]
+    assert (c["roles"], c["open"], c["best"]) == (2, 2, "interview")
+    assert {p["id"] for p in tab["platforms"]} >= {"linkedin", "boss"}
+
+
+def test_the_sign_up_goes_out_with_a_kept_version(live, data_file):
+    cli(data_file, "add-company", "星河科技")
+    cli(data_file, "add-role", "星河科技", "服务端")
+    cli(data_file, "add-role", "星河科技", "算法")
+    code, out = cli(data_file, "sent", "星河科技")
+    assert code != 0 and out.startswith("error:")                       # it isn't filled from a subset yet
+    assert live.req("POST", "/api/hunt/companies/C1/sent")[0] == 409
+    assert live.req("PUT", "/api/hunt/companies/C1", {"subset": "NOPE"})[0] == 404
+    live.req("PUT", "/api/hunt/companies/C1", {"subset": "RES-TECH-ZH"})
+    code, out = cli(data_file, "sent", "星河科技")
+    assert code == 0 and "sent with RES-TECH-ZH v1: A1, A2" in out
+    v = live.req("GET", "/api/hunt/companies/C1")[1]
+    assert all(a["status"] == "applied" and a["sent"][0]["n"] == 1 for a in v["applications"])
+    assert [e["kind"] for e in v["events"]].count("sent") == 2
+    assert live.req("POST", "/api/hunt/companies/C1/sent")[0] == 409     # nothing new to send
+    cli(data_file, "add-role", "星河科技", "数据")                          # a role added later goes out alone, as the same v1
+    code, out = cli(data_file, "sent", "星河科技")
+    assert "sent with RES-TECH-ZH v1: A3" in out
+    st = live.req("GET", "/api/state")[1]
+    assert st["subset_versions"]["RES-TECH-ZH"]["count"] == 1
+
+
+def test_with_career_ops_as_the_tracker_sent_roles_get_rows_there(live, data_file, tmp_path):
+    checkout = tmp_path / "career-ops"
+    shutil.copytree(FIXTURE, checkout)
+    (checkout / "node_modules" / "js-yaml").mkdir(parents=True)
+    Prefs(data_file.parent / "local").save(career_ops={"path": str(checkout)})
+    assert live.req("PUT", "/api/hunt/settings", {"tracker": "nope"})[0] == 400
+    assert live.req("PUT", "/api/hunt/settings", {"tracker": "career-ops"})[1]["tracker"] == "career-ops"
+    live.req("POST", "/api/hunt/companies", {"name": "星河科技", "subset": "RES-TECH-ZH"})
+    for role in ("服务端研发工程师", "算法工程师"):
+        live.req("POST", "/api/hunt/companies/C1/roles", {"role": role})
+    code, r = live.req("POST", "/api/hunt/companies/C1/sent")
+    assert code == 200 and r["copied"] == 2 and [a["co_app"] for a in r["applications"]] == ["4", "5"]
+    md = (checkout / "data" / "applications.md").read_text(encoding="utf-8")
+    assert "服务端研发工程师" in md and "算法工程师" in md
+    # Resume Studio's own tracker leaves career-ops alone
+    live.req("PUT", "/api/hunt/settings", {"tracker": "studio"})
+    live.req("POST", "/api/hunt/companies/C1/roles", {"role": "数据分析"})
+    assert live.req("POST", "/api/hunt/companies/C1/sent")[1]["copied"] == 0
+    assert "数据分析" not in (checkout / "data" / "applications.md").read_text(encoding="utf-8")
+
+
+def test_the_window_edits_and_deletes(live):
+    assert live.req("POST", "/api/hunt/companies", {"name": ""})[0] == 400
+    c = live.req("POST", "/api/hunt/companies", {"name": "美团"})[1]["company"]
+    code, v = live.req("POST", f"/api/hunt/companies/{c['id']}/roles", {"role": "后端", "channel": "platform", "platform": "boss"})
+    aid = v["application"]["id"]
+    assert v["application"]["platform"] == "boss"
+    assert live.req("POST", f"/api/hunt/apps/{aid}/status", {"status": "offer", "note": "口头 offer"})[1]["application"]["status"] == "offer"
+    assert live.req("POST", f"/api/hunt/apps/{aid}/note", {"note": ""})[0] == 400
+    assert live.req("PUT", f"/api/hunt/apps/{aid}", {"channel": "fax"})[0] == 400
+    code, v = live.req("PUT", f"/api/hunt/apps/{aid}", {"channel": "referral"})
+    assert v["application"]["channel"] == "referral" and v["application"]["platform"] == ""
+    assert live.req("DELETE", f"/api/hunt/apps/{aid}")[0] == 200 and live.req("GET", f"/api/hunt/apps/{aid}")[0] == 404
+    assert live.req("DELETE", f"/api/hunt/companies/{c['id']}")[0] == 200
+    assert live.req("GET", "/api/hunt")[1]["companies"] == []

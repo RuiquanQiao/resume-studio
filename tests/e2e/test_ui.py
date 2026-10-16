@@ -1153,41 +1153,69 @@ def test_evaluate_starts_a_career_ops_chat(connected, page_all, server, fake_cla
     assert pg.input_value("#posting-input") == ""                       # sent, so the box is empty again
 
 
-@needs_node
-def test_a_sign_up_with_several_roles_goes_out_with_a_pinned_version(connected, page, server):
-    pg = page                                                           # RES-TECH-EN is open: the new sign-up uses it
-    open_jobs(pg)
-    pg.click("#signup-new")
-    pg.fill(".modal input", "星河科技")
+# ---------------------------------------------------------------- Applying (the job-hunt tracker)
+def test_a_company_with_several_roles_goes_out_with_a_pinned_version(page, server):
+    pg = page
+    pg.keyboard.press("Control+3")
+    pg.wait_for_selector(".hunt-tab.on[data-tab=apps]")
+    assert "还没有投递" in pg.inner_text("#fillspace")
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.click("#hunt-new-company")
+    pg.fill("#fm-name", "星河科技")
+    pg.fill("#fm-site", "careers.example.com/campus")
     pg.click(".modal .btn.primary")
-    pg.wait_for_selector(".ed-head h1:text('星河科技')")
-    pg.fill("#editor input[data-key=site]", "https://careers.example.com/campus")
-    pg.press("#editor input[data-key=site]", "Tab")
-    pg.fill(".su-add-input", "服务端研发工程师，算法工程师")
-    pg.press(".su-add-input", "Enter")
+    pg.wait_for_selector(".hunt-wrap.is-page .ed-head h1:text('星河科技')")
+    assert pg.input_value(".hunt-wrap input[placeholder^='https://careers']") == "https://careers.example.com/campus"
+    choose(pg, "#company-subset", "RES-TECH-EN")
+    pg.wait_for_selector("#company-subset[data-value='RES-TECH-EN']")
+    pg.fill("#company-add-role", "服务端研发工程师，算法工程师")
+    pg.press("#company-add-role", "Enter")
     pg.wait_for_selector(".su-role:nth-child(2) .su-name:text('算法工程师')")
     pg.locator(".su-role:nth-child(2) .su-acts .btn").first.click()           # the order of preference is the user's
     pg.wait_for_selector(".su-role:nth-child(1) .su-name:text('算法工程师')")
-    assert pg.locator("#jobs .su-group .pending").count() == 2           # listed, not in the tracker yet
-    assert "算法工程师" not in (connected / "data" / "applications.md").read_text(encoding="utf-8")
-    for scheme in ("light", "dark"):
-        pg.emulate_media(color_scheme=scheme)
-        pg.screenshot(path=str(ART / f"jobs-signup-{scheme}.png"))
-    pg.emulate_media(color_scheme="light")
-
-    pg.click("#signup-send")
+    assert pg.locator(".su-role .s-saved").count() == 2                        # listed, not sent yet
+    pg.click("#company-send")
     pg.wait_for_selector(".modal:has-text('v1')")
     pg.click(".modal .btn.primary")
-    tracker = lambda: (connected / "data" / "applications.md").read_text(encoding="utf-8")   # noqa: E731
-    wait_until(lambda: "算法工程师" in tracker() and "服务端研发工程师" in tracker(), msg="roles in the tracker")
-    pg.wait_for_selector("#jobs .su-group .app-row.in-group .s-applied")
-    assert pg.locator("#jobs .su-group .pending").count() == 0
-    assert "v1" in pg.inner_text("#jobs .su-group .su-head .sent-chip")
+    pg.wait_for_selector(".su-role .s-applied >> nth=1")
     assert state(server)["subset_versions"]["RES-TECH-EN"]["latest"] == 1
-    pg.wait_for_selector(".su-sent-row")
-    pg.click(".su-sent-row .btn")                                       # what went out, as it was
+    assert pg.is_disabled("#company-send")                                    # every role there has gone out
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"hunt-company-{scheme}.png"), full_page=True)
+    pg.emulate_media(color_scheme="light")
+
+    # the progress table: both roles, in the company's order, with what went out
+    pg.click(".hunt-tab[data-tab=apps]")
+    pg.wait_for_selector(".htable tbody tr >> nth=1")
+    rows = pg.locator(".htable tbody tr").all_inner_texts()
+    assert "算法工程师" in rows[0] and "服务端研发工程师" in rows[1] and all("v1" in r for r in rows)
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"hunt-progress-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+    # one application: its status, a note dated back, the timeline
+    pg.click(".htable tbody tr >> nth=0")
+    pg.wait_for_selector("#app-status")
+    choose(pg, "#app-status", "interview")
+    pg.wait_for_selector(".timeline .tl-status")
+    pg.fill("#app-note-new", "一面：项目深挖 + 两道题")
+    pg.fill("#app-note-on", "2026-10-15")
+    pg.click("#app-note-add")
+    pg.wait_for_selector(".timeline .tl-note:text('一面：项目深挖 + 两道题')")
+    a = server.req("GET", "/api/hunt")[1]["applications"]
+    mine = next(x for x in a if x["role"] == "算法工程师")
+    assert mine["status"] == "interview" and mine["sent"][0]["n"] == 1
+    assert server.req("GET", f"/api/hunt/apps/{mine['id']}")[1]["events"][-1]["kind"] == "status"   # the dated note sorts before
+    pg.screenshot(path=str(ART / "hunt-application-light.png"), full_page=True)
+    no_native(pg)
+    # what went out, as it was
+    pg.click(".su-sent-row .btn")
     pg.wait_for_selector("#viewing:not(.hidden)")
     pg.wait_for_selector("#pages img[src*='/versions/1/page/1']")
+    # the old sign-up list is gone from Resume's Applications tab: it points here
+    pg.click(".tab[data-tab=jobs]")
+    pg.wait_for_selector("#jobs .hunt-hint")
 
 
 def test_a_cv_edited_in_career_ops_is_never_overwritten(connected, page_all, server):
@@ -1338,11 +1366,18 @@ def fill_view(server):
     return server.req("GET", "/api/autofill/linkedin")[1]
 
 
+def open_platform(pg, sid="linkedin"):
+    pg.keyboard.press("Control+3")
+    pg.click(".hunt-tab[data-tab=platforms]")
+    pg.click(f".htable tbody tr[data-id='{sid}']")
+    pg.wait_for_selector(f".fs-site.on[data-site='{sid}']")
+
+
 def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, monkeypatch):
     pg = page_all
     server.inst.browser.headless, server.inst.browser.pace = True, 0
     server.inst.browser.prefer = "msedge"
-    pg.keyboard.press("Control+3")
+    open_platform(pg)
     pg.wait_for_selector("#fillspace .fill-start")
     assert not pg.is_visible("#editor") and not pg.is_visible(".pane.right") and pg.is_visible("#chat")
     assert pg.get_attribute(".fs-site.on", "data-site") == "linkedin"
@@ -1454,7 +1489,7 @@ def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, m
 
 def test_autofill_sites_are_the_users_to_pick(page_all, server):
     pg = page_all
-    pg.keyboard.press("Control+3")
+    open_platform(pg)
     pg.wait_for_selector("#fillspace .fill-start")
     # any other site, by its address, with notes for Claude
     pg.click("#fill-add-site")
@@ -1497,7 +1532,7 @@ def test_autofill_sites_are_the_users_to_pick(page_all, server):
         pg.wait_for_selector(f".fs-site[data-site='{sid}']", state="detached")
     pg.wait_for_selector("#fillspace >> text=你在哪些网站上有资料？")
     pg.screenshot(path=str(ART / "autofill-no-sites-light.png"))
-    assert pg.locator("#chat .suggest button").count() == 0   # no site to name
+    assert "LinkedIn" not in pg.inner_text("#chat .chat-welcome")   # no site to name
     pg.click("#fillspace .btn.primary")
     pg.wait_for_selector(".site-dialog >> text=Resume Studio 认识的网站")
     pg.wait_for_timeout(400)   # the dialog's fade-in
