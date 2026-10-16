@@ -36,6 +36,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Callable
 
+from core.i18n import t
+
 Progress = Callable[[str, str], None]   # (step, state: running | done | error, detail via the step text)
 
 
@@ -106,6 +108,11 @@ class JobTool(ABC):
     @abstractmethod
     def set_status(self, app_id: str, state: str) -> None:
         """Through the tool's own write path."""
+
+    def add_applications(self, rows: list[dict]) -> list[str]:
+        """New tracker rows, through the tool's own write path: rows are {company, role, status (a state
+        id), url, notes, date}; returns their ids in the same order. A tool that can't add rows says so."""
+        raise ToolError(t("{name} can't add rows to its tracker from the window.", name=self.name))
 
     @abstractmethod
     def signature(self) -> Any:

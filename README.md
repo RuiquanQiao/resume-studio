@@ -48,6 +48,10 @@ with the C# compiler that ships with Windows.
     fit score, what to stress, what's missing). "Resume to send" ranks your subsets by how much of the
     posting each one already covers and links the one you pick: a resume is for a kind of role, never named
     after a company. Only when none fits does Claude adjust one or start a new one.
+  - **Sign-ups (网申)**: one account on a company's careers site, applied to several roles from in your
+    order of preference. Mark it sent when you submit: the subset is kept as a version, the roles go into
+    career-ops' tracker through its own writer, and every application records which subset and version it
+    got (an ordinary posting too).
   - career-ops' targeting profile (roles, location, salary, deal-breakers) is filled by Claude from your
     profile's fact layer and your subsets, and the window offers an update when they change.
   - **Job search**: career-ops' own web interface fills the window: its pipeline table, discovery, scheduled

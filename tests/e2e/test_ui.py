@@ -1153,6 +1153,43 @@ def test_evaluate_starts_a_career_ops_chat(connected, page_all, server, fake_cla
     assert pg.input_value("#posting-input") == ""                       # sent, so the box is empty again
 
 
+@needs_node
+def test_a_sign_up_with_several_roles_goes_out_with_a_pinned_version(connected, page, server):
+    pg = page                                                           # RES-TECH-EN is open: the new sign-up uses it
+    open_jobs(pg)
+    pg.click("#signup-new")
+    pg.fill(".modal input", "星河科技")
+    pg.click(".modal .btn.primary")
+    pg.wait_for_selector(".ed-head h1:text('星河科技')")
+    pg.fill("#editor input[data-key=site]", "https://careers.example.com/campus")
+    pg.press("#editor input[data-key=site]", "Tab")
+    pg.fill(".su-add-input", "服务端研发工程师，算法工程师")
+    pg.press(".su-add-input", "Enter")
+    pg.wait_for_selector(".su-role:nth-child(2) .su-name:text('算法工程师')")
+    pg.locator(".su-role:nth-child(2) .su-acts .btn").first.click()           # the order of preference is the user's
+    pg.wait_for_selector(".su-role:nth-child(1) .su-name:text('算法工程师')")
+    assert pg.locator("#jobs .su-group .pending").count() == 2           # listed, not in the tracker yet
+    assert "算法工程师" not in (connected / "data" / "applications.md").read_text(encoding="utf-8")
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"jobs-signup-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+
+    pg.click("#signup-send")
+    pg.wait_for_selector(".modal:has-text('v1')")
+    pg.click(".modal .btn.primary")
+    tracker = lambda: (connected / "data" / "applications.md").read_text(encoding="utf-8")   # noqa: E731
+    wait_until(lambda: "算法工程师" in tracker() and "服务端研发工程师" in tracker(), msg="roles in the tracker")
+    pg.wait_for_selector("#jobs .su-group .app-row.in-group .s-applied")
+    assert pg.locator("#jobs .su-group .pending").count() == 0
+    assert "v1" in pg.inner_text("#jobs .su-group .su-head .sent-chip")
+    assert state(server)["subset_versions"]["RES-TECH-EN"]["latest"] == 1
+    pg.wait_for_selector(".su-sent-row")
+    pg.click(".su-sent-row .btn")                                       # what went out, as it was
+    pg.wait_for_selector("#viewing:not(.hidden)")
+    pg.wait_for_selector("#pages img[src*='/versions/1/page/1']")
+
+
 def test_a_cv_edited_in_career_ops_is_never_overwritten(connected, page_all, server):
     pg = page_all
     open_jobs(pg)

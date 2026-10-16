@@ -29,6 +29,7 @@ class Studio:
         self.build_root = self.store.state_dir / "build"
         self.versions = versions.Versions(self.store.state_dir)
         self.extra_state = lambda: {}  # the UI layer adds runtime info (e.g. Claude availability)
+        self.on_subset_renamed: list = []   # (old id, new id) -> None: records kept outside the file follow along
 
     # ---- setup ---------------------------------------------------------
     def ensure_file(self) -> bool:
@@ -103,6 +104,8 @@ class Studio:
             if kind == "subset" and str(data["id"]) != str(item_id):
                 self._rename_builds(str(item_id), str(data["id"]))
                 self.versions.rename(str(item_id), str(data["id"]))
+                for fn in self.on_subset_renamed:
+                    fn(str(item_id), str(data["id"]))
         return self.state()
 
     def _rename_builds(self, old_id: str, new_id: str) -> None:

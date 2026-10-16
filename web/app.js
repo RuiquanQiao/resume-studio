@@ -259,7 +259,7 @@ function applyState(s) {
 function syncEditor() {
   const { kind, id } = ui.sel;
   if (kind === "posting") return;   // not in resume.yaml; jobs.js refreshes it
-  if (kind === "versions") return;   // applyState keeps it current
+  if (kind === "versions" || kind === "signup") return;   // applyState / loadJobs keep them current
   if ((kind === "entry" || kind === "subset") && !currentItem(kind, id)) { select("profile"); return; }
   if (itemHash(kind, id) === ui.formBase) return;
   if (ui.dirty) { ui.conflict = { current: clone(currentItem(kind, id)) }; buildEditor(); return; }
@@ -564,8 +564,8 @@ async function select(kind, id = null) {
 }
 
 // "posting" is not part of resume.yaml: an evaluated job posting from the Applications tab (jobs.js)
-const BUILDERS = () => ({ entry: entryForm, profile: profileForm, sections: sectionsForm, subset: subsetForm, posting: postingView, versions: versionsView });
-const NOT_IN_FILE = new Set(["posting", "versions"]);   // editor pages that aren't one item of resume.yaml
+const BUILDERS = () => ({ entry: entryForm, profile: profileForm, sections: sectionsForm, subset: subsetForm, posting: postingView, versions: versionsView, signup: signupView });
+const NOT_IN_FILE = new Set(["posting", "versions", "signup"]);   // editor pages that aren't one item of resume.yaml
 
 function buildEditor(opts = {}) {
   const { kind, id } = ui.sel;

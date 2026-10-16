@@ -787,6 +787,14 @@ body[data-ws="jobs"] .pane.left #chat { display: flex !important; }
 .fit-req { grid-column: 1 / -1; font-size: 11.5px; color: var(--text-3); }
 .fit-acts { display: flex; align-items: center; gap: 2px; }
 .fit-more { margin: 4px 10px 0; font-size: 12px; }
+/* a narrow editor (a wide preview beside it): the score goes under the name instead of squeezing it */
+.fit-list { container-type: inline-size; }
+@container (max-width: 440px) {
+  .fit-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
+  .fit-score { grid-column: 1 / -1; grid-row: 2; }
+  .fit-name { flex-wrap: wrap; row-gap: 2px; }
+}
+.fit-name .chip { white-space: nowrap; }
 .fit-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .fit-note { flex-basis: 100%; font-size: 11.5px; color: var(--text-3); line-height: 1.4; }
 .resume-picker { width: min(620px, 92vw); max-height: min(72vh, 640px); overflow: auto; padding: 12px; }
@@ -1024,3 +1032,40 @@ mark.w-add { background: color-mix(in srgb, var(--ok) 30%, transparent); }
 .viewing svg.i { color: var(--accent); }
 .viewing .vw-text { flex: 1; min-width: 0; }
 .modal-lines p { margin: 0 0 8px; line-height: 1.55; }
+
+
+/* ---- sign-ups (网申): a careers-site account with its roles, and what went out to each */
+.su-group { border-radius: var(--r-sm); }
+.su-group + .su-group, .su-group + .app-row { margin-top: 2px; }
+.su-head .su-ic { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 22px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.su-head .su-ic svg.i { width: 14px; height: 14px; }
+.app-row.in-group { padding: 4px 8px 4px 48px; }
+.app-row.in-group .e-title { font-weight: 450; font-size: 12.5px; color: var(--text-2); }
+.app-row.pending .e-title { color: var(--text-3); }
+.su-order { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+.app-row .e-meta .chip, .sent-chip { height: 17px; padding: 0 6px; margin-left: 6px; font-size: 10.5px; vertical-align: 1px; }
+.sent-chip { background: var(--ok-soft); color: var(--ok); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; line-height: 17px; }
+.su-subset { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.su-subset .select { width: 240px; max-width: 100%; }
+.su-roles { display: flex; flex-direction: column; margin-bottom: 10px; }
+.su-role { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: var(--r-sm); }
+.su-role + .su-role { border-top: 1px solid var(--line); }
+.su-role:hover { background: var(--hover); }
+.su-n { flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--hover); color: var(--text-2); font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+.su-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.su-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.su-url { font-size: 11.5px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.su-acts { flex: none; display: flex; gap: 1px; opacity: .55; }
+.su-role:hover .su-acts, .su-acts:focus-within { opacity: 1; }
+.su-add-input { width: 100%; height: 32px; padding: 0 10px; border: 1px dashed var(--line-strong); border-radius: var(--r-sm); background: var(--panel); color: var(--text); font: inherit; }
+.su-add-input:focus { outline: none; border-style: solid; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.su-sent { margin-top: 12px; display: flex; flex-direction: column; }
+.su-sent-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 12.5px; }
+.su-sent-row + .su-sent-row { border-top: 1px solid var(--line); }
+.su-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.su-when { font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.su-what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sent-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; margin-bottom: 10px; border-radius: var(--r-sm); background: var(--panel-2); border: 1px solid var(--line); font-size: 12.5px; }
+.sent-bar.done { background: var(--ok-soft); border-color: transparent; }
+.sent-bar.done > svg.i { color: var(--ok); }
+.sent-bar .sb-text { flex: 1; min-width: 160px; }

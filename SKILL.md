@@ -250,6 +250,17 @@ The window connects a job-posting tool. Today that is
   let the user decide.
 - **Statuses go through career-ops' own writer** (`set-status.mjs`); the tracker and reports are read as
   career-ops documents them.
+- **Sign-ups (网申) and what went out** are Resume Studio's own records, in `.studio/applications.json`
+  next to the data file (kept apart from the tool, so they survive switching tools; don't edit it):
+  - A **sign-up** is one account on one company's careers site: the profile is filled there once and
+    several roles are applied to from it, in an order of preference (志愿). Each sign-up has a company,
+    the site, the subset it is filled from, and its roles.
+  - When the user marks it **sent**, the subset is kept as a version (unless it already is one), the roles
+    become career-ops rows through its own path (`reserve-report-num.mjs`, a headed TSV per row in
+    `batch/tracker-additions/`, `merge-tracker.mjs`) as Applied, and that version is pinned on each row. An
+    ordinary posting is marked sent the same way, with its linked subset.
+  - So "which resume did X get" is answered by the pin `{subset, n}`: read that version in
+    `.studio/subsets/<subset>.json`.
 
 ## Online profiles (the Autofill workspace, Ctrl+3)
 

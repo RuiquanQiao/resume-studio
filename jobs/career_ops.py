@@ -738,6 +738,48 @@ class CareerOps(JobTool):
         if p.returncode != 0:
             raise ToolError(t("career-ops couldn't change the status:") + "\n" + self._tail(p, 6))
 
+    def add_applications(self, rows: list[dict]) -> list[str]:
+        """New tracker rows through career-ops' own path: reserve the numbers (reserve-report-num.mjs),
+        one headed TSV per row in batch/tracker-additions/, then merge-tracker.mjs, which locks, dedups,
+        validates the status and sorts. Rows share no URL (it dedups by URL), so a role without its own
+        posting link goes in without one. Returns the new rows' numbers, in order."""
+        if not rows:
+            return []
+        state = {s["id"]: s for s in self.states()}
+        p = self.node("reserve-report-num.mjs", "--count", str(len(rows)), timeout=60)
+        m = re.fullmatch(r"\s*(\d+)(?:-(\d+))?\s*", (p.stdout or "").strip().splitlines()[-1] if p.stdout else "")
+        if p.returncode != 0 or not m:
+            raise ToolError(t("career-ops couldn't reserve tracker numbers:") + "\n" + self._tail(p, 6))
+        first, last = int(m.group(1)), int(m.group(2) or m.group(1))
+        nums = list(range(first, last + 1))
+        width = len(m.group(1))
+        span = f"{first:0{width}d}" + (f"-{last:0{width}d}" if last != first else "")
+        adds = self.data_root() / "batch" / "tracker-additions"
+        adds.mkdir(parents=True, exist_ok=True)
+        clean = lambda v: " ".join(str(v or "").replace("\t", " ").split())   # noqa: E731 - one TSV cell
+        head = ["num", "date", "company", "role", "status", "score", "pdf", "report", "notes", "url"]
+        try:
+            for n, r in zip(nums, rows):
+                st = state.get(str(r.get("status") or "applied"))
+                cells = [str(n), clean(r.get("date")) or time.strftime("%Y-%m-%d"), clean(r.get("company")), clean(r.get("role")),
+                         st["label"] if st else "Applied", "N/A", "❌", "-", clean(r.get("notes")), clean(r.get("url"))]
+                (adds / f"{n:0{width}d}-resume-studio.tsv").write_text("\t".join(head) + "\n" + "\t".join(cells) + "\n",
+                                                                     encoding="utf-8", newline="\n")
+            p = self.node("merge-tracker.mjs", timeout=120)
+            if p.returncode != 0:
+                raise ToolError(t("career-ops couldn't add the rows to its tracker:") + "\n" + self._tail(p, 8))
+        finally:
+            self.node("reserve-report-num.mjs", "--release", span, timeout=60)   # the rows hold the numbers now
+        have = {a["id"]: a for a in self.applications()}
+        out = []
+        for n, r in zip(nums, rows):   # merge-tracker may fold a row into an existing one: say so, never guess
+            a = have.get(str(n))
+            if a is None or _plain(a.get("role", "")) != clean(r.get("role")):
+                raise ToolError(t("career-ops merged “{role}” into another row of its tracker (it looked like a duplicate); "
+                                  "give the role a more distinct name or its own posting link.", role=clean(r.get("role"))))
+            out.append(str(n))
+        return out
+
     def signature(self) -> Any:
         sig: list = []
         for p in (self.tracker_path(), self.data_root() / "cv.md", self.data_root() / "config" / "profile.yml"):
