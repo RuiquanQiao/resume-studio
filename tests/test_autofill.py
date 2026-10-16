@@ -19,6 +19,7 @@ from conftest import ROOT, calls
 
 from autofill import profile, sync
 from autofill.sites import PRESETS
+from core.browser import profile_holder
 from core.store import YamlStore
 
 BROWSER_PY = ROOT / "scripts" / "browser.py"
@@ -407,6 +408,75 @@ def test_browser_command_drives_a_real_page(live, data_file, fake_site):
     assert b["state"] == "running" and b["browser"] == "Microsoft Edge" and b["url"].endswith("/linkedin/profile.html")
     live.req("POST", "/api/browser/stop", {})
     assert live.req("GET", "/api/browser")[1]["state"] == "off"
+
+
+@pytest.fixture
+def risk_site():
+    """The fake sites, and what each page's script reported back (`seen?webdriver=…`)."""
+    seen: list[str] = []
+
+    class Handler(SimpleHTTPRequestHandler):
+        def __init__(self, *a, **k):
+            super().__init__(*a, directory=str(SITES_DIR), **k)
+
+        def log_message(self, *a, **k):
+            pass
+
+        def do_GET(self):
+            if "/seen?" in self.path:
+                seen.append(self.path.split("?", 1)[1])
+                self.send_response(204)
+                self.end_headers()
+                return
+            super().do_GET()
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{srv.server_port}", seen
+    srv.shutdown()
+
+
+def wait_for(cond, what: str, timeout: float = 20.0):
+    end = time.time() + timeout
+    while time.time() < end:
+        v = cond()
+        if v:
+            return v
+        time.sleep(0.1)
+    raise AssertionError(f"timed out waiting for {what}")
+
+
+def test_sign_in_mode_opens_the_same_profile_without_remote_control(live, data_file, risk_site):
+    """A site that drops sign-ins from a driven browser (Xinghe's code never came): sign-in mode is the same
+    profile with no debugging port, so the page sees an ordinary browser; switching back drives it again."""
+    base, seen = risk_site
+    page = base + "/login/risk.html"
+    assert cli(data_file, "open", page).returncode == 0
+    wait_for(lambda: "webdriver=true" in seen, "the driven page")   # driven: the site can tell
+    r = cli(data_file, "sign-in", page)
+    assert r.returncode == 0 and "without remote control" in out(r), out(r)
+    wait_for(lambda: "webdriver=false" in seen, "the plain page")  # the same page, now an ordinary browser
+    st = live.req("GET", "/api/browser")[1]
+    assert st["state"] == "signin" and st["signin_url"] == page
+    prof = data_file.parent / "local" / "browser" / "msedge"
+    assert not (prof / "DevToolsActivePort").exists() or live.inst.browser._live_port(prof / "DevToolsActivePort") is None
+    # nothing drives it meanwhile: commands are refused with what to do
+    r = cli(data_file, "snapshot")
+    assert r.returncode != 0 and "switch back" in out(r)
+    # switching back: the controlled browser again, at the page signed in to
+    seen.clear()
+    st = live.req("POST", "/api/browser/sign-in/done", {})[1]
+    assert st["state"] == "running" and st["url"] == page and st["signin_url"] == ""
+    wait_for(lambda: "webdriver=true" in seen, "the page driven again")
+    assert "Sign in" in out(cli(data_file, "snapshot"))
+    # the user closing the sign-in window themselves just turns the browser off
+    live.req("POST", "/api/browser/sign-in", {"url": page})
+    holder = wait_for(lambda: profile_holder(prof), "the sign-in browser")   # (Edge may hand over to another process)
+    subprocess.run(["taskkill", "/F", "/PID", str(holder)], capture_output=True)
+    wait_for(lambda: live.req("GET", "/api/browser")[1]["state"] == "off", "the browser to be off")
+    assert cli(data_file, "open", page).returncode == 0   # and the next command starts it as usual
+    assert live.req("POST", "/api/browser/sign-in", {"url": "file:///C:/x"})[0] == 409
+    live.req("POST", "/api/browser/stop", {})
 
 
 FAKE_ROUTE_SCRIPT = """async (h) => ({

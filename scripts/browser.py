@@ -14,6 +14,7 @@
     python scripts/browser.py sync linkedin             # check for updates now, by the route
     python scripts/browser.py profile linkedin --stdin <<'JSON' ... JSON   # what the site's profile says now
     python scripts/browser.py report linkedin item.i3 done
+    python scripts/browser.py sign-in https://careers.example.com/   # a site refuses to sign in a driven browser
 
 Every command prints what happened. The browser is a real Chrome or Edge with its own profile, which
 the window starts; this script only talks to the window (standard library only, no venv needed).
@@ -117,6 +118,7 @@ def main() -> int:
     p = sub.add_parser("tab"); p.add_argument("index", type=int)
     sub.add_parser("back")
     sub.add_parser("front")
+    p = sub.add_parser("sign-in", help="reopen the browser without remote control, for the user to sign in"); p.add_argument("url")
     p = sub.add_parser("extract", help="run a read script on the open page"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("route", help="save a site's read route and run it once"); p.add_argument("site")
     p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
@@ -155,6 +157,8 @@ def main() -> int:
     payload: dict = {"cmd": c}
     if c == "open":
         payload.update(url=args.url, new_tab=args.new_tab)
+    elif c == "sign-in":
+        payload["url"] = args.url
     elif c == "snapshot":
         payload.update(dialog=args.dialog, within=args.within, max=args.max)
     elif c in ("click", "select", "type", "upload", "scroll"):

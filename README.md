@@ -74,7 +74,8 @@ with the C# compiler that ships with Windows.
   route, Claude records it anew. There is no browser extension: Resume Studio opens its own Chrome or
   Edge with a profile of its own in `.local/browser/`, where you sign in once by hand. Pushing is
   Claude's, one ticked change at a time, each shown in the chat as a readable step; Claude never types a
-  password. The resume is a reference: where it words something differently, the copy offers it.
+  password. A site that refuses to sign in a driven browser (a verification code that never comes) gets a
+  sign-in mode: the same browser profile, opened without remote control, until you switch back. The resume is a reference: where it words something differently, the copy offers it.
 - **Your languages**: the window speaks your computer's language (English, 简体中文, 日本語, 한국어,
   Español, Français, Deutsch; pick another under the gear in the top bar). A resume can be written in any
   number of languages (Latin, Greek, Cyrillic, Chinese, Japanese, Korean), each with its own text,

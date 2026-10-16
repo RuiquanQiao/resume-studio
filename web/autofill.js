@@ -190,8 +190,44 @@ function listenFill(es) {
   });
   es.addEventListener("browser", (m) => {
     F.browser = JSON.parse(m.data || "{}");
+    paintSignin();
     if (W.ws === "fill") { paintFillBrowser(); renderWsTools(); }
   });
+  api("GET", "/api/browser").then((b) => { if (!F.browser) F.browser = b; paintSignin(); }).catch(() => {});
+}
+
+// ================================================================ sign-in mode
+// Some sites won't sign in a browser that is being driven (their risk checks see it and drop the request).
+// Sign-in mode reopens Resume Studio's browser profile as a plain browser; the bar stays up, in every
+// workspace, until the user switches back.
+async function signInMode(url) {
+  if (!/^https?:\/\//.test(url || "")) return;
+  try { F.browser = await api("POST", "/api/browser/sign-in", { url }); }
+  catch (e) { toast(e.message, { ms: 7000 }); }
+  paintSignin();
+  if (W.ws === "fill") { paintFillBrowser(); renderWsTools(); }
+}
+
+async function signedIn(btn) {
+  if (btn) btn.disabled = true;
+  try { F.browser = await api("POST", "/api/browser/sign-in/done", {}); }
+  catch (e) { toast(e.message, { ms: 7000 }); if (btn) btn.disabled = false; }
+  paintSignin();
+  if (W.ws === "fill") { paintFillBrowser(); renderWsTools(); }
+}
+
+function paintSignin() {
+  const el = $("#signin-bar");
+  if (!el) return;
+  const b = F.browser || {};
+  if (b.state !== "signin") { el.replaceChildren(); el.classList.add("hidden"); return; }
+  let where = b.signin_url || "";
+  try { where = new URL(where).hostname.replace(/^www\./, ""); } catch (e) { /* keep it as it is */ }
+  el.classList.remove("hidden");
+  el.replaceChildren(icon("user"),
+    h("span", { class: "nb-text" }, t("Sign in to {site} in the browser window that just opened. Resume Studio isn't controlling it, so the site sees an ordinary browser.", { site: where })),
+    h("span", { class: "spacer" }),
+    h("button", { class: "btn sm primary", id: "signin-done", onclick: (e) => signedIn(e.currentTarget) }, icon("check"), t("I've signed in: switch back")));
 }
 
 // the resume changed: what it suggests for each copy did too
@@ -664,7 +700,9 @@ function paintFillBrowser() {
   if (v && v.signed_out) {
     out.push(h("div", { class: "fill-banner warn" }, icon("user"),
       h("span", { class: "nb-text" }, t("{site} wants you to sign in. Sign in in the browser window (Resume Studio's browser remembers it), then read the profile again.", { site: site.name })),
-      h("button", { class: "btn sm primary", onclick: openSite }, icon("external"), t("Show the sign-in page"))));
+      h("button", { class: "btn sm primary", onclick: openSite }, icon("external"), t("Show the sign-in page")),
+      h("button", { class: "btn sm", title: t("For a site that refuses to sign in (a code that never arrives): the same browser, not controlled by Resume Studio"),
+        onclick: () => signInMode(/^https?:/.test(b.url || "") ? b.url : site.home) }, t("Sign in without remote control"))));
   }
   if (!b.found) {
     out.push(h("div", { class: "fill-banner warn" }, icon("alert"),
@@ -679,6 +717,7 @@ function paintFillBrowser() {
     h("span", { class: "fb-text" },
       h("b", null, b.browser ? t("Resume Studio's browser ({browser})", { browser: b.browser }) : t("Resume Studio's browser")),
       h("span", { class: "muted" }, running ? (pageName(b) || t("open")) : b.state === "starting" ? t("starting…")
+        : b.state === "signin" ? t("open for you to sign in, without remote control")
         : t("a window of its own; your sign-ins stay in it, apart from your everyday browser"))),
     h("span", { class: "spacer" }),
     running && h("button", { class: "btn sm ghost", onclick: showBrowser, title: t("Bring the browser window to the front") }, t("Show")),
@@ -724,6 +763,7 @@ function renderFillTools(el) {
     h("button", { class: "btn ghost", disabled: b.found === false, title: t("Bring the browser window to the front"), onclick: showBrowser },
       icon("external"), h("span", { class: "lbl" }, t("Show the browser"))),
     b.state === "running" && h("button", { class: "btn icon ghost", title: t("More"), onclick: (e) => openMenu(e.currentTarget, [
+      /^https?:/.test(b.url || "") && { label: t("Sign in here without remote control"), icon: "user", onClick: () => signInMode(b.url) },
       { label: t("Close the browser"), icon: "x", onClick: async () => { F.browser = await api("POST", "/api/browser/stop", {}); paintFillBrowser(); renderWsTools(); } },
     ], { align: "end", onClose: () => setTimeout(renderWsTools, 0) }) }, icon("more"))].filter(Boolean));
 }

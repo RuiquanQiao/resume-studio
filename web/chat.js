@@ -606,6 +606,7 @@ function stepLabel(s, result) {
     case "tab": return [t("Switch to another tab")];
     case "back": return [t("Go back")];
     case "front": return [t("Show the browser")];
+    case "sign-in": return [s.url && /^https?:\/\/[^$]+$/.test(s.url) ? t("Open {where} for you to sign in", { where: stepWhere(s.url) }) : t("Open a page for you to sign in")];
     case "profile": return [t("Send what {site} says to the window", { site })];
     case "signed-out": return [t("Ask you to sign in to {site}", { site })];
     case "extract": return [t("Try a read script on the page")];

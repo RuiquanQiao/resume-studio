@@ -295,6 +295,10 @@ Edge) with a profile of its own in `<skill>/.local/browser/` and drives it over 
   them with a click. A profile may say things the resume doesn't.
 - Sign-ins, verification codes and captchas are always the user's: stop and ask (AskUserQuestion) and
   never type a password. `browser.py signed-out <site>` makes the window show its sign-in banner.
+  Some sites drop a sign-in from a driven browser (their risk check sees `navigator.webdriver`; Xinghe's
+  "send the code" silently never arrives). Then `browser.py sign-in <url>` reopens the same browser
+  profile without remote control for the user to sign in; browser commands are refused until they press
+  "switch back" in the window. Never try to hide that the browser is driven.
 - **The browser command** (standard library only; the window must be open):
 
 ```bash

@@ -41,7 +41,10 @@ these sites). You work in it only through this command (Bash); every call prints
 Work like a careful person: one change at a time, read the dialog before saving, check the value after
 typing (`type` prints what the field now holds), and never click anything you weren't asked to.
 If the site asks for a sign-in, a verification code or a captcha, stop and ask the user to do it in the
-browser window (AskUserQuestion with a "Done" option), then continue. Never type passwords or codes."""
+browser window (AskUserQuestion with a "Done" option), then continue. Never type passwords or codes.
+If the sign-in itself fails here (a code that never arrives, a sign-in that bounces back), the site is refusing
+a driven browser: run `{b} sign-in <the sign-in page's address>`, which reopens the same browser without
+remote control, and ask the user to sign in there and press "switch back" in the window."""
 
 
 def guide(site: Site) -> str:

@@ -386,6 +386,17 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         browser.stop()
         return browser.status()
 
+    @app.route("POST", "/api/browser/sign-in")
+    def browser_sign_in(req: Request):
+        """Sign-in mode: the same profile as a plain browser (no remote control), for sites that refuse one."""
+        bro(lambda: browser.sign_in(str(body(req).get("url") or "")))
+        return browser.status()
+
+    @app.route("POST", "/api/browser/sign-in/done")
+    def browser_signed_in(req: Request):
+        bro(browser.end_sign_in)
+        return browser.status()
+
     def inside_data(path: str) -> str:
         p = Path(path).expanduser().resolve()
         try:
@@ -448,6 +459,10 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
             if cmd == "front":
                 browser.front()
                 return browser.here()
+            if cmd == "sign-in":
+                browser.sign_in(str(b.get("url") or ""))
+                return {"text": "the browser is open for signing in, without remote control; the window asks the user "
+                                "to sign in there and switch back. Until then browser commands are refused."}
             raise HttpError(400, f"unknown command {cmd!r}")
 
         return bro(run)

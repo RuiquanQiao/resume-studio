@@ -435,6 +435,7 @@ function signupView() {
     h("div", { class: "ed-head" }, h("h1", null, s.company), h("span", { class: "id" }, t("Sign-up")), h("span", { class: "spacer" }),
       s.site && h("button", { class: "btn sm", onclick: () => openInBrowser(s.site) }, icon("external"), t("Open the site")),
       h("button", { class: "btn icon ghost", title: t("More"), onclick: (e) => openMenu(e.currentTarget, [
+        s.site && { label: t("Sign in to it in Resume Studio's browser"), icon: "user", onClick: () => signInMode(s.site) },
         { label: t("Delete this sign-up"), icon: "trash", danger: true, onClick: () => deleteSignup(s) }], { align: "end" }) }, icon("more"))),
     card(t("The site"), t("where you fill your profile once"), [
       h("div", { class: "grid2" }, field(t("Company"), "company"), field(t("Careers site"), "site", { placeholder: "https://careers.example.com/campus" })),

@@ -36,7 +36,7 @@ class BrowserError(Exception):
 
 
 COMMANDS = {"open", "snapshot", "text", "click", "type", "select", "press", "scroll", "upload", "screenshot", "tabs",
-            "tab", "back", "front", "profile", "report", "signed-out", "extract", "route", "sync"}
+            "tab", "back", "front", "sign-in", "profile", "report", "signed-out", "extract", "route", "sync"}
 
 
 def steps_of(command: str) -> list[dict]:
@@ -152,7 +152,7 @@ def _step(rest: str, body: str) -> dict | None:
     if cmd not in COMMANDS:   # a cut-off command line (older chats kept only its start)
         return None
     step: dict[str, Any] = {"cmd": cmd}
-    if cmd == "open" and a:
+    if cmd in ("open", "sign-in") and a:
         step["url"] = a[0]
     elif cmd == "snapshot":
         step["part"] = "dialog" if flags.get("dialog") else ("part" if flags.get("in") else "page")
@@ -200,6 +200,30 @@ def find_browser(prefer: str | None = None) -> tuple[str, str] | None:
 
 NAMES = {"chrome": "Google Chrome", "msedge": "Microsoft Edge"}
 
+
+def profile_holder(profile: Path) -> int | None:
+    """The process id of the browser that has this profile open, if one does. Chromium finds its own
+    running instance the same way: on Windows by a hidden window named after the profile folder, elsewhere
+    by the `SingletonLock` link ("host-pid")."""
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+        user32.FindWindowW.restype = wintypes.HWND
+        hwnd = user32.FindWindowW("Chrome_MessageWindow", str(profile))
+        if not hwnd:
+            return None
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        return pid.value or None
+    try:
+        pid = int(os.readlink(profile / "SingletonLock").rsplit("-", 1)[1])
+        os.kill(pid, 0)
+        return pid
+    except (OSError, ValueError, IndexError):
+        return None
+
 # key name -> (key, code, Windows virtual key code, text)
 KEYS = {
     "Enter": ("Enter", "Enter", 13, "\r"), "Tab": ("Tab", "Tab", 9, ""), "Escape": ("Escape", "Escape", 27, ""),
@@ -215,7 +239,7 @@ MODIFIERS = {"alt": 1, "ctrl": 2, "control": 2, "meta": 4, "cmd": 4, "shift": 8}
 class ManagedBrowser:
     def __init__(self, profile_root: Path, log: Path, *, prefer: str | None = None, headless: bool = False,
                  pace: float = 1.0):
-        self.profile_root = Path(profile_root)
+        self.profile_root = Path(profile_root).resolve()   # the browser ignores a relative --user-data-dir
         self.log = Path(log)
         self.prefer = prefer or os.environ.get("RESUME_STUDIO_BROWSER") or None
         self.headless = headless
@@ -223,8 +247,9 @@ class ManagedBrowser:
         self.conn: Connection | None = None
         self.proc: subprocess.Popen | None = None
         self.kind = ""
-        self.state = "off"                    # off | starting | running | error
+        self.state = "off"                    # off | starting | running | error | signin
         self.error = ""
+        self.signin_url = ""                  # sign-in mode: the page it opened at
         self.lock = threading.RLock()
         self.pages: dict[str, dict] = {}      # targetId -> {url, title, opener}
         self.current: str | None = None
@@ -243,7 +268,7 @@ class ManagedBrowser:
             self._lost()
         return {"state": self.state, "error": self.error, "browser": NAMES.get(self.kind or (found or ("", ""))[0], ""),
                 "found": bool(found), "url": page.get("url", ""), "title": page.get("title", ""),
-                "tabs": sum(1 for p in self.pages.values() if p.get("type") == "page")}
+                "tabs": sum(1 for p in self.pages.values() if p.get("type") == "page"), "signin_url": self.signin_url}
 
     def _changed(self) -> None:
         if self.on_change:
@@ -261,6 +286,9 @@ class ManagedBrowser:
         with self.lock:
             if self.conn is not None and not self.conn.closed:
                 return
+            if self.state == "signin":
+                raise BrowserError("The browser is open for signing in, without Resume Studio's control. "
+                                   "When the sign-in is done, switch back in the window (or close that browser window).")
             self._lost()
             found = find_browser(self.prefer)
             if not found:
@@ -312,12 +340,17 @@ class ManagedBrowser:
 
     def _wait_port(self, port_file: Path, timeout: float = 25.0) -> int:
         end = time.time() + timeout
+        gone = 0.0
         while time.time() < end:
             port = self._live_port(port_file)
             if port is not None:
                 return port
+            # the process we started may hand over to another and exit (Edge's startup boost does): the browser
+            # then comes up a moment later, so only a port that never appears after that is a failure
             if self.proc and self.proc.poll() is not None and not port_file.exists():
-                raise BrowserError(f"{NAMES.get(self.kind, 'The browser')} closed right after starting (see {self.log}).")
+                gone = gone or time.time()
+                if time.time() - gone > 10:
+                    raise BrowserError(f"{NAMES.get(self.kind, 'The browser')} closed right after starting (see {self.log}).")
             time.sleep(0.2)
         raise BrowserError(f"{NAMES.get(self.kind, 'The browser')} didn't open its debugging port in time (see {self.log}).")
 
@@ -365,9 +398,117 @@ class ManagedBrowser:
             if sid and (method != "Page.frameNavigated" or not (p.get("frame") or {}).get("parentId")):
                 self.contexts.pop(sid, None)
 
+    # ---- sign-in mode ---------------------------------------------------------
+    # Some sites refuse to sign in a browser that is being driven: their risk checks see
+    # `navigator.webdriver`, which the debugging port turns on, and quietly drop the request (Xinghe's
+    # "send the code" did). Sign-in mode closes Resume Studio's browser and opens the same profile
+    # as a plain browser, with no debugging port, so the user signs in like anywhere else. The
+    # sign-in stays in the profile; switching back closes that window normally (so it saves its
+    # cookies) and the next command opens the controlled browser again.
+    def sign_in(self, url: str) -> dict:
+        if not url.startswith(("http://", "https://")):
+            raise BrowserError("only http(s) addresses can be opened")
+        with self.lock:
+            if self.state == "signin":
+                self._close_signin()
+            self.stop()
+            found = find_browser(self.prefer)
+            if not found:
+                self.state, self.error = "error", "no-browser"
+                self._changed()
+                raise BrowserError("Neither Google Chrome nor Microsoft Edge was found on this computer.")
+            self.kind, exe = found
+            profile = self.profile_dir(self.kind)
+            port = self._live_port(profile / "DevToolsActivePort")   # one left open by an earlier window
+            if port is not None:
+                try:
+                    self._connect(port)
+                except (CdpError, OSError):
+                    pass
+                self.stop()
+            if not self._wait_free(profile):
+                raise BrowserError(f"{NAMES.get(self.kind, 'The browser')} is still open on Resume Studio's profile. Close it, then try again.")
+            profile.mkdir(parents=True, exist_ok=True)
+            self.log.parent.mkdir(parents=True, exist_ok=True)
+            args = [exe, f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
+                    "--disable-search-engine-choice-screen"]
+            if self.headless:
+                args += ["--headless=new", "--window-size=1280,900"]
+            args.append(url)
+            flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+            with open(self.log, "ab") as logf:
+                proc = subprocess.Popen(args, stdout=logf, stderr=logf, stdin=subprocess.DEVNULL, creationflags=flags)
+            self.proc, self.state, self.error, self.signin_url = proc, "signin", "", url
+            threading.Thread(target=self._watch_signin, args=(proc,), daemon=True).start()
+            self._changed()
+            return self.status()
+
+    def _watch_signin(self, proc: subprocess.Popen) -> None:
+        """The user closed the sign-in window themselves: the browser is simply off. The process started may
+        have handed over to another and exited (Edge's startup boost), so what counts is the profile's holder,
+        once it has shown up (or the process started has gone and none came within a few seconds)."""
+        profile = self.profile_dir(self.kind)
+        started, seen = time.time(), False
+        while self.proc is proc and self.state == "signin":
+            if profile_holder(profile):
+                seen = True
+            elif seen or (proc.poll() is not None and time.time() - started > 10):
+                break
+            time.sleep(0.5)
+        with self.lock:
+            if self.proc is proc and self.state == "signin":
+                self.proc, self.state, self.signin_url = None, "off", ""
+                self._changed()
+
+    def end_sign_in(self) -> dict:
+        """Close the sign-in window and bring the controlled browser back at the page signed in to."""
+        with self.lock:
+            url = self.signin_url
+            if self.state == "signin":
+                self._close_signin()
+        if url:
+            self.open(url)
+            self.front()
+        return self.status()
+
+    def _close_signin(self) -> None:
+        profile = self.profile_dir(self.kind)
+        pid = profile_holder(profile) or (self.proc.pid if self.proc is not None and self.proc.poll() is None else None)
+        if pid:
+            # a normal close (WM_CLOSE on Windows, SIGTERM elsewhere), so the browser writes its cookies;
+            # a forced kill could lose the sign-in that just happened
+            if self.headless:   # the tests' browser has no window to close
+                if os.name == "nt":
+                    subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                else:
+                    os.kill(pid, 9)
+            elif os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(pid)], capture_output=True,   # not /T: its children refuse it
+                               creationflags=subprocess.CREATE_NO_WINDOW)
+            else:
+                os.kill(pid, 15)
+        if not self._wait_free(profile, timeout=15):
+            raise BrowserError("The sign-in window didn't close. Close it yourself, then switch back.")
+        self.proc, self.state, self.signin_url = None, "off", ""
+        self._changed()
+
+    @staticmethod
+    def _wait_free(profile: Path, timeout: float = 10.0) -> bool:
+        """Wait for the last browser on this profile to let go of it (a second one would just hand the
+        address to the first and exit). False: one still has it open."""
+        end = time.time() + timeout
+        while profile_holder(profile):
+            if time.time() >= end:
+                return False
+            time.sleep(0.2)
+        return True
+
     def stop(self) -> None:
         """Close the browser (its profile, with the sign-ins, stays)."""
         with self.lock:
+            if self.state == "signin":
+                self._close_signin()
+                return
             if self.conn is not None and not self.conn.closed:
                 try:
                     self.conn.send("Browser.close", timeout=5)

@@ -95,6 +95,8 @@ kbd { font: 11px var(--mono); padding: 1px 5px; border: 1px solid var(--line-str
 .save-status.bad { color: var(--bad); }
 .offline { flex: none; display: flex; align-items: center; gap: 8px; padding: 7px 16px; background: var(--bad-soft); color: var(--bad); font-size: 12.5px; border-bottom: 1px solid var(--line); }
 .offline .i { width: 15px; height: 15px; flex: none; }
+.signin-bar { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 7px 16px; background: var(--accent-soft); font-size: 12.5px; border-bottom: 1px solid var(--line); }
+.signin-bar > svg.i { width: 15px; height: 15px; flex: none; color: var(--accent); }
 
 /* ---------- workspace ---------- */
 .workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--w-left, 320px) 5px minmax(380px, 1fr) 5px var(--w-right, 42%); }
