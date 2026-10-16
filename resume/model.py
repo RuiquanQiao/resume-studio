@@ -277,9 +277,10 @@ def next_entry_id(doc: Any) -> str:
     return f"EXP-{(max(nums) + 1) if nums else 1:03d}"
 
 
-def next_subset_id(doc: Any) -> str:
-    nums = [int(m.group(1)) for v in doc.get("subsets") or []
-            if (m := re.fullmatch(r"(?:SUB|JOB)-(\d+)", str(v.get("id", ""))))]   # JOB-: older files
+def next_subset_id(doc: Any, taken: Any = ()) -> str:
+    """The next SUB-xxx, past every subset's id and any in `taken` (deleted subsets that still have versions)."""
+    ids = [str(v.get("id", "")) for v in doc.get("subsets") or []] + [str(x) for x in taken]
+    nums = [int(m.group(1)) for i in ids if (m := re.fullmatch(r"(?:SUB|JOB)-(\d+)", i))]   # JOB-: older files
     return f"SUB-{(max(nums) + 1) if nums else 1:03d}"
 
 

@@ -10,7 +10,7 @@ from typing import Any
 from core.i18n import system_locale, t
 from core.store import YamlStore, fingerprint, merge_into, to_plain
 
-from . import langs, model
+from . import langs, model, versions
 from .render import all_templates, get_renderer
 from .render.fonts import catalog as font_catalog
 from .render.raster import rasterize
@@ -27,6 +27,7 @@ class Studio:
         self.store = YamlStore(data_path, upgrade=model.migrate)
         self.data_dir = self.store.path.parent
         self.build_root = self.store.state_dir / "build"
+        self.versions = versions.Versions(self.store.state_dir)
         self.extra_state = lambda: {}  # the UI layer adds runtime info (e.g. Claude availability)
 
     # ---- setup ---------------------------------------------------------
@@ -58,6 +59,8 @@ class Studio:
             "resume_langs": langs.catalog(),
             "layout_defaults": model.DEFAULT_LAYOUT,
             "data_path": str(self.store.path),
+            "subset_versions": {str(v.get("id")): self.versions.status(str(v.get("id")), versions.content(doc, v))
+                                for v in doc.get("subsets") or [] if not model.is_all(v)},
             **self.extra_state(),
         }
 
@@ -99,6 +102,7 @@ class Studio:
             self.store.save(doc)
             if kind == "subset" and str(data["id"]) != str(item_id):
                 self._rename_builds(str(item_id), str(data["id"]))
+                self.versions.rename(str(item_id), str(data["id"]))
         return self.state()
 
     def _rename_builds(self, old_id: str, new_id: str) -> None:
@@ -177,8 +181,8 @@ class Studio:
             if not any(model.is_all(v) for v in doc.get("subsets") or []):
                 self._add_all_subset(doc)
             subsets = doc["subsets"]
-            existing = {str(v.get("id")) for v in subsets}
-            base_id = (new_id or "").strip() or model.next_subset_id(doc)
+            existing = {str(v.get("id")) for v in subsets} | self.versions.ids()   # a deleted subset's history keeps its id
+            base_id = (new_id or "").strip() or model.next_subset_id(doc, self.versions.ids())
             if base_id == model.ALL_ID:
                 raise ValueError(t("ALL is reserved for the full set"))
             vid, n = base_id, 2
@@ -240,9 +244,22 @@ class Studio:
         v = to_plain(subset)
         if lang:
             v["lang"] = lang
-        view = model.build_view(doc, v)
-        engine = str(subset.get("engine") or "latex")
-        build_dir = self.build_root / (self._safe(subset_id) + (f"@{self._safe(lang)}" if lang else ""))
+        build = self._safe(subset_id) + (f"@{self._safe(lang)}" if lang else "")
+        return {**self._render_view(model.build_view(doc, v), str(subset.get("engine") or "latex"), build, images),
+                "subset": subset_id, "digest": digest}
+
+    def render_version(self, subset_id: str, n: int, images: bool = True) -> dict:
+        """Render version `n` of a subset as it was, whatever the file says now."""
+        c = self._version(subset_id, n)["content"]
+        view = model.build_view(versions.as_doc(c), c["subset"])
+        return {**self._render_view(view, str(c["subset"].get("engine") or "latex"), self._version_build(subset_id, n), images),
+                "subset": subset_id, "version": n}
+
+    def _version_build(self, subset_id: str, n: int) -> str:
+        return f"{self._safe(subset_id)}@v{int(n)}"
+
+    def _render_view(self, view: dict, engine: str, build: str, images: bool) -> dict:
+        build_dir = self.build_root / build
         result = get_renderer(engine).render(view, build_dir)
         pngs = []
         if images and result.ok and result.pdf:
@@ -250,8 +267,8 @@ class Studio:
             pdf_time = result.pdf.stat().st_mtime
             if not (result.cached and len(pngs) == result.pages and all(p.stat().st_mtime >= pdf_time for p in pngs)):
                 pngs = rasterize(result.pdf, build_dir)
-        return {**result.to_json(), "subset": subset_id, "lang": view["lang"], "digest": digest,
-                "missing": view["missing"], "images": len(pngs), "stamp": int(time.time() * 1000)}
+        return {**result.to_json(), "lang": view["lang"], "missing": view["missing"], "images": len(pngs),
+                "stamp": int(time.time() * 1000)}
 
     def bullet_report(self, result: dict) -> list[dict]:
         """Bullets that take more than one line, with the text, for people and for Claude."""
@@ -268,24 +285,26 @@ class Studio:
                                 "lines": m["n"], "fill": m["fill"], "text": model.bullet_text(b, result["lang"])})
         return out
 
-    def pdf_path(self, subset_id: str) -> Path:
-        return self.build_root / self._safe(subset_id) / "main.pdf"
+    def pdf_path(self, subset_id: str, n: int | None = None) -> Path:
+        return self.build_root / (self._version_build(subset_id, n) if n else self._safe(subset_id)) / "main.pdf"
 
-    def page_image(self, subset_id: str, page: int) -> Path | None:
-        build_dir = self.build_root / self._safe(subset_id)
+    def page_image(self, subset_id: str, page: int, n: int | None = None) -> Path | None:
+        build_dir = self.build_root / (self._version_build(subset_id, n) if n else self._safe(subset_id))
         for p in build_dir.glob("page-*.png"):
             if int(p.stem.split("-")[-1]) == page:
                 return p
         return None
 
-    def export(self, subset_id: str) -> dict:
-        result = self.render(subset_id)
+    def export(self, subset_id: str, n: int | None = None) -> dict:
+        """Copy the PDF (and its source) to the export folder: the subset now, or its version `n`
+        (named <id>-v<n>, so it never replaces the current one)."""
+        result = self.render_version(subset_id, n) if n else self.render(subset_id)
         if not result["ok"]:
             return result
         doc, _ = self.store.load()
         export_dir = self.data_dir / str((doc.get("settings") or {}).get("export_dir") or "exports")
         export_dir.mkdir(parents=True, exist_ok=True)
-        name = self._safe(subset_id)
+        name = self._safe(subset_id) + (f"-v{int(n)}" if n else "")
         out_pdf = export_dir / f"{name}.pdf"
         shutil.copyfile(result["pdf"], out_pdf)
         exported = {"pdf": str(out_pdf)}
@@ -295,3 +314,67 @@ class Studio:
             shutil.copyfile(src, out_src)
             exported["source"] = str(out_src)
         return {**result, "exported": exported}
+
+    # ---- a subset's versions (like commits: kept when the user says so) ----------
+    def _subset_now(self, subset_id: str) -> tuple[Any, Any]:
+        doc, _ = self.store.load()
+        if subset_id == model.ALL_ID:
+            raise ValueError(t("ALL (the full set) has no versions: it is what the subsets are made from"))
+        sub = model.get_item(doc, "subset", subset_id)
+        return doc, sub
+
+    def _version(self, subset_id: str, n: int) -> dict:
+        v = self.versions.get(subset_id, int(n))
+        if v is None:
+            raise KeyError(t("Version {n} doesn't exist", n=n))
+        return v
+
+    def subset_versions(self, subset_id: str) -> dict:
+        """The versions, newest first, and where the subset stands now (None: it was deleted)."""
+        doc, sub = self._subset_now(subset_id)
+        vs = self.versions.all(subset_id)
+        status = self.versions.status(subset_id, versions.content(doc, sub)) if sub is not None else None
+        return {"subset": subset_id, "exists": sub is not None, "status": status,
+                "versions": [versions.Versions.summary(v) for v in reversed(vs)]}
+
+    def commit_subset(self, subset_id: str, note: str = "") -> dict:
+        """Keep what the subset says now as its next version (nothing new when it hasn't changed)."""
+        with self.store.lock:
+            doc, sub = self._subset_now(subset_id)
+            if sub is None:
+                raise KeyError(t("Subset {id} doesn't exist", id=subset_id))
+            v, created = self.versions.commit(subset_id, versions.content(doc, sub), note)
+        return {**self.subset_versions(subset_id), "made": versions.Versions.summary(v), "created": created}
+
+    def set_version_note(self, subset_id: str, n: int, note: str) -> dict:
+        self.versions.set_note(subset_id, int(n), note)
+        return self.subset_versions(subset_id)
+
+    def compare_versions(self, subset_id: str, n: int, against: int | None = None) -> dict:
+        """What changed from version `n` to version `against`, or to now when it's left out;
+        with n = 0, everything in `against` (or now) counts as added."""
+        old = self._version(subset_id, n)["content"] if n else None
+        if against:
+            new = self._version(subset_id, against)["content"]
+        else:
+            doc, sub = self._subset_now(subset_id)
+            if sub is None:
+                raise KeyError(t("Subset {id} doesn't exist", id=subset_id))
+            new = versions.content(doc, sub)
+        return {"from": n, "to": against, "items": versions.compare(old, new)}
+
+    def restore_impact(self, subset_id: str, n: int) -> dict:
+        doc, _ = self._subset_now(subset_id)
+        return versions.impact(doc, self._version(subset_id, n)["content"])
+
+    def restore_version(self, subset_id: str, n: int) -> dict:
+        """Make the subset say what version `n` said. What it says now is kept as a version first
+        (if it isn't one already), so going back can itself be undone."""
+        c = self._version(subset_id, n)["content"]
+        with self.store.lock:
+            doc, sub = self._subset_now(subset_id)
+            if sub is not None:
+                self.versions.commit(subset_id, versions.content(doc, sub), t("Before going back to v{n}", n=n), auto=True)
+            versions.restore(doc, c)
+            self.store.save(doc)
+        return self.state()

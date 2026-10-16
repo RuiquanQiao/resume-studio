@@ -1,6 +1,6 @@
 ---
 name: resume-studio
-description: Resume builder with its own window. An experience library with a private fact layer, subsets of it per kind of role, LaTeX templates, a live one-page preview and PDF export, all in one resume.yaml that the user edits in the window while Claude reads and writes the same file. Resumes can be written in any number of languages; the interface speaks the user's language. Use when the user wants to make or edit a resume / CV, open the resume window, mentions resume studio or resume.yaml, the experience library, exporting a resume PDF, fitting a resume on one page, polishing an entry, or updating their LinkedIn / BOSS直聘 or any other job-site profile from the resume (the Autofill workspace drives its own browser). Triggers also on 简历, 改简历, 经历库, 履歴書, 이력서, Lebenslauf, CV.
+description: Resume builder with its own window. An experience library with a private fact layer, subsets of it per kind of role (each with its own version history), LaTeX templates, a live one-page preview and PDF export, all in one resume.yaml that the user edits in the window while Claude reads and writes the same file. Resumes can be written in any number of languages; the interface speaks the user's language. Use when the user wants to make or edit a resume / CV, open the resume window, mentions resume studio or resume.yaml, the experience library, exporting a resume PDF, fitting a resume on one page, polishing an entry, or updating their LinkedIn / BOSS直聘 or any other job-site profile from the resume (the Autofill workspace drives its own browser). Triggers also on 简历, 改简历, 经历库, 履歴書, 이력서, Lebenslauf, CV.
 ---
 
 # Resume Studio
@@ -141,6 +141,13 @@ subsets:
              font: '', cjk_font: ''}   # keys left out use the defaults
 ```
 
+- **A subset's versions** are like commits: the user keeps one in the window ("定稿" / Keep as v2)
+  whenever the subset goes out, so it is known later exactly what an employer got. A version freezes
+  what the subset renders: its own settings plus the visible layer of the entries it picks (the library
+  is shared, so editing an entry changes every subset that uses it). The fact layer is never kept in a
+  version. They live in `.studio/subsets/<subset id>.json` next to the data file; don't edit them. To
+  see what was sent, read that file (each version's `content` is a small data file of its own); going
+  back to one, previewing and exporting it are done in the window (Versions page).
 - **Resume languages** are codes from `resume/langs.py`: Latin-script languages (en, de, fr, es, it, pt,
   nl, the Nordic and Central European languages, tr, vi, id, ms…), Greek, Cyrillic (ru, uk, bg), and
   Chinese (zh, zh-TW), Japanese (ja) and Korean (ko). Right-to-left scripts are not supported by the

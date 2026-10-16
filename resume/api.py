@@ -122,6 +122,83 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         with render_lock:
             return studio.export(req.params["vid"])
 
+    # ---- a subset's versions ---------------------------------------------
+    def number(req: Request) -> int:
+        try:
+            return int(req.params["n"])
+        except ValueError:
+            raise HttpError(400, "bad version")
+
+    def versions_call(fn):
+        try:
+            return fn()
+        except KeyError as e:
+            raise HttpError(404, str(e).strip("'\""))
+        except ValueError as e:
+            raise HttpError(400, str(e))
+
+    @app.route("GET", "/api/subsets/{vid}/versions")
+    def subset_versions(req: Request):
+        return versions_call(lambda: studio.subset_versions(req.params["vid"]))
+
+    @app.route("POST", "/api/subsets/{vid}/versions")
+    def commit_subset(req: Request):
+        """Keep what the subset says now as its next version, with the user's note."""
+        note = str(body(req).get("note") or "")[:300]
+        return versions_call(lambda: studio.commit_subset(req.params["vid"], note))
+
+    @app.route("PUT", "/api/subsets/{vid}/versions/{n}")
+    def version_note(req: Request):
+        note = str(body(req).get("note") or "")[:300]
+        return versions_call(lambda: studio.set_version_note(req.params["vid"], number(req), note))
+
+    @app.route("GET", "/api/subsets/{vid}/versions/{n}/compare")
+    def compare_versions(req: Request):
+        """From version n to `?to=<m>`, or to now."""
+        to = (req.query.get("to") or [""])[0]
+        try:
+            to = int(to) if to else None
+        except ValueError:
+            raise HttpError(400, "bad version")
+        return versions_call(lambda: studio.compare_versions(req.params["vid"], number(req), to))
+
+    @app.route("GET", "/api/subsets/{vid}/versions/{n}/restore")
+    def restore_impact(req: Request):
+        """What going back to version n would change beyond the subset (shared entries, profile)."""
+        return versions_call(lambda: studio.restore_impact(req.params["vid"], number(req)))
+
+    @app.route("POST", "/api/subsets/{vid}/versions/{n}/restore")
+    def restore_version(req: Request):
+        return versions_call(lambda: studio.restore_version(req.params["vid"], number(req)))
+
+    @app.route("POST", "/api/subsets/{vid}/versions/{n}/render")
+    def render_version(req: Request):
+        with render_lock:
+            return versions_call(lambda: studio.render_version(req.params["vid"], number(req)))
+
+    @app.route("GET", "/api/subsets/{vid}/versions/{n}/pdf")
+    def version_pdf(req: Request):
+        path = studio.pdf_path(req.params["vid"], number(req))
+        if not path.exists():
+            raise HttpError(404, t("Not rendered yet"))
+        return FileResponse(path, "application/pdf")
+
+    @app.route("GET", "/api/subsets/{vid}/versions/{n}/page/{p}")
+    def version_page(req: Request):
+        try:
+            p = int(req.params["p"])
+        except ValueError:
+            raise HttpError(400, "bad page")
+        path = studio.page_image(req.params["vid"], p, number(req))
+        if path is None:
+            raise HttpError(404, "no such page")
+        return FileResponse(path, "image/png")
+
+    @app.route("POST", "/api/subsets/{vid}/versions/{n}/export")
+    def export_version(req: Request):
+        with render_lock:
+            return versions_call(lambda: studio.export(req.params["vid"], number(req)))
+
     # ---- chat (real Claude Code sessions) --------------------------------
     @app.route("GET", "/api/claude")
     def claude_info(req: Request):

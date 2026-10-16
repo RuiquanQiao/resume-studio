@@ -32,6 +32,10 @@ with the C# compiler that ships with Windows.
   (AI agent engineer, HPC, management trainee…): tick which entries go in, reorder, give it its own
   headline, hide contacts, pick template (Classic / Modern / Timeline), language, and every
   layout knob (font size, spacing, margins, colour, paper, font).
+- **Versions of a subset**, like commits: keep one (with a note) whenever it goes out, and later see
+  exactly what was sent. Each version freezes the subset and the wording of the shared entries it picks;
+  compare any two (git-style word diff), preview or export one as it was, or go back to it. Going back
+  keeps what it said before as a version too, and says which other subsets the shared entries also change.
 - **Live preview** as page images; in a subset a second page is flagged as overflow.
 - **Chat with Claude Code** in the left sidebar: streamed replies, tool steps, resumable sessions.
   "Polish with Claude" on an entry sends the request there and shows a before/after diff with undo.

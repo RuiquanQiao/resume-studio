@@ -101,6 +101,8 @@ const ICONS = {
   chevRight: '<path d="m10 7 5 5-5 5"/>',
   chevLeft: '<path d="m14 7-5 5 5 5"/>',
   rewind: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4.5 8.9"/><path d="M4.5 4.5v4.4h4.4"/>',
+  history: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4.5 8.9"/><path d="M4.5 4.5v4.4h4.4"/><path d="M12 8v4.2l2.8 1.8"/>',
+  commit: '<circle cx="12" cy="12" r="3.2"/><path d="M3 12h5.8M15.2 12H21"/>',
   clip: '<path d="m20 11.5-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.4 8.4a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"/>',
   fork: '<circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6 7v2a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V7M12 12v5"/>',
   shield: '<path d="M12 3 5 6v5c0 4.4 3 8.3 7 9.5 4-1.2 7-5.1 7-9.5V6z"/><path d="m9 12 2 2 4-4"/>',
@@ -477,3 +479,79 @@ function syncRange(el) {
   el.style.setProperty("--p", `${((v - min) / (max - min)) * 100}%`);
 }
 document.addEventListener("input", (e) => { if (e.target.matches && e.target.matches("input[type=range]")) syncRange(e.target); });
+
+
+// ================================================================ the diff (lines, then words inside a changed line)
+const DIFF_CELLS = 400000;   // past this much work, a changed block is shown as replaced without the word marks
+function lcsOps(a, b) {
+  const n = a.length, m = b.length;
+  if (n * m > DIFF_CELLS) return [...a.map((x) => ["del", x]), ...b.map((x) => ["add", x])];
+  const w = m + 1, dp = new Uint32Array((n + 1) * w);
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
+    dp[i * w + j] = a[i] === b[j] ? dp[(i + 1) * w + j + 1] + 1 : Math.max(dp[(i + 1) * w + j], dp[i * w + j + 1]);
+  const out = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { out.push(["same", a[i]]); i++; j++; }
+    else if (dp[(i + 1) * w + j] >= dp[i * w + j + 1]) out.push(["del", a[i++]]);
+    else out.push(["add", b[j++]]);
+  }
+  while (i < n) out.push(["del", a[i++]]);
+  while (j < m) out.push(["add", b[j++]]);
+  return out;
+}
+
+// words for Latin scripts, one character each for Chinese, Japanese and Korean
+const WORD = /[぀-ヿ㐀-鿿豈-﫿가-힯]|[\p{L}\p{N}_]+|\s+|[^\s\p{L}\p{N}_]/gu;
+
+// a changed line next to its replacement: the words that differ are marked on both
+function wordMarks(oldLine, newLine) {
+  const ops = lcsOps(oldLine.match(WORD) || [], newLine.match(WORD) || []);
+  const same = ops.filter(([k, s]) => k === "same" && s.trim()).reduce((n, [, s]) => n + s.length, 0);
+  if (same < 0.4 * Math.max(oldLine.length, newLine.length)) return null;   // hardly alike: a plain replacement
+  const side = (kind) => ops.filter(([k]) => k === "same" || k === kind)
+    .map(([k, s]) => (k === "same" ? s : h("mark", { class: "w-" + kind }, s)));
+  return { del: side("del"), add: side("add") };
+}
+
+function diffRows(from, to) {
+  const ops = lcsOps(from ? from.split("\n") : [], to ? to.split("\n") : []);
+  const rows = [];
+  for (let k = 0; k < ops.length;) {
+    if (ops[k][0] === "same") { rows.push({ kind: "same", text: ops[k][1] }); k++; continue; }
+    const dels = [], adds = [];
+    while (k < ops.length && ops[k][0] !== "same") (ops[k][0] === "del" ? dels : adds).push(ops[k++][1]);
+    const marks = dels.map((d, x) => (x < adds.length ? wordMarks(d, adds[x]) : null));
+    dels.forEach((d, x) => rows.push({ kind: "del", text: d, parts: marks[x] && marks[x].del }));
+    adds.forEach((a, x) => rows.push({ kind: "add", text: a, parts: marks[x] && marks[x].add }));
+  }
+  return rows;
+}
+
+const DIFF_CONTEXT = 2;   // unchanged lines kept around a change; longer stretches fold
+const DIFF_OPEN = new Set();   // diffs the user unfolded, by key, unless the caller keeps its own set
+function diffEl(from, to, key, opened = DIFF_OPEN) {
+  const rows = diffRows(from, to);
+  const box = h("div", { class: "diff" });
+  const near = rows.map((r, x) => r.kind !== "same" ||
+    rows.slice(Math.max(0, x - DIFF_CONTEXT), x + DIFF_CONTEXT + 1).some((o) => o.kind !== "same"));
+  const line = (r) => h("div", { class: "dl dl-" + r.kind },
+    h("span", { class: "dl-sign", "aria-hidden": "true" }, { del: "−", add: "+", same: " " }[r.kind]),
+    h("span", { class: "dl-text" }, ...(r.parts || [r.text || " "])));
+  const paint = (all) => {
+    const out = [];
+    for (let x = 0; x < rows.length;) {
+      if (all || near[x] || !rows.some((r) => r.kind !== "same")) { out.push(line(rows[x])); x++; continue; }
+      let y = x;
+      while (y < rows.length && !near[y]) y++;
+      if (y - x < 2) { for (; x < y; x++) out.push(line(rows[x])); continue; }
+      out.push(h("button", { type: "button", class: "dl dl-fold", onclick: (e) => { e.stopPropagation(); opened.add(key); paint(true); } },
+        h("span", { class: "dl-sign" }, "⋯"), h("span", { class: "dl-text" }, t("{n} unchanged line", { n: y - x }, "{n} unchanged lines"))));
+      x = y;
+    }
+    if (!rows.length) out.push(h("div", { class: "dl dl-same" }, h("span", { class: "dl-sign" }, " "), h("span", { class: "dl-text muted" }, t("(empty)"))));
+    box.replaceChildren(...out);
+  };
+  paint(opened.has(key));
+  return box;
+}

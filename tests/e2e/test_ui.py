@@ -358,6 +358,47 @@ def test_jobs_create_switch_delete(page, server):
     wait_until(lambda: value_of(page, "#subset-select") == "ALL", msg="back on ALL")
 
 
+def test_subset_versions_keep_compare_preview_and_go_back(page, server):
+    chip = page.locator("#subset-version")
+    assert chip.inner_text().strip() == "还没定稿"
+    chip.click()
+    page.click(".float .menu-item:has-text('定稿为 v1')")
+    page.fill(".modal input", "秋招第一批")
+    page.click(".modal button:text-is('保留')")
+    wait_until(lambda: chip.inner_text().strip() == "v1", msg="kept as v1")
+    # a shared entry it uses changes elsewhere (Claude, by hand): the subset has changed since v1
+    eid = subset(server)["entries"][0]
+    e = next(x for x in state(server)["doc"]["entries"] if x["id"] == eid)
+    e["bullets"] = [*e.get("bullets", []), {"en": "Shipped v2 to every user", "zh": "上线第二版"}]
+    assert server.req("PUT", "/api/item", {"kind": "entry", "id": eid, "data": e, "base": None})[0] == 200
+    wait_until(lambda: chip.inner_text().strip() == "v1 · 有改动", msg="changed since v1")
+    page.click(".nav-row:has-text('版本')")
+    page.wait_for_selector(".ed-head h1:text('版本')")
+    page.click(".vshow")                                                   # what changed since v1, git-style
+    page.wait_for_selector(".vdiff .dl-add")
+    assert "Shipped v2 to every user" in page.inner_text(".vdiff .dl-add")
+    page.fill(".vnote-input", "加了一条")
+    page.click(".vkeep .btn.primary")
+    wait_until(lambda: chip.inner_text().strip() == "v2", msg="kept as v2")
+    assert page.inner_text(".vrow[data-n='2'] .vtext") == "加了一条"
+    # look at v1 as it was, then back to now
+    page.click(".vrow[data-n='1'] .vline .btn.sm")
+    page.wait_for_selector("#viewing:not(.hidden)")
+    page.wait_for_selector("#pages img[src*='/versions/1/page/1']")
+    wait_rendered(page)
+    page.click("#viewing button")
+    page.wait_for_selector("#viewing.hidden", state="attached")
+    page.wait_for_selector("#pages img[src*='/subsets/RES-TECH-EN/page/1']")
+    # go back to v1: now is v2 already, so nothing extra is kept
+    page.click(".vrow[data-n='1'] .btn.icon")
+    page.click(".float .menu-item:has-text('退回到 v1')")
+    page.wait_for_selector(".modal:has-text('就是 v2')")
+    page.click(".modal button:text('退回到这一版')")
+    wait_until(lambda: chip.inner_text().strip() == "v1", msg="back to v1")
+    e = next(x for x in state(server)["doc"]["entries"] if x["id"] == eid)
+    assert "Shipped v2" not in json.dumps(e) and page.locator(".vrow").count() == 2
+
+
 def test_job_from_all_starts_full_and_has_own_headline(page_all, server):
     pg = page_all
     pg.click("#subset-menu-btn")

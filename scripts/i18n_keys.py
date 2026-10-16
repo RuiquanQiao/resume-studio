@@ -24,7 +24,7 @@ _JS_STR = r'"((?:[^"\\]|\\.)*)"'
 _JS_CALL = re.compile(r"\bt\(\s*" + _JS_STR + r"(?:\s*,\s*\{[^{}]*\}\s*,\s*" + _JS_STR + r")?")
 # tables whose values are translated where they are used
 _JS_TABLES = {
-    "app.js": ["NOTE_TIPS", "AI_LABELS", "FONT_GROUPS"],
+    "app.js": ["NOTE_TIPS", "AI_LABELS", "FONT_GROUPS", "CHANGE_NAMES"],
     "chat.js": ["BUILTIN_DESC"],
     "jobs.js": ["STATE_NAMES", "DECISIONS", "IMPORTANCE", "VALUE_NAMES", "CHECK_NAMES", "STEP_NAMES", "MODE_NAMES", "WEB_STEPS"],
     "autofill.js": ["OPS", "APPLIED", "SECTION_NAMES", "FIELD_NAMES", "ADD_ONE"],

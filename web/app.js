@@ -48,12 +48,13 @@ function store(key, val) {
 }
 
 // promise-based dialogs (prettier than prompt/confirm and they work in every webview)
-function modal({ title, message = "", input = null, placeholder = "", ok = t("OK"), danger = false }) {
+// `optional`: an empty input is an answer too ("" rather than null, which is cancel); `message` may be a node
+function modal({ title, message = "", input = null, placeholder = "", ok = t("OK"), danger = false, optional = false }) {
   return new Promise((resolve) => {
     const root = $("#modal-root");
-    const field = input !== null ? h("input", { value: input, placeholder, spellcheck: "false" }) : null;
+    const field = input !== null ? h("input", { value: input, placeholder, spellcheck: "false", maxlength: optional ? 300 : null }) : null;
     const close = (val) => { root.replaceChildren(); document.removeEventListener("keydown", onKey, true); resolve(val); };
-    const done = () => close(field ? field.value.trim() || null : true);
+    const done = () => close(field ? (optional ? field.value.trim() : field.value.trim() || null) : true);
     const onKey = (e) => {
       if (e.key === "Escape") { e.stopPropagation(); close(field ? null : false); }
       if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); done(); }
@@ -61,7 +62,7 @@ function modal({ title, message = "", input = null, placeholder = "", ok = t("OK
     document.addEventListener("keydown", onKey, true);
     root.replaceChildren(h("div", { class: "modal-back", onmousedown: (e) => { if (e.target === e.currentTarget) close(field ? null : false); } },
       h("div", { class: "modal", role: "dialog", "aria-modal": "true" },
-        h("h3", null, title), message && h("p", null, message), field,
+        h("h3", null, title), message && (message instanceof Node ? message : h("p", null, message)), field,
         h("div", { class: "acts" },
           h("button", { class: "btn", onclick: () => close(field ? null : false) }, t("Cancel")),
           h("button", { class: "btn " + (danger ? "danger-soft" : "primary"), onclick: done }, ok)))));
@@ -246,12 +247,19 @@ function applyState(s) {
   renderLibrary();
   renderPreviewToolbar();
   renderComposerState();
+  // the versions page is open and the subset's text changed (here, by Claude, by hand): where it stands may have too
+  if (ui.sel.kind === "versions" && VS.for === ui.sel.id && VS.list && !VS.loading && VS.digest !== s.digest &&
+      JSON.stringify(versionStatus(ui.sel.id)) !== JSON.stringify(VS.list.status)) {
+    for (const k of Object.keys(VS.compare)) if (k.endsWith(">now")) delete VS.compare[k];
+    loadVersions(ui.sel.id, { quiet: true });
+  }
 }
 
 // state changed elsewhere (Claude, another window): rebuild the form if it is stale
 function syncEditor() {
   const { kind, id } = ui.sel;
   if (kind === "posting") return;   // not in resume.yaml; jobs.js refreshes it
+  if (kind === "versions") return;   // applyState keeps it current
   if ((kind === "entry" || kind === "subset") && !currentItem(kind, id)) { select("profile"); return; }
   if (itemHash(kind, id) === ui.formBase) return;
   if (ui.dirty) { ui.conflict = { current: clone(currentItem(kind, id)) }; buildEditor(); return; }
@@ -330,6 +338,7 @@ function renderTopbar() {
   for (const v of jobs) opts.push({ value: v.id, label: v.label || v.id, group: t("Subsets"), hint: `${langShort(v.lang)} · ${TEMPLATE_NAMES(v.template)}` });
   if (!jobs.length) opts.push({ value: "__none", label: t("No subsets yet"), desc: t("Click ··· on the right to create one"), group: t("Subsets"), disabled: true });
   ui.w.subset.setOptions(opts, ui.subsetId);
+  renderVersionChip();
 }
 
 function openSubsetMenu() {
@@ -343,6 +352,10 @@ function openSubsetMenu() {
     job && { label: t("Subset settings"), hint: t("Name, ID, headline"), icon: "settings", onClick: () => select("subset", ui.subsetId) },
     { label: t("New subset"), hint: t("Blank, tick entries yourself"), icon: "plus", onClick: () => newSubset(null) },
     v && { label: job ? t("Duplicate this subset") : t("New subset (with every entry ticked)"), icon: "copy", onClick: () => newSubset(ui.subsetId) },
+    job && "sep",
+    job && { label: t("Keep as v{n}…", { n: ((versionStatus() || {}).latest || 0) + 1 }), icon: "commit", disabled: !!(versionStatus() || {}).same_as,
+      hint: (versionStatus() || {}).same_as ? t("Same as v{n}", { n: versionStatus().same_as }) : "", onClick: () => commitVersion() },
+    job && { label: t("Version history"), icon: "history", onClick: () => select("versions", ui.subsetId) },
     "sep",
     { header: job ? t("Ask Claude about this subset") : t("Ask Claude about all entries") },
     ...(bilingual ? langs().map((l) => ({ label: t("Fill in the {lang} version", { lang: langName(l) }),
@@ -362,6 +375,8 @@ async function switchSubset(id) {
   if (ui.headPending) await ui.headPending();   // a headline being typed belongs to the subset it was typed in
   ui.subsetId = id;
   store("subset", id);
+  VS.viewing = null;
+  paintViewing();
   const v = subset();
   if (v && langs().includes(v.lang)) ui.editLang = v.lang;
   ui.missing = [];
@@ -369,7 +384,7 @@ async function switchSubset(id) {
   renderLibrary();
   renderPreviewToolbar();
   renderComposerState();
-  if (ui.sel.kind === "subset") select(id === ALL ? "profile" : "subset", id === ALL ? null : id);   // ALL has no job settings
+  if (ui.sel.kind === "subset" || ui.sel.kind === "versions") select(id === ALL ? "profile" : ui.sel.kind, id === ALL ? null : id);   // ALL has neither
   else buildEditorKeepDraft();
   clearPages();
   scheduleRender(0);
@@ -428,7 +443,13 @@ function renderLibrary() {
   const nav = (kind, label, ic, id = null) => h("button", { class: "nav-row" + (ui.sel.kind === kind ? " on" : ""), onclick: () => select(kind, id) }, icon(ic), label);
   const job = v && v.id !== ALL;
   lib.append(nav("profile", t("Profile"), "user"), nav("sections", t("Sections & resume settings"), "grid"));
-  if (job) lib.append(nav("subset", t("Subset settings"), "settings", v.id));
+  if (job) {
+    const st = versionStatus(v.id) || {};
+    const row = nav("versions", t("Versions"), "history", v.id);
+    row.append(h("span", { class: "nav-count" + (st.latest && !st.same_as ? " changed" : "") },
+      !st.latest ? "" : st.same_as ? `v${st.same_as}` : t("v{n} · changed", { n: st.latest })));
+    lib.append(nav("subset", t("Subset settings"), "settings", v.id), row);
+  }
   lib.append(h("div", { class: "lib-hint" + (job ? " job" : "") }, job
     ? [h("b", null, subsetName(v)), ": " + t("tick = in this subset's resume")]
     : [h("b", null, "ALL"), ": " + t("every entry lives here. Create a subset, then tick the ones it needs")]));
@@ -543,11 +564,12 @@ async function select(kind, id = null) {
 }
 
 // "posting" is not part of resume.yaml: an evaluated job posting from the Applications tab (jobs.js)
-const BUILDERS = () => ({ entry: entryForm, profile: profileForm, sections: sectionsForm, subset: subsetForm, posting: postingView });
+const BUILDERS = () => ({ entry: entryForm, profile: profileForm, sections: sectionsForm, subset: subsetForm, posting: postingView, versions: versionsView });
+const NOT_IN_FILE = new Set(["posting", "versions"]);   // editor pages that aren't one item of resume.yaml
 
 function buildEditor(opts = {}) {
   const { kind, id } = ui.sel;
-  if (kind === "posting") { ui.draft = null; ui.formBase = null; ui.dirty = false; paintEditor(opts); return; }
+  if (NOT_IN_FILE.has(kind)) { ui.draft = null; ui.formBase = null; ui.dirty = false; paintEditor(opts); return; }
   const item = currentItem(kind, id);
   if (!ui.conflict) {
     ui.draft = clone(item);
@@ -564,7 +586,7 @@ function paintEditor({ flash = false, keepScroll = true } = {}) {
   const scroll = mid.scrollTop;
   const wrap = h("div", { class: "editor" });
   if (ui.conflict) wrap.append(conflictBanner());
-  if (ui.draft == null && ui.sel.kind !== "sections" && ui.sel.kind !== "posting") wrap.append(h("p", { class: "muted" }, t("Nothing here.")));
+  if (ui.draft == null && ui.sel.kind !== "sections" && !NOT_IN_FILE.has(ui.sel.kind)) wrap.append(h("p", { class: "muted" }, t("Nothing here.")));
   else wrap.append(...[BUILDERS()[ui.sel.kind]()].flat(Infinity).filter(Boolean));
   mid.replaceChildren(wrap);
   if (keepScroll) mid.scrollTop = scroll;
@@ -1183,6 +1205,243 @@ function subsetForm() {
   ];
 }
 
+// ================================================================ a subset's versions (kept like commits)
+// A version freezes what the subset says, shared entries included; the window never makes one by
+// itself except right before going back to an older one, so that step can be undone too.
+const VS = {
+  for: null, list: null, loading: false,   // GET /api/subsets/<for>/versions
+  open: null,                              // "n>m" whose changes are shown (m = "now" for the current text)
+  compare: {},                             // "n>m" -> {items} | {error}
+  viewing: null,                           // {subset, n}: the preview shows that version instead of now
+};
+const versionStatus = (id = ui.subsetId) => (S && S.subset_versions && S.subset_versions[id]) || null;
+const versionsUrl = (id, rest = "") => `/api/subsets/${encodeURIComponent(id)}/versions${rest}`;
+const fmtWhen = (at) => { const d = new Date(at); return isNaN(d) ? at || "" : d.toLocaleString(LOCALE, { dateStyle: "medium", timeStyle: "short" }); };
+
+function renderVersionChip() {
+  const b = $("#subset-version");
+  const v = subset();
+  const st = versionStatus();
+  if (!b) return;
+  b.classList.toggle("hidden", !v || isAll() || !st);
+  if (!v || isAll() || !st) return;
+  const changed = st.latest && !st.same_as;
+  b.className = "vchip" + (changed ? " changed" : "") + (st.latest ? "" : " none");
+  b.replaceChildren(icon("history"), h("span", null, !st.latest ? t("No versions yet") : changed ? t("v{n} · changed", { n: st.latest }) : `v${st.same_as}`));
+  setTip(b, !st.latest ? t("Keep this subset as a version when you send it, so you always know what went out")
+    : changed ? t("Changed since v{n}: keep it as a version when you send it", { n: st.latest }) : t("Same as v{n}", { n: st.same_as }));
+  b.onclick = () => openVersionMenu(b);
+}
+
+function openVersionMenu(anchor) {
+  const st = versionStatus() || {};
+  const next = (st.latest || 0) + 1;
+  openMenu(anchor, [
+    { header: subsetName(subset()) },
+    { label: t("Keep as v{n}…", { n: next }), icon: "commit", disabled: !!st.same_as,
+      hint: st.same_as ? t("Same as v{n}", { n: st.same_as }) : "", onClick: () => commitVersion() },
+    { label: t("Version history"), icon: "history", hint: st.count ? t("{n} version", { n: st.count }, "{n} versions") : "",
+      onClick: () => select("versions", ui.subsetId) },
+  ], { align: "start", focusFirst: false });
+}
+
+async function loadVersions(id, { quiet = false } = {}) {
+  if (VS.loading && VS.for === id) return;
+  if (VS.for !== id) { VS.for = id; VS.list = null; VS.open = null; VS.compare = {}; }
+  VS.loading = true;
+  VS.digest = S && S.digest;   // the file state it was read against (one re-read per change, never a loop)
+  try { VS.list = await api("GET", versionsUrl(id)); }
+  catch (e) { VS.list = { error: e.message, versions: [] }; }
+  finally { VS.loading = false; }
+  if (ui.sel.kind === "versions" && ui.sel.id === id) paintEditor({ keepScroll: true, flash: !quiet && false });
+}
+
+async function commitVersion(note = null) {
+  const id = ui.subsetId;
+  const st = versionStatus(id) || {};
+  const n = (st.latest || 0) + 1;
+  if (note === null) {
+    note = await modal({ title: t("Keep as v{n}", { n }), optional: true, input: "", ok: t("Keep"),
+      message: t("A version freezes what this subset says now, shared entries included. Send it, and you can always see, export or go back to exactly this."),
+      placeholder: t("A note, e.g. sent with the autumn applications") });
+    if (note === null) return;
+  }
+  await saveDraft();
+  if (ui.headPending) await ui.headPending();
+  try {
+    const r = await api("POST", versionsUrl(id), { note });
+    VS.for = id; VS.list = r;
+    applyState(await api("GET", "/api/state"));
+    toast(r.created ? t("Kept as v{n}", { n: r.made.n }) : t("Nothing changed since v{n}", { n: r.made.n }));
+    if (ui.sel.kind === "versions") paintEditor({ keepScroll: true });
+  } catch (e) { toast(t("Couldn't keep the version: {error}", { error: e.message })); }
+}
+
+async function editVersionNote(v) {
+  const note = await modal({ title: t("Note for v{n}", { n: v.n }), optional: true, input: v.note || "", ok: t("Save"),
+    placeholder: t("A note, e.g. sent with the autumn applications") });
+  if (note === null) return;
+  try { VS.list = await api("PUT", versionsUrl(VS.for, "/" + v.n), { note }); paintEditor({ keepScroll: true }); }
+  catch (e) { toast(e.message); }
+}
+
+// the changes from version a to b (b = "now": the subset as it is), shown like `git show`
+async function toggleChanges(a, b) {
+  const key = `${a}>${b}`;
+  VS.open = VS.open === key ? null : key;
+  paintEditor({ keepScroll: true });
+  if (VS.open !== key || VS.compare[key]) return;
+  try { VS.compare[key] = await api("GET", versionsUrl(VS.for, `/${a}/compare` + (b === "now" ? "" : `?to=${b}`))); }
+  catch (e) { VS.compare[key] = { error: e.message }; }
+  if (VS.open === key) paintEditor({ keepScroll: true });
+}
+
+const CHANGE_NAMES = { added: "Added", removed: "Removed", changed: "Changed" };
+function changesEl(key) {
+  const r = VS.compare[key];
+  if (!r) return h("p", { class: "muted vdiff-empty" }, t("Comparing…"));
+  if (r.error) return h("p", { class: "muted vdiff-empty" }, r.error);
+  if (!r.items.length) return h("p", { class: "muted vdiff-empty" }, t("No differences"));
+  return h("div", { class: "vdiff" }, r.items.map((it) => h("div", { class: "vd-item" },
+    h("div", { class: "vd-head" }, h("span", { class: "vd-name" }, it.name), h("span", { class: "chip vd-" + it.status }, t(CHANGE_NAMES[it.status]))),
+    diffEl(it.before, it.after, `${key}:${it.kind}:${it.id}`))));
+}
+
+function versionsView() {
+  const id = ui.sel.id;
+  const v = subsets().find((x) => x.id === id) || null;
+  const head = h("div", { class: "ed-head" }, h("h1", null, t("Versions")), h("span", { class: "id" }, v ? subsetName(v) : id));
+  if (VS.for !== id || !VS.list) { loadVersions(id, { quiet: true }); return [head, h("p", { class: "muted" }, t("Loading…"))]; }
+  if (VS.list.status && v && VS.digest !== S.digest && JSON.stringify(versionStatus(id)) !== JSON.stringify(VS.list.status)) {   // the text changed since it was read
+    for (const k of Object.keys(VS.compare)) if (k.endsWith(">now")) delete VS.compare[k];
+    setTimeout(() => loadVersions(id, { quiet: true }), 0);
+  }
+  const L = VS.list;
+  if (L.error) return [head, h("p", { class: "muted" }, L.error)];
+  const st = L.status;
+  const out = [head];
+  if (st) {
+    const next = (st.latest || 0) + 1;
+    const note = h("input", { class: "vnote-input", placeholder: t("A note, e.g. sent with the autumn applications"), maxlength: 300, spellcheck: "false",
+      "aria-label": t("Note for v{n}", { n: next }), onkeydown: (e) => { if (e.key === "Enter" && !e.isComposing && !keep.disabled) keep.click(); } });
+    const keep = h("button", { class: "btn primary", disabled: !!st.same_as, onclick: () => commitVersion(note.value.trim()) }, icon("commit"), t("Keep as v{n}", { n: next }));
+    const nowKey = st.latest ? `${st.latest}>now` : null;
+    out.push(card(t("Now"), !st.latest ? t("No versions yet") : st.same_as ? t("Same as v{n}", { n: st.same_as }) : t("Changed since v{n}", { n: st.latest }), [
+      h("p", { class: "card-p muted" }, t("Keep a version whenever this subset goes out. The library is shared, so a version also freezes the wording of every entry it picks; notes and evidence stay private and aren't kept.")),
+      h("div", { class: "vkeep" }, note, keep),
+      nowKey && st.changed && h("button", { class: "btn sm ghost vshow" + (VS.open === nowKey ? " on" : ""), "aria-expanded": String(VS.open === nowKey), onclick: () => toggleChanges(st.latest, "now") },
+        icon(VS.open === nowKey ? "down" : "chevRight"), t("What changed since v{n}", { n: st.latest })),
+      nowKey && VS.open === nowKey && changesEl(nowKey),
+    ]));
+  } else {
+    out.push(h("div", { class: "banner info" }, icon("alert"), h("span", null, t("This subset was deleted. Its versions stay: preview, export, or go back to one to bring the subset back."))));
+  }
+  const rows = L.versions.map((x) => {
+    const key = `${x.n - 1}>${x.n}`;
+    const open = VS.open === key;
+    const viewing = VS.viewing && VS.viewing.subset === id && VS.viewing.n === x.n;
+    return h("div", { class: "vrow" + (open ? " open" : "") + (viewing ? " viewing" : ""), "data-n": x.n },
+      h("div", { class: "vline" },
+        h("button", { class: "vtoggle", "aria-expanded": String(open), title: x.n > 1 ? t("What v{n} changed from v{m}", { n: x.n, m: x.n - 1 }) : t("What v1 holds"),
+          onclick: () => toggleChanges(x.n - 1, x.n) }, icon(open ? "down" : "chevRight"), h("span", { class: "vnum" }, "v" + x.n)),
+        h("div", { class: "vmain" },
+          h("div", { class: "vtext" + (x.note ? "" : " muted") }, x.note || (x.auto ? t("Kept by itself before going back") : t("No note"))),
+          h("div", { class: "vmeta" }, fmtWhen(x.at), st && st.same_as === x.n ? " · " + t("same as now") : "")),
+        h("button", { class: "btn sm" + (viewing ? " on" : ""), onclick: () => (viewing ? stopViewing() : viewVersion(id, x.n)) }, icon("file"), viewing ? t("Back to now") : t("Preview")),
+        h("button", { class: "btn icon sm ghost", title: t("More"), "aria-label": t("More"), "aria-haspopup": "menu", onclick: (e) => versionRowMenu(e.currentTarget, x) }, icon("more"))),
+      open && changesEl(key));
+  });
+  out.push(card(t("History"), L.versions.length ? t("{n} version", { n: L.versions.length }, "{n} versions") : "",
+    rows.length ? rows : h("p", { class: "muted card-p" }, t("Nothing kept yet. Keep a version above when you send this subset."))));
+  return out;
+}
+
+function versionRowMenu(anchor, x) {
+  const st = (VS.list && VS.list.status) || null;
+  openMenu(anchor, [
+    st && { label: t("Compare with now"), icon: "git", onClick: () => toggleChanges(x.n, "now") },
+    { label: t("Export PDF"), hint: `${VS.for}-v${x.n}.pdf`, icon: "file", onClick: () => exportVersion(VS.for, x.n) },
+    { label: t("Edit note"), icon: "pen", onClick: () => editVersionNote(x) },
+    "sep",
+    { label: st ? t("Go back to v{n}…", { n: x.n }) : t("Bring the subset back as v{n}…", { n: x.n }), icon: "undo", onClick: () => restoreVersion(x.n) },
+  ], { minWidth: 240 });
+}
+
+async function viewVersion(id, n) {
+  VS.viewing = { subset: id, n };
+  if (ui.sel.kind === "versions") paintEditor({ keepScroll: true });
+  paintViewing();
+  clearPages();
+  setBadge({ busy: true });
+  try {
+    const res = await api("POST", versionsUrl(id, `/${n}/render`));
+    if (!VS.viewing || VS.viewing.n !== n || VS.viewing.subset !== id) return;
+    await showPages(res);
+    setBadge(res);
+  } catch (e) { setBadge({ ok: false, errors: [e.message] }); }
+}
+
+function stopViewing() {
+  if (!VS.viewing) return;
+  VS.viewing = null;
+  paintViewing();
+  if (ui.sel.kind === "versions") paintEditor({ keepScroll: true });
+  clearPages();
+  scheduleRender(0);
+}
+
+function paintViewing() {
+  const box = $("#viewing");
+  const on = VS.viewing && VS.viewing.subset === ui.subsetId;
+  box.classList.toggle("hidden", !on);
+  renderIssues();
+  if (!on) { box.replaceChildren(); return; }
+  box.replaceChildren(icon("history"), h("span", { class: "vw-text" }, t("Previewing v{n}, as it was kept. Edits you make now don't show here.", { n: VS.viewing.n })),
+    h("button", { class: "btn sm", onclick: stopViewing }, t("Back to now")));
+}
+
+async function exportVersion(id, n) {
+  try {
+    const r = await api("POST", versionsUrl(id, `/${n}/export`));
+    if (!r.ok) { toast(t("Export failed; see the error above the preview")); setBadge(r); return; }
+    const file = r.exported.pdf.split(/[\\/]/).pop();
+    toast(t("Exported {file}", { file }), { ms: 6000, action: { label: t("Open folder"), fn: () => api("POST", "/api/reveal", { path: r.exported.pdf }) } });
+  } catch (e) { toast(t("Export failed: {error}", { error: e.message })); }
+}
+
+async function restoreVersion(n) {
+  const id = VS.for;
+  let imp;
+  try { imp = await api("GET", versionsUrl(id, `/${n}/restore`)); } catch (e) { toast(e.message); return; }
+  const st = VS.list && VS.list.status;
+  const name = subsetName(subsets().find((x) => x.id === id)) || id;
+  const list = (xs) => xs.map((x) => t("“{name}”", { name: x })).join(t(", "));
+  const lines = [!st ? t("“{name}” comes back as it was in v{n}.", { name, n })
+    : st.same_as ? t("What “{name}” says now is v{m}, so you can come back to it.", { name, m: st.same_as })
+    : t("What “{name}” says now is kept as a version first, so you can come back to it.", { name })];
+  if (imp.entries.length) lines.push(t("These library entries go back to their wording then: {list}.", { list: list(imp.entries) }));
+  if (imp.others.length) lines.push(t("Other subsets that use them change too: {list}.", { list: list(imp.others) }));
+  if (imp.back.length) lines.push(t("Deleted since, and put back into the library: {list}.", { list: list(imp.back) }));
+  if (imp.profile) lines.push(t("Your name and contacts go back too, and every subset shows them."));
+  if (imp.sections) lines.push(t("Section titles go back too."));
+  const ok = await modal({ title: t("Go back to v{n}?", { n }), message: h("div", { class: "modal-lines" }, lines.map((l) => h("p", null, l))),
+    ok: t("Go back to it"), danger: imp.others.length > 0 || imp.profile });
+  if (!ok) return;
+  await saveDraft();
+  try {
+    const s = await api("POST", versionsUrl(id, `/${n}/restore`));
+    VS.viewing = null; VS.compare = {}; VS.open = null;
+    applyState(s);
+    if (ui.subsetId !== id && subsets().some((x) => x.id === id)) await switchSubset(id);
+    paintViewing();
+    await loadVersions(id, { quiet: true });
+    const kept = VS.list && VS.list.versions[0];
+    toast(kept && kept.auto && kept.n !== n ? t("Back to v{n}; what it said before is v{m}", { n, m: kept.n }) : t("Back to v{n}", { n }));
+    clearPages();
+    scheduleRender(0);
+  } catch (e) { toast(t("Couldn't go back: {error}", { error: e.message })); }
+}
+
 // ================================================================ AI polish (runs in the chat)
 const AI_LABELS = { polish: "Polish", translate: "Another language", fit: "Fit on one line", sync: "Update from the project", batch_translate: "Fill in a language", batch_fit: "Fit on one line", batch_sync: "Update from the project",
   autofill_read: "Read a profile", autofill_apply: "Update a profile" };
@@ -1457,6 +1716,7 @@ function scheduleRender(delay = 600) {
 async function doRender() {
   const r = ui.render;
   if (!ui.subsetId) { clearPages(); setBadge(null); return; }
+  if (VS.viewing && VS.viewing.subset === ui.subsetId) return;   // it shows a kept version, not now
   if (r.busy) { r.again = true; return; }
   r.busy = true;
   const vid = ui.subsetId;
@@ -1466,7 +1726,7 @@ async function doRender() {
   try {
     const res = await api("POST", `/api/subsets/${encodeURIComponent(vid)}/render`);
     clearTimeout(busyTimer);
-    if (vid === ui.subsetId) {
+    if (vid === ui.subsetId && !(VS.viewing && VS.viewing.subset === vid)) {
       r.last = res;
       if (res.ok) { ui.lines[res.lang] = res.lines || {}; ui.linesFor[res.lang] = vid; ui.missing = res.missing || []; }
       await showPages(res);
@@ -1499,7 +1759,7 @@ async function measureEditLang(vid) {
 function renderIssues() {
   const box = $("#issues");
   const v = subset();
-  if (!v || !S) { box.classList.add("hidden"); return; }
+  if (!v || !S || (VS.viewing && VS.viewing.subset === v.id)) { box.classList.add("hidden"); return; }   // they're about now, not a kept version
   const lang = v.lang;
   const long = longBullets(lang);
   const missing = (ui.missing || []).filter((m) => entryById(m.id));
@@ -1584,18 +1844,19 @@ function currentZoomFactor() { return ui.zoom === "fit" ? pageWidth() / paperWid
 async function showPages(res) {
   const box = $("#pages");
   if (!res.ok) return; // keep the last good preview on errors
-  if (res.cached && box.dataset.subset === res.subset && box.children.length) return; // same pages already shown
-  box.dataset.subset = res.subset;
-  const vid = encodeURIComponent(res.subset);
+  const shown = res.subset + (res.version ? "@v" + res.version : "");
+  if (res.cached && box.dataset.subset === shown && box.children.length) return; // same pages already shown
+  box.dataset.subset = shown;
+  const base = `/api/subsets/${encodeURIComponent(res.subset)}` + (res.version ? `/versions/${res.version}` : "");
   if (!res.images) { // no pdftoppm: fall back to the browser's PDF viewer
-    box.replaceChildren(h("iframe", { class: "pdf-frame", src: `/api/subsets/${vid}/pdf?t=${res.stamp}#view=FitH`, style: "height:calc(100vh - 150px)" }));
+    box.replaceChildren(h("iframe", { class: "pdf-frame", src: `${base}/pdf?t=${res.stamp}#view=FitH`, style: "height:calc(100vh - 150px)" }));
     return;
   }
   const imgs = await Promise.all(Array.from({ length: res.images }, (_, i) => new Promise((resolve) => {
     const img = new Image();
     img.alt = t("Page {n}", { n: i + 1 });
     img.onload = img.onerror = () => resolve(img);
-    img.src = `/api/subsets/${vid}/page/${i + 1}?t=${res.stamp}`;
+    img.src = `${base}/page/${i + 1}?t=${res.stamp}`;
   })));
   const w = pageWidth();
   const all = res.subset === ALL;
@@ -1604,6 +1865,7 @@ async function showPages(res) {
 }
 
 async function exportPdf() {
+  if (VS.viewing && VS.viewing.subset === ui.subsetId) return exportVersion(VS.viewing.subset, VS.viewing.n);   // what the preview shows
   await saveDraft();
   $("#export-btn").disabled = true;
   try {
