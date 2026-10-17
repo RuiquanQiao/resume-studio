@@ -164,8 +164,9 @@ company".
 - With Resume Studio's tracker chosen, sign-ups and applications stay in `.studio/hunt/`, and "Copy to
   career-ops" writes rows through its own `merge-tracker.mjs` when the user wants its analytics.
 - One-time **import** from career-ops' `data/applications.md` (statuses mapped through `states.yml`).
-- The connector contract (`jobs/base.py`) gets a second implementation, so the Applications tab in the
-  Resume workspace works with either.
+- The connector contract (`jobs/base.py`) gets a second implementation, so a posting's page in Resume
+  works with either. (The Resume workspace's Applications tab was removed on 2026-10-17, see
+  `docs/LAYOUT.md`.)
 
 ## Building it, in order
 

@@ -14,6 +14,7 @@
       <span class="logo" aria-hidden="true"></span>
       <span>Resume Studio</span>
     </div>
+    <button id="chat-toggle" class="btn ghost chat-toggle" aria-pressed="true" title="Show or hide the chat (the same chat in every workspace)"><span class="lbl">Claude</span><span class="tab-dot hidden"></span></button>
     <div id="ws-switch" class="ws-switch" role="tablist" aria-label="Workspace">
       <button class="ws-btn" role="tab" data-ws="resume" title="Resume: library, subsets and preview (Ctrl+1)"><span class="lbl" data-t>Resume</span></button>
       <button class="ws-btn" role="tab" data-ws="jobs" title="Job search: postings, pipeline, follow-ups (Ctrl+2)"><span class="lbl" data-t>Job search</span><span id="ws-jobs-dot" class="tab-dot hidden"></span></button>
@@ -33,15 +34,8 @@
   <div id="signin-bar" class="signin-bar hidden" role="status"></div>
 
   <div id="workspace" class="workspace">
-    <aside class="pane left" aria-label="Library and chat">
-      <div class="tabs" role="tablist">
-        <button class="tab" role="tab" data-tab="library" data-t>Library</button>
-        <button class="tab" role="tab" data-tab="jobs" data-t>Applications<span id="jobs-dot" class="tab-dot hidden"></span></button>
-        <button class="tab" role="tab" data-tab="chat" data-t>Chat<span id="chat-dot" class="tab-dot hidden"></span></button>
-      </div>
-      <div id="library" class="tabpane" role="tabpanel"></div>
-      <div id="jobs" class="tabpane hidden" role="tabpanel"></div>
-      <div id="chat" class="tabpane hidden" role="tabpanel">
+    <aside class="pane left" aria-label="Chat">
+      <div id="chat" class="chat-pane">
         <div class="chat-head">
           <span id="chat-select-slot" class="slot-grow"></span>
           <button id="chat-new" class="btn icon ghost" title="New chat"></button>
@@ -73,7 +67,10 @@
       </div>
     </aside>
     <div class="gutter" data-gutter="left" title="Drag to resize, double-click to reset"></div>
-    <main id="editor" class="pane middle" aria-label="Editor"></main>
+    <main id="middle" class="pane middle" aria-label="Editor">
+      <nav id="library" class="outline" aria-label="Outline"></nav>
+      <div id="editor" class="doc"></div>
+    </main>
     <div class="gutter" data-gutter="right" title="Drag to resize, double-click to reset"></div>
     <section class="pane right" aria-label="Preview">
       <div class="preview-toolbar">

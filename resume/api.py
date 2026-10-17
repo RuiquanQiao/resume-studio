@@ -488,7 +488,9 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
                 path = Path(str(p))
                 add_dirs.append(str(path.parent if path.is_file() else path))
         roots = [str(p) for p in (doc.get("settings") or {}).get("project_roots") or []]
-        context = prompts.ui_context(data_path, subset, entry, roots)
+        # what the window shows (the workspace and the company / platform / page open there), one line
+        screen = " ".join(str(b.get("screen") or "").split())[:300]
+        context = prompts.ui_context(data_path, subset, entry, roots, screen)
         targets = [(str(e.get("id")), [str(p) for p in e.get("evidence") or []]) for e in synced]
 
         def done(ok: bool) -> None:

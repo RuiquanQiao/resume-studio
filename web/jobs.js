@@ -1,4 +1,4 @@
-// Applications tab: a job-posting tool (today career-ops) behind the window.
+// Job search: a job-posting tool (today career-ops) behind the window.
 // The tool evaluates postings and keeps the tracker; Resume Studio shows them, runs the tool's work as
 // Claude Code chats in the tool's folder, and makes the tailored resume itself (a job in resume.yaml).
 // Everything here speaks the generic shapes in jobs/base.py, never career-ops' files directly.
@@ -10,7 +10,7 @@ const J = {
   detail: null,          // GET /api/jobs/app/<id> for the posting open in the middle pane
   progress: {},          // task -> {step: state, state, error} while installing / updating
   update: null,          // the last update check
-  draft: "",             // the posting being pasted (kept while the tab re-renders)
+  draft: "",             // the posting being pasted (kept while its box is closed)
   filter: "all",
   loading: null,
   fit: {},               // application id -> GET /api/jobs/app/<id>/fit (the subsets ranked for it)
@@ -105,8 +105,8 @@ async function openPosting(id) {
   if (!S || (ui.sel.kind === "posting" && ui.sel.id === id)) return;   // S: the resume is still loading
   J.detail = (J.data && J.data.applications.find((a) => a.id === id)) || { id };
   J.detail = { ...J.detail, loading: true };
+  if (W.ws !== "resume") setWorkspace("resume");   // its page sits next to the resume preview
   await select("posting", id);
-  renderJobs();
   refreshPosting();
 }
 
@@ -120,36 +120,15 @@ async function jobChat(url, body = {}) {
   if (r.doc) applyState(r);   // tailor made a job
   ui.chat.list = [r.chat, ...ui.chat.list.filter((c) => c.id !== r.chat.id)];
   await openChat(r.chat.id);
-  setTab("chat");
+  showChat();
   return r;
 }
 
-// ================================================================ left: the Applications tab
+// ================================================================ around the tool's interface, in Job search
+// The Resume workspace had an Applications tab with the tool's list, the paste box and the warnings; since
+// the window has one chat and Job search shows the tool's own interface, they live here (docs/LAYOUT.md).
 function renderJobs() {
-  const el = $("#jobs");
-  if (!el) return;
-  const scroll = el.scrollTop;
-  el.replaceChildren(...jobsPane());
-  el.scrollTop = scroll;
-  const dot = $("#jobs-dot");
-  if (dot) dot.classList.toggle("hidden", !Object.values(J.progress).some((p) => p.state === "running"));
-}
-
-function jobsPane() {
-  if (!J.data) return [h("div", { class: "jobs-loading muted" }, t("Loading…"))];
-  const st = J.data.status;
-  const busy = J.progress.install && J.progress.install.state === "running";
-  if (!st.installed || busy) return [connectCard(st), huntHint()];
-  return [
-    ...jobsBanners(st),
-    evaluateBox(),
-    applicationsList(),
-    h("div", { class: "jobs-foot" },
-      h("button", { class: "linkish", onclick: () => api("POST", "/api/open", { url: st.tool.homepage }) }, `${st.tool.name} ${st.version || ""}`.trim()),
-      h("span", null, "· " + st.tool.license),
-      h("span", { class: "spacer" }),
-      h("button", { class: "btn icon sm ghost", title: t("{name} settings", { name: st.tool.name }), onclick: () => openSettings("jobs") }, icon("settings"))),
-  ];
+  paintJobspace();
 }
 
 function connectCard(st) {
@@ -191,17 +170,7 @@ function jobsBanners(st) {
       h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => jobChat("/api/jobs/cv/resolve", { file }) }, icon("sparkle"), t("Bring the changes in")),
       h("button", { class: "btn sm ghost", onclick: () => overwriteCv(file) }, t("Use my library"))));
   }
-  const prof = st.profile || {};
-  if (st.needs_setup) {
-    out.push(h("div", { class: "jobs-banner" }, icon("user"),
-      h("span", { class: "nb-text" }, t("{name} doesn't know what you're looking for yet (roles, location, salary), so its scores would follow someone else's targets.", { name: st.tool.name })),
-      h("button", { class: "btn sm primary", disabled: !ui.chat.available, title: t("Claude fills it from your profile's fact layer and your resume subsets, and asks only for what's missing"),
-        onclick: () => setupProfile(false) }, icon("sparkle"), t("Fill it from my resume"))));
-  } else if (prof.stale) {
-    out.push(h("div", { class: "jobs-banner" }, icon("refresh"),
-      h("span", { class: "nb-text" }, t("Your fact layer or resume subsets changed since {name}'s profile was filled from them.", { name: st.tool.name })),
-      h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => setupProfile(true) }, icon("sparkle"), t("Update its profile"))));
-  }
+  // its targeting profile (missing or stale) has its button in the top bar
   return out;
 }
 
@@ -218,50 +187,40 @@ function jobsAfterResumeChange() {
   jobsResumeTimer = setTimeout(() => { if (jobsReady()) loadJobs({ quiet: true }); }, 1500);
 }
 
-function evaluateBox() {
-  const ta = h("textarea", { id: "posting-input", rows: 2, placeholder: t("Paste a job posting: its link, or the whole text"), spellcheck: "false",
+// a posting to evaluate: its link or its text, pasted into a box under the button
+function openEvaluate(anchor) {
+  const ta = h("textarea", { id: "posting-input", rows: 3, placeholder: t("Paste a job posting: its link, or the whole text"), spellcheck: "false",
     oninput: (e) => { J.draft = e.target.value; autosize(e.target); go.disabled = !J.draft.trim(); },
     onkeydown: (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); evaluatePosting(); } } }, J.draft);
   const go = h("button", { class: "btn primary sm", disabled: !J.draft.trim() || !ui.chat.available, onclick: evaluatePosting }, icon("sparkle"), t("Evaluate"));
-  requestAnimationFrame(() => autosize(ta));
-  return h("div", { class: "eval-box" }, ta,
+  const panel = h("div", { class: "eval-box eval-float", role: "dialog", "aria-label": t("Evaluate a posting") }, ta,
     h("div", { class: "eval-bar" },
       h("span", { class: "eval-hint" }, t("Claude runs {name}'s evaluation in a new chat; it takes a few minutes.", { name: jobsTool().name })),
       go));
+  requestAnimationFrame(() => autosize(ta));
+  openFloat(anchor, panel, { minWidth: 460, focus: ta, onClose: () => setTimeout(renderWsTools, 0) });
 }
 
 async function evaluatePosting() {
   const posting = J.draft.trim();
   if (!posting) return;
+  closeFloat();
   const r = await jobChat("/api/jobs/evaluate", { posting });
-  if (r) { J.draft = ""; renderJobs(); }
+  if (r) J.draft = "";
 }
 
+// the tool's evaluations as a list, for a version of it without an interface of its own
 function applicationsList() {
   const apps = J.data.applications || [];
   const open = (a) => !["rejected", "discarded", "skip"].includes(a.status);
   const shown = J.filter === "open" ? apps.filter(open) : apps;
   const head = h("div", { class: "lib-head apps-head" },
     h("span", null, h("span", { class: "t" }, t("Applications")), apps.length ? h("span", { class: "n" }, apps.length) : null),
-    h("span", { class: "row", style: "gap:2px" },
-      apps.length > 0 && uiSeg([{ value: "all", label: t("All") }, { value: "open", label: t("Active") }], J.filter, (v) => { J.filter = v; renderJobs(); }, { cls: "sm", label: t("Show") }),
-      h("button", { class: "btn icon sm ghost", title: t("More"), onclick: (e) => jobsMenu(e.currentTarget) }, icon("more"))));
-  if (!apps.length) {
-    return h("div", { class: "lib-section" }, head, h("div", { class: "empty" },
-      h("div", { class: "t" }, t("No applications yet")),
-      h("div", null, t("Paste a posting above: its evaluation and score appear here, and you can make a resume for it.")),
-      huntHint()));
-  }
-  return h("div", { class: "lib-section" }, head,
+    apps.length > 0 && uiSeg([{ value: "all", label: t("All") }, { value: "open", label: t("Active") }], J.filter, (v) => { J.filter = v; paintJobspace(); }, { cls: "sm", label: t("Show") }));
+  if (!apps.length) return h("div", { class: "lib-section" }, head, h("div", { class: "empty" }, h("div", { class: "t" }, t("No applications yet"))));
+  return h("div", { class: "lib-section", id: "jobs-list" }, head,
     shown.map(appRow),
-    !shown.length && h("div", { class: "muted", style: "padding:8px 10px;font-size:12.5px" }, t("Nothing active right now")),
-    huntHint());
-}
-
-// sign-ups on companies' own sites (网申) and the progress of every application live in the 网申 workspace
-function huntHint() {
-  return h("button", { class: "hunt-hint linkish", onclick: () => setWorkspace("fill") }, icon("globe"),
-    t("Applying on companies' own sites (网申), and tracking every application: the Applying workspace (Ctrl+3)"));
+    !shown.length && h("div", { class: "muted", style: "padding:8px 10px;font-size:12.5px" }, t("Nothing active right now")));
 }
 
 // what went out to an application: the subset and version pinned when it was sent
@@ -586,7 +545,7 @@ function postingLink(v) {
     h("span", { class: "nb-text" }, t("Sent for {n} posting", { n: ps.length }, "Sent for {n} postings"), ": ",
       ps.map((p, i) => {
         const a = apps.find((x) => x.id === String(p.id));
-        return [i ? ", " : "", a ? h("button", { class: "linkish", onclick: () => { setTab("jobs"); openPosting(a.id); } }, [a.company, a.role].filter(Boolean).join(" — "))
+        return [i ? ", " : "", a ? h("button", { class: "linkish", onclick: () => openPosting(a.id) }, [a.company, a.role].filter(Boolean).join(" — "))
           : t("application #{id} in {tool}", { id: p.id, tool: p.tool })];
       })));
 }
@@ -607,7 +566,7 @@ function paintJobsSettings(el = $("#jobs-settings")) {
   const label = h("label", null, t("Job postings: {name}", { name }), h("span", { class: "hint" }, t("Evaluates postings and tracks applications; open source, runs in its own folder")));
   if (!st.installed) {
     el.replaceChildren(label, h("div", { class: "row wrap" }, h("span", { class: "muted" }, t("Not connected")),
-      h("button", { class: "btn sm", onclick: () => { closeSettings(); setTab("jobs"); } }, t("Set it up in Applications"))));
+      h("button", { class: "btn sm", onclick: () => { closeSettings(); setWorkspace("jobs"); } }, t("Set it up in Job search"))));
     return;
   }
   const up = J.update;
@@ -726,7 +685,7 @@ const W = {
   path: "/",             // the page open in the frame
   frameBase: null,       // the address the frame was loaded from (reloads when the server comes back)
   pendingPath: null,     // a page to open once the frame is up
-  chat: "off",           // Claude's chat on the left of the workspace
+  chat: "on",            // the chat pane on the left (every workspace)
   autoStarted: false,
 };
 
@@ -783,6 +742,7 @@ function setWorkspace(ws, { path = null } = {}) {
     store("jobs-web-used", "1");
     paintJobspace();
     startWeb();
+    loadJobs({ quiet: true });   // what changed in the tool meanwhile (a cv.md edited there, a failed check)
   } else if (ws === "fill") {
     paintFill();
     loadFill();
@@ -791,12 +751,24 @@ function setWorkspace(ws, { path = null } = {}) {
   renderWsTools();
 }
 
-function setJobsChat(on) {
+// the chat pane on the left, in every workspace: shown or hidden from the Claude button in the top bar
+function setChatPane(on) {
   W.chat = on ? "on" : "off";
-  document.body.dataset.jchat = W.chat;
-  store("jobs-chat", W.chat);
+  document.body.dataset.chat = W.chat;
+  store("chat-pane", W.chat);
   if (on) { renderChat(); setTimeout(() => $("#chat-input").focus(), 0); }
-  renderWsTools();
+  paintChatToggle();
+  if (typeof applyZoom === "function" && ui.zoom === "fit") applyZoom();
+}
+
+function paintChatToggle() {
+  const b = $("#chat-toggle");
+  if (!b) return;
+  b.classList.toggle("on", W.chat === "on");
+  b.setAttribute("aria-pressed", String(W.chat === "on"));
+  const dot = b.querySelector(".tab-dot");
+  if (dot) dot.classList.toggle("hidden", !(ui.chat.running || (ui.chat.busy || []).length || ui.chat.waiting.size));
+  if (dot) dot.classList.toggle("wait", ui.chat.waiting.size > 0);
 }
 
 async function refreshWeb() {
@@ -845,6 +817,11 @@ function paintJobspace() {
   const old = el.querySelector(".js-center");
   if (old) old.remove();
   if (!webUp()) el.append(h("div", { class: "js-center" }, jobspaceCard()));
+  // what Resume Studio has to say about the tool (a check failed, cv.md changed there), above its interface
+  const warn = el.querySelector(".js-banners");
+  if (warn) warn.remove();
+  const banners = jobsReady() && !(J.progress.install && J.progress.install.state === "running") ? jobsBanners(J.data.status) : [];
+  if (banners.length) el.prepend(h("div", { class: "js-banners" }, banners));
   const dot = $("#ws-jobs-dot");
   if (dot) dot.classList.toggle("hidden", !["preparing", "starting"].includes(web.state) || W.ws === "jobs");
 }
@@ -858,8 +835,8 @@ function jobspaceCard() {
   if (!web.available) {
     return h("div", { class: "js-card" },
       h("h2", null, t("This version of {name} has no web interface of its own", { name })),
-      h("p", null, t("Its evaluations and tracker are still in the Applications tab next to your resume, and every mode is in “All of {name}” above.", { name })),
-      h("div", { class: "row" }, h("button", { class: "btn primary", onclick: () => { setWorkspace("resume"); setTab("jobs"); } }, t("Open Applications"))));
+      h("p", null, t("Its evaluations are listed below; every mode is in “All of {name}” above.", { name })),
+      applicationsList());
   }
   if (web.state === "error") {
     return h("div", { class: "js-card" },
@@ -904,9 +881,10 @@ function renderWsTools() {
   if (Float.cur && el.contains(Float.cur.anchor)) return;   // a menu hangs off these buttons: redrawn when it closes
   if (W.ws === "fill") { renderFillTools(el); return; }
   const name = jobsTool().name;
-  const out = [h("button", { class: "btn ghost" + (W.chat === "on" ? " on" : ""), "aria-pressed": String(W.chat === "on"),
-    title: t("Claude, working in {name}'s folder (it can still edit your resume)", { name }), onclick: () => setJobsChat(W.chat !== "on") },
-  icon("chat"), h("span", { class: "lbl" }, "Claude"), ui.chat.running && h("span", { class: "tab-dot" }))];
+  const out = [];
+  if (jobsReady()) out.push(h("button", { class: "btn ghost", id: "evaluate-btn", "aria-haspopup": "dialog", disabled: !ui.chat.available,
+    title: t("Claude runs {name}'s evaluation in a new chat; it takes a few minutes.", { name }), onclick: (e) => openEvaluate(e.currentTarget) },
+  icon("sparkle"), h("span", { class: "lbl" }, t("Evaluate a posting"))));
   if (jobsReady()) out.push(h("button", { class: "btn ghost", title: t("Every mode of {name}, each one as a chat with Claude", { name }), onclick: (e) => openLauncher(e.currentTarget) }, icon("apps"), h("span", { class: "lbl" }, t("All of {name}", { name }))));
   const a = webUp() ? webApp() : null;
   if (a) {
@@ -921,14 +899,16 @@ function renderWsTools() {
   const prof = (st && st.profile) || {};
   if (jobsReady() && (st.needs_setup || prof.stale)) {
     out.push(h("button", { class: "btn sm" + (st.needs_setup ? " primary" : ""), disabled: !ui.chat.available,
-      title: t("Claude fills it from your profile's fact layer and your resume subsets, and asks only for what's missing"),
+      title: (st.needs_setup ? t("{name} doesn't know what you're looking for yet (roles, location, salary), so its scores would follow someone else's targets.", { name: st.tool.name }) + " "
+        : t("Your fact layer or resume subsets changed since {name}'s profile was filled from them.", { name: st.tool.name }) + " ")
+        + t("Claude fills it from your profile's fact layer and your resume subsets, and asks only for what's missing"),
       onclick: () => setupProfile(!st.needs_setup) }, icon("user"), st.needs_setup ? t("Fill its profile from my resume") : t("Update its profile")));
   }
   if (jobsReady()) out.push(h("button", { class: "btn icon ghost", title: t("More"), onclick: (e) => webMenu(e.currentTarget) }, icon("more")));
   el.replaceChildren(...out);
 }
 
-// the resume for the posting open in the frame: the same ranked subsets as in Applications
+// the resume for the posting open in the frame: its subsets ranked, as on its page in Resume
 function openResumePicker(anchor, a) {
   const panel = h("div", { class: "resume-picker", role: "dialog", "aria-label": t("Resume to send") });
   const paint = () => {
@@ -939,9 +919,12 @@ function openResumePicker(anchor, a) {
       h("div", { class: "rp-head" }, h("b", null, t("Resume to send")), h("span", { class: "muted" }, [a.company, a.role].filter(Boolean).join(" — "))),
       ...subsetChoices(a, F, { onDone }),
       fitFoot(a, onDone),
-      linked.length > 0 && h("div", { class: "rp-acts" },
-        h("button", { class: "btn sm", onclick: () => { closeFloat(); previewSubset(linked[0].id); } }, icon("file"), t("Preview in Resume")),
-        h("button", { class: "btn sm primary", onclick: async () => { closeFloat(); await previewSubset(linked[0].id); exportPdf(); } }, t("Export PDF")))]
+      h("div", { class: "rp-acts" },
+        h("button", { class: "btn sm ghost", id: "posting-page-btn", title: t("Its verdict, how you fit, its requirements and tailoring, next to the resume preview"),
+          onclick: () => { closeFloat(); openPosting(a.id); } }, icon("bolt"), t("Open its page in Resume")),
+        h("span", { class: "spacer" }),
+        linked.length > 0 && h("button", { class: "btn sm", onclick: () => { closeFloat(); previewSubset(linked[0].id); } }, icon("file"), t("Preview in Resume")),
+        linked.length > 0 && h("button", { class: "btn sm primary", onclick: async () => { closeFloat(); await previewSubset(linked[0].id); exportPdf(); } }, t("Export PDF")))]
       .filter(Boolean));
   };
   const onDone = (kind) => { if (kind === "close") closeFloat(); else paint(); };
@@ -1003,6 +986,7 @@ window.addEventListener("message", (e) => {
   W.path = String(d.path || "/");
   store("jobs-path", W.path);
   renderWsTools();
+  renderComposerState();   // the chat says which page is open
 });
 // a click inside the frame never reaches this page: close open menus when it takes the focus
 window.addEventListener("blur", () => setTimeout(() => {
@@ -1015,8 +999,12 @@ function initWorkspaces() {
     b.onclick = () => setWorkspace(b.dataset.ws);
   }
   W.path = store("jobs-path") || "/";
-  W.chat = store("jobs-chat") === "on" ? "on" : "off";
-  document.body.dataset.jchat = W.chat;
+  W.chat = store("chat-pane") === "off" ? "off" : "on";
+  document.body.dataset.chat = W.chat;
+  const toggle = $("#chat-toggle");
+  toggle.prepend(icon("chat"));
+  toggle.onclick = () => setChatPane(W.chat !== "on");
+  paintChatToggle();
   F.site = store("fill-site") || F.site;
   F.tab = store("fill-tab") === "push" ? "push" : "copy";
   restoreHunt();

@@ -258,6 +258,9 @@ class ChatRunner:
         self.cwd = cwd
         self.tools = tools or DEFAULT_TOOLS
         self.workspaces: dict[str, Workspace] = {}
+        # what every chat in the data folder is told besides the window's own context (the tracker's and
+        # the browser's commands), so a chat can do anything from any workspace
+        self.notes: list[Any] = []    # callable() -> str
         self.turns: dict[str, Turn] = {}
         self.limits: dict = {}         # the plan's usage windows, from Claude Code's rate_limit_event
 
@@ -325,6 +328,8 @@ class ChatRunner:
                     pass
             if ws.context:
                 context = ws.context()
+        if ws is None or ws.context is None:
+            context = "\n".join([context.rstrip(), *(n() for n in self.notes)]).strip() + "\n"
         self.store.append(chat_id, msg)
         if chat.get("title") in (None, "", *UNTITLED, t("New chat")):
             self.store.update_meta(chat_id, title=_title_from(text))

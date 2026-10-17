@@ -15,7 +15,7 @@ def tools_note(data_path: str) -> str:
     return f"""\
 ## The job-hunt tracker
 
-The user tracks their applications in Resume Studio's own tracker, shown in this workspace as three tables:
+The user tracks their applications in Resume Studio's own tracker, shown in the Applying workspace as three tables:
 applications (one per company + role), companies, and platforms (the online profiles below). Read and change
 it only through this command (Bash); every call prints what is there now, and the window refreshes by itself:
 

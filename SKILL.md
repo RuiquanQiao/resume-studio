@@ -48,11 +48,14 @@ python "<skill>/scripts/studio.py" --window
 
 ## The chat in the window is Claude Code
 
-Every chat in the window's Chat tab is a real Claude Code session: `claude -p --resume <session>`, run
-in the data file's folder, loading the user's CLAUDE.md and installed skills, with no replaced system
-prompt and no forced reply language. The window only appends a short note with
-`--append-system-prompt-file`: whether the user is looking at ALL or a subset, which entry is open, and
-where the data file and this SKILL.md are. So when called from the window, just follow the rules below.
+The window has one chat, on the left of all three workspaces (Resume, Job search, Applying). Every chat
+in it is a real Claude Code session: `claude -p --resume <session>`, run in the data file's folder, loading
+the user's CLAUDE.md and installed skills, with no replaced system prompt and no forced reply language. The
+window only appends a short note with `--append-system-prompt-file`: whether the user is looking at ALL or a
+subset, which entry is being edited, what else is on screen (a company, an application, a platform, a
+career-ops page), where the data file and this SKILL.md are, and the tracker's and the browser's commands
+(below). So when called from the window, just follow the rules below; "this" in a message usually means
+what is on screen. (A chat started in Job search runs in career-ops' folder instead, see below.)
 
 The window talks to Claude Code over the SDK's two-way stream-json channel (`--input-format
 stream-json --permission-prompt-tool stdio`), so everything the terminal has is there: permission
@@ -217,16 +220,16 @@ subsets:
 - **A new subset**: append to `subsets` with the next `SUB-xxx`, a `label` and `headline`, `lang` (usually
   the first of `settings.languages`), ALL's `sections` order, and the chosen entry IDs in `entries`.
 
-## Job postings (Job search and the Applications tab, career-ops)
+## Job postings (Job search, career-ops)
 
 The window connects a job-posting tool. Today that is
 [career-ops](https://github.com/santifer/career-ops) (MIT, by santifer), installed in
 `<skill>/.local/providers/career-ops` or a folder the user picked. Resume Studio never copies its logic:
 
-- **Two workspaces.** *Resume* is the editor, with an Applications tab (evaluations next to the preview).
-  *Job search* shows career-ops' own web interface (its `web/` app, built and run by the window on loopback,
+- **Job search** shows career-ops' own web interface (its `web/` app, built and run by the window on loopback,
   through a proxy that only lets the window's frame in). The user sees everything career-ops' interface
-  shows there; what it lacks runs as chats.
+  shows there; what it lacks runs as chats. A posting's page (verdict, fit, the subset that goes out) opens
+  in Resume, next to the preview.
 - **Its chats run in its folder.** Evaluating a posting, setup, any of its modes ("All of career-ops" lists
   every one, read from `modes/`), interview prep and the like are Claude Code chats whose working directory
   is the career-ops checkout. Its own CLAUDE.md / AGENTS.md and modes apply there, and the window adds a
@@ -355,7 +358,7 @@ python <skill>/scripts/browser.py sync <site>       # check for updates now, by 
   the window (`webhost.py`), and the browser it drives (`browser.py` over `cdp.py`, pages read by `snapshot.js`).
 - `resume/`: the resume itself: data model, resume languages (`langs.py`), renderer (`render/`, LaTeX
   today, with room for Typst), templates (`templates/latex/*.tex.j2`), API, app assembly (`app.py`).
-- `jobs/`: the job-posting tool behind Job search and the Applications tab: the contract any tool implements (`base.py`),
+- `jobs/`: the job-posting tool behind Job search and a posting's page in Resume: the contract any tool implements (`base.py`),
   the career-ops connector (`career_ops.py`), resume.yaml as the Markdown CV such tools read
   (`cv_markdown.py`), and its routes (`api.py`).
 - `autofill/`: local copies of online profiles: the sites (`sites.py`), the profile shape and what a resume subset

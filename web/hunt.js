@@ -104,8 +104,8 @@ async function setHuntTab(tab) {
   welcomeAgain();
 }
 
-// an empty chat's suggestions follow what the page shows
-function welcomeAgain() { if (!ui.chat.messages.length && !ui.chat.running) renderChat(); }
+// an empty chat's suggestions, and the line above the composer, follow what the page shows
+function welcomeAgain() { if (!ui.chat.messages.length && !ui.chat.running) renderChat(); renderComposerState(); }
 
 async function openHunt(kind, id) {
   await flushTyping();
@@ -205,7 +205,7 @@ function appsTable() {
     h("td", { class: "c-main" }, a.role),
     h("td", { class: "c-muted" }, channelText(a)),
     h("td", null, hChip(a.status)),
-    h("td", { class: "c-muted" }, a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : ""),
+    h("td", { class: "c-muted c-resume" }, a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : "", resumeButton(a)),
     h("td", { class: "c-last" }, a.last && h("span", { class: "c-when" }, huntWhen(a.last.at)), a.last && h("span", { class: "c-what" }, lastText(a.last))),
     h("td", { class: "c-next" + (a.due && a.due.slice(0, 10) < today() ? " late" : "") }, a.next || "", a.due && h("span", { class: "c-due" }, a.due))],
     { "data-id": a.id }));
@@ -221,6 +221,15 @@ function appsTable() {
         h("p", null, t("Add one here, or a company with the roles you apply for on its own site (网申).")))
       : t("Nothing matches")),
   ];
+}
+
+// the resume a role goes out with (its own subset, else its company's), open in Resume
+const roleSubset = (a) => a.subset || (huntCompany(a.company) || {}).subset || null;
+function resumeButton(a) {
+  const id = roleSubset(a);
+  if (!id || !subsets().some((x) => x.id === id)) return null;
+  return h("button", { class: "btn sm ghost hunt-resume", title: t("Open “{name}” in Resume", { name: subsetName(subsets().find((x) => x.id === id)) }),
+    onclick: () => previewSubset(id) }, icon("file"), t("Resume"));
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -517,6 +526,7 @@ function appPage(v) {
       h("span", { class: "spacer" }), status.el,
       h("button", { class: "btn icon ghost", title: t("More"), "aria-label": t("More"), onclick: (e) => openMenu(e.currentTarget, [
         a.url && { label: t("Open the role's page"), icon: "external", onClick: () => openInBrowser(a.url) },
+        a.co_app && { label: t("Its evaluation in {name}", { name: jobsTool().name }), icon: "bolt", onClick: () => openPosting(String(a.co_app)) },
         { label: t("Delete this application"), icon: "trash", danger: true, onClick: () => deleteApp(a) }], { align: "end" }) }, icon("more"))),
     card(t("Progress"), a.applied ? t("applied {date}", { date: a.applied }) : t("not applied yet"), [
       h("div", { class: "grid2" }, hfield(t("Next step"), a.next, save("next"), { placeholder: t("e.g. 等二面通知") }),
@@ -534,8 +544,11 @@ function appPage(v) {
     card(t("Resume sent"), (a.sent || []).length ? t("{n} time", { n: a.sent.length }, "{n} times") : t("not yet"), [
       a.channel !== "site" && h("div", { class: "field" }, h("label", null, t("Goes out with")), h("div", { class: "su-subset" }, pick.el)),
       a.channel === "site" && h("p", { class: "card-p muted" }, t("It goes out with the sign-up on {company}'s site: mark that as sent on the company's page.", { company: c.name })),
-      a.channel !== "site" && h("div", { class: "row" }, h("button", { class: "btn primary", id: "app-send", disabled: !subId, onclick: () => sendApp(a, subId) }, icon("check"),
-        (a.sent || []).length ? t("Mark as sent again") : t("Mark as sent"))),
+      h("div", { class: "row" },
+        a.channel !== "site" && h("button", { class: "btn primary", id: "app-send", disabled: !subId, onclick: () => sendApp(a, subId) }, icon("check"),
+          (a.sent || []).length ? t("Mark as sent again") : t("Mark as sent")),
+        subId && subsets().some((x) => x.id === subId) && h("button", { class: "btn sm ghost", id: "app-resume", onclick: () => previewSubset(subId) }, icon("file"),
+          t("Open “{name}” in Resume", { name: subsetName(subsets().find((x) => x.id === subId)) }))),
       (a.sent || []).length > 0 && h("div", { class: "su-sent" }, [...a.sent].reverse().map((x) => h("div", { class: "su-sent-row" },
         h("span", { class: "su-info" }, h("span", { class: "su-what" }, sentText(x)), h("span", { class: "su-when" }, fmtWhen(x.at))),
         h("button", { class: "btn sm ghost", onclick: () => showSent(x.subset, x.n) }, icon("history"), t("See what went out"))))),

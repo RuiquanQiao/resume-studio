@@ -23,7 +23,7 @@ from . import profile, prompts, route
 from .service import Autofill
 from .sites import Site
 
-KIND = "autofill"   # the chat workspace of this tab; its chats also carry their `site`
+KIND = "autofill"   # the chat workspace this tab's chats had before the chat was one (old chats still name it)
 
 
 def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowser) -> Autofill:
@@ -66,32 +66,26 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
     def note() -> str:
         doc, _ = studio.store.load()
         roots = [str(p) for p in (doc.get("settings") or {}).get("project_roots") or []]
-        data = str(studio.store.path)
-        return rp.ui_context(data, None, None, roots) + "\n" + hunt_prompts.tools_note(data) + "\n" + prompts.tools_note(data) + "\n"
+        return rp.ui_context(str(studio.store.path), None, None, roots)
 
-    # Autofill's chats run in the data folder like any resume chat, and every message in them (the
-    # user's follow-ups too) tells Claude how to use the browser
-    chats.workspaces[KIND] = Workspace(KIND, studio.data_dir, label="Applying", context=note)
+    # every chat in the data folder, whichever workspace it was started in, knows the tracker's and the
+    # browser's commands (docs/LAYOUT.md: one chat)
+    chats.notes.append(lambda: hunt_prompts.tools_note(str(studio.store.path)) + "\n" + prompts.tools_note(str(studio.store.path)))
+    # chats started here before the chat was one: they run in the data folder like any other
+    chats.workspaces[KIND] = Workspace(KIND, studio.data_dir, label="Applying")
 
     def start_chat(b: dict, site: Site | None, title: str, text: str = "", procedure: str = "",
                    on_done: Callable[[bool], None] | None = None, action: str = "") -> dict:
-        chat = chats.store.create(title=title[:60], workspace=KIND, site=site.id if site else None, **settings_of(b))
+        chat = chats.store.create(title=title[:60], site=site.id if site else None, **settings_of(b))
         if text:
             try:
                 # the procedure goes to Claude with the message (so a later "go on" still has it); the chat shows the message
-                chats.send(chat["id"], text + ("\n\n" + procedure if procedure else ""), shown=text,
+                chats.send(chat["id"], text + ("\n\n" + procedure if procedure else ""), shown=text, context=note(),
                            meta={"action": action or None, "site": site.id if site else None}, on_done=on_done)
             except RuntimeError as e:
                 chats.store.delete(chat["id"])
                 raise HttpError(409, str(e))
         return chats.store.meta(chat["id"]) or chat
-
-    @app.route("POST", "/api/autofill/chat")
-    def empty_chat(req: Request):
-        """A chat in the Autofill workspace (the user types the first message)."""
-        b = body(req)
-        site = fill.site(str(b.get("site") or ""))
-        return {"chat": start_chat(b, site, str(b.get("title") or t("Applying")))}
 
     # ---- the workspace -----------------------------------------------------------------
     @app.route("GET", "/api/autofill")

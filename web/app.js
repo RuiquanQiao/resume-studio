@@ -135,11 +135,15 @@ function md(src) {
 // ================================================================ state
 let S = null; // last server state
 const ui = {
-  tab: "library",
   subsetId: null,
   sel: { kind: "profile", id: null },
-  draft: null, formBase: null, dirty: false, editSeq: 0,
-  saving: false, refreshAfterSave: false, saveTimer: null, conflict: null,
+  eds: new Map(),   // "kind:id" -> the editing state of an item open in the middle (see edFor)
+  ed: null,         // the one being edited
+  lastDoc: null,    // {kind, id}: where the document was, for "Back to the document" from a page
+  docOpen: new Set(),   // entries not in the subset, opened as cards anyway
+  factOpen: new Set(),  // entries whose fact layer is unfolded
+  here: null,       // the card at the top of the document (marked in the outline)
+  saving: 0, refreshAfterSave: false,
   editLang: null,
   render: { timer: null, busy: false, again: false, last: null },
   zoom: "fit",
@@ -255,23 +259,53 @@ function applyState(s) {
   }
 }
 
-// state changed elsewhere (Claude, another window): rebuild the form if it is stale
+// ---- editing ------------------------------------------------------------------
+// Every item open in the middle keeps its own draft, base hash and save timer: the document shows
+// Profile and every entry at once (docs/LAYOUT.md), so leaving a card with unsaved typing still saves
+// it, and a change from elsewhere refreshes that card alone. `ui.ed` is the one being edited (the card
+// last clicked into, or the page open); ui.draft / ui.formBase / ui.dirty / ui.conflict are its fields.
+function edFor(kind, id = null) {
+  const key = `${kind}:${id ?? ""}`;
+  let ed = ui.eds.get(key);
+  if (!ed) {
+    ed = { kind, id, key, draft: clone(currentItem(kind, id)), base: itemHash(kind, id), dirty: false, seq: 0, saving: false, timer: null, conflict: null };
+    ui.eds.set(key, ed);
+  }
+  return ed;
+}
+// what the file says now, for an item without unsaved edits
+function resetEd(ed) {
+  ed.draft = clone(currentItem(ed.kind, ed.id));
+  ed.base = itemHash(ed.kind, ed.id);
+  ed.dirty = false;
+  ed.conflict = null;
+}
+const stale = (ed) => !ed.dirty && !ed.conflict && !ed.saving && ed.base !== itemHash(ed.kind, ed.id);
+for (const [name, field] of [["draft", "draft"], ["formBase", "base"], ["dirty", "dirty"], ["conflict", "conflict"]]) {
+  Object.defineProperty(ui, name, { get: () => (ui.ed ? ui.ed[field] : field === "dirty" ? false : null), set: (v) => { if (ui.ed) ui.ed[field] = v; } });
+}
+
+// state changed elsewhere (Claude, another window): refresh what is stale, or flag a conflict
 function syncEditor() {
   const { kind, id } = ui.sel;
-  if (kind === "posting") return;   // not in resume.yaml; jobs.js refreshes it
-  if (kind === "versions") return;   // applyState keeps it current
-  if ((kind === "entry" || kind === "subset") && !currentItem(kind, id)) { select("profile"); return; }
-  if (itemHash(kind, id) === ui.formBase) return;
-  if (ui.dirty) { ui.conflict = { current: clone(currentItem(kind, id)) }; buildEditor(); return; }
-  buildEditor({ flash: true });
+  if (kind === "posting" || kind === "versions") return;   // not in resume.yaml / kept current by applyState
+  if (docMode()) { syncDocument(); return; }
+  if (kind === "subset" && !currentItem(kind, id)) { select("profile"); return; }
+  const ed = ui.ed;
+  if (!ed || itemHash(ed.kind, ed.id) === ed.base) return;
+  if (ed.dirty) { ed.conflict = { current: clone(currentItem(kind, id)) }; paintEditor(); return; }
+  resetEd(ed);
+  paintEditor({ flash: true });
 }
 
 function touch() {
-  ui.dirty = true;
-  ui.editSeq++;
+  const ed = ui.ed;
+  if (!ed) return;
+  ed.dirty = true;
+  ed.seq++;
   setSaveStatus(t("Unsaved"));
-  clearTimeout(ui.saveTimer);
-  ui.saveTimer = setTimeout(saveDraft, 550);
+  clearTimeout(ed.timer);
+  ed.timer = setTimeout(() => saveItem(ed), 550);
 }
 
 function setSaveStatus(msg, bad = false) {
@@ -280,32 +314,47 @@ function setSaveStatus(msg, bad = false) {
   el.classList.toggle("bad", bad);
 }
 
+// save what is unsaved: every item (before an action that needs the file current), or with `force`
+// the open one over a conflict ("Keep mine")
 async function saveDraft(force = false) {
-  clearTimeout(ui.saveTimer);
-  if (!ui.dirty || ui.saving || (ui.conflict && !force)) return;
-  const { kind, id } = ui.sel;
-  const seq = ui.editSeq;
-  ui.saving = true;
+  if (force) return saveItem(ui.ed, true);
+  await Promise.all([...ui.eds.values()].filter((ed) => ed.dirty).map((ed) => saveItem(ed)));
+}
+
+async function saveItem(ed, force = false) {
+  if (!ed) return;
+  clearTimeout(ed.timer);
+  if (!ed.dirty || ed.saving || (ed.conflict && !force)) return;
+  const seq = ed.seq;
+  ed.saving = true;
+  ui.saving++;
   setSaveStatus(t("Saving…"));
   try {
-    const s = await api("PUT", "/api/item", { kind, id, data: ui.draft, base: force ? null : ui.formBase });
-    if (kind === "entry" || kind === "subset") ui.sel.id = ui.draft.id;
-    if (kind === "subset") { ui.subsetId = ui.draft.id; store("subset", ui.subsetId); }
+    const s = await api("PUT", "/api/item", { kind: ed.kind, id: ed.id, data: ed.draft, base: force ? null : ed.base });
+    if ((ed.kind === "entry" || ed.kind === "subset") && ed.draft.id !== ed.id) {   // renamed (a subset's id)
+      ui.eds.delete(ed.key);
+      ed.id = ed.draft.id;
+      ed.key = `${ed.kind}:${ed.id}`;
+      ui.eds.set(ed.key, ed);
+      if (ui.ed === ed) ui.sel.id = ed.id;
+    }
+    if (ed.kind === "subset") { ui.subsetId = ed.draft.id; store("subset", ui.subsetId); }
     applyState(s);
-    ui.formBase = itemHash(ui.sel.kind, ui.sel.id);
-    if (ui.conflict) { ui.conflict = null; buildEditorKeepDraft(); }
-    if (ui.editSeq === seq) { ui.dirty = false; setSaveStatus(t("Saved")); }
-    else ui.saveTimer = setTimeout(saveDraft, 300);
+    ed.base = itemHash(ed.kind, ed.id);
+    if (ed.conflict) { ed.conflict = null; paintItem(ed); }
+    if (ed.seq === seq) { ed.dirty = false; setSaveStatus(t("Saved")); }
+    else ed.timer = setTimeout(() => saveItem(ed), 300);
     scheduleRender();
   } catch (e) {
     if (e.status === 409) {
-      ui.conflict = { current: e.data && e.data.current };
-      buildEditorKeepDraft();
+      ed.conflict = { current: e.data && e.data.current };
+      paintItem(ed);
       setSaveStatus(t("Conflict"), true);
     } else setSaveStatus(t("Save failed: {error}", { error: e.message }), true);
   } finally {
-    ui.saving = false;
-    if (ui.refreshAfterSave) { ui.refreshAfterSave = false; refresh(); }
+    ed.saving = false;
+    ui.saving--;
+    if (!ui.saving && ui.refreshAfterSave) { ui.refreshAfterSave = false; refresh(); }
   }
 }
 
@@ -385,7 +434,7 @@ async function switchSubset(id) {
   renderPreviewToolbar();
   renderComposerState();
   if (ui.sel.kind === "subset" || ui.sel.kind === "versions") select(id === ALL ? "profile" : ui.sel.kind, id === ALL ? null : id);   // ALL has neither
-  else buildEditorKeepDraft();
+  else paintEditor({ keepScroll: true });   // the document in this subset's order
   clearPages();
   scheduleRender(0);
 }
@@ -422,40 +471,56 @@ async function revealExports() {
   if (!r.ok) toast(t("Nothing exported yet; export once and this folder opens"));
 }
 
-// ================================================================ left: library
-function setTab(tab) {
-  ui.tab = tab;
-  store("tab", tab);
-  for (const b of document.querySelectorAll(".tab")) b.classList.toggle("on", b.dataset.tab === tab);
-  $("#library").classList.toggle("hidden", tab !== "library");
-  $("#jobs").classList.toggle("hidden", tab !== "jobs");
-  $("#chat").classList.toggle("hidden", tab !== "chat");
-  if (tab === "chat") { renderChat(); setTimeout(() => $("#chat-input").focus(), 0); }
-  if (tab === "jobs") { renderJobs(); loadJobs({ quiet: true }); }
-  if (tab === "chat" && W.ws === "jobs" && W.chat !== "on") setJobsChat(true);   // a chat started in Job search
+// ================================================================ left: the chat (every workspace)
+// the chat pane, shown if it was hidden, with the composer focused
+function showChat() {
+  if (W.chat !== "on") setChatPane(true);
+  else renderChat();
+  setTimeout(() => $("#chat-input").focus(), 0);
 }
 
+// ================================================================ middle: the outline rail (the library)
 function renderLibrary() {
   const lib = $("#library");
   const scroll = lib.scrollTop;
-  lib.replaceChildren();
+  lib.replaceChildren(h("div", { class: "rail-head" },
+    h("span", { class: "t" }, t("Outline")),
+    h("button", { class: "btn icon sm ghost", title: t("Collapse the outline into a strip above the document (it opens on hover)"), "aria-label": t("Collapse the outline"),
+      onclick: () => setOutline(false) }, icon("chevLeft"))), ...outlineRows());
+  lib.scrollTop = scroll;
+  const pop = Float.cur && Float.cur.panel.classList.contains("outline-pop") ? Float.cur.panel : null;
+  if (pop) {
+    const s = pop.scrollTop;
+    pop.replaceChildren(...outlineRows({ pop: true }));
+    pop.scrollTop = s;
+  }
+  paintHere();
+}
+
+// the outline's rows, in the rail or in the strip's panel: the pages, then every section with its entries
+// (ticks and order for the subset, counts, "+", the new-progress and missing-language marks)
+function outlineRows({ pop = false } = {}) {
+  const out = [];
   const v = subset();
-  const nav = (kind, label, ic, id = null) => h("button", { class: "nav-row" + (ui.sel.kind === kind ? " on" : ""), onclick: () => select(kind, id) }, icon(ic), label);
+  const nav = (kind, label, ic, id = null) => h("button", { class: "nav-row" + (ui.sel.kind === kind ? " on" : ""), "data-key": kind === "profile" ? "profile:" : null,
+    onclick: () => { if (pop && !["profile", "entry"].includes(kind)) closeFloat(); select(kind, id); } }, icon(ic), label);
   const job = v && v.id !== ALL;
-  lib.append(nav("profile", t("Profile"), "user"), nav("sections", t("Sections & resume settings"), "grid"));
+  if (pop) out.push(h("div", { class: "rail-head" }, h("span", { class: "t" }, t("Outline")),
+    h("button", { class: "btn sm ghost", title: t("Keep the outline as a rail beside the document"), onclick: () => setOutline(true) }, icon("chevRight"), t("Pin"))));
+  out.push(nav("profile", t("Profile"), "user"), nav("sections", t("Sections & resume settings"), "grid"));
   if (job) {
     const st = versionStatus(v.id) || {};
     const row = nav("versions", t("Versions"), "history", v.id);
     row.append(h("span", { class: "nav-count" + (st.latest && !st.same_as ? " changed" : "") },
       !st.latest ? "" : st.same_as ? `v${st.same_as}` : t("v{n} · changed", { n: st.latest })));
-    lib.append(nav("subset", t("Subset settings"), "settings", v.id), row);
+    out.push(nav("subset", t("Subset settings"), "settings", v.id), row);
   }
-  lib.append(h("div", { class: "lib-hint" + (job ? " job" : "") }, job
+  out.push(h("div", { class: "lib-hint" + (job ? " job" : "") }, job
     ? [h("b", null, subsetName(v)), ": " + t("tick = in this subset's resume")]
     : [h("b", null, "ALL"), ": " + t("every entry lives here. Create a subset, then tick the ones it needs")]));
   const changed = entries().filter((e) => (ui.evidence[e.id] || {}).state === "changed");
   if (changed.length) {
-    lib.append(h("div", { class: "lib-update" },
+    out.push(h("div", { class: "lib-update" },
       icon("refresh"),
       h("span", { class: "lu-text" }, changed.length === 1
         ? t("“{name}” has new progress", { name: display(changed[0].title) || entryLabel(changed[0]) })
@@ -467,29 +532,21 @@ function renderLibrary() {
 
   const included = new Set(job ? v.entries || [] : entries().map((e) => e.id));
   const order = job ? v.entries || [] : entries().map((e) => e.id);
-  for (const sec of sectionOrder(v).map(sectionById)) {   // same order as this subset's resume
+  for (const sec of sectionOrder(v).map(sectionById).filter(Boolean)) {   // same order as this subset's resume
     const mine = entries().filter((e) => e.section === sec.id);
     const inV = order.map(entryById).filter((e) => e && e.section === sec.id);
     const outV = mine.filter((e) => !included.has(e.id));
-    lib.append(h("div", { class: "lib-section" },
+    out.push(h("div", { class: "lib-section" },
       h("div", { class: "lib-head" },
         h("span", null, h("span", { class: "t" }, display(sec.title) || sec.id), mine.length ? h("span", { class: "n" }, job ? `${inV.length}/${mine.length}` : mine.length) : null),
-        h("button", { class: "btn icon sm ghost", title: t("Add an entry to “{section}”", { section: display(sec.title) || sec.id }), onclick: () => newEntry(sec.id) }, icon("plus"))),
+        h("button", { class: "btn icon sm ghost", title: t("Add an entry to “{section}”", { section: display(sec.title) || sec.id }), onclick: () => { if (pop) closeFloat(); newEntry(sec.id); } }, icon("plus"))),
       [...inV, ...outV].map((e, i) => entryRow(e, included.has(e.id), i, inV.length, job))));
   }
   const orphans = entries().filter((e) => !sectionById(e.section));
-  if (orphans.length) lib.append(h("div", { class: "lib-section" }, h("div", { class: "lib-head" }, h("span", { class: "t" }, t("Unsorted"))), orphans.map((e) => entryRow(e, included.has(e.id), 0, 0, job))));
-
-  if (!entries().length) {
-    lib.append(h("div", { class: "empty" },
-      h("div", { class: "t" }, t("The library is empty")),
-      h("div", null, t("Put every real experience here; pick for each resume later.")),
-      h("div", { class: "acts" },
-        h("button", { class: "btn primary sm", onclick: () => newEntry((sections().find((s) => s.id === "projects") || sections()[0] || {}).id || "projects") }, icon("plus"), t("Add entry")),
-        h("button", { class: "btn sm", onclick: () => startChatWith(t("Please import the experience from my old resume into resume.yaml. The old resume is at: ")) }, icon("sparkle"), t("Let Claude import")))));
-  }
-  if (S.warnings && S.warnings.length) lib.append(h("div", { class: "warnings" }, S.warnings.map((w) => h("div", null, w))));
-  lib.scrollTop = scroll;
+  if (orphans.length) out.push(h("div", { class: "lib-section" }, h("div", { class: "lib-head" }, h("span", { class: "t" }, t("Unsorted"))), orphans.map((e) => entryRow(e, included.has(e.id), 0, 0, job))));
+  if (!entries().length) out.push(h("div", { class: "empty" }, h("div", null, t("The library is empty"))));
+  if (S.warnings && S.warnings.length) out.push(h("div", { class: "warnings" }, S.warnings.map((w) => h("div", null, w))));
+  return out;
 }
 
 function entryRow(e, isIn, idx, nIn, hasSubset) {
@@ -497,7 +554,7 @@ function entryRow(e, isIn, idx, nIn, hasSubset) {
   const meta = entryMeta(e);
   const ev = (ui.evidence[e.id] || {}).state;
   const gaps = langs().length > 1 ? langs().filter((l) => missingIn(e, l)) : [];
-  return h("div", { class: "entry" + (isIn ? "" : " out") + (active ? " on" : ""), "data-id": e.id, onclick: () => select("entry", e.id) },
+  return h("div", { class: "entry" + (isIn ? "" : " out") + (active ? " on" : ""), "data-id": e.id, "data-key": "entry:" + e.id, onclick: () => select("entry", e.id) },
     hasSubset && h("button", {
       class: "check" + (isIn ? " on" : ""), role: "checkbox", "aria-checked": String(isIn),
       title: isIn ? t("Remove from this subset") : t("Add to this subset"),
@@ -546,58 +603,288 @@ async function newEntry(section) {
   const r = await api("POST", "/api/entries", { section });
   applyState(r);
   if (subset() && !isAll()) await mutateSubset((v) => { v.entries = [...(v.entries || []), r.id]; });
-  select("entry", r.id);
-  const title = () => $("#editor input[data-key=title]");
+  await select("entry", r.id);
+  const title = () => $("#active input[data-key=title]");
   if (title()) title().focus(); else setTimeout(() => title() && title().focus(), 30);
 }
 
-// ================================================================ middle: editor
+// ================================================================ middle: the document, or a page
+// Profile and every entry are one document, each a card edited in place (docs/LAYOUT.md); the other
+// kinds (sections, subset settings, versions, a posting) are pages that take its place until the user
+// goes back to it. The rail on the left of the middle (renderLibrary) is its outline.
+const docMode = (kind = ui.sel.kind) => kind === "profile" || kind === "entry";
+
 async function select(kind, id = null) {
-  await saveDraft();
+  const docShown = docMode() && !!$("#editor .doc-wrap");
+  if (!docMode(kind)) await saveDraft();   // a page reads the file
   ui.sel = { kind, id };
-  ui.conflict = null;
-  ui.dirty = false;
+  ui.ed = NOT_IN_FILE.has(kind) ? null : edFor(kind, id);
+  if (ui.ed && stale(ui.ed)) resetEd(ui.ed);
   renderLibrary();
-  if (kind !== "posting" && typeof renderJobs === "function") renderJobs();   // the open posting is no longer highlighted
   renderComposerState();
-  buildEditor();
+  if (!docMode(kind)) { paintEditor({ keepScroll: false }); return; }
+  ui.lastDoc = { kind, id };
+  if (kind === "entry" && !ui.docOpen.has(id)) { ui.docOpen.add(id); if (docShown && !cardEl(ui.ed)) paintDocument(); }
+  if (!docShown) paintDocument({ keepScroll: false });
+  markActive();
+  scrollToCard(ui.ed);
 }
 
-// "posting" is not part of resume.yaml: an evaluated job posting from the Applications tab (jobs.js)
+// "posting" is not part of resume.yaml: an evaluated job posting (jobs.js), opened from Job search or Applying
 const BUILDERS = () => ({ entry: entryForm, profile: profileForm, sections: sectionsForm, subset: subsetForm, posting: postingView, versions: versionsView });
 const NOT_IN_FILE = new Set(["posting", "versions"]);   // editor pages that aren't one item of resume.yaml
 
+// the open item again as the file has it (its unsaved edits dropped), painted
 function buildEditor(opts = {}) {
-  const { kind, id } = ui.sel;
-  if (NOT_IN_FILE.has(kind)) { ui.draft = null; ui.formBase = null; ui.dirty = false; paintEditor(opts); return; }
-  const item = currentItem(kind, id);
-  if (!ui.conflict) {
-    ui.draft = clone(item);
-    ui.formBase = itemHash(kind, id);
-    ui.dirty = false;
-  }
-  paintEditor(opts);
+  if (ui.ed) resetEd(ui.ed);
+  if (ui.ed && docMode()) paintItem(ui.ed, opts); else paintEditor(opts);
+}
+// the open item painted again from its draft (after a change that alters the form's shape)
+function buildEditorKeepDraft() {
+  if (ui.ed && docMode()) paintItem(ui.ed); else paintEditor({ keepScroll: true });
 }
 
-function buildEditorKeepDraft() { paintEditor({ keepScroll: true }); }
-
 function paintEditor({ flash = false, keepScroll = true } = {}) {
+  if (docMode()) { paintDocument({ keepScroll, flash }); return; }
   const mid = $("#editor");
   const scroll = mid.scrollTop;
-  const wrap = h("div", { class: "editor" });
-  if (ui.conflict) wrap.append(conflictBanner());
+  const wrap = h("div", { class: "editor is-page", id: "active" });   // not "page": that is a preview page
+  wrap.append(h("div", { class: "page-back" }, h("button", { class: "btn sm ghost", onclick: () => select((ui.lastDoc || {}).kind || "profile", (ui.lastDoc || {}).id ?? null) },
+    icon("chevLeft"), t("Back to the document")), h("span", { class: "spacer" }), previewToggle()));
+  if (ui.conflict) wrap.append(conflictBanner(ui.ed));
   if (ui.draft == null && ui.sel.kind !== "sections" && !NOT_IN_FILE.has(ui.sel.kind)) wrap.append(h("p", { class: "muted" }, t("Nothing here.")));
   else wrap.append(...[BUILDERS()[ui.sel.kind]()].flat(Infinity).filter(Boolean));
   mid.replaceChildren(wrap);
-  if (keepScroll) mid.scrollTop = scroll;
-  if (flash) { wrap.classList.add("flash"); }
+  mid.scrollTop = keepScroll ? scroll : 0;
+  if (flash) wrap.classList.add("flash");
 }
 
-function conflictBanner() {
+function conflictBanner(ed) {
   return h("div", { class: "banner warn" }, icon("alert"),
     h("span", { style: "flex:1" }, t("Claude or another window just changed this item, and you have unsaved edits here.")),
-    h("button", { class: "btn sm", onclick: () => { ui.conflict = null; ui.dirty = false; buildEditor({ flash: true }); } }, t("Load the latest")),
-    h("button", { class: "btn sm danger-soft", onclick: () => saveDraft(true) }, t("Keep mine")));
+    h("button", { class: "btn sm", onclick: () => { resetEd(ed); paintItem(ed, { flash: true }); } }, t("Load the latest")),
+    h("button", { class: "btn sm danger-soft", onclick: () => saveItem(ed, true) }, t("Keep mine")));
+}
+
+// ---- the document ----
+// its order: Profile, then each section in the subset's order with its ticked entries in the subset's
+// order; the entries not in the subset are folded to one line at the end of their section
+function docLayout() {
+  const v = subset();
+  const job = !!(v && v.id !== ALL);
+  const included = new Set(job ? v.entries || [] : entries().map((e) => e.id));
+  const order = job ? v.entries || [] : entries().map((e) => e.id);
+  const secs = sectionOrder(v).map(sectionById).filter(Boolean).map((sec) => ({
+    sec, hidden: !!(v && (v.hide_sections || []).includes(sec.id)),
+    inV: order.map(entryById).filter((e) => e && e.section === sec.id),
+    outV: entries().filter((e) => e.section === sec.id && !included.has(e.id)),
+  }));
+  const orphans = entries().filter((e) => !sectionById(e.section));
+  return { v, job, secs, orphans };
+}
+// what the document's shape depends on: repainted whole when it changes, card by card otherwise
+function docSig() {
+  const L = docLayout();
+  return JSON.stringify([ui.subsetId, ui.editLang, langs(), L.secs.map((s) => [s.sec.id, display(s.sec.title), s.sec.kind, s.hidden, s.inV.map((e) => e.id),
+    s.outV.map((e) => [e.id, ui.docOpen.has(e.id), display(e.title)])]), L.orphans.map((e) => e.id)]);
+}
+
+function paintDocument({ keepScroll = true, flash = false } = {}) {
+  const mid = $("#editor");
+  const anchor = keepScroll ? docAnchor() : null;
+  const L = docLayout();
+  const wrap = h("div", { class: "editor doc-wrap" + (flash ? " flash" : "") },
+    h("div", { class: "doc-top" }, outlineStrip(), h("span", { class: "spacer" }), langSwitch(), previewToggle()),
+    docCard(edFor("profile")));
+  const group = (title, sid, list, outV, hidden = false) => {
+    const n = list.length;
+    wrap.append(h("div", { class: "doc-sec", "data-sec": sid || "" },
+      h("h2", null, title), h("span", { class: "n" }, L.job && sid ? `${n}/${n + outV.length}` : n),
+      hidden && h("span", { class: "chip", title: t("This section is hidden in “{name}”; Sections & resume settings shows it again", { name: subsetName(L.v) }) }, t("Hidden in this subset")),
+      h("span", { class: "spacer" }),
+      sid && h("button", { class: "btn icon sm ghost", title: t("Add an entry to “{section}”", { section: title }), onclick: () => newEntry(sid) }, icon("plus"))));
+    if (!list.length && !outV.length) wrap.append(h("p", { class: "doc-empty muted" }, t("No entries in this section yet.")));
+    for (const e of list) wrap.append(docCard(edFor("entry", e.id)));
+    for (const e of outV) wrap.append(ui.docOpen.has(e.id) ? docCard(edFor("entry", e.id), { out: true }) : foldedRow(e, L));
+  };
+  for (const s of L.secs) group(display(s.sec.title) || s.sec.id, s.sec.id, s.inV, s.outV, s.hidden);
+  if (L.orphans.length) group(t("Unsorted"), null, L.orphans, []);
+  if (!entries().length) wrap.append(h("div", { class: "empty doc-empty-lib" },
+    h("div", { class: "t" }, t("The library is empty")),
+    h("div", null, t("Put every real experience here; pick for each resume later.")),
+    h("div", { class: "acts" },
+      h("button", { class: "btn primary sm", onclick: () => newEntry((sections().find((s) => s.id === "projects") || sections()[0] || {}).id || "projects") }, icon("plus"), t("Add entry")),
+      h("button", { class: "btn sm", onclick: () => startChatWith(t("Please import the experience from my old resume into resume.yaml. The old resume is at: ")) }, icon("sparkle"), t("Let Claude import")))));
+  mid.replaceChildren(wrap);
+  ui.docSig = docSig();
+  if (anchor) restoreAnchor(anchor); else mid.scrollTop = 0;
+  markActive();
+  spyNow();
+}
+
+function docCard(ed, { out = false } = {}) {
+  if (stale(ed)) resetEd(ed);
+  const body = ed.kind === "profile" ? profileForm(ed.draft) : entryForm(ed.draft, { out });
+  const el = h("section", { class: "doc-card" + (out ? " out" : ""), "data-key": ed.key, "data-aid": "active",
+    onfocusin: () => activate(ed), onpointerdown: () => activate(ed) },
+  ed.conflict && conflictBanner(ed), body);
+  // an edit always belongs to its own card, even when no focus event came first: taken before the field's handler
+  for (const type of ["input", "change", "keydown"]) el.addEventListener(type, () => activate(ed), true);
+  return el;
+}
+
+// an entry the subset doesn't have: one line, ticked into the subset or opened as a card
+function foldedRow(e, L) {
+  return h("div", { class: "doc-fold", "data-key": "entry:" + e.id },
+    h("button", { class: "check", role: "checkbox", "aria-checked": "false", title: t("Add to this subset"), onclick: () => toggleInclude(e.id, true) }),
+    h("button", { class: "df-title", title: t("Open it here"), onclick: () => select("entry", e.id) }, display(e.title) || t("(untitled)")),
+    h("span", { class: "df-meta" }, entryMeta(e)),
+    h("span", { class: "df-note" }, t("not in “{name}”", { name: subsetName(L.v) })));
+}
+
+// the card clicked into becomes the one being edited: the chat, the AI buttons and the rail follow it
+function activate(ed) {
+  if (ui.ed === ed) return;
+  ui.ed = ed;
+  ui.sel = { kind: ed.kind, id: ed.id };
+  ui.lastDoc = { ...ui.sel };
+  markActive();
+  renderLibrary();
+  renderComposerState();
+}
+
+const cardEl = (ed) => (ed ? $(`#editor .doc-card[data-key="${CSS.escape(ed.key)}"]`) : null);
+// ids name the parts of the card being edited only (#active, #bullets, #evidence…), so code and tests
+// that look for "the open item's bullets" find exactly one
+function markActive() {
+  const mid = $("#editor");
+  for (const el of mid.querySelectorAll("[data-aid][id]")) el.removeAttribute("id");
+  for (const el of mid.querySelectorAll(".doc-card.on")) el.classList.remove("on");
+  const card = cardEl(ui.ed);
+  if (!card) return;
+  card.classList.add("on");
+  card.id = "active";
+  for (const el of card.querySelectorAll("[data-aid]")) el.id = el.dataset.aid;
+}
+
+function paintItem(ed, { flash = false } = {}) {
+  const old = docMode() && cardEl(ed);
+  if (old) {
+    const fresh = docCard(ed, { out: old.classList.contains("out") });
+    old.replaceWith(fresh);
+    if (flash) fresh.classList.add("flash");
+    markActive();
+    return;
+  }
+  if (ed === ui.ed && !docMode()) paintEditor({ flash });
+}
+
+// state changed elsewhere, document open: the shape again if it changed, else the cards that are stale
+function syncDocument() {
+  for (const [key, ed] of ui.eds) if (ed.kind === "entry" && !entryById(ed.id) && !ed.dirty) ui.eds.delete(key);
+  if (ui.sel.kind === "entry" && !entryById(ui.sel.id)) { ui.sel = { kind: "profile", id: null }; ui.ed = edFor("profile"); renderLibrary(); }
+  if (docSig() !== ui.docSig) { paintDocument(); return; }
+  for (const ed of ui.eds.values()) {
+    if (!docMode(ed.kind) || ed.saving || itemHash(ed.kind, ed.id) === ed.base || !cardEl(ed)) continue;
+    if (ed.dirty) { ed.conflict = { current: clone(currentItem(ed.kind, ed.id)) }; paintItem(ed); }
+    else { resetEd(ed); paintItem(ed, { flash: true }); }
+  }
+}
+
+// ---- scrolling: keep the place across repaints, jump to a card, mark the one in view ----
+const docTopGap = () => (($("#editor .doc-top") || {}).offsetHeight || 0) + 8;
+const blockKey = (x) => x.dataset.key || "sec:" + x.dataset.sec;
+function docBlocks() { return [...$("#editor").querySelectorAll(".doc-card, .doc-sec, .doc-fold")]; }
+function docAnchor() {
+  const mid = $("#editor");
+  if (!mid.querySelector(".doc-wrap")) return null;
+  const top = mid.getBoundingClientRect().top;
+  const el = docBlocks().find((x) => x.getBoundingClientRect().bottom > top + docTopGap());
+  if (!el) return null;
+  return { key: blockKey(el), off: el.getBoundingClientRect().top - top, scroll: mid.scrollTop };
+}
+function restoreAnchor(a) {
+  const mid = $("#editor");
+  const el = docBlocks().find((x) => blockKey(x) === a.key);
+  if (!el) { mid.scrollTop = a.scroll; return; }
+  mid.scrollTop += el.getBoundingClientRect().top - mid.getBoundingClientRect().top - a.off;
+}
+function scrollToCard(ed) {
+  const card = cardEl(ed);
+  if (!card) return;
+  const mid = $("#editor");
+  mid.scrollTop = ed.kind === "profile" ? 0 : mid.scrollTop + card.getBoundingClientRect().top - mid.getBoundingClientRect().top - docTopGap();
+  ui.here = ed.key;
+  paintHere();
+}
+// the card under the top of the document, marked in the outline
+let spyFrame = 0;
+function spyNow() {
+  cancelAnimationFrame(spyFrame);
+  spyFrame = requestAnimationFrame(() => {
+    const mid = $("#editor");
+    if (!docMode() || !mid.querySelector(".doc-wrap")) return;
+    const top = mid.getBoundingClientRect().top + docTopGap() + 24;
+    const cards = [...mid.querySelectorAll(".doc-card, .doc-fold")];
+    const cur = cards.filter((c) => c.getBoundingClientRect().top <= top).pop() || cards[0];
+    const key = cur ? cur.dataset.key : null;
+    if (key !== ui.here) { ui.here = key; paintHere(); }
+  });
+}
+function paintHere() {
+  for (const el of document.querySelectorAll("#library .here, .outline-pop .here")) el.classList.remove("here");
+  const strip = $("#editor .os-here");
+  if (strip) strip.textContent = hereName();
+  if (!ui.here || !docMode()) return;
+  for (const el of document.querySelectorAll(`#library [data-key="${CSS.escape(ui.here)}"], .outline-pop [data-key="${CSS.escape(ui.here)}"]`)) el.classList.add("here");
+}
+function hereName() {
+  const [kind, id] = (ui.here || "profile:").split(":");
+  if (kind === "profile") return t("Profile");
+  const e = entryById(id);
+  return e ? display(e.title) || t("(untitled)") : "";
+}
+
+// ---- the outline: pinned as a rail, or collapsed into a strip that opens it on hover ----
+const outlinePinned = () => store("outline") !== "strip";
+function setOutline(pinned) {
+  store("outline", pinned ? null : "strip");
+  document.body.dataset.outline = pinned ? "rail" : "strip";
+  closeFloat();
+  renderLibrary();
+  if (docMode()) paintDocument(); else paintEditor({ keepScroll: true });
+}
+function outlineStrip() {
+  if (outlinePinned()) return null;
+  let timer = 0;
+  const btn = h("button", { class: "outline-strip", "aria-haspopup": "dialog", "aria-label": t("Outline"),
+    onclick: () => openOutline(btn),
+    onmouseenter: () => { timer = setTimeout(() => openOutline(btn), 180); },
+    onmouseleave: () => clearTimeout(timer) },
+  icon("outline"), h("span", { class: "os-label" }, t("Outline")), h("span", { class: "os-here" }, hereName()), icon("chev"));
+  return btn;
+}
+function openOutline(anchor) {
+  if (Float.cur && Float.cur.panel.classList.contains("outline-pop")) return;
+  const panel = h("div", { class: "outline-pop", role: "dialog", "aria-label": t("Outline") }, outlineRows({ pop: true }));
+  panel.addEventListener("mouseleave", (e) => { if (!panel.contains(e.relatedTarget) && !anchor.contains(e.relatedTarget)) closeFloat(); });
+  openFloat(anchor, panel, { minWidth: 320, align: "start" });
+  paintHere();
+}
+
+// the preview on the right, hidden for room (back from the same button, here or in the top bar)
+const previewShown = () => store("preview") !== "off";
+function setPreview(on) {
+  store("preview", on ? null : "off");
+  document.body.dataset.preview = on ? "on" : "off";
+  for (const b of document.querySelectorAll(".preview-toggle")) { b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); }
+  if (on) { if (typeof applyZoom === "function") applyZoom(); scheduleRender(0); }
+}
+function previewToggle() {
+  const on = previewShown();
+  return h("button", { class: "btn ghost sm preview-toggle" + (on ? " on" : ""), "aria-pressed": String(on),
+    title: on ? t("Hide the preview (more room for the document)") : t("Show the preview"), onclick: () => setPreview(!previewShown()) },
+  icon("panelRight"), h("span", { class: "lbl" }, t("Preview")));
 }
 
 function langSwitch() {
@@ -606,7 +893,7 @@ function langSwitch() {
     h("button", { class: l === ui.editLang ? "on" : "", "aria-pressed": String(l === ui.editLang), onclick: () => {
       if (l === ui.editLang) return;
       ui.editLang = l;
-      buildEditorKeepDraft();
+      paintEditor({ keepScroll: true });   // every card shows the language being edited
       if (ui.linesFor[l] !== ui.subsetId && !ui.render.busy) measureEditLang(ui.subsetId);
     } }, langShort(l))));
 }
@@ -630,19 +917,23 @@ function tfield(label, obj, key, { i18n = false, multiline = false, placeholder 
   return h("div", { class: "field" }, h("label", null, label, tag, hint && h("span", { class: "hint" }, hint)), input);
 }
 
-function entryForm() {
-  const e = ui.draft;
+function entryForm(e = ui.draft, { out = false } = {}) {
   const sec = sectionById(e.section);
   const isList = sec && sec.kind === "list";
   e.bullets = e.bullets || [];
   e.tech = e.tech || [];
   e.evidence = e.evidence || [];
-  const out = [];
+  const parts = [];
 
   const ai = ui.ai[e.id];
-  if (ai && ai.done) out.push(aiDiff(e.id));
+  if (ai && ai.done) parts.push(aiDiff(e.id));
 
-  out.push(h("div", { class: "ed-head" }, h("h1", null, display(e.title) || t("(untitled)")), h("span", { class: "id" }, entryLabel(entryById(e.id) || e)), h("span", { class: "spacer" }), langSwitch()));
+  const more = h("button", { class: "btn icon sm ghost", title: t("More"), "aria-label": t("More"), onclick: (ev) => openMenu(ev.currentTarget, [
+    out && { label: t("Fold it again"), icon: "up", onClick: () => { ui.docOpen.delete(e.id); paintDocument(); } },
+    { label: t("Delete this entry"), icon: "trash", danger: true, onClick: () => deleteEntry(e.id) }], { align: "end" }) }, icon("more"));
+  parts.push(h("div", { class: "ed-head" }, h("h2", null, display(e.title) || t("(untitled)")), h("span", { class: "id" }, entryLabel(entryById(e.id) || e)),
+    out && h("span", { class: "chip" }, t("not in “{name}”", { name: subsetName(subset()) })),
+    h("span", { class: "spacer" }), more));
 
   const secSel = uiSelect({
     options: sections().map((s) => ({ value: s.id, label: display(s.title) || s.id, hint: s.kind === "list" ? t("List") : t("Timeline") })),
@@ -664,18 +955,25 @@ function entryForm() {
   basics.push(h("div", { class: "field" }, h("label", null, isList ? t("Items") : t("Tech / keywords"), h("span", { class: "hint" }, t("comma-separated"))),
     h("input", { value: e.tech.map((t) => display(t)).join(", "), spellcheck: "false", "data-key": "tech",
       oninput: (ev) => { e.tech = ev.target.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean); touch(); } })));
-  out.push(card(t("Basics"), null, basics));
+  parts.push(card(t("Basics"), null, basics));
 
-  if (!isList) out.push(bulletsCard(e));
+  if (!isList) parts.push(bulletsCard(e));
 
-  out.push(card(t("Fact layer"), t("Only Claude sees this; it never appears on the resume"), [
+  // what only Claude reads, folded under the card (opened on a click, remembered while the window is open)
+  parts.push(h("details", { class: "fact-fold", open: ui.factOpen.has(e.id) || null,
+    ontoggle: (x) => { if (x.target.open) ui.factOpen.add(e.id); else ui.factOpen.delete(e.id); } },
+  h("summary", null, icon("chevRight"), h("span", { class: "ff-t" }, t("Fact layer and project folders")),
+    h("span", { class: "ff-sub" }, t("Only Claude sees this; it never appears on the resume")), h("span", { class: "ff-flag" }, factFlag(e.id))),
+  h("div", { class: "card fact" }, h("div", { class: "card-b" },
     h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, t("Write what really happened: what you did, what AI wrote, where the numbers come from, the details you wouldn't put on a resume. When Claude polishes, it stays within what this supports.")),
     tfield(t("What really happened / raw notes"), e, "notes", { multiline: true, rows: 6 }),
-    evidenceEditor(e),
-  ], { cls: "fact" }));
+    evidenceEditor(e)))));
+  return parts;
+}
 
-  out.push(h("div", { class: "danger-zone" }, h("button", { class: "btn sm ghost danger", onclick: () => deleteEntry(e.id) }, icon("trash"), t("Delete this entry"))));
-  return out;
+function factFlag(id) {
+  const st = (ui.evidence[id] || {}).state;
+  return st === "changed" ? h("span", { class: "chip new" }, t("new progress")) : st === "missing" ? h("span", { class: "chip bad" }, t("a folder is missing")) : null;
 }
 
 // ---------------------------------------------------------------- bullets
@@ -686,7 +984,7 @@ function bulletsCard(e) {
   const aiBtn = h("button", { class: "btn sm ghost ai-btn", "aria-haspopup": "menu", disabled: !ui.chat.available,
     title: ui.chat.available ? "" : t("The claude command was not found"), onclick: (ev) => openAiMenu(ev.currentTarget, e) }, icon("sparkle"), t("Ask Claude…"), icon("chev"));
   return card(t("Bullets"), langs().length > 1 ? t("Editing {lang}", { lang: langName(L) }) : null,
-    [h("div", { id: "bullet-notes" }, bulletNotes(e)), bulletsEditor(e)], { actions: aiBtn, cls: "bullets-card" });
+    [h("div", { class: "bullet-notes", "data-aid": "bullet-notes" }, bulletNotes(e)), bulletsEditor(e)], { actions: aiBtn, cls: "bullets-card" });
 }
 
 // what the line measurement and the bilingual check say about this entry, with one-click fixes
@@ -736,8 +1034,8 @@ function lineChip(i, m, st) {
 
 function bulletsEditor(e) {
   const L = ui.editLang, O = otherLang(L);
-  const box = h("div", { id: "bullets" });
-  const redraw = () => { box.replaceWith(bulletsEditor(e)); };
+  const box = h("div", { class: "bullets-box", "data-aid": "bullets" });
+  const redraw = () => { box.replaceWith(bulletsEditor(e)); markActive(); };
   const m = measuredFor(e.id, L);
   e.bullets.forEach((b, i) => {
     const st = bulletState(b, L);
@@ -767,7 +1065,7 @@ function bulletsEditor(e) {
     h("div", { class: "row wrap" },
       h("button", { class: "btn sm", onclick: () => { e.bullets.push(langs().length > 1 ? { [L]: "" } : ""); /* the other languages show as missing until written */ touch(); redraw(); setTimeout(() => { const ta = document.querySelectorAll("#bullets textarea"); if (ta.length) ta[ta.length - 1].focus(); }, 0); } }, icon("plus"), t("Add bullet")),
       h("span", { class: "muted", style: "font-size:12px" }, t("Supports **bold**, *italic*, [text](link)"))),
-    h("div", { id: "polish-box", class: "polish-box hidden" }, instr,
+    h("div", { class: "polish-box hidden", "data-aid": "polish-box" }, instr,
       h("button", { class: "btn primary sm", onclick: () => aiEntry("polish", e.id, { text: instr.value, lang: L }) }, icon("sparkle"), t("Polish"))));
   return box;
 }
@@ -876,7 +1174,7 @@ function changeDetail(c) {
 function evidenceEditor(e) {
   const st = ui.evidence[e.id] || { paths: [] };
   const rows = Object.fromEntries((st.paths || []).map((r) => [r.path, r]));
-  const box = h("div", { class: "evidence", id: "evidence" });
+  const box = h("div", { class: "evidence", "data-aid": "evidence" });
   box.append(h("div", { class: "ev-head" }, h("span", { class: "ev-title" }, t("Project folders and evidence")),
     h("span", { class: "hint" }, t("Claude reads the code, README and commit history in them"))));
   const pending = e.evidence.map((p) => rows[p]).filter((r) => r && (r.state === "changed" || r.state === "new"));
@@ -934,20 +1232,27 @@ async function checkEvidence(force = false) {
 
 // refresh just the evidence block, so typing elsewhere in the form is not interrupted
 function paintEvidence() {
-  const old = $("#evidence");
-  if (old && ui.sel.kind === "entry" && ui.draft) old.replaceWith(evidenceEditor(ui.draft));
+  for (const card of document.querySelectorAll("#editor .doc-card")) {
+    const ed = ui.eds.get(card.dataset.key);
+    if (!ed || ed.kind !== "entry") continue;
+    const old = card.querySelector(".evidence");
+    if (old) old.replaceWith(evidenceEditor(ed.draft));
+    const flag = card.querySelector(".ff-flag");
+    if (flag) flag.replaceChildren(...[factFlag(ed.draft.id)].filter(Boolean));
+  }
+  markActive();
 }
 
 async function deleteEntry(id) {
   if (!(await modal({ title: t("Delete “{name}”?", { name: display((entryById(id) || {}).title) || entryLabel(entryById(id)) }), message: t("It is removed from the library and every subset. You can get it back from .studio/history if needed."), ok: t("Delete"), danger: true }))) return;
-  ui.dirty = false;
+  const ed = ui.eds.get("entry:" + id);
+  if (ed) { clearTimeout(ed.timer); ed.dirty = false; }
   applyState(await api("DELETE", "/api/entries/" + encodeURIComponent(id)));
-  select("profile");
+  if (docMode()) syncDocument(); else select("profile");
   scheduleRender();
 }
 
-function profileForm() {
-  const p = ui.draft;
+function profileForm(p = ui.draft) {
   p.contacts = p.contacts || [];
   // a contact written once serves every language; one already split by language (a phone number
   // per country) changes only in the language being edited
@@ -974,13 +1279,16 @@ function profileForm() {
   });
   rows.append(h("button", { class: "btn sm", onclick: () => { p.contacts.push({ label: "", value: "", url: "" }); touch(); buildEditorKeepDraft(); } }, icon("plus"), t("Add contact")));
   return [
-    h("div", { class: "ed-head" }, h("h1", null, t("Profile")), h("span", { class: "spacer" }), langSwitch()),
+    h("div", { class: "ed-head" }, h("h2", null, t("Profile"))),
     card(t("Basics"), null, [
       tfield(t("Name"), p, "name", { i18n: true }),
       headlineField(v, job),
     ]),
     card(t("Contacts"), job ? t("Shown in order under the name; ticked = shown in “{job}”", { job: subsetName(v) }) : t("Shown in order under the name; switch to a subset to hide some of them"), rows),
-    card(t("Fact layer"), t("Only Claude sees this"), tfield(t("Job search background, constraints, preferences"), p, "notes", { multiline: true, rows: 5 }), { cls: "fact" }),
+    h("details", { class: "fact-fold", open: ui.factOpen.has("profile") || null,
+      ontoggle: (x) => { if (x.target.open) ui.factOpen.add("profile"); else ui.factOpen.delete("profile"); } },
+    h("summary", null, icon("chevRight"), h("span", { class: "ff-t" }, t("Fact layer")), h("span", { class: "ff-sub" }, t("Only Claude sees this"))),
+    h("div", { class: "card fact" }, h("div", { class: "card-b" }, tfield(t("Job search background, constraints, preferences"), p, "notes", { multiline: true, rows: 5 })))),
   ];
 }
 
@@ -1030,7 +1338,7 @@ function resumeLangEditor(st, save) {
 }
 
 async function putSettings(st) {
-  try { applyState(await api("PUT", "/api/item", { kind: "settings", data: st, base: itemHash("settings") })); buildEditorKeepDraft(); scheduleRender(); }
+  try { applyState(await api("PUT", "/api/item", { kind: "settings", data: st, base: itemHash("settings") })); paintEditor({ keepScroll: true }); scheduleRender(); }
   catch (e) { toast(t("Save failed: {error}", { error: e.message })); }
 }
 
@@ -1460,13 +1768,13 @@ function aiDiff(id) {
     return one(v);
   };
   const names = { title: t("Name"), subtitle: t("Subtitle"), bullets: t("Bullets"), tech: t("Tech"), location: t("Location"), start: t("Start"), end: t("End"), date: t("Date"), link: t("Link"), notes: t("Fact layer"), evidence: t("Evidence paths") };
-  const close = () => { delete ui.ai[id]; buildEditor(); };
+  const close = () => { delete ui.ai[id]; paintItem(edFor("entry", id)); };
   return card(keys.length ? t("Claude changed this entry") : t("Claude didn't change this entry"), `${a.action in AI_LABELS ? t(AI_LABELS[a.action]) : ""} · ${t("the chat explains why")}`, [
     keys.map((k) => [h("div", { class: "k" }, names[k] || k), h("div", { class: "before" }, fmt(before[k])), h("div", { class: "after" }, fmt(after[k]))]),
     h("div", { class: "row", style: "margin-top:12px" },
       h("button", { class: "btn sm", onclick: close }, icon("check"), keys.length ? t("Keep") : t("Got it")),
       keys.length && h("button", { class: "btn sm danger-soft", onclick: () => undoAi(id) }, icon("undo"), t("Undo, back to before")),
-      h("button", { class: "btn sm ghost", onclick: () => setTab("chat") }, icon("chat"), t("Open the chat"))),
+      h("button", { class: "btn sm ghost", onclick: () => showChat() }, icon("chat"), t("Open the chat"))),
   ], { cls: "diff" });
 }
 
@@ -1476,7 +1784,9 @@ async function undoAi(id) {
     const s = await api("PUT", "/api/item", { kind: "entry", id: snap.id, data: snap, base: itemHash("entry", snap.id) });
     delete ui.ai[id];
     applyState(s);
-    buildEditor({ flash: true });
+    const ed = edFor("entry", snap.id);
+    resetEd(ed);
+    paintItem(ed, { flash: true });
     scheduleRender();
     toast(t("Restored to before the change"));
   } catch (e) { toast(t("Undo failed: {error}", { error: e.message })); }
@@ -1513,11 +1823,14 @@ function finishAi(chatId) {
   }
   if (!touched.length) return;
   const open = ui.sel.kind === "entry" && touched.includes(ui.sel.id);
-  if (open && !ui.dirty) buildEditor();
+  for (const id of touched) {   // each card Claude changed shows what changed, with undo
+    const ed = ui.eds.get("entry:" + id);
+    if (ed && !ed.dirty) { if (stale(ed)) resetEd(ed); paintItem(ed); }
+  }
   const first = touched.find((id) => id !== ui.sel.id) || touched[0];
   if (!open || touched.length > 1) {
     const name = display((entryById(first) || {}).title) || entryLabel(entryById(first));
-    toast(touched.length > 1 ? t("Claude changed {n} entries; open each to see what changed and undo it", { n: touched.length }) : t("Claude finished “{name}”", { name }),
+    toast(touched.length > 1 ? t("Claude changed {n} entries; each card shows what changed, with undo", { n: touched.length }) : t("Claude finished “{name}”", { name }),
       { ms: 6000, action: { label: t("View"), fn: () => select("entry", first) } });
   }
 }
@@ -1562,14 +1875,18 @@ function longBullets(lang = (subset() || {}).lang) {
 // the measurement changed: update chips and notes in place (never rebuild the form under the cursor)
 function paintLines() {
   renderIssues();
-  if (ui.sel.kind !== "entry" || !ui.draft) return;
-  const e = ui.draft, L = ui.editLang, m = measuredFor(e.id, L);
-  for (const chip of document.querySelectorAll("#bullets .line-chip")) {
-    const i = +chip.dataset.line;
-    chip.replaceWith(lineChip(i, m, bulletState(e.bullets[i], L)));
+  const L = ui.editLang;
+  for (const card of document.querySelectorAll("#editor .doc-card")) {
+    const ed = ui.eds.get(card.dataset.key);
+    if (!ed || ed.kind !== "entry") continue;
+    const e = ed.draft, m = measuredFor(e.id, L);
+    for (const chip of card.querySelectorAll(".bullets-box .line-chip")) {
+      const i = +chip.dataset.line;
+      chip.replaceWith(lineChip(i, m, bulletState(e.bullets[i], L)));
+    }
+    const notes = card.querySelector(".bullet-notes");
+    if (notes) notes.replaceChildren(...bulletNotes(e));
   }
-  const notes = $("#bullet-notes");
-  if (notes) notes.replaceChildren(...bulletNotes(e));
 }
 
 // ================================================================ chat: see chat.js
@@ -1787,7 +2104,7 @@ function renderIssues() {
 }
 
 async function jumpToBullet(id, index, lang) {
-  if (langs().includes(lang)) ui.editLang = lang;
+  if (langs().includes(lang) && ui.editLang !== lang) { ui.editLang = lang; if (docMode()) paintDocument(); }
   await select("entry", id);
   const ta = document.querySelector(`#bullets textarea[data-bullet="${index}"]`);
   if (ta) { ta.scrollIntoView({ block: "center", behavior: "smooth" }); ta.focus(); ta.closest(".bullet").classList.add("pulse"); }
@@ -1949,7 +2266,6 @@ function connect() {
 function wire() {
   initTips();
   initContextMenu();
-  for (const b of document.querySelectorAll(".tab")) b.onclick = () => setTab(b.dataset.tab);
 
   ui.w.subset = uiSelect({ id: "subset-select", cls: "subset", label: t("ALL or a subset"), menuWidth: 300,
     title: t("ALL = every entry; the others are subsets of it"), onChange: (v) => switchSubset(v) });
@@ -1974,11 +2290,15 @@ function wire() {
 
   document.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveDraft(); }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "j") { e.preventDefault(); setChatPane(W.chat !== "on"); }
     if ((e.ctrlKey || e.metaKey) && e.key === ",") { e.preventDefault(); openSettings(); }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && ["1", "2", "3"].includes(e.key)) { e.preventDefault(); setWorkspace({ 1: "resume", 2: "jobs", 3: "fill" }[e.key]); }
     if (e.key === "Escape" && !Float.cur && ui.layoutOpen) { ui.layoutOpen = false; renderPreviewToolbar(); }
   });
-  window.addEventListener("beforeunload", () => { if (ui.dirty) saveDraft(); if (ui.headPending) ui.headPending(); });
+  window.addEventListener("beforeunload", () => { saveDraft(); if (ui.headPending) ui.headPending(); });
+  $("#editor").addEventListener("scroll", spyNow, { passive: true });
+  document.body.dataset.outline = outlinePinned() ? "rail" : "strip";
+  document.body.dataset.preview = previewShown() ? "on" : "off";
   // projects change while the window is in the background: look again when the user comes back
   window.addEventListener("focus", () => checkEvidence(true));
   document.addEventListener("visibilitychange", () => { if (!document.hidden) checkEvidence(true); });
@@ -1997,7 +2317,6 @@ function wire() {
     toast(switched === "new" ? t("Started a new data file: {path}", { path: S.data_path }) : t("Opened {path}", { path: S.data_path }), { ms: 5000 });
   }
   select("profile");
-  setTab(["chat", "jobs"].includes(store("tab")) ? store("tab") : "library");
   initWorkspaces();
   connect();
   loadChats().catch(() => {});

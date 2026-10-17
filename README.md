@@ -18,8 +18,8 @@ Your data lives in this folder: `resume.yaml`, plus `.studio/` (chats, history) 
 All three are git-ignored, so pulling updates never touches them. Settings (the gear, Ctrl+,) shows
 the data file and can open or start another one anywhere; the window remembers it in `.local/prefs.json`.
 
-Needs Python 3.10+, `xelatex` (TeX Live / MiKTeX) and a logged-in Claude Code for the chat; the
-Applications tab also needs git and Node.js 22+.
+Needs Python 3.10+, `xelatex` (TeX Live / MiKTeX) and a logged-in Claude Code for the chat; Job search
+(career-ops) also needs git and Node.js 22+.
 Everything is installed into this folder (`.venv`, `.cache`, `.local/providers`); nothing global.
 The exe is a 16 KB launcher built from `launcher/Launcher.cs` by `scripts/build_launcher.py`
 with the C# compiler that ships with Windows.
@@ -36,25 +36,31 @@ with the C# compiler that ships with Windows.
   exactly what was sent. Each version freezes the subset and the wording of the shared entries it picks;
   compare any two (git-style word diff), preview or export one as it was, or go back to it. Going back
   keeps what it said before as a version too, and says which other subsets the shared entries also change.
+- **The library is a document**: Profile and every entry, each a card edited in place, in the subset's order
+  (entries the subset leaves out fold to one line). An **outline** beside it ticks, orders and adds entries
+  and jumps to any card; it can fold into a strip above the document that opens on hover. The fact layer
+  folds under each card. The preview can be hidden for room. ([docs/LAYOUT.md](docs/LAYOUT.md))
 - **Live preview** as page images; in a subset a second page is flagged as overflow.
-- **Chat with Claude Code** in the left sidebar: streamed replies, tool steps, resumable sessions.
-  "Polish with Claude" on an entry sends the request there and shows a before/after diff with undo.
+- **One chat with Claude Code** on the left, the same in every workspace (hide it with the Claude button, Ctrl+J):
+  streamed replies, tool steps, resumable sessions. Claude is told what is on screen (the entry being edited,
+  the company or platform open), and can edit the resume, update the tracker and drive the browser from any
+  of them. "Polish with Claude" on an entry sends the request there and shows a before/after diff with undo.
 - **Safe co-editing**: Claude's edits refresh the form and preview; editing the same item from
   two places raises a conflict instead of overwriting; every save keeps a copy in `.studio/history`.
 - **Export** PDF + `.tex` to `settings.export_dir`.
-- **Two workspaces, switched in the top bar (Ctrl+1 / Ctrl+2)**:
-  - **Resume**: the library, the subsets and the preview, plus an **Applications** tab: paste a posting and
-    [career-ops](https://github.com/santifer/career-ops) (MIT, by santifer) evaluates it against your resume (a
-    fit score, what to stress, what's missing). "Resume to send" ranks your subsets by how much of the
+- **Job search (Ctrl+2)**, with [career-ops](https://github.com/santifer/career-ops) (MIT, by santifer):
+  - "Evaluate a posting" in its top bar: career-ops evaluates it against your resume (a fit score, what to
+    stress, what's missing). A posting's page in Resume (from "Pick a resume" → "Open its page in Resume")
+    shows the verdict next to the preview, and "Resume to send" ranks your subsets by how much of the
     posting each one already covers and links the one you pick: a resume is for a kind of role, never named
     after a company. Only when none fits does Claude adjust one or start a new one.
   - Mark a posting sent when you submit: its subset is kept as a version and pinned on it, so you always know
     what it got.
   - career-ops' targeting profile (roles, location, salary, deal-breakers) is filled by Claude from your
     profile's fact layer and your subsets, and the window offers an update when they change.
-  - **Job search**: career-ops' own web interface fills the window: its pipeline table, discovery, scheduled
+  - career-ops' own web interface fills the window: its pipeline table, discovery, scheduled
     scans, follow-ups, portals, analytics and config, exactly as career-ops ships them. Resume Studio adds what
-    only it can: Claude's chat on the left (those chats run in career-ops' folder), "All of career-ops" (every
+    only it can: the chat on the left (a new chat there runs in career-ops' folder), "All of career-ops" (every
     mode it has, found in its own files, each started as a chat), and "Pick a resume" for the posting open in
     the frame.
   - You don't need a terminal: Resume Studio installs career-ops into `.local/providers/` on request, builds its

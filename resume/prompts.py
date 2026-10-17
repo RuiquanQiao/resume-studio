@@ -27,12 +27,15 @@ def render_cmd(subset_id: str, data_path: str, lang: str | None = None) -> str:
     return f'python "{RENDER}" {subset_id}' + (f" --lang {lang}" if lang else "") + f' --data "{data_path}"'
 
 
-def ui_context(data_path: str, subset: dict | None, entry: dict | None, project_roots: list[str] | None = None) -> str:
+def ui_context(data_path: str, subset: dict | None, entry: dict | None, project_roots: list[str] | None = None,
+               screen: str = "") -> str:
     lines = [
         "# Resume Studio",
         "",
         "The user is talking to you from the Resume Studio window (a resume editor built on Claude Code),",
-        "not from a terminal. They can see a form editor and a live PDF preview next to this chat.",
+        "not from a terminal. The same chat sits beside all three of its workspaces: Resume (the experience",
+        "library as a document, and a live PDF preview), Job search (career-ops' own interface) and Applying",
+        "(the applications, companies and platforms tables, and the browser Resume Studio drives).",
         "",
         f"- Resume data file: `{data_path}`. The window watches it: after you edit it, the form and preview",
         "  refresh by themselves, so there is no need to compile or tell the user to reload.",
@@ -53,9 +56,11 @@ def ui_context(data_path: str, subset: dict | None, entry: dict | None, project_
                      f" ({subset.get('label') or ''}, language `{subset.get('lang')}`,"
                      f" template `{subset.get('template')}`).")
     if entry:
-        lines.append(f"- The entry open in the editor is `{entry.get('id')}` (section `{entry.get('section')}`)."
+        lines.append(f"- The entry being edited is `{entry.get('id')}` (section `{entry.get('section')}`)."
                      " Entry ids are internal: the user never sees them, so in replies call entries by"
                      " their title (or section and number, e.g. \"Projects #2\").")
+    if screen:
+        lines.append(f"- On screen right now: {screen}. \"This\" and \"here\" in the user's message most likely mean it.")
     return "\n".join(lines) + "\n"
 
 

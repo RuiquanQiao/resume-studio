@@ -90,7 +90,7 @@ function relTime(epoch) {
 }
 function autosize(ta) { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 200) + "px"; }
 // the chat is on screen: its tab in Resume, or the left pane of Autofill and Job search (where it has no tab)
-const chatShown = () => ui.tab === "chat" || W.ws === "fill" || (W.ws === "jobs" && W.chat === "on");
+const chatShown = () => W.chat === "on";
 const fileUrl = (path) => `/api/chats/${ui.chat.id}/file?path=${encodeURIComponent(path)}`;
 
 // ---------------------------------------------------------------- Claude Code info
@@ -330,11 +330,10 @@ async function loadChats() {
   paintChatDot(r.running);
 }
 
-function paintChatDot(running = ui.chat.running ? [ui.chat.id] : []) {
-  const dot = $("#chat-dot");
-  dot.classList.toggle("hidden", !running.length && !ui.chat.waiting.size);
-  dot.classList.toggle("wait", ui.chat.waiting.size > 0);
-  renderWsTools();   // the dot on Job search's Claude button
+// the dot on the Claude button in the top bar: a reply running, or Claude waiting for the user
+function paintChatDot(running) {
+  if (running) ui.chat.busy = running;   // every chat replying now, as the server last said
+  paintChatToggle();
 }
 
 // the latest call wins: an older one answering late must not bring its chat back. A refresh of the
@@ -383,11 +382,10 @@ function reloadChat() {
 }
 
 async function createChat() {
-  // in Job search a new chat works in the tool's folder
-  // in Autofill it can use Resume Studio's browser
+  // in Job search a new chat works in the tool's folder (its modes and scripts load there); anywhere
+  // else in Resume Studio's data folder, where it can do everything the window can
   const c = W.ws === "jobs" && jobsReady()
     ? (await api("POST", "/api/jobs/chat", { ...chatSettings(), title: jobsTool().name })).chat
-    : W.ws === "fill" ? (await api("POST", "/api/autofill/chat", { ...chatSettings(), site: F.site })).chat
     : await api("POST", "/api/chats", chatSettings());
   ui.chat.list = [c, ...ui.chat.list];
   return c;
@@ -423,37 +421,51 @@ async function renameChat(title) {
   } catch (e) { toast(e.message); }
 }
 
-// Job search shows the chats that run in the tool's folder, Autofill the ones that use the browser;
-// Resume shows every chat
-function visibleChats() {
-  if (W.ws === "fill") return ui.chat.list.filter((c) => c.workspace === "autofill");
-  if (W.ws !== "jobs" || !jobsReady()) return ui.chat.list;
-  const id = (J.data.status.tool || {}).id;
-  return ui.chat.list.filter((c) => c.workspace === id);
-}
-const chatKey = () => (W.ws === "jobs" ? "chat-jobs" : W.ws === "fill" ? "chat-fill" : "chat");
+// one chat for the three workspaces (docs/LAYOUT.md): every chat is listed everywhere, and the open one
+// stays open when the workspace changes. A chat runs either in Resume Studio's data folder or in a
+// connected tool's folder (career-ops), which is fixed when it starts; the list keeps the two apart.
+function visibleChats() { return ui.chat.list; }
+const chatKey = () => "chat";
+const inToolFolder = (c) => !!(c && c.workspace && c.workspace !== "autofill");   // "autofill": an Applying chat from before, in the data folder
 
-// each workspace keeps its own open chat
-async function chatForWorkspace() {
-  const list = visibleChats();
-  const saved = store(chatKey());
-  const id = list.some((c) => c.id === saved) ? saved : list.some((c) => c.id === ui.chat.id) ? ui.chat.id : (list[0] || {}).id || null;
-  if (id && id !== ui.chat.id) { await openChat(id, { quiet: true }); return; }
-  if (!id) {
-    openSeq++; opening = null;   // a chat still opening from the last workspace must not land here
-    ui.chat.id = null; ui.chat.meta = null; ui.chat.messages = []; ui.chat.running = false; ui.chat.live = null;
-    renderComposerState(); renderPickers();
-  }
-  renderChatSelect();
-  renderChat();
+// the open chat, or a fresh one where there is none (the switch of workspace keeps it)
+function chatForWorkspace() {
+  renderComposerState();
+  if (!ui.chat.messages.length && !ui.chat.running) renderChat();   // the empty chat's suggestions follow the workspace
 }
 
 function renderChatSelect() {
   const sel = ui.w.chat;
   const list = visibleChats();
   sel.disabled = !list.length;
-  sel.setOptions(list.map((c) => ({ value: c.id, label: c.title || t("New chat"), desc: c.workspace === "autofill" ? t("Applying") : c.workspace || null,
-    hint: ui.chat.waiting.has(c.id) ? t("waiting for you") : relTime(c.updated) })), ui.chat.id);
+  const mixed = list.some(inToolFolder) && list.some((c) => !inToolFolder(c));
+  const opt = (c) => ({ value: c.id, label: c.title || t("New chat"), group: mixed ? (inToolFolder(c) ? t("In {name}'s folder", { name: chatPlace(c) }) : "Resume Studio") : undefined,
+    hint: ui.chat.waiting.has(c.id) ? t("waiting for you") : relTime(c.updated) });
+  sel.setOptions([...list.filter((c) => !inToolFolder(c)), ...list.filter(inToolFolder)].map(opt), ui.chat.id);
+}
+const chatPlace = (c) => (jobsReady() && c.workspace === (J.data.status.tool || {}).id ? jobsTool().name : c.workspace);
+
+// what the window shows outside the resume, in one line: above the composer, and sent with every
+// message so "this company" means the one open (the subset and entry go as they always did)
+function screenLine() {
+  if (W.ws === "jobs") {
+    if (!jobsReady()) return t("Job search");
+    const a = webUp() ? webApp() : null;
+    return a ? t("{name}'s page for {job}", { name: jobsTool().name, job: [a.company, a.role].filter(Boolean).join(" — ") })
+      : t("{name}'s interface", { name: jobsTool().name });
+  }
+  if (W.ws === "fill") {
+    const p = H.page;
+    if (p && p.kind === "platform") return t("your profile on {site}", { site: platformName(p.id) });
+    if (p && p.kind === "company") return t("the company {name}", { name: (huntCompany(p.id) || {}).name || p.id });
+    if (p && p.kind === "app") {
+      const a = ((H.data && H.data.applications) || []).find((x) => x.id === p.id);
+      return a ? t("the application {job}", { job: `${(huntCompany(a.company) || {}).name || a.company} / ${a.role}` }) : p.id;
+    }
+    return t("the {table} table in Applying", { table: t(HUNT_TABS[H.tab]) });
+  }
+  if (ui.sel.kind === "posting" && J.detail) return t("the posting {job}", { job: [J.detail.company, J.detail.role].filter(Boolean).join(" — ") || J.detail.id });
+  return "";
 }
 
 // ---------------------------------------------------------------- transcript
@@ -462,7 +474,7 @@ function renderChat() {
   log.replaceChildren();
   ui.chat.liveEl = null;
   if (!ui.chat.messages.length && !ui.chat.running && W.ws === "fill") { log.append(fillWelcome()); return; }
-  if (!ui.chat.messages.length && !ui.chat.running && W.ws === "jobs" && jobsReady()) {
+  if (!ui.chat.messages.length && !ui.chat.running && W.ws === "jobs" && jobsReady() && (!ui.chat.id || inToolFolder(ui.chat.meta))) {
     const name = jobsTool().name;
     const suggest = [
       t("Scan job boards for new postings that fit me"), t("Where do my applications stand, and what should I do next?"),
@@ -583,13 +595,20 @@ function stepWhere(url) {
   } catch (_) { return clipText(url, 60); }
 }
 
+const stepItemNames = {};   // "site:change id" -> its name, seen while it was pending
 function stepLabel(s, result) {
   const what = stepTarget(s, result);
   const site = (s.site && (((F.sites || []).find((x) => x.id === s.site) || {}).name || SITE_NAMES[s.site])) || s.site || "";
+  // the change by its name; once pushed it leaves the site's pending list, so the name is remembered,
+  // and a profile field is named from its id when the step is first drawn after that
   const item = () => {
+    const key = `${s.site}:${s.id}`;
     const v = s.site && F.view[s.site];
     const it = v && (v.pending || []).find((i) => i.id === s.id);
-    return it ? pushLabel(it) : s.id;
+    if (it) return (stepItemNames[key] = pushLabel(it));
+    if (stepItemNames[key]) return stepItemNames[key];
+    const [sec, field] = String(s.id || "").split(".");
+    return sec === "basics" && field ? fieldName("basics", field) : sec === "skills" ? t("Skills") : s.id;
   };
   switch (s.cmd) {
     case "open": return [s.url && /^https?:\/\/[^$]+$/.test(s.url) ? t("Open {where}", { where: stepWhere(s.url) }) : t("Open a page")];
@@ -853,9 +872,11 @@ function renderComposerState() {
   const parts = [];
   if (ui.subsetId) parts.push(isAll() ? `ALL (${t("All entries")})` : t("the subset “{name}”", { name: subsetName(subset()) }));
   if (ui.sel.kind === "entry" && entryById(ui.sel.id)) parts.push(`“${display(entryById(ui.sel.id).title) || entryLabel(entryById(ui.sel.id))}”`);
-  const ws = (ui.chat.meta && ui.chat.meta.workspace) || (W.ws === "jobs" && jobsReady() ? jobsTool().name : W.ws === "fill" ? "autofill" : null);
-  $("#chat-context").textContent = ws === "autofill" ? t("In this chat Claude can use Resume Studio's browser")
-    : ws ? t("This chat runs in {name}'s folder; it can still edit your resume", { name: ws })
+  const tool = ui.chat.id ? inToolFolder(ui.chat.meta) && chatPlace(ui.chat.meta) : W.ws === "jobs" && jobsReady() && jobsTool().name;
+  const here = screenLine();
+  if (W.ws !== "resume") parts.length = 0;   // the resume is not what's on screen there
+  if (here) parts.push(here);
+  $("#chat-context").textContent = tool ? t("This chat runs in {name}'s folder; it can still edit your resume", { name: tool })
     : parts.length ? t("Claude knows you're looking at: {what}", { what: parts.join(" · ") }) : "";
   paintChatDot();
 }
@@ -1004,7 +1025,7 @@ function runLocal(text) {
 
 // ---------------------------------------------------------------- sending
 function startChatWith(text) {
-  setTab("chat");
+  showChat();
   const ta = $("#chat-input");
   ta.value = text;
   autosize(ta);
@@ -1023,10 +1044,11 @@ async function sendChat(text, { action = null, entryId = null, target = null, la
     store(chatKey(), c.id);
     renderChatSelect();
   }
-  setTab("chat");
+  showChat();
   const batch = action && action.startsWith("batch_");
   const attachments = files.map((f) => (f.data ? { name: f.name, data: f.data } : { name: f.name, path: f.path }));
-  const body = { text, subset_id: ui.subsetId, entry_id: batch ? null : entryId || (ui.sel.kind === "entry" ? ui.sel.id : null), action, target, lang, attachments };
+  const editing = W.ws === "resume" && ui.sel.kind === "entry" ? ui.sel.id : null;   // elsewhere the resume isn't on screen
+  const body = { text, subset_id: ui.subsetId, entry_id: batch ? null : entryId || editing, action, target, lang, attachments, screen: screenLine() };
   const queued = ui.chat.running;
   if (!queued) {
     ui.chat.running = true;
@@ -1075,8 +1097,7 @@ async function onChatEvent(type, ev) {
   if (type === "claude.info") { loadClaudeInfo(); return; }
   if (type === "claude.limits") { ui.claude = { ...ui.claude, limits: ev }; renderContextRing(); return; }
   if (type === "chat.start") {
-    paintChatDot([ev.chat]);
-    $("#chat-dot").classList.remove("hidden");
+    paintChatDot([...new Set([...(ui.chat.busy || []), ev.chat])]);
     // a reply this page did not start (another window, or one that began as the last ended): catch up
     if (ev.chat === ui.chat.id && !ui.chat.running) { ui.chat.running = true; ui.chat.live = { blocks: [] }; renderComposerState(); reloadChat(); }
     return;
@@ -1093,10 +1114,11 @@ async function onChatEvent(type, ev) {
     updateWaiting(ev.chat, here ? undefined : ev.ask.status === "pending");
     if (ev.ask.status === "pending" && (ev.chat !== ui.chat.id || !chatShown() || document.hidden)) {
       const what = ev.ask.kind === "question" ? t("Claude has a question") : ev.ask.kind === "plan" ? t("Claude's plan is waiting for your approval") : t("Claude wants to {action}", { action: toolAction(ev.ask.tool) });
-      toast(what, { ms: 8000, action: { label: t("Show me"), fn: async () => { if (ev.chat !== ui.chat.id) await openChat(ev.chat); setTab("chat"); } } });
+      toast(what, { ms: 8000, action: { label: t("Show me"), fn: async () => { if (ev.chat !== ui.chat.id) await openChat(ev.chat); showChat(); } } });
     }
     return;
   }
+  if (type === "chat.done") paintChatDot((ui.chat.busy || []).filter((id) => id !== ev.chat));
   if (ev.chat !== ui.chat.id) {
     if (type === "chat.done") {
       const r = await api("GET", "/api/chats");

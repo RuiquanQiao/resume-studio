@@ -105,9 +105,17 @@ def subset(server, vid="RES-TECH-EN"):
 
 
 def open_entry(pg, eid):
-    pg.click(f".entry[data-id='{eid}'] .e-main")
-    pg.wait_for_selector(f".entry.on[data-id='{eid}']")
-    pg.wait_for_function(f"() => !!document.querySelector('#editor .ed-head')")
+    """Pick an entry in the outline: the document scrolls to its card, which becomes the one being edited (#active)."""
+    pg.click(f"#library .entry[data-id='{eid}'] .e-main")
+    pg.wait_for_selector(f"#library .entry.on[data-id='{eid}']")
+    pg.wait_for_selector(f"#active.doc-card[data-key='entry:{eid}'] .ed-head")
+
+
+def open_facts(pg):
+    """Unfold the fact layer and project folders of the card being edited."""
+    if not pg.is_visible("#active .fact-fold textarea"):
+        pg.click("#active .fact-fold > summary")
+    pg.wait_for_selector("#evidence", state="visible")
 
 
 def page_src(pg):
@@ -137,18 +145,63 @@ def test_first_load_and_preview_fits(page, server):
     canvas_w = page.eval_on_selector("#canvas", "c => c.clientWidth")
     assert size[0] > 800 and size[1] <= canvas_w                    # real image, fitted to the panel
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-    assert page.locator(".tab.on").inner_text() == "经历库"
+    assert page.is_visible("#chat") and page.is_visible("#library")   # the chat on the left, the outline beside the document
 
 
 @needs_tex
 def test_edit_autosaves_and_rerenders(page, server, data_file):
     open_entry(page, "EXP-002")
     before = page_src(page)
-    page.fill("#editor input[data-key=subtitle]", "Founder & builder")
+    page.fill("#active input[data-key=subtitle]", "Founder & builder")
     wait_until(lambda: "Founder & builder" in data_file.read_text(encoding="utf-8"), msg="file saved")
     page.wait_for_selector("#save-status:text('已保存')")
     wait_until(lambda: page_src(page) != before, timeout=30, msg="preview refresh")
     assert "# Resume Studio sample data." in data_file.read_text(encoding="utf-8")
+
+
+def test_the_document_edits_every_card_in_place(page, server, data_file):
+    """docs/LAYOUT.md: Profile and every entry are one document; the outline is a rail that can fold into a strip."""
+    pg = page
+    assert pg.locator("#editor .doc-card").count() == 1 + len(subset(server)["entries"])   # Profile, then the subset's entries
+    # typing in one card, then straight into another: both are saved
+    a = pg.locator("#editor .doc-card[data-key='entry:EXP-002'] input[data-key=location]")
+    b = pg.locator("#editor .doc-card[data-key='entry:EXP-001'] input[data-key=location]")
+    a.fill("Sydney NSW")
+    b.fill("Perth WA")
+    loc = lambda eid: json.dumps(next(e for e in state(server)["doc"]["entries"] if e["id"] == eid).get("location"), ensure_ascii=False)   # noqa: E731
+    wait_until(lambda: "Sydney NSW" in loc("EXP-002") and "Perth WA" in loc("EXP-001"), msg="both saved")
+    assert "堪培拉" in loc("EXP-001")                                         # the other language is untouched
+    assert pg.get_attribute("#active", "data-key") == "entry:EXP-001"          # the card typed in last is the one being edited
+    assert pg.locator("#library .entry.on[data-id='EXP-001']").count() == 1
+    assert "澳大利亚国立大学" in pg.inner_text("#chat-context") or "Australian National University" in pg.inner_text("#chat-context")
+    # an entry not in the subset is one folded line; ticking it adds it, opening it shows its card
+    pg.click("#library .entry[data-id='EXP-003'] .check")
+    wait_until(lambda: "EXP-003" not in subset(server)["entries"], msg="removed from subset")
+    pg.wait_for_selector("#editor .doc-fold[data-key='entry:EXP-003']")
+    pg.click("#editor .doc-fold[data-key='entry:EXP-003'] .df-title")
+    pg.wait_for_selector("#active.doc-card.out[data-key='entry:EXP-003']")
+    pg.click("#library .entry[data-id='EXP-003'] .check")
+    wait_until(lambda: "EXP-003" in subset(server)["entries"], msg="back in the subset")
+    pg.wait_for_selector("#editor .doc-card:not(.out)[data-key='entry:EXP-003']")
+    # the fact layer is folded under each card
+    assert not pg.is_visible("#active .fact-fold textarea")
+    pg.click("#active .fact-fold > summary")
+    pg.wait_for_selector("#active .fact-fold textarea", state="visible")
+    # the outline folds into a strip that opens on hover, and is pinned again
+    pg.click("#library .rail-head button")
+    pg.wait_for_selector("#library", state="hidden")
+    pg.hover("#editor .outline-strip")
+    pg.wait_for_selector(".outline-pop .entry[data-id='EXP-002']")
+    pg.click(".outline-pop .entry[data-id='EXP-002'] .e-main")
+    pg.wait_for_selector("#active[data-key='entry:EXP-002']")
+    pg.click(".outline-pop .rail-head button")
+    pg.wait_for_selector("#library", state="visible")
+    # the preview can be hidden for room, and comes back
+    pg.click("#editor .preview-toggle")
+    pg.wait_for_selector(".pane.right", state="hidden")
+    pg.click("#editor .preview-toggle")
+    pg.wait_for_selector(".pane.right", state="visible")
+    wait_rendered(pg)
 
 
 @needs_tex
@@ -175,6 +228,8 @@ def test_layout_template_and_language(page, server):
     wait_until(lambda: subset(server)["template"] == "modern", msg="template saved")
     page.click("#lang-seg button:text('中文')")
     wait_until(lambda: subset(server)["lang"] == "zh", msg="language saved")
+    # the render of the Chinese resume, not one still finishing from before the switch
+    page.wait_for_function("() => ui.render.last && ui.render.last.lang === 'zh' && !ui.render.busy", timeout=40000)
     wait_rendered(page)
     assert page.locator("#page-badge").inner_text().strip().startswith("1 页")
     # reset one knob back to default
@@ -186,19 +241,19 @@ def test_external_edit_syncs_open_form(page, server, data_file):
     open_entry(page, "EXP-002")
     text = data_file.read_text(encoding="utf-8").replace("Solo developer", "Edited by Claude")
     data_file.write_text(text, encoding="utf-8")
-    page.wait_for_function("() => document.querySelector('#editor input[data-key=subtitle]').value === 'Edited by Claude'", timeout=5000)
+    page.wait_for_function("() => document.querySelector('#active input[data-key=subtitle]').value === 'Edited by Claude'", timeout=5000)
 
 
 def test_conflict_banner_when_both_edit(page, server, data_file):
     open_entry(page, "EXP-002")
-    page.type("#editor input[data-key=location]", "Canberra")        # unsaved local change
+    page.type("#active input[data-key=location]", "Canberra")        # unsaved local change
     text = data_file.read_text(encoding="utf-8").replace("Solo developer", "Changed elsewhere")
     data_file.write_text(text, encoding="utf-8")                      # same entry changes on disk
     page.wait_for_selector(".banner.warn", timeout=5000)
     page.click(".banner.warn button:text('载入最新版本')")
     page.wait_for_selector(".banner.warn", state="detached")
-    assert page.input_value("#editor input[data-key=subtitle]") == "Changed elsewhere"
-    assert page.input_value("#editor input[data-key=location]") == ""
+    assert page.input_value("#active input[data-key=subtitle]") == "Changed elsewhere"
+    assert page.input_value("#active input[data-key=location]") == ""
 
 
 def test_add_and_delete_entry(page, server, data_file):
@@ -209,10 +264,11 @@ def test_add_and_delete_entry(page, server, data_file):
     page.keyboard.type("New Project")
     wait_until(lambda: "New Project" in data_file.read_text(encoding="utf-8"), msg="title saved")
     assert "EXP-006" in subset(server)["entries"]                    # new entries join the current subset
-    page.click("button:text('删除这条经历')")
+    page.click("#active .ed-head .btn.icon")                          # its ⋯ menu
+    page.click(".float .menu-item:has-text('删除这条经历')")
     page.click(".modal button:text('删除')")
     wait_until(lambda: "EXP-006" not in data_file.read_text(encoding="utf-8"), msg="entry deleted")
-    page.wait_for_selector(".ed-head h1:text('个人信息')")
+    page.wait_for_selector("#active .ed-head h2:text('个人信息')")
 
 
 def test_profile_contacts_and_sections(page, server, data_file):
@@ -247,7 +303,7 @@ def test_contact_split_by_language_keeps_the_other(page, server, data_file):
     data_file.write_text(text, encoding="utf-8")
     page.click(".nav-row:text('个人信息')")
     row = page.locator(".card:has(h3:text('联系方式')) .lr >> nth=2")
-    page.click(".ed-head .seg button:text('中文')")
+    page.click(".doc-top .seg button:text('中文')")
     page.wait_for_function("() => [...document.querySelectorAll('.lr input')].some((i) => i.value === 'tel:+8615000000000')")
     assert "object" not in row.locator("input").nth(2).input_value()
     row.locator("input").nth(1).fill("+86 150 1111 2222")
@@ -323,7 +379,7 @@ def test_open_another_data_file_in_the_same_window(page, server, data_file, tmp_
     wait_rendered(page)
     assert state(server)["data_path"] == str(other.resolve())
     page.click(".nav-row:text('个人信息')")
-    page.click(".ed-head .seg button:text('EN')")
+    page.click(".doc-top .seg button:text('EN')")
     page.wait_for_function("() => [...document.querySelectorAll('#editor input')].some((i) => i.value === 'Sam Lee')")
     # the connection follows the new file: an edit Claude makes to it refreshes the form
     other.write_text(other.read_text(encoding="utf-8").replace("Sam Lee", "Sam Q. Lee"), encoding="utf-8")
@@ -409,12 +465,12 @@ def test_job_from_all_starts_full_and_has_own_headline(page_all, server):
     assert pg.locator(".entry.out").count() == 0
     # the headline is typed right on the profile page, into the job picked at the top
     pg.click(".nav-row:text('个人信息')")
-    pg.click(".ed-head .seg button:text('EN')")
-    pg.fill("#editor input[data-key=headline]", "AI Agent Engineer")
+    pg.click(".doc-top .seg button:text('EN')")
+    pg.fill("#active input[data-key=headline]", "AI Agent Engineer")
     wait_until(lambda: subset(server, "SUB-001").get("headline") in ("AI Agent Engineer", {"en": "AI Agent Engineer"}), msg="headline saved")
     assert "headline" not in state(server)["doc"]["profile"]
     assert subset(server, "ALL").get("headline") != "AI Agent Engineer"
-    pg.fill("#editor input[data-key=headline]", "AI Agent Engineer · LLM")
+    pg.fill("#active input[data-key=headline]", "AI Agent Engineer · LLM")
     choose(pg, "#subset-select", "ALL")                              # switching right away still saves into the job
     wait_until(lambda: "LLM" in json.dumps(subset(server, "SUB-001").get("headline")), msg="typed headline kept in the job")
     assert "LLM" not in json.dumps(subset(server, "ALL").get("headline"))
@@ -424,7 +480,7 @@ def test_job_from_all_starts_full_and_has_own_headline(page_all, server):
     pg.click(".nav-row:text('子集设置')")
     pg.wait_for_selector(".ed-head h1:text('子集设置')")
     choose(pg, "#subset-select", "ALL")
-    pg.wait_for_selector(".ed-head h1:text('个人信息')")
+    pg.wait_for_selector("#active .ed-head h2:text('个人信息')")
     pg.click("#subset-menu-btn")
     assert pg.locator(".float .menu-item:has-text('设置')").count() == 0
     pg.keyboard.press("Escape")
@@ -454,15 +510,14 @@ def test_numbers_are_per_section_and_ids_stay_hidden(page_all):
     nos = lambda sec: pg.locator(f".lib-section:has(.t:text('{sec}')) .e-no").all_inner_texts()
     assert nos("Education") == ["1"] and nos("Projects") == ["1", "2"] and nos("Skills") == ["1", "2"]
     open_entry(pg, "EXP-003")
-    assert pg.inner_text(".ed-head .id") == "Projects #2"
+    assert pg.inner_text("#active .ed-head .id") == "Projects #2"
     assert "EXP-" not in pg.inner_text("#library") + pg.inner_text("#editor")
-    choose(pg, "#editor .select[data-key=section]", "experience")      # moving section keeps the entry
+    choose(pg, "#active .select[data-key=section]", "experience")      # moving section keeps the entry
     pg.wait_for_selector(".lib-section:has(.t:text('Experience')) .entry[data-id='EXP-003']")
     assert nos("Experience") == ["1"] and nos("Projects") == ["1"]
 
 
 def test_chat_streams_markdown_tools_and_resumes(page, server, fake_claude):
-    page.click(".tab[data-tab=chat]")
     page.wait_for_selector(".chat-welcome")
     page.fill("#chat-input", "你好，帮我看看")
     page.keyboard.press("Enter")
@@ -484,11 +539,10 @@ def test_polish_shows_diff_and_undo_restores(page, server, data_file, fake_claud
     original = data_file.read_text(encoding="utf-8")
     monkeypatch.setenv("FAKE_CLAUDE_EDIT", json.dumps({"file": str(data_file), "from": "Solo developer", "to": "Solo developer (polished)"}))
     open_entry(page, "EXP-002")
-    page.click(".ai-btn")
+    page.click("#active .ai-btn")
     page.click(".float .menu-item:has-text('润色')")
     page.fill("#polish-box input", "更简洁")
     page.click("#polish-box button")
-    page.wait_for_selector(".tab.on:text('对话')")
     page.wait_for_selector(".msg-user:has-text('Paper2Exam')")
     page.wait_for_selector(".card.diff h3:text('Claude 改了这一条')", timeout=15000)
     assert "Solo developer (polished)" in page.inner_text(".card.diff")
@@ -548,7 +602,6 @@ def test_screenshots_for_review(page, server, fake_claude, scheme, size):
     page.click("#layout-toggle")
     page.screenshot(path=str(ART / f"layout-{tag}.png"))
     page.click("#layout-toggle")
-    page.click(".tab[data-tab=chat]")
     page.screenshot(path=str(ART / f"chat-empty-{tag}.png"))
     page.fill("#chat-input", "帮我看看这一条")
     page.keyboard.press("Enter")
@@ -580,7 +633,6 @@ def test_no_native_controls_anywhere(page, server, fake_claude):
     no_native(page)
     page.click(".nav-row:text('板块与简历设置')")
     no_native(page)
-    page.click(".tab[data-tab=chat]")
     no_native(page)
 
 
@@ -612,7 +664,7 @@ def test_tooltips_are_the_apps_own(page):
 
 def test_right_click_menu_in_text_fields(page):
     open_entry(page, "EXP-002")
-    field = page.locator("#editor input[data-key=subtitle]")
+    field = page.locator("#active input[data-key=subtitle]")
     field.click(button="right")
     menu = page.locator(".float.menu")
     assert [t.strip() for t in menu.locator(".mi-label").all_inner_texts()] == ["剪切", "复制", "粘贴", "全选"]
@@ -668,7 +720,7 @@ def test_writing_the_other_language(page, server, data_file):
     add_long_bullet(server, page)
     open_entry(page, "EXP-002")
     page.wait_for_selector(".entry[data-id='EXP-002'] .e-gap:text('缺中文')")
-    page.click(".ed-head .seg button:text('中文')")
+    page.click(".doc-top .seg button:text('中文')")
     third = page.locator("#bullets .bullet").nth(2)
     assert "missing" in third.get_attribute("class")
     assert third.locator("textarea").get_attribute("placeholder").startswith("EN: Added an evaluation")
@@ -685,7 +737,7 @@ def test_writing_the_other_language(page, server, data_file):
 def test_translate_button_sends_a_native_rewrite_request(page, server, fake_claude):
     add_long_bullet(server, page)
     open_entry(page, "EXP-002")
-    page.click(".ed-head .seg button:text('中文')")
+    page.click(".doc-top .seg button:text('中文')")
     page.click("#bullet-notes button:has-text('让 Claude 写简体中文版')")
     page.wait_for_selector(".msg-user.is-action .msg-action:text('写另一种语言')")
     wait_until(lambda: len(calls(fake_claude)) == 1, msg="claude called")
@@ -710,6 +762,7 @@ def test_project_folder_pick_sync_and_update(page, server, data_file, fake_claud
     make_repo(repo)
     monkeypatch.setenv("STUDIO_FAKE_PICK", json.dumps([str(repo)]))
     open_entry(page, "EXP-002")
+    open_facts(page)
     page.click("#evidence button:has-text('选择项目文件夹')")
     row = page.locator("#evidence .ev-row")
     row.wait_for()
@@ -743,7 +796,6 @@ def test_project_roots_setting(page, server, monkeypatch):
 
 
 def open_chat_tab(pg):
-    pg.click(".tab[data-tab=chat]")
     pg.wait_for_function("() => ui.claude && ui.claude.info")                 # Claude Code's own lists arrived
     pg.wait_for_selector("#chat-model-btn .lbl:text('Sonnet 5')")
 
@@ -802,7 +854,7 @@ def test_permission_card_in_the_chat(page, server, fake_claude):
     card.wait_for()
     assert "Claude 想要写入文件" in card.inner_text() and "notes.md" in card.inner_text()
     assert "+ hello" in card.locator(".ask-diff").inner_text()
-    page.wait_for_selector("#chat-dot.wait")                                    # the tab says Claude is waiting for you
+    page.wait_for_selector("#chat-toggle .tab-dot.wait")                        # the Claude button says Claude is waiting for you
     card.locator("button:has-text('允许，并切到「自动接受编辑」')").click()
     page.wait_for_selector(".ask.ask-perm.done.allowed")
     page.wait_for_selector(".msg-ai .md:has-text('已写入。')", timeout=10000)
@@ -992,16 +1044,17 @@ def test_screenshots_of_new_parts(page, server, fake_claude, monkeypatch, tmp_pa
     monkeypatch.setenv("STUDIO_FAKE_PICK", json.dumps([str(repo)]))
     add_long_bullet(server, page)
     open_entry(page, "EXP-002")
+    open_facts(page)
     page.click("#evidence button:has-text('选择项目文件夹')")
     page.wait_for_selector("#evidence .ev-chip:text('Claude 还没读过')")
     page.wait_for_selector("#bullets .line-chip.long", timeout=40000)
     page.screenshot(path=str(ART / f"new-entry-{scheme}.png"))
     page.locator("#evidence").scroll_into_view_if_needed()
     page.screenshot(path=str(ART / f"new-evidence-{scheme}.png"))
-    page.click(".ai-btn")
+    page.click("#active .ai-btn")
     shot_float(page, f"new-ai-menu-{scheme}")
     page.keyboard.press("Escape")
-    page.click(".ed-head .seg button:text('中文')")
+    page.click(".doc-top .seg button:text('中文')")
     page.wait_for_function("() => document.querySelectorAll('#bullets .line-chip.ok').length === 2", timeout=40000)
     page.locator("#bullets").scroll_into_view_if_needed()
     page.screenshot(path=str(ART / f"new-zh-{scheme}.png"))
@@ -1074,39 +1127,37 @@ def connected(data_file, tmp_path):
     return target
 
 
-def open_jobs(pg):
-    pg.click(".tab[data-tab=jobs]")
-    pg.wait_for_selector("#jobs .app-row")
+def open_posting_page(pg, frame, link="#to-1"):
+    """A posting's page in Resume, reached from the tool's own page for it in Job search (docs/LAYOUT.md)."""
+    frame.locator(link).click()
+    pg.wait_for_selector("#ws-tools .ws-here")
+    pg.click("#ws-tools .ws-here .btn")
+    pg.click(".resume-picker #posting-page-btn")
+    pg.wait_for_selector("body[data-ws=resume] #editor .verdict")
 
 
 def test_not_connected_offers_install_and_an_existing_copy(page_all):
     pg = page_all
-    pg.click(".tab[data-tab=jobs]")
-    pg.wait_for_selector("#jobs .connect")
-    assert pg.locator("#jobs .connect .btn.primary").inner_text().startswith("安装 career-ops")
-    assert pg.locator("#jobs .connect").inner_text().count("MIT") == 1
+    assert pg.locator(".tab").count() == 0                                     # no Applications tab in Resume
+    pg.keyboard.press("Control+2")
+    pg.wait_for_selector("#jobspace .connect")
+    assert pg.locator("#jobspace .connect .btn.primary").inner_text().startswith("安装 career-ops")
+    assert pg.locator("#jobspace .connect").inner_text().count("MIT") == 1
     for scheme in ("light", "dark"):
         pg.emulate_media(color_scheme=scheme)
         pg.screenshot(path=str(ART / f"jobs-connect-{scheme}.png"))
 
 
 @needs_node
-def test_applications_list_report_status_and_tailor(connected, page_all, server, fake_claude):
+def test_a_postings_page_report_status_and_tailor(connected, page_all, server, fake_claude):
     pg = page_all
-    open_jobs(pg)
-    rows = pg.locator("#jobs .app-row")
-    assert rows.count() == 3 and pg.locator("#jobs .app-row[data-id='1'] .score").inner_text() == "4.3"
-    assert "已投递" in pg.locator("#jobs .app-row[data-id='1']").inner_text()
-    pg.click("#jobs .seg button[data-value='open']")                     # SKIP is not active
-    assert pg.locator("#jobs .app-row").count() == 2
-    pg.click("#jobs .seg button[data-value='all']")
-
-    pg.click("#jobs .app-row[data-id='1']")
-    pg.wait_for_selector("#editor .verdict")
+    frame = open_job_search(pg)
+    open_posting_page(pg, frame)
     assert pg.locator("#editor .v-decision").inner_text() == "值得投递"
     assert not pg.locator("#editor .v-text").inner_text().startswith("Apply.")   # the bold call isn't repeated
     assert pg.locator("#editor .req").count() == 5
     assert pg.locator("#editor .rep-sec").count() >= 5
+    assert "Northwind" in pg.inner_text("#chat-context")                        # the chat knows which posting is open
     for scheme in ("light", "dark"):
         pg.emulate_media(color_scheme=scheme)
         pg.screenshot(path=str(ART / f"jobs-posting-{scheme}.png"))
@@ -1115,7 +1166,6 @@ def test_applications_list_report_status_and_tailor(connected, page_all, server,
     # status goes through career-ops' own writer
     choose(pg, "#posting-status", "interview")
     wait_until(lambda: "| Interview |" in (connected / "data" / "applications.md").read_text(encoding="utf-8"), msg="tracker updated")
-    pg.wait_for_selector("#jobs .app-row[data-id='1'] .s-interview")
 
     # the resume to send: one of the subsets, ranked for this posting, linked with one click
     pg.wait_for_selector("#editor .resume-card .fit-row")
@@ -1124,32 +1174,38 @@ def test_applications_list_report_status_and_tailor(connected, page_all, server,
     linked = lambda vid: any(p.get("id") == "1" for v in state(server)["doc"]["subsets"] if v["id"] == vid for p in v.get("postings") or [])   # noqa: E731
     wait_until(lambda: linked("RES-TECH-ZH"), msg="linked")
     pg.wait_for_selector("#editor .resume-card .fit-row.on[data-subset='RES-TECH-ZH']")
-    pg.wait_for_selector("#jobs .app-row[data-id='1'] .has-resume")
     pg.screenshot(path=str(ART / "jobs-resume-to-send-light.png"))
+    # back to the document from the posting's page
+    pg.click("#editor .page-back .btn")
+    pg.wait_for_selector("#editor .doc-wrap")
+    pg.keyboard.press("Control+2")
+    open_posting_page(pg, frame)
 
     # none fits: a new subset for this kind of role (named by the user, never after the company)
     pg.click("#editor .resume-card .fit-foot .btn.ghost")
     pg.fill(".modal input", "AI Engineer")
     pg.click(".modal .btn.primary")
-    pg.wait_for_selector(".tab.on[data-tab=chat]")
+    pg.wait_for_selector("#chat .msg-user")
     wait_until(lambda: any(v.get("label") == "AI Engineer" for v in state(server)["doc"]["subsets"]), msg="job created")
     vid = next(v["id"] for v in state(server)["doc"]["subsets"] if v.get("label") == "AI Engineer")
     wait_until(lambda: linked(vid) and not linked("RES-TECH-ZH"), msg="the posting moved to it")
     wait_until(lambda: any("001-northwind-ai" in c["stdin"] for c in calls(fake_claude)), msg="tailor message")
     assert pg.get_attribute("#subset-select", "data-value") == vid      # the preview shows the new job
 
+
 def test_evaluate_starts_a_career_ops_chat(connected, page_all, server, fake_claude):
     pg = page_all
-    open_jobs(pg)
-    assert pg.locator("#jobs .eval-box .btn.primary").is_disabled()
+    open_job_search(pg)
+    pg.click("#evaluate-btn")
+    assert pg.locator(".eval-float .btn.primary").is_disabled()
     pg.fill("#posting-input", "https://jobs.example.com/77\nAI Engineer, Canberra")
-    pg.click("#jobs .eval-box .btn.primary")
-    pg.wait_for_selector(".tab.on[data-tab=chat]")
+    pg.click(".eval-float .btn.primary")
+    pg.wait_for_selector("#chat .msg-user")
     wait_until(lambda: any("jobs.example.com/77" in c["stdin"] for c in calls(fake_claude)), msg="evaluation sent")
     c = next(c for c in calls(fake_claude) if "jobs.example.com/77" in c["stdin"])
     assert Path(c["cwd"]).resolve() == connected.resolve()
     assert "career-ops" in pg.inner_text("#chat-context")
-    pg.click(".tab[data-tab=jobs]")
+    pg.click("#evaluate-btn")
     assert pg.input_value("#posting-input") == ""                       # sent, so the box is empty again
 
 
@@ -1213,32 +1269,36 @@ def test_a_company_with_several_roles_goes_out_with_a_pinned_version(page, serve
     pg.click(".su-sent-row .btn")
     pg.wait_for_selector("#viewing:not(.hidden)")
     pg.wait_for_selector("#pages img[src*='/versions/1/page/1']")
-    # the old sign-up list is gone from Resume's Applications tab: it points here
-    pg.click(".tab[data-tab=jobs]")
-    pg.wait_for_selector("#jobs .hunt-hint")
+    # a role's Resume button opens the subset it goes out with
+    pg.keyboard.press("Control+3")
+    pg.click(".hunt-tab[data-tab=apps]")
+    pg.click(".htable .hunt-resume >> nth=0")
+    pg.wait_for_selector("body[data-ws=resume]")
+    assert value_of(pg, "#subset-select") == "RES-TECH-EN"
 
 
 def test_a_cv_edited_in_career_ops_is_never_overwritten(connected, page_all, server):
     pg = page_all
-    open_jobs(pg)
+    open_job_search(pg)
     cv = connected / "cv.md"
     wait_until(cv.exists, msg="cv.md written")
     cv.write_text(cv.read_text(encoding="utf-8") + "\n- added in career-ops\n", encoding="utf-8")
-    pg.click(".tab[data-tab=library]")
-    pg.click(".tab[data-tab=jobs]")
-    pg.wait_for_selector("#jobs .jobs-banner.warn")
-    assert "cv.md" in pg.inner_text("#jobs .jobs-banner.warn")
+    pg.keyboard.press("Control+1")
+    pg.keyboard.press("Control+2")                                       # Job search looks at the tool again
+    pg.wait_for_selector("#jobspace .js-banners .jobs-banner.warn")
+    assert "cv.md" in pg.inner_text("#jobspace .jobs-banner.warn")
     pg.screenshot(path=str(ART / "jobs-cv-conflict-light.png"))
-    pg.click("#jobs .jobs-banner.warn .btn.ghost")                        # use my library
+    pg.click("#jobspace .jobs-banner.warn .btn.ghost")                   # use my library
     pg.click(".modal .btn.danger-soft")
     wait_until(lambda: "added in career-ops" not in cv.read_text(encoding="utf-8"), msg="cv replaced")
-    pg.wait_for_selector("#jobs .jobs-banner.warn", state="detached")
+    pg.wait_for_selector("#jobspace .jobs-banner.warn", state="detached")
 
 
 def test_settings_show_the_checks_and_apply_on_done(connected, page_all, server, data_file):
     pg = page_all
-    open_jobs(pg)
-    pg.click("#jobs .jobs-foot .btn")
+    open_job_search(pg)
+    pg.click("#ws-tools .btn.icon")                                      # ⋯ → career-ops settings
+    pg.click(".float .menu-item:has-text('career-ops 设置')")
     pg.wait_for_selector("#jobs-settings .chk")
     assert pg.locator("#jobs-settings .chk.ok").count() >= 6
     pg.click("#jobs-settings .seg button[data-value='zh']")
@@ -1265,7 +1325,7 @@ def test_job_search_hosts_the_tools_own_interface(connected, page_all, server, f
     assert pg.is_visible("#editor") and not pg.is_visible("#jobspace")
     frame = open_job_search(pg)
     assert not pg.is_visible("#editor") and not pg.is_visible(".pane.right")        # the whole window is the tool's
-    assert not pg.is_visible(".subset-switch") and not pg.is_visible(".pane.left")  # Claude's chat starts folded
+    assert not pg.is_visible(".subset-switch") and pg.is_visible(".pane.left")      # the same chat on the left
     assert frame.locator("#page").inner_text() == "/"
     assert "career-ops 全部功能" in pg.inner_text("#ws-tools")
     for scheme in ("light", "dark"):
@@ -1300,7 +1360,7 @@ def test_job_search_hosts_the_tools_own_interface(connected, page_all, server, f
 
     # its preview, in Resume
     pg.click("#ws-tools .ws-here .btn")
-    pg.click(".resume-picker .rp-acts .btn:not(.primary)")
+    pg.click(".resume-picker .rp-acts .btn:has-text('在简历里预览')")
     pg.wait_for_selector("body[data-ws=resume]")
     wait_until(lambda: pg.get_attribute("#subset-select", "data-value") == "RES-TECH-EN", msg="previewed")
 
@@ -1323,30 +1383,47 @@ def test_every_mode_starts_from_the_launcher(connected, page_all, server, fake_c
     pg.keyboard.type("plan")
     assert pg.locator(".launcher .lg-item:not(.hidden)").count() == 1
     pg.keyboard.press("Enter")
-    pg.wait_for_selector("body[data-jchat=on] #chat .msg-user")
+    pg.wait_for_selector("#chat .msg-user")
     wait_until(lambda: any("interview/plan" in c["stdin"] for c in calls(fake_claude)), msg="mode sent")
     c = next(c for c in calls(fake_claude) if "interview/plan" in c["stdin"])
     assert Path(c["cwd"]).resolve() == connected.resolve()
 
 
-def test_chats_follow_the_workspace(connected, page_all, server, fake_claude):
+def test_one_chat_across_the_workspaces(connected, page_all, server, fake_claude):
+    """docs/LAYOUT.md: the open chat stays open when the workspace changes; a chat in career-ops' folder is listed apart."""
     pg = page_all
-    pg.click(".tab[data-tab=chat]")
     pg.click("#chat .suggest button >> nth=0")                                  # a resume chat
     pg.wait_for_selector("#chat .msg-user")
     resume_chat = pg.get_attribute("#chat-select", "data-value")
     open_job_search(pg)
-    pg.click("#ws-tools .btn:has-text('Claude')")
-    pg.wait_for_selector("body[data-jchat=on] #chat .chat-welcome")
-    assert "career-ops" in pg.inner_text("#chat .chat-welcome .t")              # its own suggestions, not the resume's
+    assert pg.is_visible("#chat") and pg.get_attribute("#chat-select", "data-value") == resume_chat   # the same chat
+    assert "career-ops" in pg.inner_text("#chat-context")                       # it is told what is on screen
+    pg.keyboard.press("Control+3")
+    pg.wait_for_selector(".hunt-tab")
+    assert pg.get_attribute("#chat-select", "data-value") == resume_chat
+    pg.keyboard.press("Control+2")
+    pg.click("#chat-new")                                                       # in Job search: a chat in career-ops' folder
+    pg.wait_for_selector("#chat .chat-welcome")
+    assert "career-ops" in pg.inner_text("#chat .chat-welcome .t")
     pg.click("#chat .suggest button >> nth=0")
     wait_until(lambda: any(Path(c["cwd"]).resolve() == connected.resolve() for c in calls(fake_claude)), msg="chat in its folder")
     jobs_chat = pg.get_attribute("#chat-select", "data-value")
     assert jobs_chat != resume_chat
     pg.keyboard.press("Control+1")
-    wait_until(lambda: pg.get_attribute("#chat-select", "data-value") == resume_chat, msg="Resume's chat again")
-    pg.keyboard.press("Control+2")
-    wait_until(lambda: pg.get_attribute("#chat-select", "data-value") == jobs_chat, msg="Job search's chat again")
+    pg.wait_for_selector("body[data-ws=resume]")
+    assert pg.get_attribute("#chat-select", "data-value") == jobs_chat          # it stays open in Resume too
+    pg.click("#chat-select")
+    assert pg.locator(".float .lb-group").count() == 2                          # Resume Studio's chats, then career-ops' folder's
+    pg.click(f".float [role=option][data-value='{resume_chat}']")
+    wait_until(lambda: pg.get_attribute("#chat-select", "data-value") == resume_chat, msg="picked")
+    # the chat pane folds away in any workspace, and comes back
+    pg.click("#chat-toggle")
+    pg.wait_for_selector("#chat", state="hidden")
+    pg.keyboard.press("Control+3")
+    pg.wait_for_selector(".hunt-tab")
+    assert not pg.is_visible("#chat")
+    pg.click("#chat-toggle")
+    pg.wait_for_selector("#chat", state="visible")
 
 
 # ---------------------------------------------------------------- Autofill (online profiles)
@@ -1461,7 +1538,7 @@ def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, m
     sent = next(c["stdin"] for c in calls(fake_claude) if "## The approved changes" in c["stdin"])
     assert "basics.about" in sent and "Open to ML roles." in sent and '"op": "remove"' not in sent and "EuroSAT" in sent
     pg.wait_for_selector("#chat-log .msg-user, #chat-log .msg-action")
-    assert "Resume Studio 的浏览器" in pg.inner_text("#chat-context")
+    assert "LinkedIn" in pg.inner_text("#chat-context")                        # the chat is told which profile is open
     pg.wait_for_selector("#chat-log .msg-ai .md >> text=已经处理", timeout=30000)
     steps = pg.locator("#chat-log .tool-step .tn").all_inner_texts()
     assert steps[:3] == ["打开 127.0.0.1/api/instance", "截个图", "已完成：标题"], steps
@@ -1472,7 +1549,7 @@ def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, m
     pg.wait_for_selector(".fill-banner.ok")
     assert pg.locator(".fill-plan .fi[data-id='basics.headline']").count() == 0
     chats = server.req("GET", "/api/chats")[1]["chats"]
-    assert [c["workspace"] for c in chats] == ["autofill"]
+    assert [(c.get("workspace"), c.get("site")) for c in chats] == [(None, "linkedin")]   # a data-folder chat, like any other
 
     # BOSS直聘: a copy of its own, read once first
     pg.click(".fs-site[data-site='boss']")

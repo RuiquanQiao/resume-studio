@@ -104,6 +104,19 @@ def test_chat_is_a_real_resumed_session(server, data_file, fake_claude):
     assert first["stdin"] == "你好，帮我看看简历"                        # user's words untouched, no language forcing
 
 
+def test_one_chat_knows_every_workspace_and_what_is_on_screen(server, data_file, fake_claude):
+    """docs/LAYOUT.md: a chat started anywhere can update the tracker and drive the browser, and is told what the window shows."""
+    code, chat = server.req("POST", "/api/chats")
+    code, r = _send(server, chat["id"], "Xinghe 一面过了", subset_id="RES-TECH-EN", screen="the company 星河科技")
+    assert code == 200
+    server.wait_idle(chat["id"])
+    argv = calls(fake_claude)[0]["argv"]
+    ctx = open(argv[argv.index("--append-system-prompt-file") + 1], encoding="utf-8").read()
+    assert "hunt.py" in ctx and "browser.py" in ctx and str(data_file.resolve()) in ctx
+    assert "On screen right now: the company 星河科技" in ctx
+    assert "The entry being edited" not in ctx   # none was open
+
+
 def _info(server):
     for _ in range(100):
         code, r = server.req("GET", "/api/claude")

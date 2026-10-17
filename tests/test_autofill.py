@@ -504,10 +504,12 @@ def test_claude_records_a_route_then_checks_need_no_claude(live, data_file, fake
     st, r = live.req("POST", "/api/autofill/linkedin/check", {})
     assert st == 200 and r["mode"] == "claude"
     chat = r["chat"]
-    assert chat["workspace"] == "autofill" and chat["site"] == "linkedin"
+    assert not chat.get("workspace") and chat["site"] == "linkedin"   # a chat in the data folder, like any other (one chat)
     live.wait_idle(chat["id"], timeout=90)
     first = calls(fake_claude)[-1]
     assert "record" in first["stdin"].lower() and "never by generated class names" in first["stdin"]
+    ctx = Path(first["argv"][first["argv"].index("--append-system-prompt-file") + 1]).read_text(encoding="utf-8")
+    assert "scripts" in ctx and "browser.py" in ctx and "hunt.py" in ctx and "Resume data file" in ctx   # the browser, the tracker, the resume
     st, ch = live.req("GET", "/api/chats/" + chat["id"])
     assert "never by generated" not in ch["messages"][0]["text"]   # the chat shows only the short message
     runs = calls(Path(str(fake_claude) + ".run"))
@@ -566,7 +568,7 @@ def test_claude_records_a_route_then_checks_need_no_claude(live, data_file, fake
     live.wait_idle(r["chat"]["id"], timeout=60)
     assert "stopped working" in calls(fake_claude)[-1]["stdin"] and json.dumps(FAKE_ROUTE_SCRIPT)[1:40] in calls(fake_claude)[-1]["stdin"]
     st, lst = live.req("GET", "/api/chats")
-    assert len([c for c in lst["chats"] if c.get("workspace") == "autofill"]) == 3
+    assert len([c for c in lst["chats"] if c.get("site") == "linkedin"]) == 3
 
 
 def test_signed_out_shows_up(live, data_file, fake_site, monkeypatch):
