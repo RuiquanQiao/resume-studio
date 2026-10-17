@@ -522,7 +522,7 @@ function outlineRows({ pop = false } = {}) {
   if (changed.length) {
     out.push(h("div", { class: "lib-update" },
       icon("refresh"),
-      h("span", { class: "lu-text" }, changed.length === 1
+      h("span", { class: "nb-text" }, changed.length === 1
         ? t("“{name}” has new progress", { name: display(changed[0].title) || entryLabel(changed[0]) })
         : t("{n} project has new progress since the last sync", { n: changed.length }, "{n} projects have new progress since the last sync")),
       changed.length === 1
@@ -565,7 +565,7 @@ function entryRow(e, isIn, idx, nIn, hasSubset) {
       h("span", { class: "e-title" }, display(e.title) || t("(untitled)"),
         ev === "changed" && h("span", { class: "e-dot", title: t("The project folder changed since the last sync") }),
         ev === "missing" && h("span", { class: "e-dot bad", title: t("The evidence folder can't be found") })),
-      (meta || gaps.length > 0) && h("span", { class: "e-meta" }, meta,
+      (meta || gaps.length > 0) && h("span", { class: "e-meta" }, meta && h("span", { class: "e-when" }, meta),
         gaps.map((l) => h("span", { class: "e-gap", title: t("Some text has no {lang} yet; the {lang} resume shows another language there for now", { lang: langName(l) }) }, t("No {lang}", { lang: langShort(l) }))))),
     isIn && h("span", { class: "e-tools" },
       h("button", { class: "btn icon sm ghost", title: t("Move up"), disabled: idx === 0, onclick: (ev) => { ev.stopPropagation(); hasSubset ? moveInSubset(e.id, -1) : moveInLibrary(e.id, -1); } }, icon("up")),
@@ -661,7 +661,7 @@ function paintEditor({ flash = false, keepScroll = true } = {}) {
 
 function conflictBanner(ed) {
   return h("div", { class: "banner warn" }, icon("alert"),
-    h("span", { style: "flex:1" }, t("Claude or another window just changed this item, and you have unsaved edits here.")),
+    h("span", { class: "nb-text" }, t("Claude or another window just changed this item, and you have unsaved edits here.")),
     h("button", { class: "btn sm", onclick: () => { resetEd(ed); paintItem(ed, { flash: true }); } }, t("Load the latest")),
     h("button", { class: "btn sm danger-soft", onclick: () => saveItem(ed, true) }, t("Keep mine")));
 }

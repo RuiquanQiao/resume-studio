@@ -766,7 +766,7 @@ function permissionCard(a) {
   reason.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); answerAsk(a, { allow: false, message: reason.value }, card); } });
   card.append(h("div", { class: "ask-acts" },
     h("button", { type: "button", class: "btn sm primary", onclick: () => answerAsk(a, { allow: true }, card) }, t("Allow")),
-    (a.suggestions || []).map((s, i) => h("button", { type: "button", class: "btn sm", onclick: () => answerAsk(a, { allow: true, suggestion: i }, card) }, t("Allow, {what}", { what: suggestionLabel(s) }))),
+    (a.suggestions || []).map((s, i) => h("button", { type: "button", class: "btn sm ask-long", "data-wrap": "", onclick: () => answerAsk(a, { allow: true, suggestion: i }, card) }, t("Allow, {what}", { what: suggestionLabel(s) }))),
     h("button", { type: "button", class: "btn sm ghost", onclick: () => answerAsk(a, { allow: false }, card) }, t("Deny")),
     h("button", { type: "button", class: "btn sm ghost", onclick: () => { denyRow.classList.toggle("hidden"); reason.focus(); } }, t("Deny with a reason…"))), denyRow);
   return card;

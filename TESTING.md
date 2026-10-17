@@ -25,6 +25,7 @@ report which ran and what they caught.
 | Job-hunt tracker | `tests/test_hunt.py` | companies by name, alias or id; roles in the 志愿 order asked, reordered on delete, ids never reused, a unique part of a role's name is enough and two matches ask which; statuses from the user's words (一面, 笔试, 挂, OA); the ledger: every change a line, a dated note keeps its date, tabs never split a cell, lines survive, the same status twice adds nothing; bad dates and channels refused; the old sign-ups move in once (order, versions sent, career-ops rows); Claude's command (`scripts/hunt.py`): add, status, next, list, show, about with sources, errors; a company's sign-up goes out with a kept version (refused without a subset or with nothing new), a role added later goes out alone as the same v1; with career-ops as the tracker the sent roles get rows there, with Resume Studio's they don't; edits and deletes over HTTP |
 | Hosted web UI | `tests/test_webhost.py` | `core/webhost.py` against `tests/fake_web.py` (which guards like career-ops' web app): the window's frame is let in and handed on as same-origin, the app's own requests pass untouched, other sites and other local ports get 403, the bridge script lands right after `<head>`, prepare / exit failures become an error with the log, restart keeps the address, **the server dies with Resume Studio even when it is killed** (Windows job object); career-ops' `web()` installs and builds only when its lockfile or source changed, runs its own `server.mjs` with the data root, npm's cache in this folder; every mode from `modes/README.md` plus mode files without a row (and `interview/*`), each started as a chat in its folder |
 | Autofill | `tests/test_autofill.py` | **a real browser over CDP** (`core/browser.py`, headless Edge, against `tests/fake_sites`): the whole page is read, below the fold too; clicks and typing arrive as trusted input that a React-style page accepts; dialogs, selects, checkboxes, screenshots; the profile lives in the app's own folder; uploads only from the data folder. What a subset suggests for LinkedIn / BOSS直聘 (sections, plain bullets, dates, no fact layer, degree-first resumes, fields a site lacks). **The sync**: a read brings site-only changes in, keeps the user's own, makes a conflict of a field changed on both sides (kept until settled), removals and additions on either side, a read that covers only some sections, the same school worded differently; pending changes, push reports moving the site's side on, undo. **The read route**: Claude (fake) opens the page, tests a script with `extract`, saves the route, `sync`s; then "Check for updates" reads a change made on the site by the route with no Claude call; the push gets only the ticked change and the route checks after it; a renamed heading breaks the route and the window offers a chat to record it anew. The user's own site list (add a preset or any site by its address, rename, notes for Claude, reorder, remove and re-add with the copy back, a site's first read saying what it has); over-the-limit blocks pushing; signed-out by address. **Sign-in mode**: the same profile reopened with no debugging port, so a page sees `navigator.webdriver` false (true when driven); commands are refused meanwhile; switching back drives it again at the page signed in to; the user closing that window turns the browser off |
+| Layout | `tests/e2e/test_layout.py` | every state in its catalogue (Resume, the chat, Job search, Applying: notices, banners, conflicts, warnings, empty lists, long names, folded and hidden panes, pages, dialogs) at 1280 / 1440 / 1920 wide in Chinese, English and German, looked at by `layout_check.js`: squeezed text, compact labels on two lines, content cut off or sticking out, sideways scrolling, overlapping controls; and every conditional piece of UI in `web/*.js` is in the catalogue (see **Layout checks** below) |
 | UI (Edge) | `tests/e2e/test_ui.py` | load, autosave, external edits, conflicts, **the document** (Profile and every entry as cards: typing in one card then another saves both, the card typed in is the one being edited, an entry left out of the subset folds to a line and opens as a card, the fact layer folded under each card, the outline folds into a strip that opens on hover and pins again, the preview hides and comes back), include/reorder, layout, templates, languages, entries, contacts, sections, subsets, **subset versions** (keep v1 with a note, an edit elsewhere shows as changed, the git-style diff since v1, keep v2 from the page, preview v1 as it was and back to now, go back to v1), chat streaming + markdown + tools, polish diff + undo, export, overflow, pane resizing; **no native `<select>`, colour input or `title` tooltip anywhere**, custom dropdown by mouse and keyboard, right-click menu, colour picker, line chips + issues strip, writing / hiding the other language, project folder pick → sync → new commit → update; chat composer: model / effort / mode chips (number keys, Shift+Tab, custom model id, a new chat keeps the last choice), permission / question / plan cards, queue while busy, stop, task list, fork, `/` commands, pasted and picked attachments, context ring + plan limits; career-ops: no Applications tab in Resume, the connect card in Job search, a posting's page opened from Job search's resume picker (the chat names the posting), status through career-ops, "Resume to send" → use a subset → new subset for this kind of role in the preview, "Evaluate a posting" in Job search's top bar → a chat in the career-ops folder, CV conflict banner above career-ops' interface → use my library, Settings checks + choices saved on Done; Job search: the tool's interface fills the window, the frame reports its page (navigation and pushState) → "Pick a resume" for that posting (ranked subsets, linked, named in the top bar) → its preview in Resume, Ctrl+1 / Ctrl+2 keep the frame's page, the launcher lists every mode (search, Enter) and starts it as a chat in the tool's folder, **one chat across the workspaces** (the open chat stays open in Job search and Applying and is told what is on screen; a new chat in Job search runs in career-ops' folder and is listed apart; the chat pane hides and shows in any workspace); Applying: a company with its site → its subset → two roles, reordered → mark as sent (v1) → both Applied with v1 in the progress table, in the company's order → one application: status to interviewing, a note dated back, the timeline → what went out, previewed as it was → a role's Resume button opens its subset; Platforms tab → a platform's copy (the Autofill tests below go through it); **fails on any console error or 404/500** |
 
 Notes
@@ -39,6 +40,51 @@ Notes
 - Everything temporary stays in the repo: `.cache/` (pytest temp, Edge profile, TMP) and
   `tests/artifacts/` (screenshots). Both are git-ignored.
 
+## Layout checks (how a squeezed notice can't come back)
+
+Added 2026-10-17, after the user found "6 projects have new progress" squeezed into a column one word
+wide in the outline rail. The cause: the notice was a row (icon, text, button) built for the old 320px
+Library; in the 212px rail the button kept its width and the text was given none. The screenshots had not
+shown it because the review copy never had a project with new progress, so the notice never appeared.
+Both halves of that are now covered by tests, not by memory:
+
+1. **A checker that looks at the screen** (`tests/e2e/layout_check.js`). It flags:
+   - text pushed into a column a few letters wide (three or more lines in a box under 6em, including a box squeezed to 0px);
+   - a compact button, tab or chip whose label broke onto two lines (a label meant to wrap carries `data-wrap`);
+   - content cut off by its box without an ellipsis;
+   - an element sticking out of the box it belongs to;
+   - a pane, or the window, scrolling sideways;
+   - two controls on top of each other.
+2. **A catalogue of states** (`STATES` in `tests/e2e/test_layout.py`). Each state brings onto the screen something
+   that shows only in some situations (a notice, a banner, a conflict, a warning, an empty list, long names,
+   a folded or hidden pane, a page, a dialog), names the selectors that prove it is there, and is checked
+   at each window size and language in `LOOKS`.
+3. **A guard on the catalogue** (`test_every_notice_is_in_the_catalogue`). It reads `web/*.js`, and any class
+   that marks a conditional piece of UI (banner, warn, update, conflict, empty, issue, error, strip…)
+   must be shown by some state, or listed in `NOT_SHOWN` with the reason it needs none.
+
+Rules for every change to the window:
+
+- **New conditional UI gets a state.** A new notice, banner, warning, empty state or badge is not done until
+  a state in `STATES` shows it. The guard fails otherwise, so this can't be forgotten.
+- **Run the layout checks after any layout or CSS change**, and after moving a piece into a different
+  container (a pane, the rail, a card, a popover): `.venv/Scripts/python -m pytest tests/e2e/test_layout.py`
+  (about 2½ minutes). Each finding names the element and saves a screenshot to `tests/artifacts/layout/`
+  (the list is in `findings.txt` there). Look at the screenshot before fixing.
+- **A row of text and buttons wraps; it never squeezes.** Notice text uses `.nb-text` (it keeps at least
+  200px, or 120px in the rail, and pushes the buttons below it). Never give text `flex: 1` with no basis next to
+  a button that can't shrink.
+- **A piece that can live in a narrow box adapts to the box, not the window.** Use wrapping, `minmax()`,
+  `min()` or a container query (as the layout panel does) rather than a fixed column width.
+- **Never hide the important part to save room.** When something must be shortened, shorten the
+  repeated or secondary part (a role's page wraps its heading rather than cutting the role).
+- **Skipping is the last resort.** `SKIP` in `test_layout.py` lists places the checker can't judge (the
+  preview's page images, career-ops' own interface), each with its reason. Fix the layout first; only a
+  piece that breaks a rule on purpose goes there.
+- **The review copy needs these states too.** For a hands-on review on `.cache/review/`, bring up the same
+  states (a project with new progress, a conflict, a warning) rather than reviewing only what the data
+  happens to show.
+
 ## 2. Visual review
 
 `tests/e2e` writes screenshots to `tests/artifacts/`:
@@ -49,7 +95,7 @@ a question card, a plan card, the `/` menu with the task list and queue, and the
 Open them and check:
 
 - [ ] nothing overlaps, wraps into a column of single characters, or is cut off
-- [ ] the preview page fits its panel; the toolbar stays on one line
+- [ ] the preview page fits its panel; its toolbar wraps onto a second line rather than sticking out
 - [ ] inputs, textareas and buttons share one style in both themes
 - [ ] empty states read well (no blank selects, no "undefined", no stray "0")
 - [ ] every dropdown / menu / picker is the app's own (rounded panel, app font), opened fully, not mid-fade
