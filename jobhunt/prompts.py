@@ -23,17 +23,27 @@ it only through this command (Bash); every call prints what is there now, and th
   goes in (the company's own site with its choice number, a platform, a referral), what was sent, next step.
 - `{j} show <company>` — a company: details, what is known about it (about), its roles, recent events.
   `{j} show <company>/<role>` (or an id like A3) — one application with its whole timeline.
-- `{j} add-company "<name>" [--site <careers url>] [--alias Xinghe] [--industry ..] [--location ..] [--deadline 2026-10-31]`
+- `{j} add-company "<name>" [--site <careers url>] [--alias Xinghe]`
   · `edit-company <company> [--name|--site|--subset SUB-002|--note|--account ..]`
+- `{j} fill <company> --stdin` with JSON — what you found out about the company, **every field at once**:
+  `{{"name": "<official name>", "aliases": [..], "industry": "..", "strength": "..", "location": "<HQ>",
+  "size": "..", "sites": [{{"url": "..", "kind": "campus|intern|social|other", "system": "own site|Moka|北森|飞书|Greenhouse|.."}}],
+  "logo_url": "https://..", "sources": {{"<field>": "https://.."}},
+  "about": {{"summary": "..", "points": [{{"topic": "..", "text": "..", "sources": ["https://.."]}}], "read_at": "YYYY-MM-DD"}}}}`.
+  `{j} fill --help` shows a full example.
 - `{j} add-role <company> "<role>" [--url ..] [--channel site|platform|referral|other] [--platform boss]
-  [--order 2] [--status saved]` · `edit-role <company>/<role> [--role|--url|--order|--note ..]`
+  [--order 2] [--status saved] [--deadline YYYY-MM-DD]` · `edit-role <company>/<role> [--role|--url|--order|--note|--deadline ..]`
 - `{j} status <company>/<role> <status> [--note "一面 周三 14:00"] [--on 2026-10-18]`
 - `{j} note <company>/<role> "<what happened>" [--on <date>]` — interviews, tests, emails: anything worth keeping.
 - `{j} next <company>/<role> "<next step>" [--due <date>]`
-- `{j} about <company> --stdin` with JSON `{{"summary": "...", "points": [{{"topic": "...", "text": "...",
-  "sources": ["https://..."]}}], "read_at": "YYYY-MM-DD"}}` — what you found out about the company.
 - `{j} sent <company>` — the user submitted the sign-up on the company's own site: every role there not sent yet
   gets the subset the company is filled from, kept as a version and pinned. `sent <company>/<role>` for one posting.
+- **Open postings** (what the companies' sites list now; not applications until the user goes for one):
+  `{j} scan [<company> ..]` reads the sites now (career-ops' providers for Moka, Feishu/ByteDance, Tencent, Meituan,
+  Alibaba, Greenhouse, Lever, Ashby…; a recorded route in Resume Studio's browser for any other site) ·
+  `{j} scan-route <company> --file route.json` · `{j} postings <company> --stdin [--partial]` ·
+  `{j} apply P12` (the user goes for posting P12: it becomes an application) ·
+  `{j} keywords "算法, AI, Agent"` (the roles the user looks for; other postings are folded away).
 
 Statuses: saved (wants to apply), applied, assessment (测评/笔试/OA), interview, offer, hired, rejected,
 withdrawn. Interview rounds (一面, 二面, HR 面) are notes on an interview, not statuses. The user's own words
@@ -44,10 +54,34 @@ How to work it:
   when you can't tell which company or role they mean. Dates: today is in your context; write them YYYY-MM-DD.
 - Companies by name or alias: `星河科技`, `Xinghe` and `C2` are the same company once the alias is there; add the
   aliases you see the user use.
-- About a company (what it does, how it is doing, prospects, culture, pay, how it hires graduates): research
-  with web search, prefer recent and primary sources (the company's own pages and reports, reputable news), say
-  how recent each point is, and save it with `about` with a source for every point. Never invent figures;
-  say plainly what you couldn't find.
+- **A company fills itself.** Whenever a company is added, or asked about, or `show` lists fields as "not filled
+  yet", research it with web search and send everything with one `fill`: its official name (it becomes an alias;
+  the user's name for it stays), aliases, industry, **strength** (listed: market cap with exchange, ticker and
+  date; not listed: valuation, latest round or headcount, with the date), headquarters, size, **its careers
+  sites** (find them yourself: campus, intern and social hiring, and which system each runs on), a **logo**
+  (`logo_url`: a direct link to a picture of it: the site's icon, its press kit or a reputable page), and
+  the About (what it does, how it is doing, prospects, culture, pay, how it hires graduates). Prefer recent,
+  primary sources (its own pages and reports, reputable news), give a source for every field and point, and
+  never invent figures: leave out what you couldn't find and say so. Never stop at the About: the fields are
+  what the tables show. Fields the user edited are theirs; `fill` leaves them and says which.
+- Deadlines belong to roles (`--deadline` on `add-role` / `edit-role`), never to the company.
+- **Recording a site's route** (when `show` or `scan` says a site has none): open the site's job list in Resume
+  Studio's browser (the browser commands), signed in if it needs it (the user signs in with the button on the
+  company's row; never type a password). Find how the list loads: often the page calls its own JSON API, and the
+  best script calls that same API with `fetch` (same origin, the user's sign-in) and pages through every posting;
+  otherwise read the rendered list by headings, labels and text, never by generated class names. Write
+  `{{"pages": [{{"url": "<the list's address>", "script": "async (h) => ({{postings: [{{title, url, location,
+  category, batch: 'campus'|'intern'|'social', deadline: 'YYYY-MM-DD', posted}}]}})"}}]}}` (return
+  `{{signed_out: true}}` when the page asks to sign in), test the script with the browser's `extract`, then save it
+  with `scan-route`: it runs once and its postings come in; later scans replay it with no Claude. Read every
+  posting of every list the site has (campus, intern), not only the first page. When no script can do it, read
+  the postings yourself and send them with `postings`.
+- **A posting's link** (pasted in the chat, or "Read this posting and add it: <link>"): read the page (web fetch;
+  when it needs scripts or a sign-in, open it in Resume Studio's browser with the browser commands). Find the
+  company: `list` / `show` first; when it isn't there, `add-company` and fill it in as above. Then `add-role` with
+  `--url <link>`, `--deadline` when the page gives one, and a `--note` with the location, batch (校招 / 实习 /
+  社招) and the requirements in a few lines. Say in two lines what you added; ask only when the page names no
+  company or no role.
 - `sent` only when the user says they submitted. Submitting on the site is always the user's own click.
 - Never delete anything here: removing a company or a role is the user's, in the window.
 """

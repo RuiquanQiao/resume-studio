@@ -4,10 +4,11 @@
     python scripts/hunt.py show 星河科技                      # a company: its details, about, roles, recent events
     python scripts/hunt.py show 星河科技/服务端              # one application (or its id: A3)
     python scripts/hunt.py add-company "星河科技" --site https://careers.xinghe.example/campus --alias Xinghe
-    python scripts/hunt.py edit-company 星河科技 --deadline 2026-10-31 --subset SUB-002 --industry 电商
+    python scripts/hunt.py edit-company 星河科技 --subset SUB-002 --industry 电商
+    python scripts/hunt.py fill 星河科技 --stdin <<'JSON'   # Claude's research, every field at once (see `fill --help`)
     python scripts/hunt.py add-role 星河科技 "服务端研发工程师" [--url ...] [--channel site|platform|referral|other]
-                                       [--platform boss] [--order 2] [--status saved]
-    python scripts/hunt.py edit-role 星河科技/服务端 [--role ...] [--url ...] [--order 1] [--note ...]
+                                       [--platform boss] [--order 2] [--status saved] [--deadline 2026-10-31]
+    python scripts/hunt.py edit-role 星河科技/服务端 [--role ...] [--url ...] [--order 1] [--note ...] [--deadline ...]
     python scripts/hunt.py status 星河科技/服务端 interview --note "一面 周三 14:00" [--on 2026-10-18]
     python scripts/hunt.py note 星河科技/服务端 "笔试已交" [--on 2026-10-18]
     python scripts/hunt.py next 星河科技/服务端 "等二面通知" --due 2026-10-25
@@ -15,6 +16,11 @@
                                                        "sources": ["https://..."]}], "read_at": "2026-10-16"}  JSON
     python scripts/hunt.py sent 星河科技                      # the sign-up on its site went out (every role not sent yet)
     python scripts/hunt.py sent 星河科技/服务端 [--subset SUB-002]
+    python scripts/hunt.py scan [星河科技 ...]                # read the companies' sites for open postings now
+    python scripts/hunt.py scan-route 星河科技 --file route.json   # record how to read its job list, run it once
+    python scripts/hunt.py postings 星河科技 --stdin [--partial]   # the postings you read yourself (no route possible)
+    python scripts/hunt.py apply P12                        # the user goes for posting P12: it becomes an application
+    python scripts/hunt.py keywords "算法, AI, Agent, 后端"  # the roles the user looks for (others are folded away)
 
 Statuses: saved (want to apply), applied, assessment (测评/笔试), interview (rounds are notes), offer, hired,
 rejected, withdrawn; Chinese words work too (一面 → interview, 笔试 → assessment, 挂 → rejected).
@@ -33,6 +39,23 @@ from pathlib import Path
 from _bootstrap import resolve_data
 
 CHANNELS = {"site": "its own site", "platform": "via {platform}", "referral": "referral", "other": "other"}
+FILL_HELP = """Claude's research on a company, every field at once, as JSON on stdin:
+
+  {"name": "Xinghe Technology Ltd.",                      # its official name (kept as an alias; the user's name stays)
+   "aliases": ["星河科技", "Xinghe", "Nebula"],
+   "industry": "电商 / 互联网",
+   "strength": "市值约 1,600 亿美元 (NASDAQ: XHT, 2026-10-17)",   # listed: market cap, exchange, ticker, date;
+                                                     # not listed: valuation, latest round or headcount, with the date
+   "location": "上海 (注册地都柏林)",
+   "size": "约 2.3 万人 (2025 年报)",
+   "sites": [{"url": "https://careers.xinghe.example/campus", "kind": "campus", "system": "own site"},
+             {"url": "https://careers.xinghe.example/intern", "kind": "intern", "system": "own site"}],
+   "logo_url": "https://.../logo.png",                # downloaded once into the data folder
+   "sources": {"strength": "https://...", "industry": "https://...", "location": "https://...", "size": "https://..."},
+   "about": {"summary": "...", "points": [{"topic": "...", "text": "...", "sources": ["https://..."]}], "read_at": "2026-10-18"}}
+
+Every key is optional; send what you found. Fields the user edited in the window are theirs and are left as
+they are (the reply says which). site kinds: campus, intern, social, other."""
 
 
 def server_url(data: Path) -> str:
@@ -69,6 +92,8 @@ def app_line(a: dict, company: str = "") -> str:
     if a.get("sent"):
         s = a["sent"][-1]
         parts.append(f"sent {s['at'][:10]}: {s['subset']} v{s['n']}")
+    if a.get("deadline"):
+        parts.append(f"deadline {a['deadline']}")
     if a.get("next"):
         parts.append(f"next: {a['next']}" + (f" (due {a['due']})" if a.get("due") else ""))
     elif a.get("due"):
@@ -87,10 +112,19 @@ def event_line(e: dict) -> str:
 def show_company(v: dict) -> None:
     c = v["company"]
     print(f"{c['id']} {c['name']}" + (f" (also: {', '.join(c['aliases'])})" if c.get("aliases") else ""))
-    for k, label in (("site", "careers site"), ("industry", "industry"), ("location", "location"), ("size", "size"),
-                     ("deadline", "deadline"), ("account", "account"), ("subset", "filled from")):
+    src = c.get("sources") or {}
+    kept = set(c.get("kept") or [])
+    for k, label in (("industry", "industry"), ("strength", "strength"), ("location", "headquarters"), ("size", "size"),
+                     ("site", "careers site"), ("account", "account"), ("subset", "filled from")):
         if c.get(k):
-            print(f"  {label}: {c[k]}" + (f" ({c.get('subset_label')})" if k == "subset" and c.get("subset_label") else ""))
+            print(f"  {label}: {c[k]}" + (f" ({c.get('subset_label')})" if k == "subset" and c.get("subset_label") else "")
+                  + (f"  [{src[k]}]" if src.get(k) else "") + ("  (the user's: fill leaves it)" if k in kept else ""))
+    for x in c.get("sites") or []:
+        print(f"  site ({x['kind']}{', ' + x['system'] if x.get('system') else ''}): {x['url']}")
+    print("  logo: " + ("saved" if c.get("logo") else "none yet") + ("  (the user's)" if "logo" in kept else ""))
+    missing = [k for k in ("industry", "strength", "location", "site", "logo") if not c.get(k)]
+    if missing:
+        print("  not filled yet: " + ", ".join(missing) + " (research it and send them with `fill`)")
     if c.get("note"):
         print("  notes: " + c["note"].replace("\n", "\n         "))
     ab = c.get("about")
@@ -99,7 +133,7 @@ def show_company(v: dict) -> None:
         for p in ab.get("points") or []:
             print(f"    - {p.get('topic') + ': ' if p.get('topic') else ''}{p['text']}" + (f"  [{', '.join(p['sources'])}]" if p.get("sources") else ""))
     else:
-        print("  about: nothing yet (research it and save with `about`)")
+        print("  about: nothing yet (research it and send it with `fill`)")
     print(f"  roles ({len(v['applications'])}):" if v["applications"] else "  roles: none yet")
     for a in v["applications"]:
         print("    " + app_line(a))
@@ -107,6 +141,26 @@ def show_company(v: dict) -> None:
         print("  recent events:")
         for e in v["events"][-12:]:
             print("  " + event_line(e))
+    sc = v.get("scan") or {}
+    ps = [p for p in v.get("postings") or [] if not p.get("closed")]
+    kw = v.get("keywords") or []
+    if sc.get("at"):
+        print(f"  last scan {sc['at'][:16].replace('T', ' ')} by {sc.get('how') or '?'}: "
+              + (f"{sc.get('found', 0)} found" if sc.get("ok") else f"failed: {sc.get('error')}")
+              + ("; the route is recorded" if sc.get("recorded") else ""))
+    if sc.get("needs") == "claude":
+        print("  a careers site has no read route yet: record one with `scan-route` (see the instructions)")
+    elif sc.get("needs") == "sites":
+        print("  no careers site known yet: find them and send them with `fill` (sites)")
+    if ps:
+        mine = [p for p in ps if not kw or any(k.casefold() in p["title"].casefold() for k in kw)]
+        print(f"  open postings: {len(ps)}" + (f", {len(mine)} matching the user's keywords ({', '.join(kw)})" if kw else "") + ":")
+        for p in mine[:60]:
+            print(f"    {p['id']:<6} {p['title']}" + (f" · {p['location']}" if p.get("location") else "")
+                  + (f" · {p['batch']}" if p.get("batch") else "") + (f" · closes {p['deadline']}" if p.get("deadline") else "")
+                  + (f" · applied as {p['app']}" if p.get("app") else ""))
+        if len(mine) > 60:
+            print(f"    … and {len(mine) - 60} more")
 
 
 def show_app(v: dict) -> None:
@@ -131,7 +185,7 @@ def main() -> int:
         p = sub.add_parser(name); p.add_argument("ref" if name == "edit-company" else "name")
         if name == "edit-company":
             p.add_argument("--name")
-        for opt in ("site", "industry", "location", "size", "deadline", "account", "subset", "note"):
+        for opt in ("site", "industry", "strength", "location", "size", "account", "subset", "note"):
             p.add_argument("--" + opt)
         p.add_argument("--alias", action="append", help="another name it goes by (repeat for more)")
     for name in ("add-role", "edit-role"):
@@ -140,14 +194,22 @@ def main() -> int:
             p.add_argument("company"); p.add_argument("role")
         else:
             p.add_argument("ref"); p.add_argument("--role")
-        for opt in ("url", "channel", "platform", "order", "note", "subset") + (("status",) if name == "add-role" else ()):
+        for opt in ("url", "channel", "platform", "order", "note", "subset", "deadline") + (("status",) if name == "add-role" else ()):
             p.add_argument("--" + opt)
     p = sub.add_parser("status"); p.add_argument("ref"); p.add_argument("status"); p.add_argument("--note", default="")
     p.add_argument("--on", default="")
     p = sub.add_parser("note"); p.add_argument("ref"); p.add_argument("text"); p.add_argument("--on", default="")
     p = sub.add_parser("next"); p.add_argument("ref"); p.add_argument("text"); p.add_argument("--due", default="")
     p = sub.add_parser("about"); p.add_argument("ref"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
+    p = sub.add_parser("fill", description=FILL_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("ref"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("sent"); p.add_argument("ref"); p.add_argument("--subset")
+    p = sub.add_parser("scan"); p.add_argument("companies", nargs="*")
+    p = sub.add_parser("scan-route"); p.add_argument("ref"); p.add_argument("--file"); p.add_argument("--stdin", action="store_true")
+    p = sub.add_parser("postings"); p.add_argument("ref"); p.add_argument("--file"); p.add_argument("--stdin", action="store_true")
+    p.add_argument("--partial", action="store_true", help="you read only some of the lists: nothing missing is closed")
+    p = sub.add_parser("apply"); p.add_argument("ref")
+    p = sub.add_parser("keywords"); p.add_argument("keywords")
     args = ap.parse_args()
     url = server_url(resolve_data(args.data))
     c = args.cmd
@@ -175,7 +237,7 @@ def main() -> int:
         show_company(r["company"]) if "company" in r else show_app(r["app"])
         return 0
     if c in ("add-company", "edit-company"):
-        a = pick("site", "industry", "location", "size", "deadline", "account", "subset", "note")
+        a = pick("site", "industry", "strength", "location", "size", "account", "subset", "note")
         if c == "add-company":
             a["name"] = args.name
         else:
@@ -187,7 +249,7 @@ def main() -> int:
         show_company(r["company"])
         return 0
     if c in ("add-role", "edit-role"):
-        a = pick("url", "channel", "platform", "order", "note", "subset", "status")
+        a = pick("url", "channel", "platform", "order", "note", "subset", "status", "deadline")
         if c == "add-role":
             a.update(company=args.company, role=args.role)
         else:
@@ -202,15 +264,52 @@ def main() -> int:
         r = call(url, "note", {"ref": args.ref, "note": args.text, "on": args.on})
     elif c == "next":
         r = call(url, "next", {"ref": args.ref, "next": args.text, "due": args.due})
-    elif c == "about":
+    elif c in ("about", "fill"):
         raw = sys.stdin.buffer.read().decode("utf-8") if args.stdin else Path(args.file).read_text(encoding="utf-8") if args.file else ""
         try:
-            about = json.loads(raw)
+            got = json.loads(raw)
         except ValueError as e:
             sys.exit(f"error: that isn't valid JSON ({e})")
-        r = call(url, "about", {"ref": args.ref, "about": about})
+        r = call(url, c, {"ref": args.ref, ("about" if c == "about" else "fields"): got})
+        if r.get("kept"):
+            print("left as the user set them: " + ", ".join(r["kept"]))
+        if r.get("logo_error"):
+            print("logo not saved: " + r["logo_error"])
         print("saved:")
         show_company(r["company"])
+        return 0
+    elif c in ("scan", "scan-route", "postings"):
+        if c == "scan":
+            r = call(url, "scan", {"companies": args.companies})
+        else:
+            raw = sys.stdin.buffer.read().decode("utf-8") if args.stdin else Path(args.file).read_text(encoding="utf-8") if args.file else ""
+            try:
+                got = json.loads(raw)
+            except ValueError as e:
+                sys.exit(f"error: that isn't valid JSON ({e})")
+            if c == "scan-route":
+                r = call(url, c, {"ref": args.ref, "route": got})
+            else:
+                rows = got.get("postings") if isinstance(got, dict) else got
+                r = call(url, c, {"ref": args.ref, "postings": rows, "partial": args.partial})
+        for x in r["scanned"]:
+            if x.get("busy"):
+                print(f"{x['company']}: already being scanned")
+            elif x.get("error"):
+                print(f"{x['company']}: failed: {x['error']}" + (" (signed out: the user signs in with the button on its row)" if x.get("signed_out") else ""))
+            elif "found" in x:
+                print(f"{x['company']}: {x['found']} open, {x['new']} new, {x['closed']} closed, {x['changed']} changed"
+                      + (f"; still needs: {x['needs']}" if x.get("needs") else ""))
+            else:
+                print(f"{x['company']}: needs {x.get('needs') or 'claude'} (no site could be read without you)")
+        if r.get("company"):
+            show_company(r["company"])
+        return 0
+    elif c == "apply":
+        r = call(url, "apply", {"ref": args.ref})
+    elif c == "keywords":
+        r = call(url, "keywords", {"keywords": args.keywords})
+        print("keywords: " + (", ".join(r["settings"]["keywords"]) or "none (every posting counts)"))
         return 0
     else:   # sent
         r = call(url, "sent", {"ref": args.ref, **pick("subset")})["sent"]

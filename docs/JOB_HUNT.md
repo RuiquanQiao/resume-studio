@@ -1,7 +1,8 @@
 # Job hunt: applications, companies and platforms
 
-Status (2026-10-16): **step 1 is built** (the three tables, the data, `scripts/hunt.py`, the tracker choice
-in Settings; see "Building it, in order"). Steps 2–5 are the plan.
+Status (2026-10-18): **step 1 is built** (the three tables, the data, `scripts/hunt.py`, the tracker choice
+in Settings; see "Building it, in order"). On 2026-10-18 the user asked for the tracker to find things itself
+(next section); steps A–C come first, then the old steps 2–5.
 
 ## The vision (2026-10-16)
 
@@ -45,6 +46,115 @@ What the user wants, point by point:
    how each field would change.
 5. **Signing in is a button**, owned by the company or platform it belongs to, never a chat request.
 6. The buttons always name the site they act on (the "Open LinkedIn" while on Xinghe must not happen).
+
+## 2026-10-18: the tracker finds things itself
+
+The request, after Claude had researched a company and written only its About:
+
+- The About text is wanted, but its facts must also be parsed into the fields.
+- Ideally the user never gives the careers-site URL: they add a role, and Claude works out the company
+  and everything behind it.
+- Open roles are detected from the site, not typed in by hand.
+- The Companies table has only a few fields: the name with the company's real logo, its industry, its
+  strength (market cap, or whatever shows it if unlisted), and its roles as a Notion-style relation that
+  links to each one. A company has no deadline of its own.
+- The workflow: add a company's careers site; Claude signs in with its browser tools and reads the
+  roles. One button scans every company, so each day shows what is new. Reuse career-ops' code where
+  it fits.
+- Far less for the user to manage by hand.
+
+The design below was approved as proposed: write it into docs/JOB_HUNT.md first, then build company
+auto-fill and the table, link parsing, and the open-roles scan, in that order.
+
+### Why it was not agent enough
+
+1. **Only the About.** Claude's instructions (`jobhunt/prompts.py`) said "research the company, save it
+   with `about`", and `about` touches no field. Claude did what it was told; the instruction was wrong.
+2. **Roles typed by hand.** The tracker was designed as a ledger of what the user applies to, not a source
+   of what is open. Finding postings was in no step of the plan.
+3. **A company deadline, no logo.** Deadlines belong to a batch or a role; a company is a company.
+4. **The careers site asked of the user.** Claude can find it, and which hiring system it runs on.
+
+### The design
+
+**A company fills itself.** The user gives a name, a careers site or a posting link. Claude researches and
+fills every field, each with its source, in one command (`hunt.py fill <company> --stdin`):
+
+- official name and aliases;
+- **logo**, downloaded once into `.studio/hunt/logos/` (from the site's icon or a reputable page), shown
+  from there, never hot-linked;
+- industry;
+- **strength**: listed → market cap with the exchange, ticker and date; not listed → valuation, funding
+  round or headcount, with the date;
+- headquarters;
+- careers sites (campus / social / intern) and the hiring system behind each (own site, Moka, 北森,
+  飞书, Greenhouse, Lever, Ashby…);
+- the About, as before.
+
+Every field stays editable. A field the user edited is theirs: Claude's later fills leave it alone (it is
+listed as "kept yours" in the reply), so the user never fights the agent.
+
+**The companies table has four columns**:
+
+1. logo + name;
+2. industry;
+3. strength;
+4. **open roles**, as chips like a Notion relation: each opens that posting; the user's own applications
+   stand out.
+
+The deadline leaves the company: it lives on postings and applications. An existing company deadline moves
+to that company's roles that have none. HQ, notes and the account hint stay on the company's page.
+
+**Postings and applications are two layers.**
+
+- **Open postings** (在招岗位): what the company's sites list now: title, category, location, batch
+  (校招 / 实习 / 社招), deadline, link, first and last seen. Found by scanning, never typed.
+- **Applications** (my roles): what the user goes for. "要投" on a posting makes it an application (linked
+  to the posting); an application can still be added by hand.
+
+Xinghe alone lists seven categories and dozens of roles, so they can't all be applications.
+
+**Paste a link.** A posting link, pasted on the Companies tab or in the chat: Claude reads the page, finds
+the company (creating and filling it when new), adds the posting with its details, and offers to apply.
+
+**Scanning** (`hunt.py scan`, the **Scan all** button on the Companies tab, a Scan button per company):
+
+- Greenhouse, Lever and Ashby sites are read through their public APIs, with code taken from career-ops'
+  `scan.mjs` (MIT, credited in the file), no browser and no Claude.
+- Any other site (Xinghe's own site, Moka, 北森…) is read in Resume Studio's browser by a **recorded route**,
+  as profiles are (`autofill/route.py`): the first scan lets Claude find the job list, sign-in included (the
+  user signs in with the row's button), and record read-only page scripts; later scans replay them with no
+  Claude. A route that stops working asks Claude to record it again.
+- Postings are matched across scans by a fingerprint (company, title, location, link; after career-ops'
+  `listing-fingerprint.mjs`): new ones are marked **new**, gone ones **closed**, changed deadlines shown.
+- **Today's changes**: after a scan the Companies tab says what is new, closed or changed, per company.
+- **Daily**: when the window opens and the last scan is more than a day old, it scans by itself (only routes
+  and APIs, never Claude). Settings can turn this off.
+
+### Building it, in order (before steps 2–5 below)
+
+- **A. Companies fill themselves**: the fields above, logos, `hunt.py fill`, the four-column table, the
+  deadline moved to roles, user-edited fields kept.
+- **B. Paste a link**: a posting link becomes a filled company + a posting.
+- **C. Open postings**: the postings layer, scanning by API and by recorded route, Scan all, today's
+  changes, the daily scan.
+
+All three were built on 2026-10-18. Choices made on the way:
+
+- *Built:* career-ops' providers are **called, not copied**. career-ops already reads Moka (`mokahr.mjs`), Feishu
+  (ByteDance's jobs.bytedance.com and `*.jobs.feishu.cn`), Tencent, Meituan, Alibaba, Greenhouse, Lever, Ashby,
+  Workday and about a hundred more. `jobs/co_scan.mjs` loads its `providers/` from its own install through its
+  `_registry.mjs`, the way its `scan.mjs` does, so its updates keep coming (the swappable-provider rule this
+  project keeps). Without career-ops installed, every site is read by a route. A live check read 2,000 Tencent
+  postings in seconds; Xinghe's own site has no provider, so it gets a route.
+- *Built:* **keywords** (career-ops' title filter): the roles the user looks for, on the Companies tab. Postings
+  without one are kept but folded away, and don't count as news. Tencent alone lists thousands.
+- *Built:* the **daily scan** never opens the browser by itself: sites read by a route wait for a scan the user
+  starts (or are read when the browser is open already); providers run either way. It never starts Claude.
+- *Built:* a site that needs Claude (no provider, no route yet) or a company with no known site is listed under
+  "Today" with one button that asks Claude, for all of them at once.
+- *Built:* adding a company in the window asks Claude to fill it in right away (in the open chat). A posting the
+  user already applies to (same role name) is linked to that application, not offered again.
 
 ## Why the button said "Open LinkedIn"
 

@@ -1379,7 +1379,7 @@ function openSettings(section = null) {
   };
   const close = () => {
     for (const k of Object.keys(jobsPending)) delete jobsPending[k];
-    pendingTracker = undefined;
+    pendingTracker = undefined; pendingDaily = undefined;
     pendingUiLang = undefined; closeSettings = () => {}; root.replaceChildren(); document.removeEventListener("keydown", onKey); $("#settings-btn").focus(); };
   closeSettings = close;
   // bubble phase: an open dropdown takes Escape first (it stops the event in the capture phase)

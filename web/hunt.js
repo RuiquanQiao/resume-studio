@@ -56,6 +56,7 @@ async function loadHunt({ quiet = false } = {}) {
         H.data = await api("GET", "/api/hunt");
         if (H.page && H.page.kind !== "platform") await loadHuntPage({ quiet: true });
       } while (H.again);
+      if (!H.autoScan) { H.autoScan = true; api("POST", "/api/hunt/scan", { auto: true }).catch(() => {}); }
     } catch (e) { if (!quiet) toast(e.message); }
     finally { H.loading = null; }
     if (W.ws === "fill" && !fillTyping()) paintFill();
@@ -202,7 +203,7 @@ function appsTable() {
     { label: t("Latest") }, { label: t("Next step") }];
   const rows = shown.map((a) => hrow(() => openHunt("app", a.id), [
     h("td", { class: "c-company" }, h("button", { class: "linkish", onclick: () => openHunt("company", a.company) }, names[a.company] || "")),
-    h("td", { class: "c-main" }, a.role),
+    h("td", { class: "c-main" }, a.role, a.deadline && h("span", { class: "c-due" + (a.deadline < today() ? " late" : "") }, t("closes {date}", { date: a.deadline }))),
     h("td", { class: "c-muted" }, channelText(a)),
     h("td", null, hChip(a.status)),
     h("td", { class: "c-muted c-resume" }, a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : "", resumeButton(a)),
@@ -215,7 +216,8 @@ function appsTable() {
     tableTools(
       d.applications.length > 0 && uiSeg([{ value: "open", label: t("Active") }, { value: "all", label: t("All") }], H.show,
         (v) => { H.show = v; paintHunt(); }, { cls: "sm", label: t("Show") }),
-      h("button", { class: "btn sm primary", id: "hunt-new-app", onclick: newApplication }, icon("plus"), t("Add an application"))),
+      h("button", { class: "btn sm primary", id: "hunt-new-app", onclick: newApplication }, icon("plus"), t("Add an application")),
+      linkButton()),
     htable(cols, rows, !d.applications.length
       ? h("div", null, h("div", { class: "t" }, t("No applications yet")),
         h("p", null, t("Add one here, or a company with the roles you apply for on its own site (网申).")))
@@ -234,26 +236,166 @@ function resumeButton(a) {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+// a company's logo (downloaded into the data folder by Claude's fill), or its first letter
+function companyLogo(c, cls = "") {
+  const box = h("span", { class: "co-logo " + cls, "aria-hidden": "true" });
+  const letter = () => box.replaceChildren(h("span", { class: "co-letter" }, Array.from(c.name || "?")[0].toUpperCase()));
+  if (c.logo_url) {
+    const img = h("img", { src: c.logo_url, alt: "", loading: "lazy", onerror: letter });
+    box.append(img);
+  } else letter();
+  return box;
+}
+
+// ---- open postings (docs/JOB_HUNT.md, 2026-10-18) ----
+const scanInfo = () => (H.data && H.data.scan) || { running: {}, keywords: [] };
+const scanning = (cid) => !!(scanInfo().running || {})[cid];
+const kwMatch = (title) => { const kw = scanInfo().keywords || []; return !kw.length || kw.some((k) => title.toLowerCase().includes(k.toLowerCase())); };
+
+// the company's open postings, as one chip in the table (the ones matching the user's keywords)
+function openChip(c) {
+  const ps = c.postings || {};
+  const news = (ps.news || {}).new || 0;
+  if (!ps.open) return null;
+  return h("button", { class: "role-chip open-chip", title: t("{n} open on its sites", { n: ps.open }), onclick: () => openHunt("company", c.id) },
+    icon("briefcase"), h("span", { class: "rc-name" }, t("{n} open", { n: ps.matching })), news > 0 && h("span", { class: "rc-new" }, t("{n} new", { n: news })));
+}
+
+async function scanCompanies(ids = null) {
+  try {
+    await api("POST", "/api/hunt/scan", ids ? { companies: ids } : {});
+    await loadHunt({ quiet: true });
+  } catch (e) { toast(e.message); }
+}
+
+function scanAllButton() {
+  const busy = Object.keys(scanInfo().running || {}).length > 0;
+  const last = scanInfo().last_all;
+  return h("button", { class: "btn sm", id: "hunt-scan-all", disabled: busy,
+    title: last ? t("Last scanned {when}", { when: huntWhen(last) }) : t("Reads every company's careers sites for open roles"),
+    onclick: () => scanCompanies() }, busy ? h("span", { class: "spin" }) : icon("refresh"), busy ? t("Scanning…") : t("Scan all"));
+}
+
+// what the last day's scans brought, and the sites Claude still has to learn once
+function scanNews() {
+  const d = H.data;
+  const names = Object.fromEntries(d.companies.map((c) => [c.id, c]));
+  const learn = d.companies.filter((c) => (c.postings || {}).needs === "claude");
+  const noSites = d.companies.filter((c) => (c.postings || {}).needs === "sites");
+  const rows = (d.changes || []).map((ch) => {
+    const c = names[ch.company];
+    if (!c) return null;
+    const parts = [ch.new.length && t("{n} new", { n: ch.new.length }), ch.closed.length && t("{n} closed", { n: ch.closed.length }),
+      ch.changed.length && t("{n} changed", { n: ch.changed.length })].filter(Boolean);
+    return h("div", { class: "news-row" },
+      h("button", { class: "linkish news-co", onclick: () => openHunt("company", c.id) }, companyLogo(c), c.name),
+      h("span", { class: "muted" }, parts.join(" · ")),
+      h("span", { class: "news-items" }, ch.new.slice(0, 4).map((p) => h("span", { class: "news-item" }, p.title)),
+        ch.new.length > 4 && h("span", { class: "muted" }, t("and {n} more", { n: ch.new.length - 4 }))));
+  }).filter(Boolean);
+  const kw = scanInfo().keywords || [];
+  const kwInput = h("input", { class: "kw-input", id: "hunt-keywords", value: kw.join(", "), spellcheck: "false",
+    placeholder: t("e.g. 算法, AI, Agent, 后端"), "aria-label": t("Roles you look for"),
+    onchange: async (e) => { try { await api("PUT", "/api/hunt/scan-settings", { keywords: e.target.value }); await loadHunt({ quiet: true }); } catch (err) { toast(err.message); } } });
+  return h("div", { class: "scan-news" },
+    h("div", { class: "sn-head" }, h("b", null, t("Today")), h("span", { class: "muted" }, rows.length ? "" : t("nothing new from the last day's scans")),
+      h("span", { class: "spacer" }), h("label", { class: "kw-label", for: "hunt-keywords" }, t("Roles you look for")), kwInput),
+    rows,
+    learn.length > 0 && h("div", { class: "note-bar" }, icon("sparkle"), h("span", { class: "nb-text" },
+      t("{names}: Claude reads the site once and records how, then scans need no Claude.", { names: learn.map((c) => c.name).join(", ") })),
+      h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => askLearn(learn) }, icon("sparkle"), t("Let Claude learn them"))),
+    noSites.length > 0 && h("div", { class: "note-bar" }, icon("alert"), h("span", { class: "nb-text" },
+      t("{names}: no careers site known yet.", { names: noSites.map((c) => c.name).join(", ") })),
+      h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => noSites.forEach(askFill) }, icon("sparkle"), t("Ask Claude to find them"))));
+}
+
+function askLearn(cs) {
+  sendChat(t("Find the open roles on the careers sites of {names}, and record a scan route for each so later scans need no Claude.", { names: cs.map((c) => c.name).join(", ") }));
+}
+
+// a company's open postings, on its page
+function postingsCard(v) {
+  const c = v.company;
+  const sc = v.scan || {};
+  const all = v.postings || [];
+  const open = all.filter((p) => !p.closed);
+  const closed = all.filter((p) => p.closed);
+  const fresh = new Set(sc.new || []);
+  const q = (H.pq || "").trim().toLowerCase();
+  const showAll = !!H.pall;
+  const shown = open.filter((p) => (showAll || kwMatch(p.title)) && (!q || [p.title, p.location, p.category].join(" ").toLowerCase().includes(q)));
+  const hidden = open.length - open.filter((p) => kwMatch(p.title)).length;
+  const limit = H.plimit || 120;
+  const busy = scanning(c.id) || sc.running;
+  const status = busy ? h("span", { class: "fs-status" }, h("span", { class: "spin" }), t("Scanning…"))
+    : !sc.at ? h("span", { class: "muted" }, t("not scanned yet"))
+    : sc.ok ? h("span", { class: "muted" }, t("scanned {when} · {how}", { when: huntWhen(sc.at), how: howName(sc.how) }))
+    : h("span", { class: "fs-status bad" }, icon("alert"), sc.signed_out ? t("The site asks to sign in") : t("The last scan didn't work"));
+  const row = (p) => h("div", { class: "post-row" + (p.closed ? " closed" : ""), "data-id": p.id },
+    h("div", { class: "pr-main" },
+      h("a", { class: "pr-title", href: p.url || null, "data-ext": p.url ? "" : null }, p.title),
+      fresh.has(p.id) && h("span", { class: "chip new-chip" }, t("new")),
+      p.changed && p.changed.deadline && h("span", { class: "chip", title: p.changed.deadline.join(" → ") }, t("deadline changed")),
+      h("span", { class: "pr-meta" }, [p.location, p.category, p.batch && t(BATCH_NAMES[p.batch] || p.batch)].filter(Boolean).join(" · "),
+        p.deadline && h("span", { class: "c-due" + (p.deadline < today() ? " late" : "") }, t("closes {date}", { date: p.deadline })))),
+    p.app ? h("button", { class: "btn sm ghost", onclick: () => openHunt("app", p.app) }, hChip(((v.applications || []).find((a) => a.id === p.app) || {}).status || "saved"))
+      : !p.closed && h("button", { class: "btn sm", title: t("Add it to your applications"), onclick: () => applyPosting(p) }, icon("plus"), t("Want to apply")));
+  const search = h("input", { class: "hunt-search", type: "search", id: "posting-search", value: H.pq || "", placeholder: t("Search these roles"),
+    oninput: (e) => { H.pq = e.target.value; const pos = e.target.selectionStart; paintHunt(); const el = $("#posting-search"); if (el) { el.focus(); el.setSelectionRange(pos, pos); } } });
+  return card(t("Open roles"), open.length ? t("{n} on its sites", { n: open.length }) : "", [
+    h("div", { class: "row wrap post-tools" }, status, h("span", { class: "spacer" }),
+      sc.needs === "claude" && h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Let Claude learn its site")),
+      !sc.ok && sc.at && sc.how === "route" && h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Ask Claude to record it again")),
+      h("button", { class: "btn sm", id: "company-scan", disabled: !!busy, onclick: () => scanCompanies([c.id]) }, icon("refresh"), t("Scan"))),
+    !sc.ok && sc.error && h("div", { class: "note-bar warn" }, icon("alert"), h("span", { class: "nb-text" }, sc.error),
+      sc.signed_out && c.site && h("button", { class: "btn sm", onclick: () => signInMode(c.site) }, icon("user"), t("Sign in to {site}", { site: c.name }))),
+    sc.needs === "sites" && h("p", { class: "muted card-p" }, t("No careers site known yet: ask Claude to fill the company in, or type one below.")),
+    open.length > 0 && h("div", { class: "row wrap" }, search, hidden > 0 && h("button", { class: "btn sm ghost", onclick: () => { H.pall = !H.pall; paintHunt(); } },
+      showAll ? t("Only the roles you look for") : t("Show all ({n} more)", { n: hidden }))),
+    shown.length ? h("div", { class: "post-list" }, shown.slice(0, limit).map(row),
+      shown.length > limit && h("button", { class: "btn sm ghost", onclick: () => { H.plimit = limit + 200; paintHunt(); } }, t("Show {n} more", { n: Math.min(200, shown.length - limit) })))
+      : open.length > 0 && h("p", { class: "muted card-p" }, t("Nothing here matches. Change the roles you look for on the Companies tab, or show all.")),
+    closed.length > 0 && h("details", { class: "post-closed" }, h("summary", null, t("{n} closed", { n: closed.length })), h("div", { class: "post-list" }, closed.slice(0, 200).map(row))),
+  ]);
+}
+
+const BATCH_NAMES = { campus: "Campus", intern: "Internship", social: "Experienced", other: "Other" };
+function howName(how) {
+  return String(how || "").split("+").map((x) => (x === "route" ? t("its recorded route") : x === "claude" ? t("read by Claude") : x)).join(" + ");
+}
+
+async function applyPosting(p) {
+  try {
+    const v = await api("POST", `/api/hunt/postings/${encodeURIComponent(p.id)}/apply`);
+    await loadHunt({ quiet: true });
+    toast(t("Added to your applications: {role}", { role: v.application.role }));
+  } catch (e) { toast(e.message); }
+}
+
+// a role as a chip, like a relation in a table: it opens the role
+function roleChip(a) {
+  return h("button", { class: "role-chip s-" + a.status, title: huntState(a.status), onclick: () => openHunt("app", a.id) },
+    h("span", { class: "rc-dot" }), h("span", { class: "rc-name" }, a.role));
+}
+
 function companiesTable() {
   const d = H.data;
-  const shown = d.companies.filter((c) => matches(c.name, (c.aliases || []).join(" "), c.industry, c.note));
-  const cols = [{ label: t("Company") }, { label: t("Industry") }, { label: t("Roles") }, { label: t("Furthest") }, { label: t("Deadline") },
-    { label: t("Filled from") }, { label: t("Latest") }];
-  const rows = shown.map((c) => {
-    const v = subsets().find((x) => x.id === c.subset);
-    return hrow(() => openHunt("company", c.id), [
-      h("td", { class: "c-main" }, c.name, (c.aliases || []).length > 0 && h("span", { class: "c-alias" }, c.aliases.join(" · "))),
-      h("td", { class: "c-muted" }, c.industry || ""),
-      h("td", null, c.roles ? t("{open} active of {n}", { open: c.open, n: c.roles }) : h("span", { class: "c-muted" }, t("none yet"))),
-      h("td", null, c.best && hChip(c.best)),
-      h("td", { class: "c-muted" + (c.deadline && c.deadline < today() ? " late" : "") }, c.deadline || ""),
-      h("td", { class: "c-muted" }, c.subset ? subsetName(v) || c.subset : ""),
-      h("td", { class: "c-muted" }, c.last ? huntWhen(c.last) : "")], { "data-id": c.id });
-  });
+  const shown = d.companies.filter((c) => matches(c.name, (c.aliases || []).join(" "), c.industry, c.strength, c.note));
+  const cols = [{ label: t("Company") }, { label: t("Industry") }, { label: t("Strength") }, { label: t("Roles") }];
+  const rows = shown.map((c) => hrow(() => openHunt("company", c.id), [
+    h("td", { class: "c-company-cell" }, h("span", { class: "co-name" }, companyLogo(c),
+      h("span", { class: "co-text" }, h("span", { class: "c-main-name" }, c.name),
+        (c.aliases || []).length > 0 && h("span", { class: "c-alias" }, c.aliases.join(" · "))))),
+    h("td", { class: "c-muted c-industry" }, c.industry || ""),
+    h("td", { class: "c-muted c-strength" }, c.strength || ""),
+    h("td", { class: "c-roles" }, h("div", { class: "role-chips" }, (c.apps || []).map(roleChip), openChip(c),
+      !(c.apps || []).length && !openChip(c) && h("span", { class: "c-muted" }, scanning(c.id) ? t("Scanning…") : t("none yet"))))], { "data-id": c.id }));
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Companies")),
       h("p", null, t("What each company is and how it is doing, your notes, and its own careers site: one profile there, several roles in your order of preference."))),
-    tableTools(h("button", { class: "btn sm primary", id: "hunt-new-company", onclick: () => newCompany() }, icon("plus"), t("Add a company"))),
+    tableTools(h("button", { class: "btn sm primary", id: "hunt-new-company", onclick: () => newCompany() }, icon("plus"), t("Add a company")), linkButton(),
+      d.companies.length > 0 && scanAllButton()),
+    d.companies.length > 0 && scanNews(),
     htable(cols, rows, !d.companies.length
       ? h("div", null, h("div", { class: "t" }, t("No companies yet")), h("p", null, t("Add the companies you're applying to; Claude can tell you about each one.")))
       : t("Nothing matches")),
@@ -315,14 +457,34 @@ function formModal({ title, message = "", fields, ok = t("OK") }) {
 async function newCompany(name = "") {
   const f = await formModal({ title: t("Add a company"), ok: t("Add"), fields: [
     { key: "name", label: t("Company"), value: name, required: true, placeholder: t("e.g. 星河科技") },
-    { key: "site", label: t("Careers site"), hint: t("optional"), placeholder: "https://careers.example.com/campus" }] });
+    { key: "site", label: t("Careers site"), hint: t("optional: Claude finds it"), placeholder: "https://careers.example.com/campus" }] });
   if (!f) return null;
   try {
     const v = await api("POST", "/api/hunt/companies", f);
     await loadHunt({ quiet: true });
     openHunt("company", v.company.id);
+    askFill(v.company);
     return v.company;
   } catch (e) { toast(e.message); return null; }
+}
+
+// a posting's link: Claude reads it and fills in the company (new or known) and the role (docs/JOB_HUNT.md, 2026-10-18)
+function linkButton() {
+  return h("button", { class: "btn sm", id: "hunt-from-link", disabled: !ui.chat.available,
+    title: ui.chat.available ? t("Paste a posting's link: Claude reads it and fills in the company and the role") : t("Claude isn't available"),
+    onclick: addFromLink }, icon("link"), t("Add from a link"));
+}
+
+async function addFromLink() {
+  const f = await formModal({ title: t("Add from a link"), ok: t("Read it"),
+    message: t("The link to a posting. Claude reads it, adds its company (and finds out about it, when it is new) and the role, with its deadline."),
+    fields: [{ key: "url", label: t("Link"), required: true, placeholder: "https://careers.example.com/campus/job/12345" }] });
+  if (!f) return;
+  let url = f.url.trim();
+  if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+  const same = ((H.data && H.data.applications) || []).find((a) => a.url && a.url.replace(/\/$/, "") === url.replace(/\/$/, ""));
+  if (same) { toast(t("That posting is already on the list")); openHunt("app", same.id); return; }
+  sendChat(t("Read this posting and add it: {url}", { url }));
 }
 
 async function newApplication(companyId = null) {
@@ -335,7 +497,7 @@ async function newApplication(companyId = null) {
   if (!f) return;
   try {
     let cid = fixed ? fixed.id : (cs.find((c) => c.name.toLowerCase() === f.company.toLowerCase()) || {}).id;
-    if (!cid) cid = (await api("POST", "/api/hunt/companies", { name: f.company })).company.id;
+    if (!cid) { const made = (await api("POST", "/api/hunt/companies", { name: f.company })).company; cid = made.id; askFill(made); }
     const v = await api("POST", `/api/hunt/companies/${encodeURIComponent(cid)}/roles`, { role: f.role, url: f.url });
     await loadHunt({ quiet: true });
     if (!companyId) openHunt("app", v.application.id);
@@ -410,19 +572,26 @@ function companyPage(v) {
   const ab = c.about;
   return [
     backTo("companies"),
-    h("div", { class: "ed-head" }, h("h1", null, c.name), h("span", { class: "id" }, c.id), h("span", { class: "spacer" }),
+    h("div", { class: "ed-head" }, companyLogo(c, "lg"), h("h1", null, c.name), h("span", { class: "id" }, c.id), h("span", { class: "spacer" }),
+      h("button", { class: "btn sm", id: "company-fill", disabled: !ui.chat.available, onclick: () => askFill(c) }, icon("sparkle"),
+        filledSome(c) ? t("Ask Claude to fill it in again") : t("Ask Claude to fill it in")),
       c.site && h("button", { class: "btn sm", onclick: () => openOnSite(c.site) }, icon("external"), t("Open its site")),
       h("button", { class: "btn icon ghost", title: t("More"), "aria-label": t("More"), onclick: (e) => openMenu(e.currentTarget, [
         c.site && { label: t("Sign in to it in Resume Studio's browser"), icon: "user", onClick: () => signInMode(c.site) },
         c.site && { label: t("Open it in your everyday browser"), icon: "external", onClick: () => openInBrowser(c.site) },
+        (c.kept || []).length > 0 && { label: t("Let Claude fill the fields you edited too"), icon: "sparkle", onClick: () => editCompany(c.id, { kept: [] }) },
         "sep",
         { label: t("Delete this company"), icon: "trash", danger: true, onClick: () => deleteCompany(c, apps.length) }], { align: "end" }) }, icon("more"))),
     card(t("Roles"), siteApps.length ? t("on its own site, in your order of preference") : t("the roles you apply for here"), [
       roles.length ? h("div", { class: "su-roles" }, roles) : h("p", { class: "muted card-p" }, t("No roles yet: add the ones you apply for below.")),
       add,
     ]),
+    postingsCard(v),
     card(t("Its careers site"), t("one profile there, filled from a subset"), [
-      h("div", { class: "grid2" }, hfield(t("Careers site"), c.site, save("site"), { placeholder: "https://careers.example.com/campus" }),
+      (c.sites || []).length > 0 && h("div", { class: "co-sites" }, c.sites.map((x) => h("div", { class: "co-site" },
+        h("span", { class: "chip" }, t(SITE_KINDS[x.kind] || "Other")), h("a", { href: x.url, "data-ext": "", class: "co-site-url" }, x.url.replace(/^https?:\/\//, "")),
+        x.system && h("span", { class: "muted" }, x.system)))),
+      h("div", { class: "grid2" }, hfield(t("Careers site"), c.site, save("site"), { placeholder: "https://careers.example.com/campus", hint: keptHint(c, "site") }),
         hfield(t("Account"), c.account, save("account"), { placeholder: t("e.g. the phone or email you signed up with"), hint: t("never a password") })),
       h("div", { class: "field" }, h("label", null, t("Filled from"), h("span", { class: "hint" }, t("the subset this site gets"))), h("div", { class: "su-subset" }, pick.el,
         st && h("span", { class: "chip" + (st.latest && !st.same_as ? " vd-changed" : "") }, !st.latest ? t("No versions yet") : st.same_as ? `v${st.same_as}` : t("v{n} · changed", { n: st.latest })),
@@ -438,17 +607,36 @@ function companyPage(v) {
       ab && (ab.points || []).length > 0 && h("div", { class: "about-points" }, ab.points.map((p) => h("div", { class: "about-point" },
         p.topic && h("b", null, p.topic), h("span", null, p.text),
         (p.sources || []).length > 0 && h("span", { class: "about-src" }, p.sources.map((s, k) => h("a", { href: s, "data-ext": "", title: s }, `[${k + 1}]`)))))),
-      h("div", { class: "row" }, h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => askAbout(c) }, icon("sparkle"),
-        ab ? t("Ask Claude to look again") : t("Ask Claude about it"))),
     ]),
-    card(t("Company details"), "", [
-      h("div", { class: "grid2" }, hfield(t("Name"), c.name, save("name")), hfield(t("Also called"), (c.aliases || []).join(", "), save("aliases"), { placeholder: "Xinghe, Nebula", hint: t("Claude knows it by these too") })),
-      h("div", { class: "grid2" }, hfield(t("Industry"), c.industry, save("industry")), hfield(t("Location"), c.location, save("location"))),
-      h("div", { class: "grid2" }, hfield(t("Deadline"), c.deadline, save("deadline"), { type: "date" }), hfield(t("Size"), c.size, save("size"))),
+    card(t("Company details"), t("filled by Claude, each with its source; what you edit stays yours"), [
+      h("div", { class: "grid2" }, hfield(t("Name"), c.name, save("name")), hfield(t("Also called"), (c.aliases || []).join(", "), save("aliases"), { placeholder: "Xinghe, Nebula", hint: keptHint(c, "aliases") || t("Claude knows it by these too") })),
+      h("div", { class: "grid2" }, hfield(t("Industry"), c.industry, save("industry"), { hint: keptHint(c, "industry") }),
+        hfield(t("Strength"), c.strength, save("strength"), { placeholder: t("e.g. market cap, or the latest valuation"), hint: keptHint(c, "strength") })),
+      h("div", { class: "grid2" }, hfield(t("Headquarters"), c.location, save("location"), { hint: keptHint(c, "location") }),
+        hfield(t("Size"), c.size, save("size"), { hint: keptHint(c, "size") })),
       hfield(t("Notes"), c.note, save("note"), { multiline: true, placeholder: t("e.g. which batch (提前批 / 正式批), referral code, what you heard") }),
     ]),
     card(t("What happened"), v.events.length ? t("{n} event", { n: v.events.length }, "{n} events") : "", [timeline(v.events, apps)]),
   ];
+}
+
+const SITE_KINDS = { campus: "Campus", intern: "Internships", social: "Experienced", other: "Other" };
+const filledSome = (c) => !!(c.industry || c.strength || c.logo || (c.about && c.about.summary));
+
+// next to a field's label: where Claude found it, or that it is the user's now
+function keptHint(c, key) {
+  if ((c.kept || []).includes(key)) return t("yours: Claude leaves it");
+  const src = (c.sources || {})[key];
+  if (!src) return "";
+  let host = src;
+  try { host = new URL(src).hostname.replace(/^www\./, ""); } catch (e) { /* keep it as written */ }
+  return h("a", { href: src, "data-ext": "", class: "src-link", title: src }, t("source: {site}", { site: host }));
+}
+
+// Claude researches the company and fills every field (docs/JOB_HUNT.md, 2026-10-18)
+function askFill(c) {
+  if (!ui.chat.available) return;
+  sendChat(t("Find out about {company} and fill in all its fields: industry, strength, headquarters, size, its careers sites, its logo and the About, each with a source.", { company: c.name }));
 }
 
 async function moveApp(a, place) {
@@ -457,9 +645,6 @@ async function moveApp(a, place) {
   await loadHunt({ quiet: true });
 }
 
-function askAbout(c) {
-  sendChat(t("Tell me about {company}: what it does, how it is doing, its prospects, its culture and pay, and how it hires graduates. Save what you find to its About, with sources.", { company: c.name }));
-}
 
 async function sendCompany(c, unsent) {
   const st = versionStatus(c.subset) || {};
@@ -537,6 +722,7 @@ function appPage(v) {
     ]),
     card(t("The role"), "", [
       h("div", { class: "grid2" }, hfield(t("Role"), a.role, save("role")), hfield(t("Link"), a.url, save("url"), { placeholder: "https://…" })),
+      h("div", { class: "grid2" }, hfield(t("Deadline"), a.deadline, save("deadline"), { type: "date", id: "app-deadline" }), h("span")),
       h("div", { class: "field" }, h("label", null, t("How it goes in")), h("div", { class: "row wrap" }, channel, plat && plat.el,
         a.channel === "site" && h("span", { class: "muted" }, t("choice {n} on {company}'s site", { n: a.order, company: c.name })))),
       hfield(t("Notes"), a.note, save("note"), { multiline: true }),
@@ -618,7 +804,7 @@ function timeline(events, apps) {
 }
 
 // ================================================================ Settings: which tracker the applications go into (saved on Done)
-let pendingTracker;
+let pendingTracker, pendingDaily;
 function trackerField() {
   const name = jobsTool().name;
   const box = h("div", { class: "field", id: "tracker-settings" });
@@ -631,7 +817,11 @@ function trackerField() {
       h("p", { class: "settings-note" }, v === "career-ops"
         ? (d.career_ops ? t("Roles you mark as sent also get a row in {name}'s tracker (its pipeline, follow-ups and stats see them).", { name })
           : t("{name} isn't connected yet: roles go into Resume Studio's tracker until it is.", { name }))
-        : t("Everything stays in Resume Studio's own tracker, next to your data file. {name} keeps its own rows.", { name })));
+        : t("Everything stays in Resume Studio's own tracker, next to your data file. {name} keeps its own rows.", { name })),
+      (() => { const on = pendingDaily ?? ((d.scan || {}).daily !== false);
+        return h("button", { type: "button", class: "check-row", id: "daily-scan", role: "checkbox", "aria-checked": String(on),
+          onclick: () => { pendingDaily = !on; paint(); } }, h("span", { class: "check" + (on ? " on" : "") }),
+        h("span", null, t("Scan the companies' sites once a day, when the window opens"), h("span", { class: "hint" }, t("by their providers and recorded routes; never Claude")))); })());
   };
   paint();
   if (!H.data) loadHunt({ quiet: true }).then(paint);
@@ -639,6 +829,12 @@ function trackerField() {
 }
 
 async function applyTracker() {
+  if (pendingDaily !== undefined) {
+    const v = pendingDaily;
+    pendingDaily = undefined;
+    await api("PUT", "/api/hunt/scan-settings", { daily: v });
+    if (H.data && H.data.scan) H.data.scan.daily = v;
+  }
   if (pendingTracker === undefined) return;
   const v = pendingTracker;
   pendingTracker = undefined;

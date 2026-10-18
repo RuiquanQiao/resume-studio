@@ -266,4 +266,4 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
     fill = autofill_api.register(app, studio, chats, inst.browser)
 
     # ---- the job hunt: applications, companies and platforms (Resume Studio's own tracker) ----
-    hunt_api.register(app, studio, tool, prefs, platforms=fill.summary)
+    inst.hunt = hunt_api.register(app, studio, tool, prefs, platforms=fill.summary, browser=inst.browser)

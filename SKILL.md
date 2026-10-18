@@ -261,10 +261,11 @@ The window connects a job-posting tool. Today that is
 
 Resume Studio's own tracker (design and the user's vision: `docs/JOB_HUNT.md`). Three tables under tabs:
 **applications** (one per company + role, with its status, how it goes in, what was sent and the next step),
-**companies** (what each is, its roles in the user's order of preference, its own careers site and the subset
-it is filled from) and **platforms** (the online profiles below). The data lives in `.studio/hunt/`
-(`companies.json`, `applications.json`, and `events.tsv`, an append-only ledger of status changes, notes and
-sends). Work it only through `scripts/hunt.py`, with the window open (every command prints what is there now):
+**companies** (logo, industry, strength, its open roles and the user's applications; on its page its careers
+sites, the subset it is filled from and the About) and **platforms** (the online profiles below). The data lives
+in `.studio/hunt/` (`companies.json`, `applications.json`, `postings.json`, `scans.json`, `logos/`, and
+`events.tsv`, an append-only ledger of status changes, notes and sends). Work it only through
+`scripts/hunt.py`, with the window open (every command prints what is there now):
 
 ```bash
 python scripts/hunt.py list [--status interview]          # applications
@@ -273,9 +274,21 @@ python scripts/hunt.py add-company 星河科技 --site https://careers.xinghe.ex
 python scripts/hunt.py add-role 星河科技 服务端研发工程师      # --channel site|platform|referral|other
 python scripts/hunt.py status 星河科技/服务端 interview --note "一面 周三 14:00"
 python scripts/hunt.py note 星河科技/服务端 "二面约在下周二"
-python scripts/hunt.py about 星河科技 --stdin <<'JSON' ... JSON   # research, with a source for every point
+python scripts/hunt.py fill 星河科技 --stdin <<'JSON' ... JSON    # research: every field at once, each with a source
 python scripts/hunt.py sent 星河科技                         # the user submitted the sign-up on its site
+python scripts/hunt.py scan [星河科技]                        # read the companies' sites for open postings
+python scripts/hunt.py scan-route 星河科技 --file route.json   # record how to read a site's job list (once)
+python scripts/hunt.py apply P12                          # the user goes for posting P12
 ```
+
+- **A company fills itself** (docs/JOB_HUNT.md, 2026-10-18): when one is added or asked about, research it and
+  send everything with one `fill` (official name, aliases, industry, strength, HQ, size, its careers sites and
+  their hiring systems, a logo link, the About), never only the About. Fields the user edited stay theirs.
+  Deadlines belong to roles (`--deadline`), not companies. A posting's link: read it, add or fill the company,
+  add the role with its deadline.
+- **Open postings** are scanned, never typed: career-ops' providers (Moka, Feishu/ByteDance, Tencent, Meituan,
+  Alibaba, Greenhouse, Lever, Ashby…) read public job APIs; any other site gets a read route Claude records
+  once in the browser (`scan-route`), replayed with no Claude. `keywords` are the roles the user looks for.
 
 - **Statuses**: saved (wants to apply), applied, assessment (测评/笔试), interview, offer, hired, rejected,
   withdrawn; the user's own words work (一面 → interview). Interview rounds are notes, not statuses.

@@ -5,6 +5,7 @@
 //   wrapped   a compact button, tab or chip whose label broke over two lines
 //   cut       an element cut off by a container that hides its overflow
 //   sticks    an element painting outside the box it belongs to, over its neighbours
+//   spills    text running past its own box (nothing clips it), over its neighbours
 //   scrolls   a pane or box that scrolls sideways when it should not
 //   overlap   two controls on top of each other
 //
@@ -110,6 +111,11 @@
         && s.webkitLineClamp === "none" && !el.matches("details:not([open])") && (el.innerText || "").trim()
         && el.clientHeight > 0)
       report("cut", el, `${el.scrollHeight - el.clientHeight}px of ${el.scrollHeight}px hidden below`);
+
+    // spills: its own text runs past its box, with nothing clipping it, over what is next to it
+    if (text && s.overflowX === "visible" && el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0
+        && !["inline", "contents"].includes(s.display))
+      report("spills", el, `text runs ${el.scrollWidth - el.clientWidth}px past its box`);
 
     // scrolls sideways
     if ((s.overflowX === "auto" || s.overflowX === "scroll") && el.scrollWidth > el.clientWidth + 1

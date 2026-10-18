@@ -2,11 +2,17 @@
 
 Plain files next to the data file, in our own schema, so switching trackers loses nothing:
 
-    .studio/hunt/companies.json     {"next": 3, "companies": [{id: "C1", name, aliases, site, industry, location,
-                                     size, note, deadline, account, subset, about, created, updated}]}
+    .studio/hunt/companies.json     {"next": 3, "companies": [{id: "C1", name, aliases, site, sites, industry,
+                                     strength, location, size, logo, sources, kept, note, account, subset,
+                                     about, created, updated}]}
     .studio/hunt/applications.json  {"next": 5, "applications": [{id: "A1", company: "C1", role, url, channel,
-                                     platform, order, status, applied, next, due, note, subset,
+                                     platform, order, status, applied, deadline, next, due, note, subset,
                                      sent: [{at, subset, n}], co_app, created, updated}]}
+    .studio/hunt/logos/C1.png       a company's logo, downloaded once (docs/JOB_HUNT.md, 2026-10-18)
+
+A company fills itself: Claude researches it and sends every field at once (`fill`), each with its source.
+A field the user edits in the window goes into `kept`, and Claude's later fills leave it alone. Deadlines
+belong to roles (`deadline`), not to companies; a company deadline from before moves to its roles.
     .studio/hunt/events.tsv         at  app  kind  from  to  source  note      (append-only)
 
 The events are a ledger, like career-ops' status-log.tsv: every status change, note and send is a line,
@@ -55,6 +61,11 @@ ALIASES = {
     "withdrawn": ["withdraw", "discarded", "gave up", "放弃", "不去", "撤回"],
 }
 CHANNELS = ["site", "platform", "referral", "other"]
+# what Claude fills on a company (the name stays the user's: an official name goes into the aliases)
+FILLABLE = ["aliases", "industry", "strength", "location", "size", "site", "sites", "logo", "about"]
+SITE_KINDS = ["campus", "intern", "social", "other"]
+LOGO_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif",
+              "image/svg+xml": "svg", "image/x-icon": "ico", "image/vnd.microsoft.icon": "ico"}
 EVENT_KINDS = ["created", "status", "note", "sent"]
 COLUMNS = ["at", "app", "kind", "from", "to", "source", "note"]
 
@@ -122,6 +133,7 @@ class Hunt:
         self.dir = Path(state_dir) / "hunt"
         self.lock = threading.RLock()
         self.on_change: Callable[[], None] | None = None
+        self.scanner: Any = None   # set by jobhunt/api.py: scanning the companies' sites (jobhunt/scan.py)
 
     # ---- the files ----------------------------------------------------------------
     def _file(self, name: str) -> Path:
@@ -222,14 +234,22 @@ class Hunt:
 
     @staticmethod
     def _company_fields(c: dict, fields: dict) -> None:
-        for k, limit in (("name", 80), ("site", 500), ("industry", 80), ("location", 80), ("size", 40),
+        for k, limit in (("name", 80), ("site", 500), ("industry", 80), ("strength", 160), ("location", 80), ("size", 60),
                          ("account", 120), ("subset", 80)):
             if k in fields:
                 c[k] = _text(fields[k], limit)
         if "note" in fields:
             c["note"] = _long(fields["note"], 4000)
-        if "deadline" in fields:
-            c["deadline"] = _date(fields["deadline"])
+        if "sites" in fields:
+            c["sites"] = Hunt._sites(fields["sites"])
+            if c["sites"] and not c.get("site"):
+                c["site"] = next((x["url"] for x in c["sites"] if x["kind"] == "campus"), c["sites"][0]["url"])
+        if "sources" in fields and isinstance(fields["sources"], dict):
+            src = dict(c.get("sources") or {})
+            for k, v in fields["sources"].items():
+                if k in FILLABLE and re.match(r"https?://", _text(v, 500)):
+                    src[k] = _text(v, 500)
+            c["sources"] = src
         if "aliases" in fields:
             xs = fields["aliases"]
             xs = re.split(r"[,，、;；]", xs) if isinstance(xs, str) else xs or []
@@ -241,6 +261,21 @@ class Hunt:
         site = c.get("site") or ""
         if site and not re.match(r"https?://", site):
             c["site"] = "https://" + site
+
+    @staticmethod
+    def _sites(v: Any) -> list[dict]:
+        """A company's careers sites: [{url, kind (campus | intern | social | other), system (Moka, 北森, own site…)}]."""
+        out = []
+        for x in v if isinstance(v, list) else []:
+            x = x if isinstance(x, dict) else {"url": x}
+            url = _text(x.get("url"), 500)
+            if not url:
+                continue
+            if not re.match(r"https?://", url):
+                url = "https://" + url
+            kind = _text(x.get("kind"), 20).lower()
+            out.append({"url": url, "kind": kind if kind in SITE_KINDS else "other", "system": _text(x.get("system"), 40)})
+        return out[:8]
 
     @staticmethod
     def _about(v: Any) -> dict:
@@ -265,9 +300,9 @@ class Hunt:
             name = _text(fields.get("name"), 80)
             if name and any(_key(c["name"]) == _key(name) for c in data["companies"]):
                 raise ValueError(t("{name} is already on the list", name=name))
-            c = {"id": f"C{data['next']}", "name": "", "aliases": [], "site": "", "industry": "", "location": "",
-                 "size": "", "note": "", "deadline": "", "account": "", "subset": "", "about": None,
-                 "created": _now(), "updated": _now()}
+            c = {"id": f"C{data['next']}", "name": "", "aliases": [], "site": "", "sites": [], "industry": "", "strength": "",
+                 "location": "", "size": "", "logo": "", "sources": {}, "kept": [], "note": "", "account": "", "subset": "",
+                 "about": None, "created": _now(), "updated": _now()}
             self._company_fields(c, fields)
             data["next"] += 1
             data["companies"].insert(0, c)
@@ -275,7 +310,8 @@ class Hunt:
         self._changed()
         return c
 
-    def update_company(self, ref: str, fields: dict) -> dict:
+    def update_company(self, ref: str, fields: dict, *, source: str = "window") -> dict:
+        """An edit. Made in the window, the fields it changes become the user's (`kept`): Claude's fills skip them."""
         with self.lock:
             cid = self.company(ref)["id"]
             data = self._companies()
@@ -283,11 +319,86 @@ class Hunt:
             name = _text(fields.get("name"), 80) if "name" in fields else ""
             if name and any(_key(x["name"]) == _key(name) and x["id"] != cid for x in data["companies"]):
                 raise ValueError(t("{name} is already on the list", name=name))
+            before = {k: json.dumps(c.get(k), ensure_ascii=False) for k in FILLABLE}
             self._company_fields(c, fields)
+            if source == "window":
+                mine = [k for k in FILLABLE if k in fields and json.dumps(c.get(k), ensure_ascii=False) != before[k]]
+                c["kept"] = sorted(set(c.get("kept") or []) | set(mine))
+            if "kept" in fields and isinstance(fields["kept"], list):   # the user hands fields back to Claude
+                c["kept"] = sorted({k for k in fields["kept"] if k in FILLABLE})
             c["updated"] = _now()
             self._write("companies.json", data)
         self._changed()
         return c
+
+    def fill(self, ref: str, fields: dict) -> tuple[dict, list[str]]:
+        """Claude's research, every field at once. Fields the user edited stay theirs; an official name that
+        differs from the user's goes into the aliases. Returns the company and the fields it left alone."""
+        with self.lock:
+            c = self.company(ref)
+            kept = set(c.get("kept") or [])
+            take = {k: v for k, v in fields.items() if k in FILLABLE and k != "logo" and k not in kept}
+            skipped = sorted(k for k in fields if k in FILLABLE and k in kept)
+            official = _text(fields.get("name"), 80)
+            if official and _key(official) != _key(c["name"]) and "aliases" not in kept:
+                al = take.get("aliases", c.get("aliases") or [])
+                al = re.split(r"[,，、;；]", al) if isinstance(al, str) else list(al)
+                take["aliases"] = [official, *al]
+            if "sources" in fields:
+                take["sources"] = {k: v for k, v in (fields.get("sources") or {}).items() if k not in kept}
+            if "site" in kept:
+                take.pop("site", None)
+            elif "sites" in take and "site" not in take:   # the campus site leads unless the user picked one
+                sites = self._sites(take["sites"])
+                if sites:
+                    take["site"] = next((x["url"] for x in sites if x["kind"] == "campus"), sites[0]["url"])
+            c = self.update_company(c["id"], take, source="chat")
+        return c, skipped
+
+    def logo_path(self, ref: str) -> Path | None:
+        c = self.company(ref)
+        p = self.dir / "logos" / c["logo"] if c.get("logo") else None
+        return p if p and p.is_file() else None
+
+    def save_logo(self, ref: str, data: bytes, content_type: str, *, source: str = "chat") -> dict:
+        """A company's logo, kept in the data folder (never hot-linked)."""
+        ext = LOGO_TYPES.get(content_type.split(";")[0].strip().lower())
+        if not ext:
+            raise ValueError(t("That isn't a picture Resume Studio can show ({type})", type=content_type or "?"))
+        if not data or len(data) > 2_000_000:
+            raise ValueError(t("The logo must be a picture under 2 MB"))
+        c = self.company(ref)
+        if source != "window" and "logo" in (c.get("kept") or []):
+            return c
+        d = self.dir / "logos"
+        d.mkdir(parents=True, exist_ok=True)
+        for old in d.glob(c["id"] + ".*"):
+            old.unlink(missing_ok=True)
+        (d / f"{c['id']}.{ext}").write_bytes(data)
+        with self.lock:
+            cs = self._companies()
+            me = next(x for x in cs["companies"] if x["id"] == c["id"])
+            me["logo"] = f"{c['id']}.{ext}"
+            if source == "window":
+                me["kept"] = sorted(set(me.get("kept") or []) | {"logo"})
+            me["updated"] = _now()
+            self._write("companies.json", cs)
+        self._changed()
+        return me
+
+    def migrate(self) -> None:
+        """Deadlines belong to roles (2026-10-18): a company's deadline moves to its roles that have none."""
+        with self.lock:
+            cs = self._companies()
+            moving = {c["id"]: c.pop("deadline") for c in cs["companies"] if "deadline" in c}
+            if not moving:
+                return
+            apps = self._apps()
+            for a in apps["applications"]:
+                if moving.get(a["company"]) and not a.get("deadline"):
+                    a["deadline"] = moving[a["company"]]
+            self._write("applications.json", apps)
+            self._write("companies.json", cs)
 
     def delete_company(self, ref: str) -> None:
         """The company and its applications go; the ledger keeps their lines."""
@@ -339,6 +450,8 @@ class Hunt:
             a["next"] = _text(fields["next"], 200)
         if "due" in fields:
             a["due"] = _date(fields["due"])
+        if "deadline" in fields:
+            a["deadline"] = _date(fields["deadline"])
         if "channel" in fields:
             ch = _text(fields["channel"], 20) or "site"
             if ch not in CHANNELS:
@@ -360,7 +473,7 @@ class Hunt:
                 raise ValueError(t("{company} already has {role}", company=c["name"], role=role))
             status = state_of(fields.get("status") or "saved")
             a = {"id": f"A{data['next']}", "company": c["id"], "role": "", "url": "", "channel": "site", "platform": "",
-                 "order": 0, "status": status, "applied": "", "next": "", "due": "", "note": "", "subset": "",
+                 "order": 0, "status": status, "applied": "", "deadline": "", "next": "", "due": "", "note": "", "subset": "",
                  "sent": [], "co_app": None, "created": _now(), "updated": _now()}
             self._app_fields(a, {"channel": "site", **fields})
             mine = [x for x in data["applications"] if x["company"] == c["id"]]
@@ -548,7 +661,9 @@ class Hunt:
             mine = [a for a in apps if a["company"] == c["id"]]
             live = [a for a in mine if a["status"] in OPEN or a["status"] in ("offer", "hired")]
             best = max(live or mine, key=lambda a: rank.get(a["status"], 0))["status"] if mine else ""
+            mine.sort(key=lambda a: a.get("order") or 0)
             companies.append({**c, "roles": len(mine), "open": sum(1 for a in mine if a["status"] in OPEN), "best": best,
+                              "apps": [{"id": a["id"], "role": a["role"], "status": a["status"]} for a in mine],
                               "last": max((last[a["id"]]["at"] for a in mine if a["id"] in last), default="")})
         return {"applications": rows, "companies": companies,
                 "states": [{"id": s, "label": label, "open": s in OPEN} for s, label, _ in STATES]}

@@ -73,9 +73,13 @@ with the C# compiler that ships with Windows.
 - **Applying (Ctrl+3)**: Resume Studio's own job-hunt tracker, in three tables:
   - **Progress**: every application (company and role), how it goes in (the company's own site, a platform, a
     referral), its status, the subset version it got, the latest event and the next step. Each has a timeline.
-  - **Companies**: what each is (Claude finds out, with a source for every point), your notes, its careers
-    site and the roles there in your order of preference (网申 / 志愿). Mark the sign-up sent when you submit:
-    the subset is kept as a version and pinned on every role.
+  - **Companies**: logo, industry, strength and open roles. Add one by its name or paste a posting's link:
+    Claude fills in every field (with a source for each), finds its careers sites and logo. **Scan all** reads
+    every company's sites for open roles (career-ops' providers for Moka, Feishu, Tencent, Greenhouse, Lever…;
+    a route Claude records once for any other site) and says what is new today. On a company's page: its open
+    roles ("Want to apply" adds one to your applications), the roles there in your order of preference
+    (网申 / 志愿), its About and your notes. Mark the sign-up sent when you submit: the subset is kept as a
+    version and pinned on every role.
   - **Platforms**: your online profiles (below).
   - Tell Claude in the chat on the left what happened ("Xinghe 一面过了") and it updates the tables through
     `scripts/hunt.py`. Settings → Applications tracker can also copy sent roles into career-ops' tracker.

@@ -204,6 +204,37 @@ def companies(c):
             c.server.req("POST", f"/api/hunt/companies/{cid}/roles", {"role": r})
 
 
+LOGO = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+                     "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082")
+
+
+def filled_companies(c):
+    """Companies the way Claude's fill and a scan leave them: logos, strength, roles, open postings, news."""
+    companies(c)
+    hunt = c.server.inst.hunt
+    hunt.fill("C1", {"industry": "电商 / 互联网平台", "strength": "市值约 1,600 亿美元 (NASDAQ: XHT, 2026-10-17)", "location": "上海",
+                     "size": "约 2.3 万人", "sites": [{"url": "https://careers.xinghe.example/campus", "kind": "campus", "system": "own site"},
+                                                   {"url": "https://careers.xinghe.example/intern", "kind": "intern", "system": "own site"}],
+                     "sources": {"strength": "https://example.com/quote"}})
+    hunt.save_logo("C1", LOGO, "image/png")
+    hunt.fill("C2", {"industry": "Software", "strength": "Market cap about US$45 bn (NASDAQ: TEAM, 2026-10-17)", "location": "Sydney"})
+    hunt.add_company({"name": "Moonshot AI 月之暗面"})
+    posts = hunt.scanner.postings
+    roles = ["服务端研发工程师（上海）", "算法工程师 — 推荐与广告方向", "AI Agent 研发工程师（新设岗位）", "数据分析师", "客户端研发工程师 iOS / Android",
+             "前端研发工程师", "产品经理培训生", "安全工程师", "运营管培生", "视觉设计师"]
+    posts.merge("C1", [{"title": r, "url": f"https://careers.xinghe.example/campus/job/{i}", "location": "上海", "category": "研发" if i < 7 else "产品",
+                        "batch": "campus", "deadline": "2026-10-31" if i % 3 == 0 else ""} for i, r in enumerate(roles)], how="route")
+    posts.set_scan_state("C1", route={"pages": [{"url": "https://careers.xinghe.example/campus/jobs", "script": "async () => ({postings: []})"}]})
+    posts.merge("C2", [{"title": "Graduate Software Engineer", "url": "https://jobs.lever.co/atlassian/1", "location": "Sydney, Australia"}], how="lever")
+    posts.set_scan_state("C3", needs="claude", at="")
+    posts.settings(keywords="研发, 算法, Agent, Engineer")
+
+
+def failed_scan(c):
+    filled_companies(c)
+    c.server.inst.hunt.scanner.postings.failed("C1", "the site asks to sign in", how="route", signed_out=True)
+
+
 def applying(tab):
     return then(key("Control+3"), click(f".hunt-tab[data-tab={tab}]"))
 
@@ -225,9 +256,15 @@ def linkedin_conflict(pg, c):
     pg.keyboard.type("Open to ML roles.")
     pg.locator(".fill-scroll").evaluate("e => e.focus()")      # out of the field: the window repaints it
     wait_until(lambda: c.server.req("GET", "/api/autofill/linkedin")[1]["local"]["basics"].get("about"), msg="typing saved")
-    c.data["n"] = c.data.get("n", 0) + 1
-    now = {**FILL_NOW, "basics": {"headline": "Student at ANU", "about": f"Hello from LinkedIn {c.data['n']}."}}
-    c.server.req("POST", "/api/autofill/linkedin/current", now)
+    for _ in range(3):   # under load the site's reading can land before the window settled the edit: send it again
+        c.data["n"] = c.data.get("n", 0) + 1
+        now = {**FILL_NOW, "basics": {"headline": "Student at ANU", "about": f"Hello from LinkedIn {c.data['n']}."}}
+        c.server.req("POST", "/api/autofill/linkedin/current", now)
+        try:
+            pg.wait_for_selector(".ff.conflict .ff-conflict", timeout=6000)
+            return
+        except Exception:  # noqa: BLE001
+            continue
 
 
 FILL_TROUBLE = js("""() => { const v = F.view[F.site];
@@ -289,6 +326,12 @@ STATES = [
           prepare=companies),
     State("applying, an application's page", then(applying("apps"), click(".htable tbody tr >> nth=0")), ["#app-status"],
           prepare=companies),
+    State("applying, companies filled in, with today's changes", applying("companies"),
+          [".htable .co-logo img", ".htable .role-chip.open-chip", ".scan-news .news-row", ".scan-news .note-bar"], prepare=filled_companies),
+    State("applying, a company's open roles", then(applying("companies"), click(".htable tbody tr[data-id='C1']")),
+          [".post-list .post-row", ".co-sites .co-site", ".post-row .new-chip"], prepare=filled_companies),
+    State("applying, a company whose scan failed", then(applying("companies"), click(".htable tbody tr[data-id='C1']")),
+          [".post-tools .fs-status.bad", ".note-bar.warn"], prepare=failed_scan),
     State("applying, platforms, one signed out", then(applying("platforms"), wait(".htable tbody tr"),
                                                       js("() => { F.sites[0].signed_out = true; paintHunt(); }")),
           [".htable .state-chip.s-warn"]),
