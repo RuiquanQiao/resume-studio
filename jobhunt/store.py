@@ -134,6 +134,9 @@ class Hunt:
         self.lock = threading.RLock()
         self.on_change: Callable[[], None] | None = None
         self.scanner: Any = None   # set by jobhunt/api.py: scanning the companies' sites (jobhunt/scan.py)
+        # set by jobhunt/api.py: finding a logo on a company's own sites (jobhunt/logos.py), and asking for it
+        self.find_logo: Callable[[list[str]], tuple[bytes, str, str] | None] | None = None
+        self.want_logos: Callable[..., None] = lambda *cids: None
 
     # ---- the files ----------------------------------------------------------------
     def _file(self, name: str) -> Path:

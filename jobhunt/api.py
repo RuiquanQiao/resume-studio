@@ -1,9 +1,9 @@
 """The tracker's routes: the window's tables and pages, and one command endpoint for scripts/hunt.py."""
 from __future__ import annotations
 
+import os
+import threading
 import time
-import urllib.error
-import urllib.request
 from typing import Any, Callable
 
 from core.i18n import t
@@ -13,31 +13,13 @@ from jobs.signups import Signups
 from resume import model
 from resume.service import Studio
 
+from . import logos
+from .logos import fetch_logo
 from .postings import Postings
 from .scan import Scanner
-from .store import STATE_IDS, Hunt
+from .store import LOGO_TYPES, STATE_IDS, Hunt
 
 TRACKERS = ["studio", "career-ops"]
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
-
-
-def fetch_logo(url: str) -> tuple[bytes, str]:
-    """Download a logo Claude found (http(s) only, a picture, under 2 MB)."""
-    if not url.startswith(("https://", "http://")):
-        raise ValueError(t("The logo's address must start with https://"))
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "image/*"})
-    try:
-        with urllib.request.urlopen(req, timeout=15) as r:
-            data = r.read(2_000_001)
-            ctype = r.headers.get("Content-Type") or ""
-    except (urllib.error.URLError, OSError) as e:
-        raise ValueError(t("Couldn't download the logo: {error}", error=str(getattr(e, "reason", e))))
-    if ctype.startswith(("application/octet-stream", "binary/")) or not ctype:   # some CDNs don't say
-        head = data[:16]
-        ctype = ("image/png" if head.startswith(b"\x89PNG") else "image/jpeg" if head.startswith(b"\xff\xd8")
-                 else "image/gif" if head.startswith(b"GIF8") else "image/webp" if head[8:12] == b"WEBP"
-                 else "image/svg+xml" if b"<svg" in data[:400] else ctype)
-    return data, ctype
 
 
 def subset_to_send(studio: Studio, subset_id: str | None) -> str:
@@ -102,6 +84,46 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     def logo_url(c: dict) -> str:
         return f"/api/hunt/logos/{c['id']}?v={c.get('updated', '')}" if c.get("logo") else ""
 
+    # ---- logos: a company with a site gets its logo from it, in the background, with no Claude ----
+    tried: set[tuple[str, tuple[str, ...]]] = set()   # (company, its sites) already looked at this run
+    tried_lock = threading.Lock()
+
+    def logo_sites(c: dict) -> tuple[str, ...]:
+        return tuple(u for u in dict.fromkeys([c.get("site") or "", *[s["url"] for s in c.get("sites") or []]]) if u)
+
+    def find_logo(cid: str) -> None:
+        try:
+            c = hunt.company(cid)
+        except KeyError:
+            return
+        sites = logo_sites(c)
+        finder = hunt.find_logo
+        with tried_lock:
+            if c.get("logo") or "logo" in (c.get("kept") or []) or not sites or finder is None or (cid, sites) in tried:
+                return
+            tried.add((cid, sites))
+        got = finder(list(sites))
+        if not got:
+            return
+        data, ctype, src = got
+        try:
+            c = hunt.company(cid)
+            if c.get("logo") or "logo" in (c.get("kept") or []):   # Claude or the user got there first
+                return
+            hunt.save_logo(cid, data, ctype)
+            hunt.update_company(cid, {"sources": {"logo": src}}, source="auto")
+        except (KeyError, ValueError):
+            pass
+
+    def want_logos(*cids: str) -> None:
+        ids = list(cids) or [c["id"] for c in hunt.companies()]
+        threading.Thread(target=lambda: [find_logo(i) for i in ids], name="hunt-logos", daemon=True).start()
+
+    hunt.find_logo = (lambda sites: logos.from_sites(sites, types=LOGO_TYPES)) \
+        if os.environ.get("STUDIO_LOGOS") != "off" else None
+    hunt.want_logos = want_logos
+    want_logos()   # the companies that have a site and no logo yet
+
     def fill(ref: str, fields: dict) -> dict:
         """Claude's research on a company, every field at once, the logo downloaded into the data folder."""
         fields = fields if isinstance(fields, dict) else {}
@@ -116,6 +138,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                     hunt.save_logo(c["id"], data, ctype)
                 except ValueError as e:
                     logo_error = str(e)
+        want_logos(c["id"])   # no logo from Claude (or it failed): the site's own icon
         return {"company": company_view(c["id"]), "kept": kept, "logo_error": logo_error, "text": "filled"}
 
     def company_view(ref: str) -> dict:
@@ -242,6 +265,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         if b.get("subset"):
             subset_to_send(studio, str(b["subset"]))
         c = guard(lambda: hunt.add_company(b))
+        want_logos(c["id"])
         return company_view(c["id"])
 
     @app.route("GET", "/api/hunt/companies/{cid}")
@@ -253,7 +277,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         b = body(req)
         if b.get("subset"):
             subset_to_send(studio, str(b["subset"]))
-        guard(lambda: hunt.update_company(req.params["cid"], b))
+        want_logos(guard(lambda: hunt.update_company(req.params["cid"], b))["id"])
         return guard(lambda: company_view(req.params["cid"]))
 
     @app.route("DELETE", "/api/hunt/companies/{cid}")
@@ -326,12 +350,16 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             if cmd == "add-company":
                 if a.get("subset"):
                     subset_to_send(studio, str(a["subset"]))
-                return {"company": company_view(hunt.add_company(a)["id"]), "text": "added"}
+                cid = hunt.add_company(a)["id"]
+                want_logos(cid)
+                return {"company": company_view(cid), "text": "added"}
             if cmd == "edit-company":
                 ref = str(a.pop("ref", "") or "")
                 if a.get("subset"):
                     subset_to_send(studio, str(a["subset"]))
-                return {"company": company_view(hunt.update_company(ref, a, source=src)["id"]), "text": "changed"}
+                cid = hunt.update_company(ref, a, source=src)["id"]
+                want_logos(cid)
+                return {"company": company_view(cid), "text": "changed"}
             if cmd == "add-role":
                 ref = str(a.pop("company", "") or "")
                 return {"app": app_view(hunt.add_application(ref, a, source=src)["id"]), "text": "added"}

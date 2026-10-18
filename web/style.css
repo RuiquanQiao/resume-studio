@@ -1219,9 +1219,8 @@ mark.w-add { background: color-mix(in srgb, var(--ok) 30%, transparent); }
 .co-logo { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px;
   overflow: hidden; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); }
 .co-logo img { width: 100%; height: 100%; object-fit: contain; padding: 2px; }
-.co-logo .co-letter { font-size: 12.5px; font-weight: 650; color: var(--text-2); }
+.co-logo.none { background: none; box-shadow: none; }   /* no logo yet: an empty slot, so the names line up */
 .co-logo.lg { width: 34px; height: 34px; border-radius: 8px; }
-.co-logo.lg .co-letter { font-size: 16px; }
 .co-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .co-text { min-width: 0; }
 .c-main-name { display: block; font-weight: 600; }

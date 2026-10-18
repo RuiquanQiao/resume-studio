@@ -59,7 +59,9 @@ How to work it:
   the user's name for it stays), aliases, industry, **strength** (listed: market cap with exchange, ticker and
   date; not listed: valuation, latest round or headcount, with the date), headquarters, size, **its careers
   sites** (find them yourself: campus, intern and social hiring, and which system each runs on), a **logo**
-  (`logo_url`: a direct link to a picture of it: the site's icon, its press kit or a reputable page), and
+  (`logo_url`: a direct link to a picture of it, from its press kit or a reputable page; once a company has a
+  site, Resume Studio takes the icon off the company's own site by itself, so send one when `show` still says
+  no logo, the site runs on a hiring system like Moka or Feishu, or the icon isn't the company's), and
   the About (what it does, how it is doing, prospects, culture, pay, how it hires graduates). Prefer recent,
   primary sources (its own pages and reports, reputable news), give a source for every field and point, and
   never invent figures: leave out what you couldn't find and say so. Never stop at the About: the fields are

@@ -237,13 +237,12 @@ function resumeButton(a) {
 const today = () => new Date().toISOString().slice(0, 10);
 
 // a company's logo (downloaded into the data folder by Claude's fill), or its first letter
-function companyLogo(c, cls = "") {
+// the company's real logo, or nothing: never a made-up stand-in. `slot` keeps an empty space (table rows line up).
+function companyLogo(c, cls = "", slot = false) {
   const box = h("span", { class: "co-logo " + cls, "aria-hidden": "true" });
-  const letter = () => box.replaceChildren(h("span", { class: "co-letter" }, Array.from(c.name || "?")[0].toUpperCase()));
-  if (c.logo_url) {
-    const img = h("img", { src: c.logo_url, alt: "", loading: "lazy", onerror: letter });
-    box.append(img);
-  } else letter();
+  const none = () => { if (slot) { box.classList.add("none"); box.replaceChildren(); } else box.remove(); };
+  if (!c.logo_url) { if (!slot) return null; none(); return box; }
+  box.append(h("img", { src: c.logo_url, alt: "", loading: "lazy", onerror: none }));
   return box;
 }
 
@@ -383,7 +382,7 @@ function companiesTable() {
   const shown = d.companies.filter((c) => matches(c.name, (c.aliases || []).join(" "), c.industry, c.strength, c.note));
   const cols = [{ label: t("Company") }, { label: t("Industry") }, { label: t("Strength") }, { label: t("Roles") }];
   const rows = shown.map((c) => hrow(() => openHunt("company", c.id), [
-    h("td", { class: "c-company-cell" }, h("span", { class: "co-name" }, companyLogo(c),
+    h("td", { class: "c-company-cell" }, h("span", { class: "co-name" }, companyLogo(c, "", true),
       h("span", { class: "co-text" }, h("span", { class: "c-main-name" }, c.name),
         (c.aliases || []).length > 0 && h("span", { class: "c-alias" }, c.aliases.join(" · "))))),
     h("td", { class: "c-muted c-industry" }, c.industry || ""),

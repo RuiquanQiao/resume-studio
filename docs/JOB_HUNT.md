@@ -155,6 +155,15 @@ All three were built on 2026-10-18. Choices made on the way:
   "Today" with one button that asks Claude, for all of them at once.
 - *Built:* adding a company in the window asks Claude to fill it in right away (in the open chat). A posting the
   user already applies to (same role name) is linked to that application, not offered again.
+- *Built (2026-10-18 evening):* **the logo doesn't wait for Claude.** The user's Xinghe showed a grey "星" box:
+  Xinghe was added before fills existed, nobody asked Claude, and the table stood a made-up initial in for the
+  logo (user: "你他妈懂不懂什么叫公司logo？！"). Now a company with a site gets its logo from that site by
+  itself, in the background (`jobhunt/logos.py`): the icon its pages declare (apple-touch-icon, then the
+  largest icon), else `/favicon.ico`. It runs when a company is added, edited or filled, and once for every
+  company when the window starts. Sites on a hiring system (Moka, Feishu, Greenhouse…) are skipped, since
+  their icon is the vendor's. The logo's source is recorded, and Claude's `logo_url` or the user's own logo
+  still replaces it. **A company without a logo shows no logo**, never an invented letter: the table keeps an
+  empty slot so the names line up.
 
 ## Why the button said "Open LinkedIn"
 

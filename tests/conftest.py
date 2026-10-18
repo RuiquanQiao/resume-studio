@@ -26,6 +26,8 @@ for _k in ("TMP", "TEMP", "TMPDIR"):
 # machine. Most UI assertions are written against the Chinese catalog (the sample file is
 # bilingual); test_i18n.py covers English, fallback and switching.
 os.environ["RESUME_STUDIO_LANG"] = "zh-CN"
+# companies' logos come from their sites over the network; tests that want it hand in a finder
+os.environ["STUDIO_LOGOS"] = "off"
 
 
 @pytest.fixture

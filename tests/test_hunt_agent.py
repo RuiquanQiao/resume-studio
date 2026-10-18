@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
 from pathlib import Path
 
 import pytest
 
 from jobhunt import api as hunt_api
+from jobhunt import logos
 from jobhunt.postings import Postings, clean, fingerprint
 from jobhunt.scan import Scanner, validate_route
-from jobhunt.store import Hunt
+from jobhunt.store import LOGO_TYPES, Hunt
 from test_hunt import cli, live  # noqa: F401
 
 PNG = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000"
@@ -57,6 +59,65 @@ def test_a_logo_is_kept_in_the_data_folder(hunt):
     assert hunt.save_logo("C1", PNG, "image/png")["logo"] == "C1.svg"            # the user's logo stays
     with pytest.raises(ValueError):
         hunt.save_logo("C1", b"<html>", "text/html", source="window")
+
+
+def test_a_logo_is_found_on_the_companys_own_site():
+    page = ('<html><head><link rel="icon" href="/favicon-16.png" sizes="16x16">'
+            '<link rel="mask-icon" href="/mask.svg"><link rel="apple-touch-icon" href="https://cdn.example.com/touch.png">'
+            '<link rel="shortcut icon" href="icon.svg"></head></html>')
+    assert logos.candidates("https://careers.example.com/campus/", page) == [
+        "https://cdn.example.com/touch.png", "https://careers.example.com/campus/icon.svg",
+        "https://careers.example.com/favicon-16.png", "https://careers.example.com/favicon.ico"]
+    assert logos.candidates("https://x.example.com/a", "<html>") == ["https://x.example.com/favicon.ico"]
+
+    asked = []
+    pics = {"https://careers.example.com/favicon.ico": (PNG, "image/png")}
+
+    def download(u):
+        asked.append(u)
+        if u.endswith("touch.png"):
+            return b"<html>blocked</html>", "text/html"          # not a picture: the next one
+        if u in pics:
+            return pics[u]
+        raise ValueError("404")
+
+    pages = {"https://careers.example.com/campus": ("https://careers.example.com/campus", page)}
+    got = logos.from_sites(["https://app.mokahr.com/campus/acme", "https://careers.example.com/campus"],
+                           page=lambda u: pages[u], download=download, types=LOGO_TYPES)
+    assert got == (PNG, "image/png", "https://careers.example.com/favicon.ico")
+    assert not any("mokahr" in u for u in asked)                    # a hiring system's icon is the vendor's
+    # a site that redirects to a hiring system gives no logo either
+    assert logos.from_sites(["https://jobs.example.com"], page=lambda u: ("https://acme.jobs.feishu.cn/", page),
+                            download=download, types=LOGO_TYPES) is None
+
+
+def test_a_company_with_a_site_gets_its_logo_by_itself(live, data_file):
+    hunt = live.inst.hunt
+    looked = []
+
+    def finder(sites):
+        looked.append(sites)
+        return (PNG, "image/png", "https://careers.xinghe.example/icon.png") if "xinghe" in sites[0] else None
+
+    hunt.find_logo = finder
+    live.req("POST", "/api/hunt/companies", {"name": "没网站的公司"})
+    live.req("POST", "/api/hunt/companies", {"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
+    for _ in range(100):
+        c = hunt.company("星河科技")
+        if c.get("logo"):
+            break
+        time.sleep(0.05)
+    assert c["logo"] == "C2.png" and hunt.logo_path("C2").read_bytes() == PNG
+    assert c["sources"]["logo"] == "https://careers.xinghe.example/icon.png" and c["kept"] == []   # still Claude's to replace
+    assert looked == [["https://careers.xinghe.example/campus"]]  # nothing to look at without a site
+    tab = live.req("GET", "/api/hunt")[1]
+    assert [bool(x["logo_url"]) for x in tab["companies"]] == [True, False]
+    # once a company has a logo it isn't looked for again, and one with none found isn't asked twice per run
+    hunt.want_logos()
+    live.req("PUT", "/api/hunt/companies/C1", {"site": "https://nothing.example.com"})
+    hunt.want_logos("C1")
+    time.sleep(0.5)
+    assert looked == [["https://careers.xinghe.example/campus"], ["https://nothing.example.com"]]
 
 
 def test_a_companys_deadline_moves_to_its_roles(hunt):
