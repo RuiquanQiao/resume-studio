@@ -86,4 +86,7 @@ How to work it:
   company or no role.
 - `sent` only when the user says they submitted. Submitting on the site is always the user's own click.
 - Never delete anything here: removing a company or a role is the user's, in the window.
+- The tables are arranged by the user like a Notion database (views as tabs, filters, sorts, groups, a board,
+  column order and widths), saved in `.studio/hunt/views.json`. Leave that file alone unless the user asks you
+  to arrange a table; then edit only the views they named.
 """

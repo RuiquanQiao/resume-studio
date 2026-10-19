@@ -165,6 +165,59 @@ All three were built on 2026-10-18. Choices made on the way:
   still replaces it. **A company without a logo shows no logo**, never an invented letter: the table keeps an
   empty slot so the names line up.
 
+## 2026-10-19: tables that work like a Notion database
+
+The request:
+
+- Progress holds only roles the user can apply for. Putting every scanned posting there wastes
+  attention.
+- The Applying tables should edit like a Notion database: columns that move, and select fields such
+  as status that switch with a click in the table itself. Compare with Notion's docs and match them.
+
+Progress already holds only applications (roles the user chose with "想投" or added); scanned postings stay on
+the company's page. That stays the rule. Compared with Notion's help pages (Table view; Views, filters, sorts &
+groups; Database properties), the tables lacked: moving, resizing and hiding columns, editing a cell where it
+is, header menus, filters, groups, several views, and a board. > A 和 B 一起做：就地编辑、拖列调宽隐藏，加上筛选、分组、多个视图标签和按状态的看板视图。
+
+### The design
+
+One component (`web/dbview.js`) draws all three tables (Progress, Companies, Platforms) from a list of
+**properties**, each with a type: `title`, `text`, `select`, `date`, `relation`, or a read-only `custom`.
+
+- **Editing in place**, as in Notion: a select cell (status, how it goes in) opens its options under the cell;
+  a date cell opens a date field; a text cell becomes a text box (Enter or leaving it saves, Esc cancels).
+  The title cell opens the row's page; read-only cells open it too. A status change made in the table is the
+  same event as one made on the role's page (it goes into the timeline).
+- **Columns**: drag a heading to move it, drag its right edge to resize it. Clicking a heading opens its menu:
+  sort ascending / descending, filter by it, group by it (selects), wrap text, hide. A **Properties** menu
+  lists every property with an eye to hide or show it, and they can be dragged into order there too.
+- **Filters**: rules like "Status is Applied, Tests", "Company contains 星", "Deadline is before …", "is
+  empty"; all rules must hold (AND). Shown as chips above the table; each opens to be changed or removed.
+- **Sort**: one or more sorts, in order; none keeps the table's natural order (company, then 志愿).
+- **Group**: by a select property; each group has a heading with its count and folds away.
+- **Views**: each table has several views as tabs, each with its own layout, columns, filters, sort and group.
+  A view can be added (Table or Board), renamed, duplicated or deleted (the last one stays). Progress starts
+  with "Active" (open statuses), "All" and "Board"; the others with one table view.
+- **Board**: one column per option of the group property (status by default), cards showing the title and the
+  shown properties; dragging a card to another column changes that value.
+- Views live with the data in `.studio/hunt/views.json` (like a Notion database's views, they belong to the
+  data, not to one window), through `GET/PUT /api/hunt/views`.
+
+Built the same day (`web/dbview.js`, `jobhunt/views.py`). Choices made on the way:
+
+- *Built:* **a table at its defaults fits its pane.** Notion's columns keep their pixel widths and the table
+  scrolls; here, until the user sizes a column, every column is scaled to the pane from its own width, none
+  below a readable minimum for its type, and long text wraps. The first column the user drags to a new width
+  turns the view's widths into its own (the others keep what they had on screen), and from then on the table
+  may run wider than the pane, as in Notion. A board always runs sideways (a column per status).
+- *Built:* the **title** cell (the role, the company, the platform) opens the row's page; read-only cells open it
+  too; the others edit in place. "By" (the next step's date) is hidden by default and shown under the next step.
+- *Built:* on a **board card**, a date says which date it is (no heading above it there).
+- *Built:* only one floating panel is open at a time, so a choice inside a panel (a filter's condition, a sort's
+  property) unfolds within the panel; there is still no native `<select>` anywhere.
+- Not built (Notion has them; not asked for): calculations under a column, ticking several rows to edit them
+  together, conditional colour, side peek, the user's own properties, AND/OR filter groups.
+
 ## Why the button said "Open LinkedIn"
 
 The Autofill page is organised around **the selected profile site**: LinkedIn and BOSS直聘 are its tabs,

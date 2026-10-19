@@ -114,6 +114,21 @@ const ICONS = {
   briefcase: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M3 13h18"/>',
   outline: '<path d="M9 6h11M12 12h8M12 18h8"/><path d="M4.5 6h.01M7.5 12h.01M7.5 18h.01" stroke-width="3"/>',
   panelRight: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14.5 4v16"/>',
+  // the database views' own (web/dbview.js)
+  text: '<path d="M5 7h14M5 12h14M5 17h9"/>',
+  option: '<circle cx="12" cy="12" r="8.5"/><path d="m8.5 10.8 3.5 3.5 3.5-3.5"/>',
+  calendar: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+  list: '<path d="M9 7h11M9 12h11M9 17h11M4.5 7h.01M4.5 12h.01M4.5 17h.01" stroke-width="2.2"/>',
+  table: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 10h17M9.5 10v9"/>',
+  columns: '<rect x="3.5" y="5" width="4.5" height="14" rx="1.2"/><rect x="9.75" y="5" width="4.5" height="10" rx="1.2"/><rect x="16" y="5" width="4.5" height="7" rx="1.2"/>',
+  filter: '<path d="M4 6h16M7 12h10M10 18h4"/>',
+  sort: '<path d="M7 4v16M4 7l3-3 3 3M17 20V4M14 17l3 3 3-3"/>',
+  sortUp: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+  sortDown: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  layers: '<path d="m12 4 8.5 4.5L12 13 3.5 8.5z"/><path d="m3.5 12.5 8.5 4.5 8.5-4.5M3.5 16.5 12 21l8.5-4.5"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
+  eyeOff: '<path d="M10.6 6.6A9 9 0 0 1 12 6.5c6 0 9.5 5.5 9.5 5.5a15 15 0 0 1-2.6 3.1M6.4 7.7A15 15 0 0 0 2.5 12S6 18.5 12 18.5a9 9 0 0 0 4.1-1M4 4l16 16"/>',
+  wrap: '<path d="M4 6h16M4 12h13a3 3 0 0 1 0 6h-4M4 18h5"/><path d="m15 16-2 2 2 2"/>',
   apps: '<circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/>',
 };
 function icon(name) {
@@ -260,6 +275,13 @@ function placeFloat(f) {
   if (!below && natural > roomAbove && roomBelow > roomAbove) below = true;
   p.style.maxHeight = Math.max(120, below ? roomBelow : roomAbove) + "px";
   const ph = p.offsetHeight, pw = p.offsetWidth;
+  if (f.place === "over") {   // over the anchor itself (a table cell edited in place)
+    p.style.maxHeight = "";
+    p.style.top = Math.max(pad, Math.min(r.top, H - ph - pad)) + "px";
+    p.style.left = Math.max(pad, Math.min(r.left, W - pw - pad)) + "px";
+    p.dataset.side = "over";
+    return;
+  }
   const top = below ? r.bottom + gap : r.top - gap - ph;
   let left = f.align === "end" ? r.right - pw : f.align === "center" ? r.left + r.width / 2 - pw / 2 : r.left;
   left = Math.max(pad, Math.min(left, W - pw - pad));

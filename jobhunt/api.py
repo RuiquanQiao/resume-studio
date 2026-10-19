@@ -18,6 +18,7 @@ from .logos import fetch_logo
 from .postings import Postings
 from .scan import Scanner
 from .store import LOGO_TYPES, STATE_IDS, Hunt
+from .views import Views
 
 TRACKERS = ["studio", "career-ops"]
 
@@ -46,6 +47,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     hunt = Hunt(studio.store.state_dir)
     hunt.on_change = lambda: app.bus.publish("hunt", {})
     posts = Postings(hunt)
+    views = Views(hunt.dir)
     scanner = Scanner(hunt, posts, tool, browser, lambda: app.bus.publish("hunt", {}))
     hunt.scanner = scanner   # the app (and tests) reach the scanner through the tracker
     studio.on_subset_renamed.append(hunt.rename_subset)
@@ -242,6 +244,17 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     def apply_posting(req: Request):
         a = guard(lambda: posts.apply(req.params["pid"]))
         return app_view(a["id"])
+
+    @app.route("GET", "/api/hunt/views")
+    def get_views(req: Request):
+        return views.all()
+
+    @app.route("PUT", "/api/hunt/views/{table}")
+    def put_views(req: Request):
+        """A table's views, as the window arranged them: the other windows (and Claude) see the same."""
+        tb = guard(lambda: views.save(req.params["table"], body(req)))
+        app.bus.publish("hunt", {"views": True})
+        return tb
 
     @app.route("GET", "/api/hunt/logos/{cid}")
     def logo(req: Request):

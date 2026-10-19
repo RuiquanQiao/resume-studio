@@ -119,12 +119,13 @@
 
     // scrolls sideways
     if ((s.overflowX === "auto" || s.overflowX === "scroll") && el.scrollWidth > el.clientWidth + 1
-        && el.tagName !== "TEXTAREA" && el.tagName !== "INPUT")
+        && el.tagName !== "TEXTAREA" && el.tagName !== "INPUT" && !el.matches("[data-scrolls]"))   // [data-scrolls]: meant to (a board, a sized table)
       report("scrolls", el, `scrolls ${el.scrollWidth - el.clientWidth}px sideways`);
 
     // sticks out of its parent, painting over what is next to it
     const p = el.parentElement;
-    if (p && p !== document.body && s.position !== "absolute" && s.position !== "fixed" && css(p).display !== "contents") {
+    if (p && p !== document.body && s.position !== "absolute" && s.position !== "fixed" && css(p).display !== "contents"
+        && !p.matches("[data-scrolls]")) {   // what a sideways scroller holds runs past it on purpose
       const pb = p.getBoundingClientRect();
       const over = Math.max(b.right - pb.right, pb.left - b.left);
       if (over > 2 && pb.width > 0) report("sticks", el, `${Math.round(over)}px outside ${name(p)}`);

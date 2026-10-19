@@ -242,7 +242,7 @@ def applying(tab):
 def open_platform(pg, c, sid="linkedin"):
     pg.keyboard.press("Control+3")
     pg.click(".hunt-tab[data-tab=platforms]")
-    pg.click(f".htable tbody tr[data-id='{sid}']")
+    pg.click(f".dbv-view tr[data-id='{sid}'] .dbv-title")
     pg.wait_for_selector(f".fs-site.on[data-site='{sid}']")
 
 
@@ -322,17 +322,34 @@ STATES = [
     State("applying, no applications", applying("apps"), ["#fillspace .hunt-empty"]),
     State("applying, progress", applying("apps"), [".htable tbody tr"], prepare=companies),
     State("applying, companies", applying("companies"), [".htable tbody tr"], prepare=companies),
-    State("applying, a company's page", then(applying("companies"), click(".htable tbody tr >> nth=0")), [".hunt-wrap.is-page"],
+    State("applying, a company's page", then(applying("companies"), click(".dbv-title >> nth=0")), [".hunt-wrap.is-page"],
           prepare=companies),
-    State("applying, an application's page", then(applying("apps"), click(".htable tbody tr >> nth=0")), ["#app-status"],
+    State("applying, an application's page", then(applying("apps"), click(".dbv-title >> nth=0")), ["#app-status"],
           prepare=companies),
     State("applying, companies filled in, with today's changes", applying("companies"),
           [".htable .co-logo img", ".htable .role-chip.open-chip", ".scan-news .news-row", ".scan-news .note-bar"], prepare=filled_companies),
-    State("applying, a company's open roles", then(applying("companies"), click(".htable tbody tr[data-id='C1']")),
+    State("applying, a company's open roles", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
           [".post-list .post-row", ".co-sites .co-site", ".post-row .new-chip"], prepare=filled_companies),
-    State("applying, a company whose scan failed", then(applying("companies"), click(".htable tbody tr[data-id='C1']")),
+    State("applying, a company whose scan failed", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
           [".post-tools .fs-status.bad", ".note-bar.warn"], prepare=failed_scan),
-    State("applying, platforms, one signed out", then(applying("platforms"), wait(".htable tbody tr"),
+    State("applying, progress as a board", then(applying("apps"), click(".dbv-tab[data-view=v3]")), [".dbv-board .dbv-card"], prepare=companies),
+    State("applying, progress grouped by status", then(applying("apps"), js("""() => { const tb = DBV.tables.apps, v = tb.views[1];
+        tb.active = v.id; v.group = 'status'; v.sorts = [{key: 'role', dir: 'desc'}]; paintHunt(); }""")), [".dbv-group .dbv-fold", ".dbv-tool.on"],
+          prepare=companies),
+    State("applying, a status picked in its cell", then(applying("apps"), click(".dbv-view tbody tr >> nth=0 >> td[data-key=status]")),
+          [".float.dbv-options"], prepare=companies),
+    State("applying, a cell typed over", then(applying("apps"), click(".dbv-view tbody tr >> nth=0 >> td[data-key=next]")),
+          [".float.dbv-textpanel"], prepare=companies),
+    State("applying, a filter being set", then(applying("apps"), click(".dbv-chip[data-key=status]")), [".float.dbv-filterpanel .dbv-check"],
+          prepare=companies),
+    State("applying, sorts being set", then(applying("apps"), js("() => { DBV.tables.apps.views[0].sorts = [{key: 'deadline', dir: 'desc'}]; paintHunt(); }"),
+                                            click("#dbv-apps-sort"), click(".float .select.dbv-sortkey")), [".float.dbv-sortpanel .dbv-inlist"],
+          prepare=companies),
+    State("applying, the properties panel", then(applying("apps"), click("#dbv-apps-props")), [".float.dbv-propspanel .dbv-proprow"], prepare=companies),
+    State("applying, companies with every property, wrapped", then(applying("companies"), js("""() => {
+        const v = DBV.tables.companies.views[0]; v.columns = companyProps().map((p) => ({key: p.key, width: null, hidden: false, wrap: true})); paintHunt(); }""")),
+          [".dbv-td.wrap"], prepare=filled_companies),
+    State("applying, platforms, one signed out", then(applying("platforms"), wait(".dbv-view tbody tr"),
                                                       js("() => { F.sites[0].signed_out = true; paintHunt(); }")),
           [".htable .state-chip.s-warn"]),
     State("applying, a platform not read yet", then(open_platform, wait("#fillspace .fill-start")), ["#fillspace .fill-start"]),

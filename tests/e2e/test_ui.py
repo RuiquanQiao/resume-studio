@@ -1251,7 +1251,7 @@ def test_a_company_with_several_roles_goes_out_with_a_pinned_version(page, serve
         pg.screenshot(path=str(ART / f"hunt-progress-{scheme}.png"))
     pg.emulate_media(color_scheme="light")
     # one application: its status, a note dated back, the timeline
-    pg.click(".htable tbody tr >> nth=0")
+    pg.click(".htable tbody tr >> nth=0 >> .dbv-title")
     pg.wait_for_selector("#app-status")
     choose(pg, "#app-status", "interview")
     pg.wait_for_selector(".timeline .tl-status")
@@ -1275,6 +1275,144 @@ def test_a_company_with_several_roles_goes_out_with_a_pinned_version(page, serve
     pg.click(".htable .hunt-resume >> nth=0")
     pg.wait_for_selector("body[data-ws=resume]")
     assert value_of(pg, "#subset-select") == "RES-TECH-EN"
+
+
+def test_the_tables_work_like_a_notion_database(page_all, server):
+    """docs/JOB_HUNT.md, 2026-10-19: edit cells in place, move / resize / hide columns, filter, sort, group,
+    several views as tabs and a board by status; the views are saved with the data."""
+    pg = page_all
+    c1 = server.req("POST", "/api/hunt/companies", {"name": "星河科技"})[1]["company"]["id"]
+    c2 = server.req("POST", "/api/hunt/companies", {"name": "腾讯"})[1]["company"]["id"]
+    a1 = server.req("POST", f"/api/hunt/companies/{c1}/roles", {"role": "服务端研发工程师"})[1]["application"]["id"]
+    a2 = server.req("POST", f"/api/hunt/companies/{c1}/roles", {"role": "算法工程师"})[1]["application"]["id"]
+    a3 = server.req("POST", f"/api/hunt/companies/{c2}/roles", {"role": "后台开发"})[1]["application"]["id"]
+    server.req("POST", f"/api/hunt/apps/{a3}/status", {"status": "rejected"})
+    app = lambda aid: server.req("GET", f"/api/hunt/apps/{aid}")[1]["application"]
+    views = lambda: server.req("GET", "/api/hunt/views")[1]
+    pg.keyboard.press("Control+3")
+    pg.wait_for_selector(".dbv-view[data-table=apps] .dbv-tab.on[data-view=v1]")
+    row = lambda aid: f".dbv-view tr[data-id='{aid}']"
+    assert pg.locator(".dbv-view tbody tr").count() == 2                     # "Active": the rejected role is filtered out
+    assert pg.locator(".dbv-chip[data-key=status]").count() == 1
+
+    # a status, picked in its cell: the same event as on the role's page
+    pg.click(f"{row(a1)} td[data-key=status]")
+    pg.click(".float [role=option][data-value=interview]")
+    wait_until(lambda: app(a1)["status"] == "interview", msg="status saved")
+    assert server.req("GET", f"/api/hunt/apps/{a1}")[1]["events"][-1]["to"] == "interview"
+    pg.wait_for_selector(f"{row(a1)} td[data-key=status] .s-interview")
+    # text, typed over the cell: Enter saves, Esc cancels
+    pg.click(f"{row(a1)} td[data-key=next]")
+    pg.fill(".float .dbv-textbox", "等二面通知")
+    pg.press(".float .dbv-textbox", "Enter")
+    wait_until(lambda: app(a1)["next"] == "等二面通知", msg="next step saved")
+    pg.wait_for_selector(f"{row(a1)} td[data-key=next]:has-text('等二面通知')")
+    pg.click(f"{row(a1)} td[data-key=next]")
+    pg.fill(".float .dbv-textbox", "不要")
+    pg.keyboard.press("Escape")
+    pg.wait_for_selector(".float", state="detached")
+    time.sleep(0.4)
+    assert app(a1)["next"] == "等二面通知"
+    # a date
+    pg.click(f"{row(a2)} td[data-key=deadline]")
+    pg.fill(".float .dbv-date", "2026-11-01")
+    wait_until(lambda: app(a2)["deadline"] == "2026-11-01", msg="deadline saved")
+    pg.keyboard.press("Escape")
+    # the title opens the row's page; other cells don't
+    pg.click(f"{row(a2)} .dbv-title")
+    pg.wait_for_selector("#app-status")
+    pg.click(".hunt-back")
+    pg.wait_for_selector(".dbv-view[data-table=apps]")
+
+    # a heading's menu sorts; the sort is the view's, saved with the data
+    pg.click(".dbv-th[data-key=role] .dbv-thbtn")
+    pg.click(".float .menu-item:has-text('降序排列')")
+    pg.wait_for_selector(".dbv-th[data-key=role] .dbv-thbtn svg >> nth=1")
+    assert pg.locator(".dbv-view tbody tr").first.get_attribute("data-id") == a2   # 算法 before 服务端, by the title, descending
+    wait_until(lambda: views()["apps"]["views"][0]["sorts"] == [{"key": "role", "dir": "desc"}], msg="sort saved")
+    # hide a column in Properties; move one by dragging its heading; resize one by its edge
+    pg.click("#dbv-apps-props")
+    pg.click(".float .dbv-proprow[data-key=last] .btn:not(.drag-handle)")
+    pg.keyboard.press("Escape")
+    pg.wait_for_selector(".dbv-th[data-key=last]", state="detached")
+    pg.drag_and_drop(".dbv-th[data-key=next]", ".dbv-th[data-key=company]", target_position={"x": 4, "y": 10})
+    wait_until(lambda: pg.locator(".dbv-th").evaluate_all("(xs) => xs.map((x) => x.dataset.key)")[1:3] == ["next", "company"], msg="column moved")
+    before = pg.locator(".dbv-th[data-key=status]").bounding_box()["width"]   # the table fits the pane until a column is sized
+    box = pg.locator(".dbv-th[data-key=status] .dbv-resize").bounding_box()
+    pg.mouse.move(box["x"] + 3, box["y"] + 10)
+    pg.mouse.down()
+    pg.mouse.move(box["x"] + 83, box["y"] + 10, steps=5)
+    pg.mouse.up()
+    def saved_col(key):
+        return next(c for c in views()["apps"]["views"][0]["columns"] if c["key"] == key)
+    wait_until(lambda: abs(saved_col("status")["width"] - (before + 80)) <= 2 and saved_col("last")["hidden"], msg="width and hidden saved")
+    assert saved_col("role")["width"]                                           # the others keep the widths they had on screen
+    assert pg.locator(".dbv-wrap[data-scrolls] table.sized").count() == 1
+
+    # another view: everything; a filter typed in; grouped by status
+    pg.click(".dbv-tab[data-view=v2]")
+    pg.wait_for_selector(".dbv-tab.on[data-view=v2]")
+    assert pg.locator(".dbv-view tbody tr").count() == 3
+    pg.click("#dbv-apps-filter")
+    pg.click(".float .menu-item:has-text('公司')")
+    pg.fill(".float .dbv-fin", "腾")
+    pg.keyboard.press("Escape")
+    pg.wait_for_selector(".dbv-chip[data-key=company]")
+    assert pg.locator(".dbv-view tbody tr").count() == 1
+    pg.click(".dbv-chip[data-key=company]")
+    pg.click(".float .btn[aria-label='删除这个筛选']")
+    pg.wait_for_selector(".dbv-chip[data-key=company]", state="detached")
+    pg.click("#dbv-apps-group")
+    pg.click(".float .menu-item:has-text('状态')")
+    pg.wait_for_selector(".dbv-group[data-group=rejected]")
+    assert pg.locator(".dbv-group").count() == 3                             # 想投, 面试中, 未通过: empty groups don't show
+    pg.click(".dbv-group[data-group=rejected] .dbv-fold")
+    pg.wait_for_selector(f".dbv-group[data-group=rejected] {row(a3)[len('.dbv-view '):]}", state="detached")
+
+    # the board: a column per status; dragging a card changes its status
+    pg.click(".dbv-tab[data-view=v3]")
+    pg.wait_for_selector(".dbv-board .dbv-col[data-group=applied]")
+    pg.drag_and_drop(f".dbv-card[data-id='{a2}']", ".dbv-col[data-group=applied]")
+    wait_until(lambda: app(a2)["status"] == "applied", msg="dragged to Applied")
+    pg.wait_for_selector(f".dbv-col[data-group=applied] .dbv-card[data-id='{a2}']")
+    # a new view, renamed; then deleted
+    pg.click(".dbv-addview")
+    pg.click(".float .menu-item:has-text('表格')")
+    pg.wait_for_selector(".dbv-tab.on[data-view=v4]")
+    pg.click(".dbv-tab.on")
+    pg.click(".float .menu-item:has-text('改名')")
+    pg.fill("#fm-name", "本周截止")
+    pg.click(".modal .btn.primary")
+    pg.wait_for_selector(".dbv-tab.on:has-text('本周截止')")
+    wait_until(lambda: [v["name"] for v in views()["apps"]["views"]][-1] == "本周截止", msg="view saved")
+    pg.click(".dbv-tab[data-view=v3]")
+    pg.wait_for_selector(".dbv-board")
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"hunt-board-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+    pg.click(".dbv-tab[data-view=v4]")
+    pg.click(".dbv-tab.on")
+    pg.click(".float .menu-item:has-text('删除这个视图')")
+    pg.wait_for_selector(".dbv-tab[data-view=v4]", state="detached")
+    no_native(pg)
+
+    # the views come back after a reload: they live with the data
+    pg.click(".dbv-tab[data-view=v1]")
+    wait_until(lambda: views()["apps"]["active"] == "v1", msg="active view saved")
+    pg.reload()
+    pg.keyboard.press("Control+3")
+    pg.wait_for_selector(".dbv-tab.on[data-view=v1]")
+    assert pg.locator(".dbv-th[data-key=last]").count() == 0 and pg.locator(".dbv-tab").count() == 3
+
+    # the companies table: a field typed in its cell is the user's (Claude's fills keep it)
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.click(f".dbv-view tr[data-id='{c1}'] td[data-key=industry]")
+    pg.fill(".float .dbv-textbox", "电商")
+    pg.press(".float .dbv-textbox", "Enter")
+    wait_until(lambda: server.req("GET", f"/api/hunt/companies/{c1}")[1]["company"]["industry"] == "电商", msg="industry saved")
+    assert "industry" in server.req("GET", f"/api/hunt/companies/{c1}")[1]["company"]["kept"]
+    pg.screenshot(path=str(ART / "hunt-companies-light.png"))
 
 
 def test_a_cv_edited_in_career_ops_is_never_overwritten(connected, page_all, server):
@@ -1446,7 +1584,7 @@ def fill_view(server):
 def open_platform(pg, sid="linkedin"):
     pg.keyboard.press("Control+3")
     pg.click(".hunt-tab[data-tab=platforms]")
-    pg.click(f".htable tbody tr[data-id='{sid}']")
+    pg.click(f".dbv-view tr[data-id='{sid}'] .dbv-title")
     pg.wait_for_selector(f".fs-site.on[data-site='{sid}']")
 
 

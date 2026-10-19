@@ -83,6 +83,13 @@ Rules for every change to the window:
 - **Skipping is the last resort.** `SKIP` in `test_layout.py` lists places the checker can't judge (the
   preview's page images, career-ops' own interface), each with its reason. Fix the layout first; only a
   piece that breaks a rule on purpose goes there.
+- **A box that scrolls sideways on purpose says so with `data-scrolls`** (a board's columns, a table whose
+  columns the user sized or that has more columns than room; added 2026-10-19 with the database views). The
+  checker then doesn't call its scrolling, or what runs past it, a fault. A table at its defaults must fit
+  its pane: `web/dbview.js` fits the columns to the pane, none below its type's minimum, and only sets
+  `data-scrolls` when even the minimums don't fit.
+- **A panel's screenshot waits for it to appear.** Floating panels fade in; a review script waits for
+  `.float.in` and a moment more, or the screenshot shows a half-transparent panel.
 - **The review copy needs these states too.** For a hands-on review on `.cache/review/`, bring up the same
   states (a project with new progress, a conflict, a warning) rather than reviewing only what the data
   happens to show.

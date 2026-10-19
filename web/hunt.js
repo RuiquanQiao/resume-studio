@@ -24,7 +24,8 @@ const huntState = (id) => t(HSTATES[id] || id || "—");
 const hChip = (id) => h("span", { class: "state-chip s-" + (id || "unknown") }, huntState(id));
 const huntCompany = (id) => ((H.data && H.data.companies) || []).find((c) => c.id === id) || null;
 const platformName = (id) => ((F.sites || []).find((s) => s.id === id) || {}).name || SITE_NAMES[id] || id || "";
-const huntOpen = (a) => ["saved", "applied", "assessment", "interview"].includes(a.status);
+const OPEN_STATES = ["saved", "applied", "assessment", "interview"];
+const huntOpen = (a) => OPEN_STATES.includes(a.status);
 const epochOf = (at) => { const d = new Date(at); return isNaN(d) ? 0 : d.getTime() / 1000; };
 const huntWhen = (at) => (at ? relTime(epochOf(at)) : "");
 
@@ -53,13 +54,15 @@ async function loadHunt({ quiet = false } = {}) {
     try {
       do {
         H.again = false;
-        H.data = await api("GET", "/api/hunt");
+        const [data] = await Promise.all([api("GET", "/api/hunt"), DBV.tables && !H.viewsStale ? null : loadViews()]);
+        H.data = data; H.viewsStale = false;
         if (H.page && H.page.kind !== "platform") await loadHuntPage({ quiet: true });
       } while (H.again);
       if (!H.autoScan) { H.autoScan = true; api("POST", "/api/hunt/scan", { auto: true }).catch(() => {}); }
     } catch (e) { if (!quiet) toast(e.message); }
     finally { H.loading = null; }
-    if (W.ws === "fill" && !fillTyping()) paintFill();
+    if (W.ws === "fill" && dbvBusy()) DBV.pending = true;   // an open cell editor or view panel: after it closes
+    else if (W.ws === "fill" && !fillTyping()) paintFill();
   })();
   return H.loading;
 }
@@ -80,6 +83,8 @@ function listenHunt(es) {
   es.addEventListener("hunt", (m) => {
     const d = JSON.parse(m.data || "{}");
     if (d.versions && typeof refresh === "function") refresh();   // a send kept a version of a subset
+    // another window arranged a table: not the echo of this one's own save, nor while it has one waiting
+    if (d.views && !Object.keys(DBV.timers).length && Date.now() - DBV.saved > 2000) H.viewsStale = true;
     loadHunt({ quiet: true });
   });
 }
@@ -174,18 +179,6 @@ function tableTools(...right) {
 
 const matches = (...texts) => { const q = H.q.trim().toLowerCase(); return !q || texts.some((x) => String(x || "").toLowerCase().includes(q)); };
 
-function htable(cols, rows, empty) {
-  if (!rows.length) return h("div", { class: "hunt-empty" }, empty);
-  return h("div", { class: "htable-wrap" }, h("table", { class: "htable" },
-    h("thead", null, h("tr", null, cols.map((c) => h("th", { class: c.cls || null }, c.label)))),
-    h("tbody", null, rows)));
-}
-
-function hrow(onOpen, cells, attrs = {}) {
-  return h("tr", { tabindex: "0", ...attrs, onclick: (e) => { if (!e.target.closest("button, a, input")) onOpen(); },
-    onkeydown: (e) => { if (e.key === "Enter" && e.target === e.currentTarget) onOpen(); } }, cells);
-}
-
 function lastText(ev) {
   if (!ev) return "";
   if (ev.kind === "status") return `${huntState(ev.from)} → ${huntState(ev.to)}` + (ev.note ? ` · ${ev.note}` : "");
@@ -194,34 +187,84 @@ function lastText(ev) {
   return ev.note || "";
 }
 
+// ---- the tables are Notion-style database views (web/dbview.js; docs/JOB_HUNT.md, 2026-10-19) ----
+const late = (d) => !!d && String(d).slice(0, 10) < today();
+
+// a change made in a table's cell: shown at once, then saved; the "hunt" event brings the saved row back
+async function cellApp(a, fields) {
+  Object.assign(a, fields);
+  paintHunt();
+  try { await api("PUT", `/api/hunt/apps/${encodeURIComponent(a.id)}`, fields); }
+  catch (e) { toast(e.message); }
+  loadHunt({ quiet: true });
+}
+async function cellStatus(a, status) {
+  a.status = status;
+  paintHunt();
+  try { await api("POST", `/api/hunt/apps/${encodeURIComponent(a.id)}/status`, { status }); }   // a timeline event, as on the role's page
+  catch (e) { toast(e.message); }
+  loadHunt({ quiet: true });
+}
+async function cellCompany(c, fields) {
+  Object.assign(c, fields);
+  paintHunt();
+  try { await api("PUT", `/api/hunt/companies/${encodeURIComponent(c.id)}`, fields); }
+  catch (e) { toast(e.message); }
+  loadHunt({ quiet: true });
+}
+
+function appProps() {
+  const d = H.data;
+  const states = () => (d.states || []).map((s) => ({ value: s.id, label: huntState(s.id), cls: "s-" + s.id }));
+  const channels = () => Object.entries(HCHANNELS).map(([value, label]) => ({ value, label: t(label), cls: "s-plain" }));
+  const co = (a) => huntCompany(a.company) || {};
+  return [
+    { key: "role", label: t("Role"), type: "title", width: 220, get: (a) => a.role },
+    { key: "company", label: t("Company"), type: "relation", width: 170, group: true, get: (a) => co(a).name || "",
+      render: (a) => h("button", { type: "button", class: "role-chip co-chip", onclick: () => openHunt("company", a.company) },
+        companyLogo(co(a), "xs"), h("span", { class: "rc-name" }, co(a).name || "")) },
+    { key: "status", label: t("Status"), type: "select", width: 140, get: (a) => a.status, options: states, set: (a, v) => cellStatus(a, v) },
+    { key: "channel", label: t("How"), type: "select", width: 150, min: 120, wrap: true, get: (a) => a.channel || "site", options: channels,
+      render: (a) => h("span", { class: "c-muted" }, channelText(a)),
+      set: (a, v) => cellApp(a, { channel: v, ...(v === "platform" && !a.platform && (F.sites || []).length ? { platform: F.sites[0].id } : {}) }) },
+    { key: "deadline", label: t("Deadline"), type: "date", width: 120, get: (a) => a.deadline || "",
+      render: (a) => a.deadline ? h("span", { class: "c-date" + (late(a.deadline) && huntOpen(a) ? " late" : "") }, a.deadline) : "",
+      set: (a, v) => cellApp(a, { deadline: v }) },
+    { key: "sent", label: t("Resume sent"), type: "custom", width: 190, min: 130, get: (a) => (a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : ""),
+      render: (a) => h("span", { class: "c-muted c-resume" }, a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : "", resumeButton(a)) },
+    { key: "last", label: t("Latest"), type: "custom", width: 220, get: (a) => (a.last ? a.last.at : ""),
+      render: (a) => a.last ? h("span", { class: "c-last" }, h("span", { class: "c-when" }, huntWhen(a.last.at)), h("span", { class: "c-what" }, lastText(a.last))) : "" },
+    { key: "next", label: t("Next step"), type: "text", width: 180, get: (a) => a.next || "", set: (a, v) => cellApp(a, { next: v }),
+      render: (a) => h("span", { class: "c-next" + (late(a.due) ? " late" : "") }, a.next || "", a.due && h("span", { class: "c-due" }, a.due)) },
+    { key: "due", label: t("By"), type: "date", width: 120, hidden: true, get: (a) => (a.due || "").slice(0, 10),
+      render: (a) => a.due ? h("span", { class: "c-date" + (late(a.due) ? " late" : "") }, a.due) : "", set: (a, v) => cellApp(a, { due: v }) },
+    { key: "note", label: t("Notes"), type: "text", width: 220, hidden: true, get: (a) => a.note || "", set: (a, v) => cellApp(a, { note: v }) },
+    { key: "url", label: t("Link"), type: "text", width: 200, hidden: true, get: (a) => a.url || "", set: (a, v) => cellApp(a, { url: v }) },
+  ];
+}
+
+const APP_VIEWS = () => [
+  { id: "v1", name: t("Active"), filters: [{ key: "status", op: "is", value: OPEN_STATES }] },
+  { id: "v2", name: t("All") },
+  { id: "v3", name: t("Board"), layout: "board", group: "status" },
+];
+
 function appsTable() {
   const d = H.data;
   const names = Object.fromEntries(d.companies.map((c) => [c.id, c.name]));
   const all = [...d.applications].sort((a, b) => (names[a.company] || "").localeCompare(names[b.company] || "") || (a.order || 0) - (b.order || 0));
-  const shown = all.filter((a) => (H.show === "all" || huntOpen(a)) && matches(names[a.company], a.role, a.note, a.next));
-  const cols = [{ label: t("Company") }, { label: t("Role") }, { label: t("How") }, { label: t("Status") }, { label: t("Resume sent") },
-    { label: t("Latest") }, { label: t("Next step") }];
-  const rows = shown.map((a) => hrow(() => openHunt("app", a.id), [
-    h("td", { class: "c-company" }, h("button", { class: "linkish", onclick: () => openHunt("company", a.company) }, names[a.company] || "")),
-    h("td", { class: "c-main" }, a.role, a.deadline && h("span", { class: "c-due" + (a.deadline < today() ? " late" : "") }, t("closes {date}", { date: a.deadline }))),
-    h("td", { class: "c-muted" }, channelText(a)),
-    h("td", null, hChip(a.status)),
-    h("td", { class: "c-muted c-resume" }, a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : "", resumeButton(a)),
-    h("td", { class: "c-last" }, a.last && h("span", { class: "c-when" }, huntWhen(a.last.at)), a.last && h("span", { class: "c-what" }, lastText(a.last))),
-    h("td", { class: "c-next" + (a.due && a.due.slice(0, 10) < today() ? " late" : "") }, a.next || "", a.due && h("span", { class: "c-due" }, a.due))],
-    { "data-id": a.id }));
+  const shown = all.filter((a) => matches(names[a.company], a.role, a.note, a.next));
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Your applications")),
       h("p", null, t("Every role you apply for, wherever it goes in. Tell Claude on the left what happened (“Xinghe 一面过了”), or change it here."))),
     tableTools(
-      d.applications.length > 0 && uiSeg([{ value: "open", label: t("Active") }, { value: "all", label: t("All") }], H.show,
-        (v) => { H.show = v; paintHunt(); }, { cls: "sm", label: t("Show") }),
       h("button", { class: "btn sm primary", id: "hunt-new-app", onclick: newApplication }, icon("plus"), t("Add an application")),
       linkButton()),
-    htable(cols, rows, !d.applications.length
-      ? h("div", null, h("div", { class: "t" }, t("No applications yet")),
-        h("p", null, t("Add one here, or a company with the roles you apply for on its own site (网申).")))
-      : t("Nothing matches")),
+    dbView({ table: "apps", props: appProps(), rows: shown, rowId: (a) => a.id, open: (a) => openHunt("app", a.id), defaults: APP_VIEWS(), repaint: paintHunt,
+      empty: !d.applications.length
+        ? h("div", null, h("div", { class: "t" }, t("No applications yet")),
+          h("p", null, t("Add one here, or a company with the roles you apply for on its own site (网申).")))
+        : t("Nothing matches") }),
   ];
 }
 
@@ -377,27 +420,39 @@ function roleChip(a) {
     h("span", { class: "rc-dot" }), h("span", { class: "rc-name" }, a.role));
 }
 
+function companyProps() {
+  const text = (key, label, width, extra = {}) => ({ key, label, type: "text", width, get: (c) => c[key] || "", set: (c, v) => cellCompany(c, { [key]: v }), ...extra });
+  return [
+    { key: "name", label: t("Company"), type: "title", width: 230, get: (c) => c.name,
+      render: (c) => h("span", { class: "co-name" }, companyLogo(c, "", true),
+        h("span", { class: "co-text" }, h("span", { class: "c-main-name" }, c.name),
+          (c.aliases || []).length > 0 && h("span", { class: "c-alias" }, c.aliases.join(" · ")))) },
+    text("industry", t("Industry"), 150, { group: true }),
+    text("strength", t("Strength"), 200),
+    { key: "roles", label: t("Roles"), type: "relation", width: 300, get: (c) => (c.apps || []).map((a) => a.role),
+      render: (c) => h("div", { class: "role-chips" }, (c.apps || []).map(roleChip), openChip(c),
+        !(c.apps || []).length && !openChip(c) && h("span", { class: "c-muted" }, scanning(c.id) ? t("Scanning…") : t("none yet"))) },
+    text("location", t("Headquarters"), 130, { hidden: true, group: true }),
+    text("size", t("Size"), 120, { hidden: true }),
+    text("site", t("Careers site"), 220, { hidden: true }),
+    text("note", t("Notes"), 220, { hidden: true }),
+  ];
+}
+
 function companiesTable() {
   const d = H.data;
   const shown = d.companies.filter((c) => matches(c.name, (c.aliases || []).join(" "), c.industry, c.strength, c.note));
-  const cols = [{ label: t("Company") }, { label: t("Industry") }, { label: t("Strength") }, { label: t("Roles") }];
-  const rows = shown.map((c) => hrow(() => openHunt("company", c.id), [
-    h("td", { class: "c-company-cell" }, h("span", { class: "co-name" }, companyLogo(c, "", true),
-      h("span", { class: "co-text" }, h("span", { class: "c-main-name" }, c.name),
-        (c.aliases || []).length > 0 && h("span", { class: "c-alias" }, c.aliases.join(" · "))))),
-    h("td", { class: "c-muted c-industry" }, c.industry || ""),
-    h("td", { class: "c-muted c-strength" }, c.strength || ""),
-    h("td", { class: "c-roles" }, h("div", { class: "role-chips" }, (c.apps || []).map(roleChip), openChip(c),
-      !(c.apps || []).length && !openChip(c) && h("span", { class: "c-muted" }, scanning(c.id) ? t("Scanning…") : t("none yet"))))], { "data-id": c.id }));
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Companies")),
       h("p", null, t("What each company is and how it is doing, your notes, and its own careers site: one profile there, several roles in your order of preference."))),
     tableTools(h("button", { class: "btn sm primary", id: "hunt-new-company", onclick: () => newCompany() }, icon("plus"), t("Add a company")), linkButton(),
       d.companies.length > 0 && scanAllButton()),
     d.companies.length > 0 && scanNews(),
-    htable(cols, rows, !d.companies.length
-      ? h("div", null, h("div", { class: "t" }, t("No companies yet")), h("p", null, t("Add the companies you're applying to; Claude can tell you about each one.")))
-      : t("Nothing matches")),
+    dbView({ table: "companies", props: companyProps(), rows: shown, rowId: (c) => c.id, open: (c) => openHunt("company", c.id),
+      defaults: [{ id: "v1", name: t("All companies") }], repaint: paintHunt,
+      empty: !d.companies.length
+        ? h("div", null, h("div", { class: "t" }, t("No companies yet")), h("p", null, t("Add the companies you're applying to; Claude can tell you about each one.")))
+        : t("Nothing matches") }),
   ];
 }
 
@@ -405,19 +460,27 @@ function platformsTable() {
   const sites = F.sites || [];
   const apps = (H.data && H.data.applications) || [];
   if (!F.sites) { loadFill(); return h("div", { class: "muted" }, t("Loading…")); }
-  const cols = [{ label: t("Platform") }, { label: t("Your profile there") }, { label: t("Sign-in") }, { label: t("Applications") }, { label: t("Last checked") }];
-  const rows = sites.filter((s) => matches(s.name, s.home)).map((s) => hrow(() => openHunt("platform", s.id), [
-    h("td", { class: "c-main" }, s.name, h("span", { class: "c-alias" }, (s.home || "").replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""))),
-    h("td", { class: "c-muted" }, !s.synced_at ? t("Not read yet") : s.conflicts ? t("{n} conflict", { n: s.conflicts }, "{n} conflicts")
-      : s.changes ? t("{n} change to push", { n: s.changes }, "{n} changes to push") : t("In step")),
-    h("td", null, s.signed_out ? h("span", { class: "state-chip s-warn" }, t("Sign in")) : h("span", { class: "c-muted" }, s.synced_at ? t("Signed in") : "")),
-    h("td", { class: "c-muted" }, String(apps.filter((a) => a.channel === "platform" && a.platform === s.id).length || "")),
-    h("td", { class: "c-muted" }, s.synced_at ? relTime(s.synced_at) : "")], { "data-id": s.id }));
+  const host = (s) => (s.home || "").replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+  const profile = (s) => !s.synced_at ? "unread" : s.conflicts ? "conflicts" : s.changes ? "changes" : "step";
+  const PROFILE = { unread: t("Not read yet"), conflicts: t("Has conflicts"), changes: t("Changes to push"), step: t("In step") };
+  const nApps = (s) => apps.filter((a) => a.channel === "platform" && a.platform === s.id).length;
+  const props = [
+    { key: "name", label: t("Platform"), type: "title", width: 200, get: (s) => s.name,
+      render: (s) => h("span", { class: "co-text" }, h("span", { class: "c-main-name" }, s.name), h("span", { class: "c-alias" }, host(s))) },
+    { key: "profile", label: t("Your profile there"), type: "custom", width: 180, group: true, get: (s) => PROFILE[profile(s)],
+      render: (s) => h("span", { class: "c-muted" }, !s.synced_at ? t("Not read yet") : s.conflicts ? t("{n} conflict", { n: s.conflicts }, "{n} conflicts")
+        : s.changes ? t("{n} change to push", { n: s.changes }, "{n} changes to push") : t("In step")) },
+    { key: "signin", label: t("Sign-in"), type: "custom", width: 130, get: (s) => (s.signed_out ? t("Sign in") : s.synced_at ? t("Signed in") : ""),
+      render: (s) => s.signed_out ? h("span", { class: "state-chip s-warn" }, t("Sign in")) : h("span", { class: "c-muted" }, s.synced_at ? t("Signed in") : "") },
+    { key: "apps", label: t("Applications"), type: "custom", width: 120, get: (s) => nApps(s) || "", render: (s) => h("span", { class: "c-muted" }, String(nApps(s) || "")) },
+    { key: "checked", label: t("Last checked"), type: "custom", width: 140, get: (s) => s.synced_at || "", render: (s) => h("span", { class: "c-muted" }, s.synced_at ? relTime(s.synced_at) : "") },
+  ];
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Platforms")),
       h("p", null, t("Your profiles on job platforms. Resume Studio keeps a copy of each, in step with the site: open one to see it field by field."))),
     tableTools(h("button", { class: "btn sm primary", id: "hunt-new-platform", onclick: () => siteDialog(null) }, icon("plus"), t("Add a site"))),
-    sites.length ? htable(cols, rows, t("Nothing matches")) : noSitesCard(),
+    sites.length ? dbView({ table: "platforms", props, rows: sites.filter((s) => matches(s.name, s.home)), rowId: (s) => s.id,
+      open: (s) => openHunt("platform", s.id), defaults: [{ id: "v1", name: t("All platforms") }], repaint: paintHunt, empty: t("Nothing matches") }) : noSitesCard(),
   ];
 }
 

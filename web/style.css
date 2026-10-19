@@ -1185,6 +1185,122 @@ mark.w-add { background: color-mix(in srgb, var(--ok) 30%, transparent); }
 .state-chip.s-saved { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
 .state-chip.s-withdrawn { color: var(--text-3); }
 .state-chip.s-warn { background: var(--warn-soft); color: var(--warn); }
+.state-chip.s-plain { background: var(--hover); color: var(--text-2); }
+
+/* ---- database views (web/dbview.js; docs/JOB_HUNT.md, 2026-10-19): tabs, tools, filters, table, board ---- */
+.dbv-view { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dbv-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.dbv-tabs { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; min-width: 0; }
+.dbv-tab { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 9px; border: 0; border-radius: var(--r-sm); background: none;
+  color: var(--text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.dbv-tab .i { width: 14px; height: 14px; }
+.dbv-tab:hover { background: var(--hover); color: var(--text); }
+.dbv-tab.on { color: var(--text); font-weight: 600; box-shadow: inset 0 -2px 0 var(--text); border-radius: var(--r-sm) var(--r-sm) 0 0; }
+.dbv-tab.on .i:last-child { width: 12px; height: 12px; color: var(--text-3); }
+.dbv-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+.dbv-tool { white-space: nowrap; color: var(--text-2); }
+.dbv-tool.on { color: var(--accent); }
+.dbv-tool .n { font-size: 11px; padding: 0 5px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.dbv-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.dbv-chip { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 9px; border: 1px solid var(--accent-ring); border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent); font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.dbv-chip .i { width: 12px; height: 12px; flex: none; }
+.dbv-pop.menu { padding: 8px; }
+.dbv-pop .row { display: flex; align-items: center; gap: 8px; }
+.dbv-pop select, .dbv-pop .dbv-fin, .dbv-date { height: 28px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel);
+  color: var(--text); font: inherit; font-size: 13px; min-width: 0; }
+.dbv-pick { position: relative; min-width: 0; }
+.dbv-pick .select { width: auto; min-width: 120px; height: 28px; }
+.dbv-inlist { margin-top: 4px; min-width: 100%; max-height: 260px; overflow: auto; padding: 4px;   /* in the panel's flow: a float can't hold a float */
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); box-shadow: var(--shadow); }
+.dbv-inlist[hidden] { display: none; }
+.dbv-fval { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+.dbv-fval .dbv-fin { width: 100%; }
+.dbv-check { display: flex; align-items: center; gap: 8px; padding: 4px 4px; border-radius: var(--r-sm); cursor: pointer; }
+.dbv-check:hover { background: var(--hover); }
+.dbv-sortrow { margin-bottom: 6px; }
+.dbv-sortrow select:first-child { flex: 1; }
+.dbv-p { margin: 2px 4px 8px; font-size: 12.5px; }
+.dbv-proplist { display: flex; flex-direction: column; }
+.dbv-proprow { display: flex; align-items: center; gap: 6px; padding: 2px 2px; border-radius: var(--r-sm); font-size: 13px; }
+.dbv-proprow:hover { background: var(--hover); }
+.dbv-proprow > .i { width: 14px; height: 14px; color: var(--text-3); flex: none; }
+.dbv-proprow.lifted { background: var(--panel-2); box-shadow: var(--shadow-sm); }
+.dbv-options .lb-opt { gap: 6px; }
+.dbv-datepanel { display: flex; flex-direction: column; gap: 6px; }
+.dbv-textpanel { padding: 0; border: 1px solid var(--accent); border-radius: var(--r-sm); background: var(--panel); box-shadow: var(--shadow); }
+.dbv-textbox { display: block; width: 100%; min-height: 36px; padding: 8px 11px; border: 0; background: none; color: var(--text); font: inherit; font-size: 13px;
+  line-height: 1.45; resize: none; outline: none; overflow: hidden; }
+
+.dbv-wrap { overflow-x: auto; }
+.htable.dbv { table-layout: fixed; min-width: 100%; }
+.htable.dbv th.dbv-th { position: sticky; top: 0; padding: 0; user-select: none; }
+.dbv-thbtn { display: flex; align-items: center; gap: 6px; width: 100%; height: 34px; padding: 0 12px; border: 0; background: none; color: var(--text-3);
+  font: inherit; font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; overflow: hidden; }
+.dbv-thbtn:hover { background: var(--hover); color: var(--text-2); }
+.dbv-thbtn .i { width: 13px; height: 13px; flex: none; }
+.dbv-thlabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.dbv-th { position: relative; }
+.dbv-th[draggable=true] { cursor: grab; }
+.dbv-th.dragging { opacity: .45; }
+.dbv-th.drop-l { box-shadow: inset 2px 0 0 var(--accent); }
+.dbv-th.drop-r { box-shadow: inset -2px 0 0 var(--accent); }
+.dbv-resize { position: absolute; top: 0; right: 0; width: 7px; height: 100%; cursor: col-resize; z-index: 2; }   /* inside its heading: a sticky heading paints over its neighbour's overhang */
+.dbv-resize:hover, body.col-resizing .dbv-resize:hover { background: var(--accent); opacity: .6; }
+body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-select: none; }
+.htable.dbv th + th, .htable.dbv td + td { border-left: 1px solid var(--line); }
+.htable.dbv td.dbv-td { padding: 0; vertical-align: top; }
+.htable.dbv td.dbv-pad, .htable.dbv th.dbv-pad { border-left: 0; }
+.dbv-in { min-height: 36px; padding: 8px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbv-td.wrap .dbv-in, .htable.dbv .dbv-td.wrap .c-muted { white-space: normal; overflow-wrap: anywhere; overflow: visible; }
+.dbv-td.wrap .role-chips { flex-wrap: wrap; }
+.dbv-td:not(.wrap) .role-chips { flex-wrap: nowrap; }
+.dbv-td.editable { cursor: text; }
+.dbv-td.editable.t-select, .dbv-td.editable.t-date { cursor: pointer; }
+.dbv-td.editable:hover { box-shadow: inset 0 0 0 1px var(--line-strong); }
+.dbv-td[aria-expanded=true] { box-shadow: inset 0 0 0 2px var(--accent-ring); }
+.dbv-title { display: block; width: 100%; min-height: 36px; padding: 8px 12px; border: 0; background: none; color: var(--text); font: inherit; font-weight: 600;
+  text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbv-td.wrap .dbv-title { white-space: normal; overflow-wrap: anywhere; }
+.dbv-title:hover { text-decoration: underline; text-underline-offset: 3px; }
+.dbv-title .co-name { display: flex; max-width: 100%; }
+.dbv-title .co-text { min-width: 0; }
+.dbv-td:not(.wrap) .dbv-title .c-main-name, .dbv-td:not(.wrap) .dbv-title .c-alias { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbv-td.wrap .dbv-title .c-main-name { white-space: normal; overflow-wrap: anywhere; }
+.dbv-td:not(.wrap) .role-chips { overflow: hidden; text-overflow: ellipsis; }
+.dbv-in .c-last { display: block; }
+.htable.dbv .c-last, .htable.dbv .c-next { min-width: 0; max-width: none; }   /* the column's width rules here, not the old table's */
+.dbv-td:not(.wrap) .dbv-in > span { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: top; }
+.dbv-in .c-date { font-variant-numeric: tabular-nums; color: var(--text-2); }
+.dbv-in .c-date.late { color: var(--warn); }
+.htable.dbv tbody tr { cursor: default; }
+.co-chip { gap: 5px; }
+.co-logo.xs { width: 16px; height: 16px; border-radius: 4px; }
+.dbv-grouphead td { padding: 0 !important; background: var(--panel-2); border-left: 0 !important; }
+.dbv-fold { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 10px; border: 0; background: none; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.dbv-fold .i { width: 14px; height: 14px; color: var(--text-3); }
+.dbv-fold .n, .dbv-colhead .n { font-size: 12px; color: var(--text-3); }
+
+.dbv-board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
+.dbv-col { flex: 0 0 260px; display: flex; flex-direction: column; gap: 8px; padding: 8px; border-radius: var(--r-lg); background: var(--panel-2); min-height: 120px; }
+.dbv-col.drop { box-shadow: inset 0 0 0 2px var(--accent-ring); }
+.dbv-colhead { display: flex; align-items: center; gap: 8px; padding: 2px 4px; }
+.dbv-cards { display: flex; flex-direction: column; gap: 6px; }
+.dbv-card { display: flex; flex-direction: column; gap: 5px; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel);
+  box-shadow: var(--shadow-sm); font-size: 12.5px; cursor: pointer; min-width: 0; }
+.dbv-card:hover { background: var(--hover); }
+.dbv-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dbv-card.dragging { opacity: .45; }
+.dbv-cardtitle { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+.dbv-cardprop { color: var(--text-2); min-width: 0; overflow-wrap: anywhere; }
+.dbv-cardprop .role-chips { flex-wrap: wrap; }
+.dbv-cardprop .c-when { display: block; font-size: 11.5px; color: var(--text-3); }
+.dbv-cardprop .c-due { margin-left: 6px; font-size: 11.5px; color: var(--text-3); }
+.dbv-cardprop .dbv-plabel { margin-right: 6px; color: var(--text-3); font-size: 11.5px; }
+.dbv-cardprop .late { color: var(--warn); }
+.dbv-filterpanel > .row { align-items: flex-start; }
+.dbv-filterpanel > .row > b, .dbv-filterpanel > .row > .btn { margin-top: 2px; line-height: 24px; }
+
 .hunt-wrap .ed-head h1 .co { color: var(--text-3); font-weight: 560; }
 .hunt-wrap .ed-head .select { width: 170px; }
 .su-main.linkish { display: flex; flex-direction: column; text-align: left; align-items: flex-start; color: inherit; }
