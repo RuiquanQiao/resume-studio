@@ -150,6 +150,15 @@ def test_a_roles_jd_is_kept_apart_from_its_notes(live, data_file):
     assert live.req("PUT", "/api/hunt/apps/A1", {"jd": ""})[1]["application"]["jd"] == ""   # the window can clear it
 
 
+def test_a_roles_referral_code_has_its_own_field(live, data_file):
+    cli(data_file, "add-company", "星河科技")
+    code, out = cli(data_file, "add-role", "星河科技", "服务端", "--referral", "NTA8X2")
+    assert code == 0 and "referral code NTA8X2" in out
+    assert live.req("GET", "/api/hunt/apps/A1")[1]["application"]["referral"] == "NTA8X2"
+    assert "referral code" not in cli(data_file, "add-role", "星河科技", "算法")[1]   # none got: no referral
+    assert live.req("PUT", "/api/hunt/apps/A1", {"referral": ""})[1]["application"]["referral"] == ""
+
+
 def test_the_sign_up_goes_out_with_a_kept_version(live, data_file):
     cli(data_file, "add-company", "星河科技")
     cli(data_file, "add-role", "星河科技", "服务端")

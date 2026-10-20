@@ -243,7 +243,11 @@ function appProps() {
       render: (a) => h("button", { type: "button", class: "role-chip co-chip", onclick: () => openHunt("company", a.company) },
         companyLogo(co(a), "xs"), h("span", { class: "rc-name" }, co(a).name || "")) },
     { key: "status", label: t("Status"), type: "select", width: 140, get: (a) => a.status, options: states, set: (a, v) => cellStatus(a, v) },
-    { key: "channel", label: t("How"), type: "select", width: 150, min: 120, wrap: true, get: (a) => a.channel || "site", options: channels,
+    { key: "url", label: t("Link"), type: "text", width: 200, get: (a) => a.url || "", set: (a, v) => cellApp(a, { url: v }),
+      render: (a) => !/^https?:\/\//.test(a.url || "") ? h("span", { class: "c-muted" }, a.url || "") : h("a", { href: a.url, class: "c-link", title: a.url, onclick: (e) => { e.preventDefault(); openInBrowser(a.url); } },
+        a.url.replace(/^https?:\/\//, "")) },
+    { key: "referral", label: t("Referral code"), type: "text", width: 130, get: (a) => a.referral || "", set: (a, v) => cellApp(a, { referral: v }) },
+    { key: "channel", label: t("How"), type: "select", width: 150, min: 120, wrap: true, hidden: true, get: (a) => a.channel || "site", options: channels,
       render: (a) => h("span", { class: "c-muted" }, channelText(a)),
       set: (a, v) => cellApp(a, { channel: v, ...(v === "platform" && !a.platform && (F.sites || []).length ? { platform: F.sites[0].id } : {}) }) },
     { key: "deadline", label: t("Deadline"), type: "date", width: 120, get: (a) => a.deadline || "",
@@ -259,7 +263,6 @@ function appProps() {
       render: (a) => a.due ? h("span", { class: "c-date" + (late(a.due) ? " late" : "") }, a.due) : "", set: (a, v) => cellApp(a, { due: v }) },
     { key: "note", label: t("Notes"), type: "text", width: 220, hidden: true, get: (a) => a.note || "", set: (a, v) => cellApp(a, { note: v }) },
     { key: "jd", label: t("JD"), type: "text", width: 260, hidden: true, get: (a) => a.jd || "", set: (a, v) => cellApp(a, { jd: v }) },
-    { key: "url", label: t("Link"), type: "text", width: 200, hidden: true, get: (a) => a.url || "", set: (a, v) => cellApp(a, { url: v }) },
   ];
 }
 
@@ -724,7 +727,7 @@ function companyPage(v) {
         hfield(t("Strength"), c.strength, save("strength"), { placeholder: t("e.g. market cap, or the latest valuation"), hint: keptHint(c, "strength") })),
       h("div", { class: "grid2" }, hfield(t("Headquarters"), c.location, save("location"), { hint: keptHint(c, "location") }),
         hfield(t("Size"), c.size, save("size"), { hint: keptHint(c, "size") })),
-      hfield(t("Notes"), c.note, save("note"), { multiline: true, placeholder: t("e.g. which batch (提前批 / 正式批), referral code, what you heard") }),
+      hfield(t("Notes"), c.note, save("note"), { multiline: true, placeholder: t("e.g. which batch (提前批 / 正式批), what you heard") }),
     ]),
     card(t("What happened"), v.events.length ? t("{n} event", { n: v.events.length }, "{n} events") : "", [timeline(v.events, apps)]),
   ];
@@ -832,7 +835,8 @@ function appPage(v) {
     ]),
     card(t("The role"), "", [
       h("div", { class: "grid2" }, hfield(t("Role"), a.role, save("role")), hfield(t("Link"), a.url, save("url"), { placeholder: "https://…" })),
-      h("div", { class: "grid2" }, hfield(t("Deadline"), a.deadline, save("deadline"), { type: "date", id: "app-deadline" }), h("span")),
+      h("div", { class: "grid2" }, hfield(t("Deadline"), a.deadline, save("deadline"), { type: "date", id: "app-deadline" }),
+        hfield(t("Referral code"), a.referral, save("referral"), { placeholder: t("none: no referral") })),
       h("div", { class: "field" }, h("label", null, t("How it goes in")), h("div", { class: "row wrap" }, channel, plat && plat.el,
         a.channel === "site" && h("span", { class: "muted" }, t("choice {n} on {company}'s site", { n: a.order, company: c.name })))),
       hfield(t("Notes"), a.note, save("note"), { multiline: true }),

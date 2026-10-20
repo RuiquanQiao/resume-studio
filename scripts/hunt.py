@@ -8,7 +8,7 @@
     python scripts/hunt.py fill 星河科技 --stdin <<'JSON'   # Claude's research, every field at once (see `fill --help`)
     python scripts/hunt.py add-role 星河科技 "服务端研发工程师" [--url ...] [--channel site|platform|referral|other]
                                        [--platform boss] [--order 2] [--status saved] [--deadline 2026-10-31]
-    python scripts/hunt.py edit-role 星河科技/服务端 [--role ...] [--url ...] [--order 1] [--note ...] [--deadline ...]
+    python scripts/hunt.py edit-role 星河科技/服务端 [--role ...] [--url ...] [--referral <内推码>] [--order 1] [--note ...] [--deadline ...]
     python scripts/hunt.py status 星河科技/服务端 interview --note "一面 周三 14:00" [--on 2026-10-18]
     python scripts/hunt.py note 星河科技/服务端 "笔试已交" [--on 2026-10-18]
     python scripts/hunt.py jd 星河科技/服务端 --stdin <<'JD'   # the posting's full text (JD), kept on the role
@@ -99,6 +99,8 @@ def app_line(a: dict, company: str = "") -> str:
         parts.append(f"next: {a['next']}" + (f" (due {a['due']})" if a.get("due") else ""))
     elif a.get("due"):
         parts.append(f"due {a['due']}")
+    if a.get("referral"):
+        parts.append(f"referral code {a['referral']}")
     if a.get("url"):
         parts.append(a["url"])
     return "  ".join(parts)
@@ -199,7 +201,7 @@ def main() -> int:
             p.add_argument("company"); p.add_argument("role")
         else:
             p.add_argument("ref"); p.add_argument("--role")
-        for opt in ("url", "channel", "platform", "order", "note", "subset", "deadline") + (("status",) if name == "add-role" else ()):
+        for opt in ("url", "referral", "channel", "platform", "order", "note", "subset", "deadline") + (("status",) if name == "add-role" else ()):
             p.add_argument("--" + opt)
     p = sub.add_parser("status"); p.add_argument("ref"); p.add_argument("status"); p.add_argument("--note", default="")
     p.add_argument("--on", default="")
@@ -255,7 +257,7 @@ def main() -> int:
         show_company(r["company"])
         return 0
     if c in ("add-role", "edit-role"):
-        a = pick("url", "channel", "platform", "order", "note", "subset", "status", "deadline")
+        a = pick("url", "referral", "channel", "platform", "order", "note", "subset", "status", "deadline")
         if c == "add-role":
             a.update(company=args.company, role=args.role)
         else:

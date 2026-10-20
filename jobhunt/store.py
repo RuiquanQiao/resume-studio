@@ -21,7 +21,8 @@ never edited; a correction is a new line. An application's `status` is the last 
 
 An application's `channel` is how it goes in: "site" (the company's own careers site, the 网申 sign-up:
 one profile there, several roles in order of preference, `order` 1, 2, …), "platform" (`platform` names
-the Autofill site: LinkedIn, BOSS直聘…), "referral" or "other".
+the Autofill site: LinkedIn, BOSS直聘…), "referral" or "other". `referral` is the 内推码 the user got for
+it, entered on the sign-up: empty means none.
 """
 from __future__ import annotations
 
@@ -444,7 +445,7 @@ class Hunt:
         raise KeyError(t("{company} has no role “{role}”", company=c["name"], role=role.strip()))
 
     def _app_fields(self, a: dict, fields: dict) -> None:
-        for k, limit in (("role", 120), ("url", 500), ("subset", 80)):
+        for k, limit in (("role", 120), ("url", 500), ("referral", 80), ("subset", 80)):
             if k in fields:
                 a[k] = _text(fields[k], limit)
         if "note" in fields:
@@ -477,7 +478,7 @@ class Hunt:
             if role and any(x["company"] == c["id"] and _key(x["role"]) == _key(role) for x in data["applications"]):
                 raise ValueError(t("{company} already has {role}", company=c["name"], role=role))
             status = state_of(fields.get("status") or "saved")
-            a = {"id": f"A{data['next']}", "company": c["id"], "role": "", "url": "", "channel": "site", "platform": "",
+            a = {"id": f"A{data['next']}", "company": c["id"], "role": "", "url": "", "referral": "", "channel": "site", "platform": "",
                  "order": 0, "status": status, "applied": "", "deadline": "", "next": "", "due": "", "note": "", "jd": "", "subset": "",
                  "sent": [], "co_app": None, "created": _now(), "updated": _now()}
             self._app_fields(a, {"channel": "site", **fields})

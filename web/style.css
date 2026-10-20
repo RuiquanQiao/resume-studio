@@ -1288,6 +1288,8 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-sel
 .dbv-td:not(.wrap) .dbv-in > span { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: top; }
 .dbv-in .c-date { font-variant-numeric: tabular-nums; color: var(--text-2); }
 .dbv-in .c-date.late { color: var(--warn); }
+.dbv-in .c-link { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
+.dbv-in .c-link:hover { text-decoration: underline; }
 .htable.dbv tbody tr { cursor: default; }
 .co-chip { gap: 5px; }
 .co-logo.xs { width: 16px; height: 16px; border-radius: 4px; }

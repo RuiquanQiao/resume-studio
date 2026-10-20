@@ -32,7 +32,8 @@ it only through this command (Bash); every call prints what is there now, and th
   "about": {{"summary": "..", "points": [{{"topic": "..", "text": "..", "sources": ["https://.."]}}], "read_at": "YYYY-MM-DD"}}}}`.
   `{j} fill --help` shows a full example.
 - `{j} add-role <company> "<role>" [--url ..] [--channel site|platform|referral|other] [--platform boss]
-  [--order 2] [--status saved] [--deadline YYYY-MM-DD]` · `edit-role <company>/<role> [--role|--url|--order|--note|--deadline ..]`
+  [--order 2] [--status saved] [--deadline YYYY-MM-DD]` · `edit-role <company>/<role> [--role|--url|--referral|--order|--note|--deadline ..]`
+  (`--referral` is the 内推码 for that role: put it there, not in a note; no code means no referral)
 - `{j} status <company>/<role> <status> [--note "一面 周三 14:00"] [--on 2026-10-18]`
 - `{j} note <company>/<role> "<what happened>" [--on <date>]` — interviews, tests, emails: anything worth keeping.
 - `{j} next <company>/<role> "<next step>" [--due <date>]`
