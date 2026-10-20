@@ -1,5 +1,5 @@
 """The tables' views (docs/JOB_HUNT.md, 2026-10-19): like a Notion database, each table has several views,
-each with its own layout (table or board), columns (order, width, hidden, wrapped), filters, sorts and group.
+each with its own layout (table, board, calendar or Gantt), columns (order, width, hidden, wrapped), filters, sorts and group.
 They belong to the data, so they live in the data folder:
 
     .studio/hunt/views.json   {"apps": {"active": "v1", "views": [{id, name, layout, columns, filters, sorts, group}]},
@@ -17,7 +17,7 @@ from typing import Any
 from core.i18n import t
 
 TABLES = ("apps", "companies", "platforms")
-LAYOUTS = ("table", "board")
+LAYOUTS = ("table", "board", "calendar", "gantt")
 OPS = ("is", "is_not", "contains", "not_contains", "before", "after", "empty", "not_empty")
 KEY = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 

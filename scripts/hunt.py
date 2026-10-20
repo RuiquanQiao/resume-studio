@@ -12,7 +12,10 @@
     python scripts/hunt.py status 星河科技/服务端 interview --note "一面 周三 14:00" [--on 2026-10-18]
     python scripts/hunt.py note 星河科技/服务端 "笔试已交" [--on 2026-10-18]
     python scripts/hunt.py jd 星河科技/服务端 --stdin <<'JD'   # the posting's full text (JD), kept on the role
-    python scripts/hunt.py next 星河科技/服务端 "等二面通知" --due 2026-10-25
+    python scripts/hunt.py book 星河科技/服务端 一面 --at "2026-10-25 14:00" [--minutes 45] [--where 腾讯会议 123] [--note ..]
+    python scripts/hunt.py rebook 星河科技/服务端 E2 [--title 二面] [--at ..] [--minutes ..] [--where ..] [--note ..]
+    python scripts/hunt.py unbook 星河科技/服务端 E2        # (or its title: 二面)
+    python scripts/hunt.py ics [星河科技/服务端]             # everything booked (and deadlines) as an .ics file
     python scripts/hunt.py about 星河科技 --stdin <<'JSON'  {"summary": "...", "points": [{"topic": "...", "text": "...",
                                                        "sources": ["https://..."]}], "read_at": "2026-10-16"}  JSON
     python scripts/hunt.py sent 星河科技                      # the sign-up on its site went out (every role not sent yet)
@@ -23,7 +26,7 @@
     python scripts/hunt.py apply P12                        # the user goes for posting P12: it becomes an application
     python scripts/hunt.py keywords "算法, AI, Agent, 后端"  # the roles the user looks for (others are folded away)
 
-Statuses: saved (want to apply), applied, assessment (测评/笔试), interview (rounds are notes), offer, hired,
+Statuses: saved (want to apply), applied, assessment (测评/笔试), interview (rounds are booked: `book`), offer, hired,
 rejected, withdrawn; Chinese words work too (一面 → interview, 笔试 → assessment, 挂 → rejected).
 Every command prints what is there now. Options: --data PATH (default: $RESUME_STUDIO_DATA, else the
 file the window last opened). Standard library only, no venv needed.
@@ -33,6 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -95,10 +99,9 @@ def app_line(a: dict, company: str = "") -> str:
         parts.append(f"sent {s['at'][:10]}: {s['subset']} v{s['n']}")
     if a.get("deadline"):
         parts.append(f"deadline {a['deadline']}")
-    if a.get("next"):
-        parts.append(f"next: {a['next']}" + (f" (due {a['due']})" if a.get("due") else ""))
-    elif a.get("due"):
-        parts.append(f"due {a['due']}")
+    soon = [e for e in a.get("schedule") or [] if e["at"][:10] >= time.strftime("%Y-%m-%d")]
+    if soon:
+        parts.append(f"next: {soon[0]['title']} {soon[0]['at']}")
     if a.get("referral"):
         parts.append(f"referral code {a['referral']}")
     if a.get("url"):
@@ -177,6 +180,10 @@ def show_app(v: dict) -> None:
         print("  JD: not kept yet (`jd` saves the posting's text)")
     for s in a.get("sent") or []:
         print(f"  sent {s['at'][:16].replace('T', ' ')}: {s['subset']} v{s['n']}")
+    print("  booked:" if a.get("schedule") else "  booked: nothing")
+    for e in a.get("schedule") or []:
+        print(f"    {e['id']:<4} {e['at']}  {e['title']}" + (f" ({e['minutes']} min)" if e.get("minutes") else "")
+              + (f" @ {e['where']}" if e.get("where") else "") + (f": {e['note']}" if e.get("note") else ""))
     print("  events:" if v["events"] else "  events: none")
     for e in v["events"]:
         print(event_line(e))
@@ -206,7 +213,16 @@ def main() -> int:
     p = sub.add_parser("status"); p.add_argument("ref"); p.add_argument("status"); p.add_argument("--note", default="")
     p.add_argument("--on", default="")
     p = sub.add_parser("note"); p.add_argument("ref"); p.add_argument("text"); p.add_argument("--on", default="")
-    p = sub.add_parser("next"); p.add_argument("ref"); p.add_argument("text"); p.add_argument("--due", default="")
+    for name in ("book", "rebook"):
+        p = sub.add_parser(name); p.add_argument("ref")
+        if name == "book":
+            p.add_argument("title"); p.add_argument("--at", required=True)
+        else:
+            p.add_argument("event"); p.add_argument("--title"); p.add_argument("--at")
+        for opt in ("minutes", "where", "note"):
+            p.add_argument("--" + opt)
+    p = sub.add_parser("unbook"); p.add_argument("ref"); p.add_argument("event")
+    p = sub.add_parser("ics"); p.add_argument("ref", nargs="?", default="")
     p = sub.add_parser("jd"); p.add_argument("ref"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("about"); p.add_argument("ref"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("fill", description=FILL_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -270,8 +286,15 @@ def main() -> int:
         r = call(url, "status", {"ref": args.ref, "status": args.status, "note": args.note, "on": args.on})
     elif c == "note":
         r = call(url, "note", {"ref": args.ref, "note": args.text, "on": args.on})
-    elif c == "next":
-        r = call(url, "next", {"ref": args.ref, "next": args.text, "due": args.due})
+    elif c in ("book", "rebook"):
+        r = call(url, c, {"ref": args.ref, **({"title": args.title} if c == "book" else {"event": args.event, **pick("title")}),
+                          **pick("at", "minutes", "where", "note")})
+    elif c == "unbook":
+        r = call(url, c, {"ref": args.ref, "event": args.event})
+    elif c == "ics":
+        r = call(url, c, {"ref": args.ref})
+        print(f"written: {r['path']} (opening it imports it into the user's calendar app)")
+        return 0
     elif c == "jd":
         raw = sys.stdin.buffer.read().decode("utf-8") if args.stdin else Path(args.file).read_text(encoding="utf-8") if args.file else ""
         if not raw.strip():

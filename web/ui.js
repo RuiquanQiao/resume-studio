@@ -121,6 +121,8 @@ const ICONS = {
   list: '<path d="M9 7h11M9 12h11M9 17h11M4.5 7h.01M4.5 12h.01M4.5 17h.01" stroke-width="2.2"/>',
   table: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 10h17M9.5 10v9"/>',
   columns: '<rect x="3.5" y="5" width="4.5" height="14" rx="1.2"/><rect x="9.75" y="5" width="4.5" height="10" rx="1.2"/><rect x="16" y="5" width="4.5" height="7" rx="1.2"/>',
+  gantt: '<path d="M4 6h9M7 12h10M10 18h10" stroke-width="3" stroke-linecap="round"/>',
+  download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
   filter: '<path d="M4 6h16M7 12h10M10 18h4"/>',
   sort: '<path d="M7 4v16M4 7l3-3 3 3M17 20V4M14 17l3 3 3-3"/>',
   sortUp: '<path d="M12 19V5M6 11l6-6 6 6"/>',

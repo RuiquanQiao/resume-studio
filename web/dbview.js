@@ -8,8 +8,10 @@
 //   custom    drawn by the table, read-only: clicking it opens the row
 // {key, label, type, get(row) -> value, render(row)?, options()? [{value, label, cls}], set(row, value)?,
 //  width?, hidden?, group? (can group by it)}
-// Each table has several views (tabs), each with its own layout (table | board), columns (order, width,
-// hidden, wrapped), filters, sorts and group. They are saved with the data (.studio/hunt/views.json).
+// Each table has several views (tabs), each with its own layout (table | board | calendar | gantt), columns
+// (order, width, hidden, wrapped), filters, sorts and group. They are saved with the data (.studio/hunt/views.json).
+// A table whose rows have dates (o.dated(row) -> {start, end, cls, items: [{at, label, sub, kind}]}) can also be
+// a calendar (the items, by day) or a Gantt chart (a bar per row from start to end, its items on it).
 // Loaded after ui.js and before hunt.js: only definitions.
 "use strict";
 
@@ -19,7 +21,12 @@ const DBV = {
   pending: false,      // a repaint waits for an editor to close
   drag: null,          // {table, key} while a column heading is dragged
   saved: 0,            // when this window last saved: the "views" event that follows is its own echo
+  month: {},           // table -> "YYYY-MM" the calendar shows (this window's, not saved)
 };
+const LAYOUT_ICONS = { table: "table", board: "columns", calendar: "calendar", gantt: "gantt" };
+const LAYOUT_NAMES = { table: "Table", board: "Board", calendar: "Calendar", gantt: "Gantt" };
+const LAYOUT_AS = { table: "Show as a table", board: "Show as a board", calendar: "Show as a calendar", gantt: "Show as a Gantt chart" };
+const dbvLayouts = (o) => (o.dated ? ["table", "board", "calendar", "gantt"] : ["table", "board"]);
 
 const FILTER_OPS = {
   is: "is", is_not: "is not", contains: "contains", not_contains: "does not contain", before: "is before",
@@ -256,12 +263,11 @@ function dbvTabs(o, tb, repaint) {
       onclick: (e) => {
         if (!on) { tb.active = v.id; dbvSave(o.table, repaint); return; }
         dbvViewMenu(e.currentTarget, o, tb, v, repaint);
-      } }, icon(v.layout === "board" ? "columns" : "table"), h("span", null, v.name), on && icon("chev"));
+      } }, icon(LAYOUT_ICONS[v.layout] || "table"), h("span", null, v.name), on && icon("chev"));
   });
   const add = h("button", { type: "button", class: "btn icon sm ghost dbv-addview", title: t("Add a view"), "aria-label": t("Add a view"),
-    onclick: (e) => openMenu(e.currentTarget, [
-      { label: t("Table"), icon: "table", onClick: () => dbvAddView(o, tb, "table", repaint) },
-      { label: t("Board"), icon: "columns", onClick: () => dbvAddView(o, tb, "board", repaint) }]) }, icon("plus"));
+    onclick: (e) => openMenu(e.currentTarget, dbvLayouts(o).map((l) => ({ label: t(LAYOUT_NAMES[l]), icon: LAYOUT_ICONS[l],
+      onClick: () => dbvAddView(o, tb, l, repaint) }))) }, icon("plus"));
   return h("div", { class: "dbv-tabs", role: "tablist", "aria-label": t("Views") }, tabs, add);
 }
 
@@ -269,7 +275,7 @@ function dbvNewId(tb) { let n = tb.views.length + 1; while (tb.views.some((v) =>
 
 function dbvAddView(o, tb, layout, repaint) {
   const groupBy = layout === "board" ? (o.props.find((p) => p.type === "select") || {}).key || "" : "";
-  const v = { id: dbvNewId(tb), name: layout === "board" ? t("Board") : t("Table"), layout, columns: [], filters: [], sorts: [], group: groupBy, folded: [] };
+  const v = { id: dbvNewId(tb), name: t(LAYOUT_NAMES[layout]), layout, columns: [], filters: [], sorts: [], group: groupBy, folded: [] };
   tb.views.push(v);
   tb.active = v.id;
   dbvSave(o.table, repaint);
@@ -281,11 +287,11 @@ function dbvViewMenu(anchor, o, tb, v, repaint) {
       const f = await formModal({ title: t("Rename the view"), ok: t("Save"), fields: [{ key: "name", label: t("Name"), value: v.name, required: true }] });
       if (f) { v.name = f.name; dbvSave(o.table, repaint); }
     } },
-    { label: v.layout === "board" ? t("Show as a table") : t("Show as a board"), icon: v.layout === "board" ? "table" : "columns", onClick: () => {
-      v.layout = v.layout === "board" ? "table" : "board";
-      if (v.layout === "board" && !dbvBoardProp(o.props, v)) v.group = (o.props.find((p) => p.type === "select") || {}).key || "";
+    ...dbvLayouts(o).filter((l) => l !== v.layout).map((l) => ({ label: t(LAYOUT_AS[l]), icon: LAYOUT_ICONS[l], onClick: () => {
+      v.layout = l;
+      if (l === "board" && !dbvBoardProp(o.props, v)) v.group = (o.props.find((p) => p.type === "select") || {}).key || "";
       dbvSave(o.table, repaint);
-    } },
+    } })),
     { label: t("Duplicate"), icon: "copy", onClick: () => {
       const c = JSON.parse(JSON.stringify(v));
       c.id = dbvNewId(tb); c.name = t("{name} copy", { name: v.name });
@@ -310,11 +316,12 @@ function dbvTools(o, tb, view, cols, repaint) {
   const btn = (id, ic, label, count, onClick) => h("button", { type: "button", class: "btn sm ghost dbv-tool" + (count ? " on" : ""), id: `dbv-${o.table}-${id}`, onclick: onClick },
     icon(ic), label, count ? h("span", { class: "n" }, count) : null);
   const groupP = byKey[view.group];
+  const dated = ["calendar", "gantt"].includes(view.layout);   // rows by date: no columns, no groups
   return h("div", { class: "dbv-tools" },
     btn("filter", "filter", t("Filter"), n("filters"), (e) => dbvFilterAdd(e.currentTarget, o, view, repaint)),
-    btn("sort", "sort", t("Sort"), n("sorts"), (e) => dbvSortPanel(e.currentTarget, o, view, repaint)),
-    btn("group", "layers", groupP ? t("Group: {name}", { name: groupP.label }) : t("Group"), 0, (e) => dbvGroupMenu(e.currentTarget, o, view, repaint)),
-    btn("props", "eye", t("Properties"), 0, (e) => dbvPropsPanel(e.currentTarget, o, view, repaint)));
+    view.layout !== "calendar" && btn("sort", "sort", t("Sort"), n("sorts"), (e) => dbvSortPanel(e.currentTarget, o, view, repaint)),
+    !dated && btn("group", "layers", groupP ? t("Group: {name}", { name: groupP.label }) : t("Group"), 0, (e) => dbvGroupMenu(e.currentTarget, o, view, repaint)),
+    !dated && btn("props", "eye", t("Properties"), 0, (e) => dbvPropsPanel(e.currentTarget, o, view, repaint)));
 }
 
 // the filters as chips above the table; each opens to be changed or removed
@@ -647,6 +654,100 @@ function dbvBoardEl(o, view, cols, rows, repaint) {
   return h("div", { class: "dbv-board", "data-scrolls": "" }, columns);   // a column per option: it runs sideways, as in Notion
 }
 
+// ---------------------------------------------------------------- dates: the calendar and the Gantt chart
+const dbvPad = (n) => String(n).padStart(2, "0");
+const dbvYmd = (d) => `${d.getFullYear()}-${dbvPad(d.getMonth() + 1)}-${dbvPad(d.getDate())}`;   // local, not UTC
+const dbvDay = (s) => { const [y, m, d] = String(s).slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d); };
+const dbvAddDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const dbvDays = (a, b) => Math.round((dbvDay(dbvYmd(b)) - dbvDay(dbvYmd(a))) / 864e5);
+const dbvLocale = () => document.documentElement.lang || undefined;
+
+function dbvItems(o, rows) {
+  const out = [];
+  for (const row of rows) for (const it of (o.dated(row).items || [])) if (it.at) out.push({ ...it, row });
+  return out.sort((a, b) => a.at.localeCompare(b.at));
+}
+
+// one dated thing (an interview, a deadline): opens its row
+function dbvItemEl(o, it, { day = false } = {}) {
+  const time = it.at.length > 10 ? it.at.slice(11, 16) : "";
+  return h("button", { type: "button", class: "dbv-item k-" + (it.kind || "event"), title: [day ? it.at : time, it.label, it.sub].filter(Boolean).join(" · "),
+    onclick: (e) => { e.stopPropagation(); o.open(it.row); } },
+  time && h("span", { class: "dbv-itime" }, time), h("span", { class: "dbv-ilabel" }, it.label), it.sub && h("span", { class: "dbv-isub" }, it.sub));
+}
+
+function dbvCalendarEl(o, rows, repaint) {
+  const todayS = dbvYmd(new Date());
+  const month = DBV.month[o.table] || todayS.slice(0, 7);
+  const first = dbvDay(month + "-01");
+  const start = dbvAddDays(first, -((first.getDay() + 6) % 7));   // weeks start on Monday
+  const byDay = {};
+  for (const it of dbvItems(o, rows)) (byDay[it.at.slice(0, 10)] = byDay[it.at.slice(0, 10)] || []).push(it);
+  const go = (m) => { DBV.month[o.table] = m; repaint(); };
+  const shift = (n) => go(dbvYmd(new Date(first.getFullYear(), first.getMonth() + n, 1)).slice(0, 7));
+  const weeks = [];
+  let d = start;
+  do {
+    const days = [];
+    for (let i = 0; i < 7; i++, d = dbvAddDays(d, 1)) {
+      const k = dbvYmd(d);
+      days.push(h("div", { class: "dbv-calday" + (d.getMonth() !== first.getMonth() ? " out" : "") + (k === todayS ? " today" : "") + (i > 4 ? " weekend" : ""), "data-day": k },
+        h("span", { class: "dbv-calnum" }, d.getDate()),
+        (byDay[k] || []).map((it) => dbvItemEl(o, it))));
+    }
+    weeks.push(h("div", { class: "dbv-calweek" }, days));
+  } while (d.getMonth() === first.getMonth());
+  const wd = new Intl.DateTimeFormat(dbvLocale(), { weekday: "short" });
+  return h("div", { class: "dbv-cal" },
+    h("div", { class: "dbv-calbar" },
+      h("b", { class: "dbv-calmonth" }, new Intl.DateTimeFormat(dbvLocale(), { year: "numeric", month: "long" }).format(first)),
+      h("button", { type: "button", class: "btn icon sm ghost", title: t("Previous month"), "aria-label": t("Previous month"), onclick: () => shift(-1) }, icon("chevLeft")),
+      h("button", { type: "button", class: "btn sm ghost", onclick: () => go(todayS.slice(0, 7)) }, t("Today")),
+      h("button", { type: "button", class: "btn icon sm ghost", title: t("Next month"), "aria-label": t("Next month"), onclick: () => shift(1) }, icon("chevRight"))),
+    h("div", { class: "dbv-calhead" }, [0, 1, 2, 3, 4, 5, 6].map((i) => h("span", null, wd.format(new Date(2024, 0, 1 + i))))),
+    h("div", { class: "dbv-calweeks" }, weeks));
+}
+
+function dbvGanttEl(o, rows) {
+  const now = new Date();
+  const title = o.props.find((p) => p.type === "title");
+  const lines = rows.map((row) => ({ row, ...o.dated(row) })).filter((x) => x.start || (x.items || []).length);
+  if (!lines.length) return h("div", { class: "hunt-empty" }, t("Nothing with a date yet"));
+  const dates = [dbvYmd(now)];
+  for (const x of lines) { if (x.start) dates.push(x.start); if (x.end) dates.push(x.end); for (const it of x.items || []) dates.push(it.at.slice(0, 10)); }
+  dates.sort();
+  const from = dbvAddDays(dbvDay(dates[0]), -3), to = dbvAddDays(dbvDay(dates[dates.length - 1]), 14);
+  const n = dbvDays(from, to) + 1, W = 30;
+  const x = (s) => dbvDays(from, dbvDay(s)) * W;
+  const months = [], days = [];
+  for (let i = 0; i < n; i++) {
+    const d = dbvAddDays(from, i);
+    if (i === 0 || d.getDate() === 1) months.push(h("span", { class: "dbv-gmonth", style: `left:${i * W}px` }, new Intl.DateTimeFormat(dbvLocale(), { year: "numeric", month: "short" }).format(d)));
+    days.push(h("span", { class: "dbv-gday" + ([0, 6].includes(d.getDay()) ? " weekend" : "") + (dbvYmd(d) === dbvYmd(now) ? " today" : ""), style: `left:${i * W}px;width:${W}px` }, d.getDate()));
+  }
+  const width = n * W;
+  const todayX = x(dbvYmd(now)) + W / 2;
+  const track = (ln) => h("div", { class: "dbv-gtrack", style: `width:${width}px` },
+    h("span", { class: "dbv-gnow", style: `left:${todayX}px`, "aria-hidden": "true" }),
+    ln.start && h("button", { type: "button", class: "dbv-gbar " + (ln.cls || ""), title: `${ln.start} → ${ln.end || ln.start}`, "aria-label": `${ln.start} → ${ln.end || ln.start}`,
+      style: `left:${x(ln.start)}px;width:${Math.max(W, x(ln.end || ln.start) - x(ln.start) + W)}px`, onclick: () => o.open(ln.row) }),
+    (ln.items || []).map((it) => {
+      const el = dbvItemEl(o, { ...it, row: ln.row }, { day: true });
+      el.classList.add("dbv-gitem");
+      el.style.left = (x(it.at) + W / 2) + "px";
+      return el;
+    }));
+  const el = h("div", { class: "dbv-gantt", "data-scrolls": "" },
+    h("div", { class: "dbv-grow dbv-ghead" }, h("div", { class: "dbv-gname" }),
+      h("div", { class: "dbv-gtrack", style: `width:${width}px` }, h("div", { class: "dbv-gmonths" }, months), h("div", { class: "dbv-gdays" }, days))),
+    lines.map((ln) => h("div", { class: "dbv-grow", "data-id": o.rowId(ln.row) },
+      h("div", { class: "dbv-gname" }, h("button", { type: "button", class: "dbv-title", onclick: () => o.open(ln.row) }, dbvShow(title, ln.row) || t("Untitled"))),
+      track(ln))));
+  // opens with today in sight
+  requestAnimationFrame(() => { el.scrollLeft = Math.max(0, todayX - (el.clientWidth - 220) / 2); });
+  return el;
+}
+
 // ---------------------------------------------------------------- the whole view
 // o: {table, props, rows, rowId(row), open(row), defaults: [views], empty (node when there are no rows at all),
 //     repaint()}
@@ -657,6 +758,8 @@ function dbView(o) {
   const rows = dbvRows(view, o.props, o.rows);
   const body = !o.rows.length ? h("div", { class: "hunt-empty" }, o.empty)
     : !rows.length ? h("div", { class: "hunt-empty" }, t("Nothing matches"))
+    : view.layout === "calendar" && o.dated ? dbvCalendarEl(o, rows, o.repaint)
+    : view.layout === "gantt" && o.dated ? dbvGanttEl(o, rows)
     : view.layout === "board" ? dbvBoardEl(o, view, cols, rows, o.repaint) : dbvTableEl(o, view, cols, rows, o.repaint);
   if (DBV.refit) { DBV.refit = false; requestAnimationFrame(() => dbvRefit()); }   // drawn before its pane existed: fit it now
   return h("div", { class: "dbv-view", "data-table": o.table, "data-layout": view.layout },

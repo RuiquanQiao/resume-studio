@@ -13,7 +13,7 @@ from jobs.signups import Signups
 from resume import model
 from resume.service import Studio
 
-from . import logos
+from . import ics, logos
 from .logos import fetch_logo
 from .postings import Postings
 from .scan import Scanner
@@ -338,6 +338,49 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         r = guard(lambda: send_app(req.params["aid"], str(b.get("subset") or "") or None, "window"))
         return {**r, **app_view(req.params["aid"]), **studio.state()}
 
+    # what is booked for a role: a test, 一面, 二面…
+    @app.route("POST", "/api/hunt/apps/{aid}/schedule")
+    def add_booked(req: Request):
+        guard(lambda: hunt.add_booked(req.params["aid"], body(req)))
+        return guard(lambda: app_view(req.params["aid"]))
+
+    @app.route("PUT", "/api/hunt/apps/{aid}/schedule/{eid}")
+    def edit_booked(req: Request):
+        guard(lambda: hunt.update_booked(req.params["aid"], req.params["eid"], body(req)))
+        return guard(lambda: app_view(req.params["aid"]))
+
+    @app.route("DELETE", "/api/hunt/apps/{aid}/schedule/{eid}")
+    def delete_booked(req: Request):
+        guard(lambda: hunt.delete_booked(req.params["aid"], req.params["eid"]))
+        return guard(lambda: app_view(req.params["aid"]))
+
+    def export_ics(app_ref: str = "", eid: str = "", deadlines: bool = True) -> str:
+        """The calendar file, in the export folder: every application's, or one role's, or one booked thing."""
+        apps = hunt.applications()
+        name = "applying"
+        if app_ref:
+            a = hunt.application(app_ref)
+            apps = [{**a, "schedule": [e for e in a.get("schedule") or [] if not eid or e["id"] == eid]}]
+            if eid and not apps[0]["schedule"]:
+                raise KeyError(t("{role} has nothing booked called “{ref}”", role=a["role"], ref=eid))
+            name = f"applying-{a['id']}" + (f"-{eid}" if eid else "")
+            deadlines = deadlines and not eid
+        doc, _ = studio.store.load()
+        out = studio.data_dir / str((doc.get("settings") or {}).get("export_dir") or "exports") / f"{name}.ics"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        names = {c["id"]: c["name"] for c in hunt.companies()}
+        out.write_text(ics.calendar(apps, names, deadlines=deadlines), encoding="utf-8", newline="")
+        return str(out)
+
+    @app.route("POST", "/api/hunt/ics")
+    def make_ics(req: Request):
+        """{app?, event?, open?}: written to the export folder; `open` hands it to the computer's calendar app."""
+        b = body(req)
+        path = guard(lambda: export_ics(str(b.get("app") or ""), str(b.get("event") or "")))
+        if b.get("open") and os.name == "nt" and not os.environ.get("STUDIO_NO_SHELL"):
+            os.startfile(path)   # noqa: S606 - our own file, in the data folder
+        return {"path": path}
+
     @app.route("DELETE", "/api/hunt/apps/{aid}")
     def delete_app(req: Request):
         guard(lambda: hunt.delete_application(req.params["aid"]))
@@ -387,9 +430,20 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 x = hunt.application(str(a.get("ref") or ""))
                 hunt.add_note(x["id"], str(a.get("note") or ""), source=src, on=str(a.get("on") or ""))
                 return {"app": app_view(x["id"]), "text": "noted"}
-            if cmd == "next":
-                x = hunt.update_application(str(a.get("ref") or ""), {"next": a.get("next") or "", "due": a.get("due") or ""})
+            if cmd == "book":
+                x = hunt.application(str(a.pop("ref", "") or ""))
+                hunt.add_booked(x["id"], a)
+                return {"app": app_view(x["id"]), "text": "booked"}
+            if cmd == "rebook":
+                x = hunt.application(str(a.pop("ref", "") or ""))
+                hunt.update_booked(x["id"], str(a.pop("event", "") or ""), a)
                 return {"app": app_view(x["id"]), "text": "changed"}
+            if cmd == "unbook":
+                x = hunt.application(str(a.get("ref") or ""))
+                hunt.delete_booked(x["id"], str(a.get("event") or ""))
+                return {"app": app_view(x["id"]), "text": "removed"}
+            if cmd == "ics":
+                return {"path": export_ics(str(a.get("ref") or "")), "text": "exported"}
             if cmd == "about":
                 x = hunt.update_company(str(a.get("ref") or ""), {"about": a.get("about")}, source=src)
                 return {"company": company_view(x["id"]), "text": "about"}
@@ -424,7 +478,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                     r = send_company(ref, src)
                 return {"sent": r, "text": "sent"}
             raise HttpError(400, f"unknown command {cmd!r}; one of: list, show, add-company, edit-company, fill, add-role, "
-                                 "edit-role, status, note, next, about, sent, scan, scan-route, postings, apply, keywords")
+                                 "edit-role, status, note, book, rebook, unbook, ics, about, sent, scan, scan-route, postings, apply, keywords")
 
         out = guard(run)
         if cmd == "sent":

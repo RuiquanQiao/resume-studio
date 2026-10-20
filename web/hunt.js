@@ -14,6 +14,7 @@ const H = {
   show: "open",          // applications: "open" | "all"
   q: "",                 // the search box
   loading: null,
+  editing: null,         // the booked thing being edited on a role's page (its id)
 };
 
 const HUNT_TABS = { apps: "Progress", companies: "Companies", platforms: "Platforms" };
@@ -145,7 +146,7 @@ async function openHunt(kind, id) {
     return;
   }
   H.tab = kind === "company" ? "companies" : "apps";
-  H.page = { kind, id }; H.view = null;
+  H.page = { kind, id }; H.view = null; H.editing = null;
   storeHunt();
   paintFill();
   await loadHuntPage();
@@ -257,10 +258,8 @@ function appProps() {
       render: (a) => h("span", { class: "c-muted c-resume" }, a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : "", resumeButton(a)) },
     { key: "last", label: t("Latest"), type: "custom", width: 220, get: (a) => (a.last ? a.last.at : ""),
       render: (a) => a.last ? h("span", { class: "c-last" }, h("span", { class: "c-when" }, huntWhen(a.last.at)), h("span", { class: "c-what" }, lastText(a.last))) : "" },
-    { key: "next", label: t("Next step"), type: "text", width: 180, get: (a) => a.next || "", set: (a, v) => cellApp(a, { next: v }),
-      render: (a) => h("span", { class: "c-next" + (late(a.due) ? " late" : "") }, a.next || "", a.due && h("span", { class: "c-due" }, a.due)) },
-    { key: "due", label: t("By"), type: "date", width: 120, hidden: true, get: (a) => (a.due || "").slice(0, 10),
-      render: (a) => a.due ? h("span", { class: "c-date" + (late(a.due) ? " late" : "") }, a.due) : "", set: (a, v) => cellApp(a, { due: v }) },
+    { key: "events", label: t("Events"), type: "custom", width: 190, get: (a) => { const e = nextBooked(a); return e ? `${e.at} ${e.title}` : ""; },
+      render: (a) => bookedCell(a) },
     { key: "note", label: t("Notes"), type: "text", width: 220, hidden: true, get: (a) => a.note || "", set: (a, v) => cellApp(a, { note: v }) },
     { key: "jd", label: t("JD"), type: "text", width: 260, hidden: true, get: (a) => a.jd || "", set: (a, v) => cellApp(a, { jd: v }) },
   ];
@@ -270,20 +269,140 @@ const APP_VIEWS = () => [
   { id: "v1", name: t("Active"), filters: [{ key: "status", op: "is", value: OPEN_STATES }] },
   { id: "v2", name: t("All") },
   { id: "v3", name: t("Board"), layout: "board", group: "status" },
+  { id: "v4", name: t("Calendar"), layout: "calendar" },
+  { id: "v5", name: t("Gantt"), layout: "gantt" },
 ];
+
+// ---- what is booked for a role: tests, 一面, 二面… (docs/JOB_HUNT.md, 2026-10-21) ----
+// the usual ones, offered as chips; the user's own titles join them
+const BOOKED_TITLES = ["笔试", "测评", "一面", "二面", "三面", "HR 面", "终面"];
+const nowAt = () => { const d = new Date(); return `${dbvYmd(d)} ${dbvPad(d.getHours())}:${dbvPad(d.getMinutes())}`; };
+const bookedPast = (e) => (e.at.length > 10 ? e.at : e.at + " 23:59") < nowAt();
+const nextBooked = (a) => (a.schedule || []).find((e) => !bookedPast(e)) || null;
+function bookedWhen(at, { weekday = true } = {}) {
+  const d = dbvDay(at);
+  const day = new Intl.DateTimeFormat(dbvLocale(), { month: "short", day: "numeric", ...(weekday ? { weekday: "short" } : {}),
+    ...(d.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}) }).format(d);
+  return at.length > 10 ? `${day} ${at.slice(11, 16)}` : day;
+}
+function bookedCell(a) {
+  const e = nextBooked(a);
+  if (!e) return "";
+  const more = (a.schedule || []).filter((x) => !bookedPast(x)).length - 1;
+  return h("span", { class: "c-booked" }, h("b", null, e.title), " ", h("span", { class: "c-when" }, bookedWhen(e.at)),
+    more > 0 && h("span", { class: "c-more" }, t("+{n} more", { n: more })));
+}
+// for the calendar and the Gantt chart: from when it went in (or was added) to now, or to its last event once it is over
+function appDated(a) {
+  const co = (huntCompany(a.company) || {}).name || "";
+  const start = a.applied || (a.created || "").slice(0, 10) || null;
+  let end = huntOpen(a) ? today() : ((a.last && a.last.at) || a.updated || "").slice(0, 10) || start;
+  if (start && end < start) end = start;
+  const items = (a.schedule || []).map((e) => ({ at: e.at, label: e.title, sub: co, kind: bookedPast(e) ? "past" : "event" }));
+  if (a.deadline) items.push({ at: a.deadline, label: t("Deadline"), sub: co, kind: "deadline" });
+  return { start, end, cls: "s-" + a.status, items };
+}
+
+async function exportIcs(what) {
+  try {
+    const r = await api("POST", "/api/hunt/ics", { ...what, open: true });
+    const file = r.path.split(/[\\/]/).pop();
+    toast(t("Opened {file} in your calendar app", { file }), { ms: 7000, action: { label: t("Open folder"), fn: () => api("POST", "/api/reveal", { path: r.path }) } });
+  } catch (e) { toast(e.message); }
+}
+
+async function bookedCall(method, path, body) {
+  try {
+    H.view = await api(method, path, body);
+    H.editing = null;
+    paintHunt();
+    loadHunt({ quiet: true });
+    return true;
+  } catch (e) { toast(e.message); return false; }
+}
+
+// the card on a role's page: what is booked, each with its own edit, and an Add row like the timeline's
+function bookedCard(a) {
+  const base = `/api/hunt/apps/${encodeURIComponent(a.id)}/schedule`;
+  const list = a.schedule || [];
+  const used = [...new Set(((H.data && H.data.applications) || []).flatMap((x) => (x.schedule || []).map((e) => e.title)))];
+  const titles = [...BOOKED_TITLES, ...used.filter((x) => !BOOKED_TITLES.includes(x))];
+  const chips = (input) => h("div", { class: "bk-chips", role: "group", "aria-label": t("Common ones") }, titles.map((x) =>
+    h("button", { type: "button", class: "bk-chip" + (input.value === x ? " on" : ""), onclick: (e) => {
+      input.value = x;
+      for (const c of e.currentTarget.parentNode.children) c.classList.toggle("on", c === e.currentTarget);
+      input.focus();
+    } }, x)));
+  const form = (e) => {
+    const title = h("input", { type: "text", class: "bk-title", value: e ? e.title : "", placeholder: t("What: 一面, 笔试…"), spellcheck: "false", "aria-label": t("What") });
+    const day = h("input", { type: "date", class: "bk-day", value: e ? e.at.slice(0, 10) : today(), "aria-label": t("Date") });
+    const time = h("input", { type: "time", class: "bk-time", value: e && e.at.length > 10 ? e.at.slice(11, 16) : "", "aria-label": t("Time") });
+    const fields = () => ({ title: title.value.trim(), at: day.value + (time.value ? " " + time.value : "") });
+    title.addEventListener("input", () => { const box = title.parentNode && title.parentNode.parentNode.querySelector(".bk-chips"); if (box) for (const c of box.children) c.classList.toggle("on", c.textContent === title.value); });
+    if (!e) {   // a new one: what, when, Add
+      const add = () => {
+        const f = fields();
+        if (!f.title) { title.focus(); return; }
+        if (!day.value) { day.focus(); return; }
+        bookedCall("POST", base, f);
+      };
+      title.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.isComposing) add(); });
+      return h("div", { class: "bk-new" }, chips(title),
+        h("div", { class: "row bk-row" }, title, day, time, h("span", { class: "spacer" }),
+          h("button", { class: "btn sm primary", id: "bk-add", onclick: add }, icon("plus"), t("Add"))));
+    }
+    const minutes = h("input", { type: "number", min: "0", step: "15", class: "bk-min", value: e.minutes || "", placeholder: "60", "aria-label": t("Minutes") });
+    const where = h("input", { type: "text", class: "bk-where", value: e.where || "", placeholder: t("Where: a room, a meeting link…"), spellcheck: "false", "aria-label": t("Where") });
+    const note = h("textarea", { rows: 2, class: "bk-note", placeholder: t("Notes: who, what to prepare…"), spellcheck: "false", "aria-label": t("Notes") }, e.note || "");
+    const save = () => {
+      const f = fields();
+      if (!f.title) { title.focus(); return; }
+      if (!day.value) { day.focus(); return; }
+      bookedCall("PUT", `${base}/${encodeURIComponent(e.id)}`, { ...f, minutes: minutes.value || 0, where: where.value.trim(), note: note.value.trim() });
+    };
+    return h("div", { class: "bk-edit", "data-id": e.id }, chips(title),
+      h("div", { class: "row bk-row" }, title, day, time,
+        h("label", { class: "bk-minl" }, minutes, h("span", { class: "muted" }, t("min")))),
+      where, note,
+      h("div", { class: "row" }, h("span", { class: "spacer" }),
+        h("button", { class: "btn sm ghost", onclick: () => { H.editing = null; paintHunt(); } }, t("Cancel")),
+        h("button", { class: "btn sm primary", onclick: save }, t("Save"))));
+  };
+  const row = (e) => h("div", { class: "bk-item" + (bookedPast(e) ? " past" : ""), "data-id": e.id },
+    h("span", { class: "bk-when" }, bookedWhen(e.at)),
+    h("span", { class: "bk-what" }, h("b", null, e.title),
+      (e.minutes || e.where) && h("span", { class: "muted" }, [e.minutes ? t("{n} min", { n: e.minutes }) : "", e.where].filter(Boolean).join(" · ")),
+      e.note && h("span", { class: "bk-notes" }, e.note)),
+    h("span", { class: "bk-acts" },
+      h("button", { class: "btn icon sm ghost", title: t("Add to my calendar"), "aria-label": t("Add to my calendar"), onclick: () => exportIcs({ app: a.id, event: e.id }) }, icon("calendar")),
+      h("button", { class: "btn icon sm ghost", title: t("Edit"), "aria-label": t("Edit"), onclick: () => { H.editing = e.id; paintHunt(); } }, icon("pen")),
+      h("button", { class: "btn icon sm ghost", title: t("Delete"), "aria-label": t("Delete"), onclick: async () => {
+        if (await modal({ title: t("Delete “{what}”?", { what: e.title }), message: bookedWhen(e.at), ok: t("Delete"), danger: true }))
+          bookedCall("DELETE", `${base}/${encodeURIComponent(e.id)}`);
+      } }, icon("trash"))));
+  return card(t("Events"), list.length ? t("{n} booked", { n: list.length }) : t("interviews, tests: anything with a date"), [
+    list.length > 0 && h("div", { class: "bk-list" }, list.map((e) => (H.editing === e.id ? form(e) : row(e)))),
+    form(null),
+    list.length > 0 && h("div", { class: "row" }, h("span", { class: "spacer" }),
+      h("button", { class: "btn sm ghost", onclick: () => exportIcs({ app: a.id }) }, icon("calendar"), t("Add all to my calendar"))),
+  ]);
+}
 
 function appsTable() {
   const d = H.data;
   const names = Object.fromEntries(d.companies.map((c) => [c.id, c.name]));
   const all = [...d.applications].sort((a, b) => (names[a.company] || "").localeCompare(names[b.company] || "") || (a.order || 0) - (b.order || 0));
-  const shown = all.filter((a) => matches(names[a.company], a.role, a.note, a.jd, a.next));
+  const shown = all.filter((a) => matches(names[a.company], a.role, a.note, a.jd, ...(a.schedule || []).map((e) => e.title)));
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Your applications")),
       h("p", null, t("Every role you apply for, wherever it goes in. Tell Claude on the left what happened (“Xinghe 一面过了”), or change it here."))),
     tableTools(
       h("button", { class: "btn sm primary", id: "hunt-new-app", onclick: newApplication }, icon("plus"), t("Add an application")),
-      linkButton()),
+      linkButton(),
+      h("button", { class: "btn sm", id: "hunt-ics", title: t("Every interview, test and deadline as an .ics file, opened in your calendar app (Outlook…)"),
+        disabled: !d.applications.some((a) => (a.schedule || []).length || a.deadline), onclick: () => exportIcs({}) }, icon("calendar"), t("Add to my calendar"))),
     dbView({ table: "apps", props: appProps(), rows: shown, rowId: (a) => a.id, open: (a) => openHunt("app", a.id), defaults: APP_VIEWS(), repaint: paintHunt,
+      dated: appDated,
       empty: !d.applications.length
         ? h("div", null, h("div", { class: "t" }, t("No applications yet")),
           h("p", null, t("Add one here, or a company with the roles you apply for on its own site (网申).")))
@@ -300,7 +419,7 @@ function resumeButton(a) {
     onclick: () => previewSubset(id) }, icon("file"), t("Resume"));
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dbvYmd(new Date());
 
 // a company's logo (downloaded into the data folder by Claude's fill), or its first letter
 // the company's real logo, or nothing: never a made-up stand-in. `slot` keeps an empty space (table rows line up).
@@ -826,9 +945,8 @@ function appPage(v) {
         a.url && { label: t("Open the role's page"), icon: "external", onClick: () => openInBrowser(a.url) },
         a.co_app && { label: t("Its evaluation in {name}", { name: jobsTool().name }), icon: "bolt", onClick: () => openPosting(String(a.co_app)) },
         { label: t("Delete this application"), icon: "trash", danger: true, onClick: () => deleteApp(a) }], { align: "end" }) }, icon("more"))),
+    bookedCard(a),
     card(t("Progress"), a.applied ? t("applied {date}", { date: a.applied }) : t("not applied yet"), [
-      h("div", { class: "grid2" }, hfield(t("Next step"), a.next, save("next"), { placeholder: t("e.g. 等二面通知") }),
-        hfield(t("By"), a.due, save("due"), { type: "date" })),
       h("div", { class: "field" }, h("label", { for: "app-note-new" }, t("Add to the timeline")), note,
         h("div", { class: "row" }, when, h("span", { class: "spacer" }), h("button", { class: "btn sm primary", id: "app-note-add", onclick: () => addAppNote(a, note.value, when.value) }, icon("plus"), t("Add")))),
       timeline(v.events, [a]),

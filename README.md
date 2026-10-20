@@ -72,7 +72,8 @@ with the C# compiler that ships with Windows.
     replace career-ops later without changing the window.
 - **Applying (Ctrl+3)**: Resume Studio's own job-hunt tracker, in three tables:
   - **Progress**: every application (company and role), how it goes in (the company's own site, a platform, a
-    referral), its status, the subset version it got, the latest event and the next step. Each has a timeline.
+    referral), its status, the subset version it got, the latest event and what is booked (interviews,
+    tests), shown on a calendar and a Gantt chart and exported as .ics. Each has a timeline.
   - **Companies**: logo, industry, strength and open roles. Add one by its name or paste a posting's link:
     Claude fills in every field (with a source for each), finds its careers sites and logo. **Scan all** reads
     every company's sites for open roles (career-ops' providers for Moka, Feishu, Tencent, Greenhouse, Lever…;

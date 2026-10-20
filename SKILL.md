@@ -282,7 +282,7 @@ programs and work rights).
 ## The job-hunt tracker (the Applying workspace, Ctrl+3)
 
 Resume Studio's own tracker (design and the user's vision: `docs/JOB_HUNT.md`). Three tables under tabs:
-**applications** (one per company + role, with its status, how it goes in, what was sent and the next step),
+**applications** (one per company + role, with its status, how it goes in, what was sent and what is booked: tests, 一面, 二面…),
 **companies** (logo, industry, strength, its open roles and the user's applications; on its page its careers
 sites, the subset it is filled from and the About) and **platforms** (the online profiles below). The data lives
 in `.studio/hunt/` (`companies.json`, `applications.json`, `postings.json`, `scans.json`, `logos/`, and
@@ -296,6 +296,8 @@ python scripts/hunt.py add-company 星河科技 --site https://careers.xinghe.ex
 python scripts/hunt.py add-role 星河科技 服务端研发工程师      # --channel site|platform|referral|other
 python scripts/hunt.py status 星河科技/服务端 interview --note "一面 周三 14:00"
 python scripts/hunt.py note 星河科技/服务端 "二面约在下周二"
+python scripts/hunt.py book 星河科技/服务端 二面 --at "2026-10-28 14:00"   # a round with its time: on the calendar
+python scripts/hunt.py ics                                # every round and deadline as an .ics for the user's calendar
 python scripts/hunt.py fill 星河科技 --stdin <<'JSON' ... JSON    # research: every field at once, each with a source
 python scripts/hunt.py sent 星河科技                         # the user submitted the sign-up on its site
 python scripts/hunt.py scan [星河科技]                        # read the companies' sites for open postings

@@ -67,8 +67,58 @@ def test_statuses_take_the_users_words_and_land_in_the_ledger(hunt):
                                                               ("status", "applied", "interview"), ("note", "", "")]
     assert evs[0]["at"].startswith("2026-10-10") and evs[2]["note"] == "一面 周三 14:00\n问了 Redis"   # lines survive; a tab never splits a cell
     with pytest.raises(ValueError, match="2026-10-25"):
-        hunt.update_application(a["id"], {"due": "next tuesday"})
-    assert hunt.update_application(a["id"], {"due": "2026/10/25", "next": "等二面"})["due"] == "2026-10-25"
+        hunt.update_application(a["id"], {"deadline": "next tuesday"})
+
+
+def test_interviews_are_booked_moved_and_dropped(hunt):
+    hunt.add_company({"name": "Xinghe"})
+    a = hunt.add_application("Xinghe", {"role": "后端"})
+    e2 = hunt.add_booked(a["id"], {"title": "二面", "at": "2026/10/28 9:30", "minutes": "45", "where": "腾讯会议 123"})
+    e1 = hunt.add_booked(a["id"], {"title": "一面", "at": "2026-10-25"})
+    assert (e1["id"], e2["id"]) == ("E2", "E1") and e2["at"] == "2026-10-28 09:30" and e2["minutes"] == 45
+    assert [e["title"] for e in hunt.application(a["id"])["schedule"]] == ["一面", "二面"]   # by date
+    with pytest.raises(ValueError):
+        hunt.add_booked(a["id"], {"title": "三面", "at": "next week"})
+    with pytest.raises(ValueError):
+        hunt.add_booked(a["id"], {"title": "", "at": "2026-10-30"})
+    hunt.update_booked(a["id"], "二面", {"at": "2026-10-24 15:00"})                  # by its title too
+    assert [e["title"] for e in hunt.application(a["id"])["schedule"]] == ["二面", "一面"]
+    hunt.delete_booked(a["id"], "E2")
+    assert [e["id"] for e in hunt.application(a["id"])["schedule"]] == ["E1"]
+    with pytest.raises(KeyError):
+        hunt.delete_booked(a["id"], "E9")
+
+
+def test_a_next_step_from_before_becomes_booked_or_a_note(hunt):
+    hunt.add_company({"name": "Xinghe"})
+    a1 = hunt.add_application("Xinghe", {"role": "后端"})
+    a2 = hunt.add_application("Xinghe", {"role": "前端", "note": "学长内推"})
+    data = hunt._apps()
+    for a in data["applications"]:
+        a.update({"next": "等二面", "due": "2026-10-25"} if a["id"] == a1["id"] else {"next": "问 HR", "due": ""})
+    hunt._write("applications.json", data)
+    hunt.migrate()
+    x1, x2 = hunt.application(a1["id"]), hunt.application(a2["id"])
+    assert "next" not in x1 and "due" not in x2
+    assert [(e["title"], e["at"]) for e in x1["schedule"]] == [("等二面", "2026-10-25")]
+    assert x2["note"] == "学长内推\n问 HR"
+
+
+def test_the_calendar_file_imports_anywhere(hunt):
+    from jobhunt.ics import calendar
+    hunt.add_company({"name": "星河科技"})
+    a = hunt.add_application("星河科技", {"role": "服务端, 研发", "url": "https://x.example/1", "deadline": "2026-10-31"})
+    hunt.add_booked(a["id"], {"title": "一面", "at": "2026-10-25 14:00", "minutes": 45, "where": "A座; 3楼", "note": "带简历\n两份"})
+    hunt.add_booked(a["id"], {"title": "笔试", "at": "2026-10-23"})
+    text = calendar(hunt.applications(), {c["id"]: c["name"] for c in hunt.companies()})
+    assert text.startswith("BEGIN:VCALENDAR\r\n") and text.endswith("END:VCALENDAR\r\n") and "\n" not in text.replace("\r\n", "")
+    unfolded = text.replace("\r\n ", "")
+    assert "DTSTART:20261025T140000\r\nDTEND:20261025T144500" in unfolded                       # floating local time
+    assert "DTSTART;VALUE=DATE:20261023\r\nDTEND;VALUE=DATE:20261024" in unfolded               # a day, no time
+    assert "SUMMARY:一面 · 星河科技 · 服务端\\, 研发" in unfolded and "LOCATION:A座\\; 3楼" in unfolded
+    assert "DESCRIPTION:带简历\\n两份\\nhttps://x.example/1" in unfolded
+    assert "UID:A1-E1@resume-studio" in unfolded and "UID:A1-deadline@resume-studio" in unfolded
+    assert all(len(line.encode("utf-8")) <= 75 for line in text.split("\r\n"))
 
 
 def test_the_old_sign_ups_move_in_once(tmp_path, data_file):
@@ -117,10 +167,10 @@ def test_claude_works_the_tracker_from_its_command(live, data_file):
     assert "A2    星河科技 / 算法工程师  [saved]  (its own site, choice 1)" in out
     code, out = cli(data_file, "status", "Xinghe/服务端", "一面", "--note", "一面 周三 14:00")
     assert code == 0 and "[interview]" in out and "saved → interview: 一面 周三 14:00  [chat]" in out
-    code, out = cli(data_file, "next", "Xinghe/服务端", "等二面通知", "--due", "2026-10-25")
-    assert "next: 等二面通知 (due 2026-10-25)" in out
+    code, out = cli(data_file, "book", "Xinghe/服务端", "二面", "--at", "2030-10-25 14:00", "--where", "腾讯会议")
+    assert code == 0 and "E1   2030-10-25 14:00  二面 @ 腾讯会议" in out
     code, out = cli(data_file, "list", "--status", "interview")
-    assert out.strip().splitlines() == ["A1    星河科技 / 服务端研发工程师  [interview]  (its own site, choice 2)  next: 等二面通知 (due 2026-10-25)"]
+    assert out.strip().splitlines() == ["A1    星河科技 / 服务端研发工程师  [interview]  (its own site, choice 2)  next: 二面 2030-10-25 14:00"]
     code, out = cli(data_file, "status", "Xinghe/服务端", "maybe")
     assert code != 0 and out.startswith("error:")
     about = {"summary": "电商平台", "points": [{"topic": "业务", "text": "星河科技与 Nebula", "sources": ["https://example.com/r"]}]}
@@ -157,6 +207,25 @@ def test_a_roles_referral_code_has_its_own_field(live, data_file):
     assert live.req("GET", "/api/hunt/apps/A1")[1]["application"]["referral"] == "NTA8X2"
     assert "referral code" not in cli(data_file, "add-role", "星河科技", "算法")[1]   # none got: no referral
     assert live.req("PUT", "/api/hunt/apps/A1", {"referral": ""})[1]["application"]["referral"] == ""
+
+
+def test_booked_from_the_window_and_from_claude_end_in_one_calendar_file(live, data_file):
+    cli(data_file, "add-company", "星河科技")
+    cli(data_file, "add-role", "星河科技", "服务端")
+    code, out = cli(data_file, "book", "星河科技/服务端", "一面", "--at", "2026-10-25 14:00", "--minutes", "45")
+    assert code == 0 and "E1   2026-10-25 14:00  一面 (45 min)" in out
+    v = live.req("POST", "/api/hunt/apps/A1/schedule", {"title": "二面", "at": "2026-10-28"})[1]
+    assert [e["title"] for e in v["application"]["schedule"]] == ["一面", "二面"]
+    v = live.req("PUT", "/api/hunt/apps/A1/schedule/E2", {"at": "2026-10-29 10:00"})[1]
+    assert v["application"]["schedule"][1]["at"] == "2026-10-29 10:00"
+    assert "E1   2026-10-25 14:00  一面" in cli(data_file, "rebook", "星河科技/服务端", "一面", "--where", "A座")[1]
+    code, out = cli(data_file, "ics")
+    path = Path(out.split("written: ")[1].split(" (")[0])
+    assert code == 0 and path.name == "applying.ics" and path.read_text(encoding="utf-8").count("BEGIN:VEVENT") == 2
+    r = live.req("POST", "/api/hunt/ics", {"app": "A1", "event": "E2"})[1]
+    assert Path(r["path"]).name == "applying-A1-E2.ics" and "二面" in Path(r["path"]).read_text(encoding="utf-8")
+    assert live.req("DELETE", "/api/hunt/apps/A1/schedule/E1")[1]["application"]["schedule"][0]["id"] == "E2"
+    assert cli(data_file, "unbook", "星河科技/服务端", "E1")[0] != 0   # gone already
 
 
 def test_the_sign_up_goes_out_with_a_kept_version(live, data_file):

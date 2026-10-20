@@ -29,7 +29,7 @@ _JS_TABLES = {
     "jobs.js": ["STATE_NAMES", "DECISIONS", "IMPORTANCE", "VALUE_NAMES", "CHECK_NAMES", "STEP_NAMES", "MODE_NAMES", "WEB_STEPS"],
     "autofill.js": ["OPS", "APPLIED", "SECTION_NAMES", "FIELD_NAMES", "ADD_ONE"],
     "hunt.js": ["HUNT_TABS", "HSTATES", "HCHANNELS", "SITE_KINDS", "BATCH_NAMES"],
-    "dbview.js": ["FILTER_OPS"],
+    "dbview.js": ["FILTER_OPS", "LAYOUT_NAMES", "LAYOUT_AS"],
 }
 _JS_GROUPS = {"jobs.js": ["MODE_GROUPS"]}   # [["Group title", [...]], ...]
 

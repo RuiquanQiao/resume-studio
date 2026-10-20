@@ -6,8 +6,9 @@ Plain files next to the data file, in our own schema, so switching trackers lose
                                      strength, location, size, logo, sources, kept, note, account, subset,
                                      about, created, updated}]}
     .studio/hunt/applications.json  {"next": 5, "applications": [{id: "A1", company: "C1", role, url, channel,
-                                     platform, order, status, applied, deadline, next, due, note, subset,
-                                     sent: [{at, subset, n}], co_app, created, updated}]}
+                                     platform, order, status, applied, deadline, note, subset,
+                                     sent: [{at, subset, n}], schedule: [{id, title, at, minutes, where, note}],
+                                     co_app, created, updated}]}
     .studio/hunt/logos/C1.png       a company's logo, downloaded once (docs/JOB_HUNT.md, 2026-10-18)
 
 A company fills itself: Claude researches it and sends every field at once (`fill`), each with its source.
@@ -23,6 +24,11 @@ An application's `channel` is how it goes in: "site" (the company's own careers 
 one profile there, several roles in order of preference, `order` 1, 2, …), "platform" (`platform` names
 the Autofill site: LinkedIn, BOSS直聘…), "referral" or "other". `referral` is the 内推码 the user got for
 it, entered on the sign-up: empty means none.
+
+An application's `schedule` holds what is booked for it (docs/JOB_HUNT.md, 2026-10-21): a test, 一面, 二面,
+HR 面…, each with its date and time. The window shows them on a calendar and a Gantt chart, and
+exports them as an .ics file for the user's own calendar (jobhunt/ics.py). Unlike the ledger, they
+are edited and deleted freely: a rescheduled interview moves.
 """
 from __future__ import annotations
 
@@ -92,6 +98,15 @@ def _date(v: Any) -> str:
     y, mo, d, hh, mm = m.groups()
     out = f"{int(y):04d}-{int(mo):02d}-{int(d):02d}"
     return out + (f" {int(hh):02d}:{mm}" if hh else "")
+
+
+def _minutes(v: Any) -> int:
+    """How long something booked takes, in minutes (0: not said)."""
+    try:
+        n = int(float(str(v or 0).strip() or 0))
+    except ValueError:
+        raise ValueError(t("“{value}” isn't a number of minutes", value=_text(v, 20)))
+    return max(0, min(n, 24 * 60))
 
 
 def _now() -> str:
@@ -391,18 +406,28 @@ class Hunt:
         return me
 
     def migrate(self) -> None:
-        """Deadlines belong to roles (2026-10-18): a company's deadline moves to its roles that have none."""
+        """Deadlines belong to roles (2026-10-18): a company's deadline moves to its roles that have none.
+        A role's next step and its date (until 2026-10-21) become something booked when they had a date,
+        else a line in its notes."""
         with self.lock:
             cs = self._companies()
             moving = {c["id"]: c.pop("deadline") for c in cs["companies"] if "deadline" in c}
-            if not moving:
-                return
             apps = self._apps()
+            old = [a for a in apps["applications"] if "next" in a or "due" in a]
+            if not moving and not old:
+                return
             for a in apps["applications"]:
                 if moving.get(a["company"]) and not a.get("deadline"):
                     a["deadline"] = moving[a["company"]]
+            for a in old:
+                nxt, due = _text(a.pop("next", "")), str(a.pop("due", "") or "")
+                if nxt and due:
+                    a.setdefault("schedule", []).append({"id": "E1", "title": nxt, "at": due, "minutes": 0, "where": "", "note": ""})
+                elif nxt or due:
+                    a["note"] = ((a.get("note") or "") + "\n" + " ".join(x for x in (nxt, due) if x)).strip()
             self._write("applications.json", apps)
-            self._write("companies.json", cs)
+            if moving:
+                self._write("companies.json", cs)
 
     def delete_company(self, ref: str) -> None:
         """The company and its applications go; the ledger keeps their lines."""
@@ -452,10 +477,6 @@ class Hunt:
             a["note"] = _long(fields["note"], 4000)
         if "jd" in fields:   # the posting's own text, as it was read: kept apart from the user's notes
             a["jd"] = _long(fields["jd"], 20000)
-        if "next" in fields:
-            a["next"] = _text(fields["next"], 200)
-        if "due" in fields:
-            a["due"] = _date(fields["due"])
         if "deadline" in fields:
             a["deadline"] = _date(fields["deadline"])
         if "channel" in fields:
@@ -479,8 +500,8 @@ class Hunt:
                 raise ValueError(t("{company} already has {role}", company=c["name"], role=role))
             status = state_of(fields.get("status") or "saved")
             a = {"id": f"A{data['next']}", "company": c["id"], "role": "", "url": "", "referral": "", "channel": "site", "platform": "",
-                 "order": 0, "status": status, "applied": "", "deadline": "", "next": "", "due": "", "note": "", "jd": "", "subset": "",
-                 "sent": [], "co_app": None, "created": _now(), "updated": _now()}
+                 "order": 0, "status": status, "applied": "", "deadline": "", "note": "", "jd": "", "subset": "",
+                 "sent": [], "schedule": [], "co_app": None, "created": _now(), "updated": _now()}
             self._app_fields(a, {"channel": "site", **fields})
             mine = [x for x in data["applications"] if x["company"] == c["id"]]
             order = fields.get("order")
@@ -570,6 +591,70 @@ class Hunt:
             self._log(aid, "sent", frm=frm, to=a["status"], source=source, note=f"{subset} v{n}" + (f" · {where}" if where else ""))
         self._changed()
         return a
+
+    # ---- what is booked: tests, interviews ------------------------------------------
+    @staticmethod
+    def _booked_fields(e: dict, fields: dict) -> None:
+        if "title" in fields:
+            e["title"] = _text(fields["title"], 60)
+        if "at" in fields:
+            e["at"] = _date(fields["at"])
+        if "minutes" in fields:
+            e["minutes"] = _minutes(fields["minutes"])
+        if "where" in fields:
+            e["where"] = _text(fields["where"], 300)
+        if "note" in fields:
+            e["note"] = _long(fields["note"], 1000)
+        if not e.get("title"):
+            raise ValueError(t("Say what it is first (一面, 笔试…)"))
+        if not e.get("at"):
+            raise ValueError(t("Give it a date"))
+
+    def _booked(self, ref: str, fn: Callable[[dict], Any]) -> dict:
+        with self.lock:
+            aid = self.application(ref)["id"]
+            data = self._apps()
+            a = next(x for x in data["applications"] if x["id"] == aid)
+            a.setdefault("schedule", [])
+            out = fn(a)
+            a["schedule"].sort(key=lambda e: e["at"])
+            a["updated"] = _now()
+            self._write("applications.json", data)
+        self._changed()
+        return out
+
+    def add_booked(self, ref: str, fields: dict) -> dict:
+        """Something booked for this application: a test, 一面, 二面… with its date (and time)."""
+        def add(a: dict) -> dict:
+            n = max((int(e["id"][1:]) for e in a["schedule"] if str(e.get("id", ""))[1:].isdigit()), default=0) + 1
+            e = {"id": f"E{n}", "title": "", "at": "", "minutes": 0, "where": "", "note": ""}
+            self._booked_fields(e, fields)
+            a["schedule"].append(e)
+            return e
+        return self._booked(ref, add)
+
+    def update_booked(self, ref: str, eid: str, fields: dict) -> dict:
+        def edit(a: dict) -> dict:
+            e = self._booked_one(a, eid)
+            self._booked_fields(e, fields)
+            return e
+        return self._booked(ref, edit)
+
+    def delete_booked(self, ref: str, eid: str) -> dict:
+        def drop(a: dict) -> dict:
+            e = self._booked_one(a, eid)
+            a["schedule"].remove(e)
+            return e
+        return self._booked(ref, drop)
+
+    @staticmethod
+    def _booked_one(a: dict, eid: str) -> dict:
+        r = str(eid or "").strip()
+        hit = next((e for e in a["schedule"] if e["id"] == r), None) \
+            or next((e for e in a["schedule"] if _key(e["title"]) == _key(r)), None)
+        if not hit:
+            raise KeyError(t("{role} has nothing booked called “{ref}”", role=a["role"], ref=r))
+        return hit
 
     def link_tracker(self, ref: str, co_app: str) -> None:
         """The row this application has in career-ops' tracker (when it is copied there)."""

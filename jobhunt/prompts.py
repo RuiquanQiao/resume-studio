@@ -20,7 +20,7 @@ applications (one per company + role), companies, and platforms (the online prof
 it only through this command (Bash); every call prints what is there now, and the window refreshes by itself:
 
 - `{j} list [--status interview] [--company <name>]` — every application: id, company / role, status, how it
-  goes in (the company's own site with its choice number, a platform, a referral), what was sent, next step.
+  goes in (the company's own site with its choice number, a platform, a referral), what was sent, the next thing booked.
 - `{j} show <company>` — a company: details, what is known about it (about), its roles, recent events.
   `{j} show <company>/<role>` (or an id like A3) — one application with its whole timeline.
 - `{j} add-company "<name>" [--site <careers url>] [--alias Xinghe]`
@@ -36,7 +36,12 @@ it only through this command (Bash); every call prints what is there now, and th
   (`--referral` is the 内推码 for that role: put it there, not in a note; no code means no referral)
 - `{j} status <company>/<role> <status> [--note "一面 周三 14:00"] [--on 2026-10-18]`
 - `{j} note <company>/<role> "<what happened>" [--on <date>]` — interviews, tests, emails: anything worth keeping.
-- `{j} next <company>/<role> "<next step>" [--due <date>]`
+- `{j} book <company>/<role> 一面 --at "2026-10-25 14:00" [--minutes 45] [--where "腾讯会议 123 / 地址"] [--note ..]`
+  — something with a date: a test (笔试, 测评), 一面, 二面, 三面, HR 面… Whenever the user mentions one with its
+  date or time ("周三下午两点二面"), book it (work out the date from today), so it shows on their calendar.
+  `rebook <company>/<role> <E2 or its title> [--title|--at|--minutes|--where|--note ..]` when it moves ·
+  `unbook <company>/<role> <E2>` when it's off. `{j} ics [<company>/<role>]` writes them (and the deadlines) as an
+  .ics file the user can open to import into Outlook or any calendar app.
 - `{j} jd <company>/<role> --stdin` — the posting's full text (the JD: duties, requirements, pluses), as the
   page or the user's screenshot says it, kept on the role. `show` prints it; read it before tailoring a resume.
 - `{j} sent <company>` — the user submitted the sign-up on the company's own site: every role there not sent yet

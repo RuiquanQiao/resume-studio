@@ -1317,17 +1317,17 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     assert server.req("GET", f"/api/hunt/apps/{a1}")[1]["events"][-1]["to"] == "interview"
     pg.wait_for_selector(f"{row(a1)} td[data-key=status] .s-interview")
     # text, typed over the cell: Enter saves, Esc cancels
-    pg.click(f"{row(a1)} td[data-key=next]")
-    pg.fill(".float .dbv-textbox", "等二面通知")
+    pg.click(f"{row(a1)} td[data-key=referral]")
+    pg.fill(".float .dbv-textbox", "NTA8X2")
     pg.press(".float .dbv-textbox", "Enter")
-    wait_until(lambda: app(a1)["next"] == "等二面通知", msg="next step saved")
-    pg.wait_for_selector(f"{row(a1)} td[data-key=next]:has-text('等二面通知')")
-    pg.click(f"{row(a1)} td[data-key=next]")
+    wait_until(lambda: app(a1)["referral"] == "NTA8X2", msg="referral code saved")
+    pg.wait_for_selector(f"{row(a1)} td[data-key=referral]:has-text('NTA8X2')")
+    pg.click(f"{row(a1)} td[data-key=referral]")
     pg.fill(".float .dbv-textbox", "不要")
     pg.keyboard.press("Escape")
     pg.wait_for_selector(".float", state="detached")
     time.sleep(0.4)
-    assert app(a1)["next"] == "等二面通知"
+    assert app(a1)["referral"] == "NTA8X2"
     # a date
     pg.click(f"{row(a2)} td[data-key=deadline]")
     pg.fill(".float .dbv-date", "2026-11-01")
@@ -1350,8 +1350,8 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.click(".float .dbv-proprow[data-key=last] .btn:not(.drag-handle)")
     pg.keyboard.press("Escape")
     pg.wait_for_selector(".dbv-th[data-key=last]", state="detached")
-    pg.drag_and_drop(".dbv-th[data-key=next]", ".dbv-th[data-key=company]", target_position={"x": 4, "y": 10})
-    wait_until(lambda: pg.locator(".dbv-th").evaluate_all("(xs) => xs.map((x) => x.dataset.key)")[1:3] == ["next", "company"], msg="column moved")
+    pg.drag_and_drop(".dbv-th[data-key=referral]", ".dbv-th[data-key=company]", target_position={"x": 4, "y": 10})
+    wait_until(lambda: pg.locator(".dbv-th").evaluate_all("(xs) => xs.map((x) => x.dataset.key)")[1:3] == ["referral", "company"], msg="column moved")
     before = pg.locator(".dbv-th[data-key=status]").bounding_box()["width"]   # the table fits the pane until a column is sized
     box = pg.locator(".dbv-th[data-key=status] .dbv-resize").bounding_box()
     pg.mouse.move(box["x"] + 3, box["y"] + 10)
@@ -1393,7 +1393,7 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     # a new view, renamed; then deleted
     pg.click(".dbv-addview")
     pg.click(".float .menu-item:has-text('表格')")
-    pg.wait_for_selector(".dbv-tab.on[data-view=v4]")
+    pg.wait_for_selector(".dbv-tab.on[data-view=v6]")
     pg.click(".dbv-tab.on")
     pg.click(".float .menu-item:has-text('改名')")
     pg.fill("#fm-name", "本周截止")
@@ -1406,10 +1406,48 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
         pg.emulate_media(color_scheme=scheme)
         pg.screenshot(path=str(ART / f"hunt-board-{scheme}.png"))
     pg.emulate_media(color_scheme="light")
-    pg.click(".dbv-tab[data-view=v4]")
+    pg.click(".dbv-tab[data-view=v6]")
     pg.click(".dbv-tab.on")
     pg.click(".float .menu-item:has-text('删除这个视图')")
-    pg.wait_for_selector(".dbv-tab[data-view=v4]", state="detached")
+    pg.wait_for_selector(".dbv-tab[data-view=v6]", state="detached")
+    no_native(pg)
+
+    # the calendar: what is booked, on its day; a click opens the role (docs/JOB_HUNT.md, 2026-10-21)
+    day = pg.evaluate("() => dbvYmd(new Date())")
+    server.req("POST", f"/api/hunt/apps/{a1}/schedule", {"title": "一面", "at": day + " 14:00"})
+    server.req("PUT", f"/api/hunt/apps/{a2}", {"deadline": day})
+    pg.click(".dbv-tab[data-view=v4]")
+    pg.wait_for_selector(f".dbv-calday.today[data-day='{day}'] .dbv-item.k-event:has-text('一面')")
+    assert pg.locator(f".dbv-calday[data-day='{day}'] .dbv-item.k-deadline").count() == 1
+    assert pg.locator("#dbv-apps-group").count() == 0                       # no columns or groups on a calendar
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"hunt-calendar-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+    pg.click(".dbv-calbar .btn[aria-label='下个月']")
+    pg.wait_for_selector(f".dbv-calday[data-day='{day}']", state="detached")
+    pg.click(".dbv-calbar .btn:has-text('今天')")
+    pg.click(f".dbv-calday[data-day='{day}'] .dbv-item.k-event")
+    pg.wait_for_selector(".bk-item:has-text('一面')")
+    # on the role's page: a common one picked, a date and time, Add
+    pg.click(".bk-new .bk-chip:has-text('二面')")
+    pg.fill(".bk-new .bk-day", "2030-01-15")
+    pg.fill(".bk-new .bk-time", "09:30")
+    pg.click("#bk-add")
+    wait_until(lambda: [e["title"] for e in app(a1)["schedule"]] == ["一面", "二面"], msg="booked from the page")
+    assert app(a1)["schedule"][1]["at"] == "2030-01-15 09:30"
+    pg.wait_for_selector(".bk-item:has-text('二面')")
+    assert pg.evaluate("() => { const w = document.querySelector('.bk-item').closest('.hunt-wrap'); return w.offsetWidth >= w.parentNode.clientWidth - 2; }")   # the page uses the whole pane
+    pg.screenshot(path=str(ART / "hunt-role-events-light.png"))
+    pg.click(".hunt-back")
+    # the Gantt chart: a bar per role, what is booked on it
+    pg.click(".dbv-tab[data-view=v5]")
+    pg.wait_for_selector(f".dbv-grow[data-id='{a1}'] .dbv-gbar")
+    assert pg.locator(f".dbv-grow[data-id='{a1}'] .dbv-gitem").count() == 2
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"hunt-gantt-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
     no_native(pg)
 
     # the views come back after a reload: they live with the data
@@ -1418,7 +1456,8 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.reload()
     pg.keyboard.press("Control+3")
     pg.wait_for_selector(".dbv-tab.on[data-view=v1]")
-    assert pg.locator(".dbv-th[data-key=last]").count() == 0 and pg.locator(".dbv-tab").count() == 3
+    assert pg.locator(".dbv-th[data-key=last]").count() == 0 and pg.locator(".dbv-tab").count() == 5
+    assert [v["layout"] for v in views()["apps"]["views"]][3:] == ["calendar", "gantt"]   # kept as they are, not turned into tables
 
     # the companies table: a field typed in its cell is the user's (Claude's fills keep it)
     pg.click(".hunt-tab[data-tab=companies]")

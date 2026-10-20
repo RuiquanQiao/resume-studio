@@ -211,12 +211,38 @@ Built the same day (`web/dbview.js`, `jobhunt/views.py`). Choices made on the wa
   turns the view's widths into its own (the others keep what they had on screen), and from then on the table
   may run wider than the pane, as in Notion. A board always runs sideways (a column per status).
 - *Built:* the **title** cell (the role, the company, the platform) opens the row's page; read-only cells open it
-  too; the others edit in place. "By" (the next step's date) is hidden by default and shown under the next step.
+  too; the others edit in place.
 - *Built:* on a **board card**, a date says which date it is (no heading above it there).
 - *Built:* only one floating panel is open at a time, so a choice inside a panel (a filter's condition, a sort's
   property) unfolds within the panel; there is still no native `<select>` anywhere.
 - Not built (Notion has them; not asked for): calculations under a column, ticking several rows to edit them
   together, conditional colour, side peek, the user's own properties, AND/OR filter groups.
+
+## 2026-10-21: what is booked, on a calendar and a Gantt chart
+
+The request: drop the next step and its date; instead, a role keeps **events**, added with a "+ Add" like the
+timeline's, because interviews come in rounds (一面, 二面, 三面…) and each has its time. The usual rounds are offered
+as choices. Progress gets a **Gantt** view and a **calendar** view, and the events can be exported (.ics) into the
+user's own calendar app, such as Outlook. In the same pass: every page in Applying uses the whole width of its pane
+(a role's page had been capped narrower than the table).
+
+- **Data**: `schedule` on the application: `[{id: "E1", title, at: "YYYY-MM-DD[ HH:MM]", minutes, where, note}]`,
+  kept in date order. Unlike the ledger it is edited and deleted freely (an interview that moves just moves).
+  The old `next` / `due` fields move in once: with a date they become one of these, without one a line in the notes.
+- **The role's page**: an Events card on top. Chips for the usual ones (笔试, 测评, 一面, 二面, 三面, HR 面, 终面, then
+  any title the user has used), a date and an optional time, Add. Each event edits in place (how long, where,
+  notes), can be deleted, and has its own "Add to my calendar".
+- **The table**: an Events column with the next one coming (and how many more).
+- **Calendar** (a view layout): a month, Monday first, with the events and the deadlines on their days; a click
+  opens the role. **Gantt** (a view layout): a bar per role from when it went in (or was added) to today, or to
+  its last event once it is over, with its events and deadline on it; it opens with today in sight. Both keep
+  the view's filters; neither has columns or groups. Any table whose rows have dates can have them (`o.dated`).
+- **.ics** (`jobhunt/ics.py`): every event and deadline, one role's, or one event, written to the export folder
+  and opened, which on Windows hands it to the calendar app's import. Times are floating (no time zone): a 14:00
+  interview stays at 14:00. Each entry keeps its UID, so importing again updates instead of duplicating.
+  A subscribed live feed was not built: Outlook only subscribes to addresses it can reach, not this computer's.
+- **Claude**: `hunt.py book / rebook / unbook / ics`; told to book a round whenever the user mentions one with a
+  date or time.
 
 ## Why the button said "Open LinkedIn"
 
@@ -261,7 +287,7 @@ trackers later loses nothing.
   - Its site: a `sites` entry of kind `company`, with the subset it is filled from.
 - **`applications.json`**: one per company + role.
   - Role, link, channel (the company's site, a platform, a referral), 志愿 order within the company.
-  - Status (below), applied date, next step and its due date.
+  - Status (below), applied date, its 内推码 (`referral`, empty: none), what is booked (`schedule`, below).
   - **Sent**: subset id + version number, kept when it went out (exists today, `jobs/signups.py`).
 - **`events.tsv`**: append-only, like career-ops' `status-log.tsv`: date, application, from, to, source
   (window / chat / import), note. Interviews, tests, emails and notes are events too. The application's
@@ -287,7 +313,7 @@ hunt.py add-company "星河科技" --site https://careers.xinghe.example/campus
 hunt.py add-role Xinghe "服务端研发工程师" --url ... [--order 2]
 hunt.py status Xinghe/服务端研发工程师 interview --note "一面 周三 14:00"
 hunt.py event  Xinghe/服务端研发工程师 "笔试已交"
-hunt.py next   Xinghe/服务端研发工程师 "等二面通知" --due 2026-10-25
+hunt.py book   Xinghe/服务端研发工程师 二面 --at "2026-10-25 14:00"
 hunt.py about  Xinghe --stdin   # Claude's research, as JSON with a source and date for each claim
 hunt.py sent   Xinghe           # mark the sign-up sent: keeps the subset version, pins it on every role
 ```
@@ -301,9 +327,9 @@ what it found (with sources) to the company's About. Claude asks before anything
 The Autofill workspace (Ctrl+3) becomes **求职 / Job hunt**. A tab bar switches tables; each table
 sorts, filters and searches; a row opens its page on the right.
 
-1. **投递 Applications**: company, role, channel, status, subset·vN sent, last event, next step and due
+1. **投递 Applications**: company, role, channel, status, subset·vN sent, last event, the next thing booked
    date. Grouped by company with the 志愿 order shown, or flat. Filters by status. A row's page: the
-   timeline of events, the version that went out (preview it as it was), next step.
+   timeline of events, the version that went out (preview it as it was), what is booked.
 2. **公司 Companies**: name, industry, roles and best status, deadline, sign-in state, the profile copy's
    state ("in step" / "3 changes to push"). A company's page:
    - **About**: Claude's summary with sources and when it was read; "Refresh" asks Claude again.
