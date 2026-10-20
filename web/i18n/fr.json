@@ -559,6 +559,8 @@
   "Sa {n} candidature part aussi. Les versions envoyées restent avec leurs sous-ensembles.",
   "Ses {n} candidatures partent aussi. Les versions envoyées restent avec leurs sous-ensembles."
  ],
+ "JD": "Description",
+ "Job description": "Description du poste",
  "Job postings: {name}": "Offres d'emploi : {name}",
  "Job search": "Recherche d’emploi",
  "Job search background, constraints, preferences": "Contexte de recherche d'emploi, contraintes, préférences",
@@ -807,6 +809,7 @@
  "Paste a job posting: its link, or the whole text": "Collez une offre d'emploi : son lien ou le texte complet",
  "Paste a posting's link: Claude reads it and fills in the company and the role": "Collez le lien d’une offre : Claude la lit et remplit l’entreprise et le poste",
  "Paste the posting's link or text first": "Collez d'abord le lien ou le texte de l'offre",
+ "Paste the posting's text here: duties, requirements, pluses. Or send Claude its link or a screenshot.": "Collez ici le texte de l'offre : missions, exigences, atouts. Ou envoyez son lien ou une capture à Claude.",
  "Permission mode": "Mode d'autorisation",
  "Permission mode: {mode}": "Mode d'autorisation : {mode}",
  "Permission mode: {mode} (following Claude Code's setting)": "Mode d'autorisation : {mode} (selon le réglage de Claude Code)",
@@ -1311,6 +1314,10 @@
  "Went back to the previous version": "Retour à la version précédente",
  "Went back to v{n}": "Retour à v{n}",
  "Went out: {what}": "Envoyée : {what}",
+ "Went to {n} role": [
+  "Envoyée à {n} poste",
+  "Envoyée à {n} postes"
+ ],
  "What changed since v{n}": "Ce qui a changé depuis v{n}",
  "What each company is and how it is doing, your notes, and its own careers site: one profile there, several roles in your order of preference.": "Ce qu'est chaque entreprise et comment elle se porte, vos notes, et son site carrières : un profil là-bas, plusieurs postes par ordre de préférence.",
  "What happened": "Ce qui s'est passé",
@@ -1479,6 +1486,7 @@
  "not found": "introuvable",
  "not in this copy": "pas dans cette copie",
  "not in “{name}”": "pas dans « {name} »",
+ "not kept yet": "pas encore gardée",
  "not looked into yet": "pas encore étudiée",
  "not read yet": "pas encore lu",
  "not scanned yet": "pas encore analysé",

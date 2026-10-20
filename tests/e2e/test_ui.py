@@ -1263,12 +1263,27 @@ def test_a_company_with_several_roles_goes_out_with_a_pinned_version(page, serve
     mine = next(x for x in a if x["role"] == "算法工程师")
     assert mine["status"] == "interview" and mine["sent"][0]["n"] == 1
     assert server.req("GET", f"/api/hunt/apps/{mine['id']}")[1]["events"][-1]["kind"] == "status"   # the dated note sorts before
+    # the posting's text has its own place, apart from the notes
+    jd = "算法工程师｜北京\n\n任职要求：\n· 熟悉 PyTorch"
+    pg.fill("#app-jd", jd)
+    pg.click(".hunt-wrap .ed-head h1")                                         # leaving the box saves it
+    pg.wait_for_function("(id) => fetch('/api/hunt/apps/' + id).then((r) => r.json()).then((v) => v.application.jd.includes('PyTorch'))", arg=mine["id"])
+    assert server.req("GET", f"/api/hunt/apps/{mine['id']}")[1]["application"]["jd"] == jd
     pg.screenshot(path=str(ART / "hunt-application-light.png"), full_page=True)
     no_native(pg)
     # what went out, as it was
     pg.click(".su-sent-row .btn")
     pg.wait_for_selector("#viewing:not(.hidden)")
     pg.wait_for_selector("#pages img[src*='/versions/1/page/1']")
+    # and from the version's side: the roles v1 went to, each one a way back to its application
+    pg.wait_for_selector(".vrow[data-n='1'] .vsent .role-chip >> nth=1")
+    chips = pg.locator(".vrow[data-n='1'] .vsent .role-chip").all_inner_texts()
+    assert sorted(chips) == ["星河科技 / 服务端研发工程师", "星河科技 / 算法工程师"]
+    assert "2" in pg.inner_text(".vrow[data-n='1'] .vsent-label")
+    pg.screenshot(path=str(ART / "versions-sent-light.png"))
+    pg.click(".vrow[data-n='1'] .vsent .role-chip:has-text('算法工程师')")
+    pg.wait_for_selector("body[data-ws=fill] #app-jd")
+    assert pg.input_value("#app-jd") == jd
     # a role's Resume button opens the subset it goes out with
     pg.keyboard.press("Control+3")
     pg.click(".hunt-tab[data-tab=apps]")

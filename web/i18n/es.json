@@ -559,6 +559,8 @@
   "Su {n} candidatura también se va. Las versiones enviadas se quedan con sus subconjuntos.",
   "Sus {n} candidaturas también se van. Las versiones enviadas se quedan con sus subconjuntos."
  ],
+ "JD": "Descripción",
+ "Job description": "Descripción del puesto",
  "Job postings: {name}": "Ofertas de empleo: {name}",
  "Job search": "Búsqueda de empleo",
  "Job search background, constraints, preferences": "Contexto de la búsqueda de empleo, limitaciones, preferencias",
@@ -807,6 +809,7 @@
  "Paste a job posting: its link, or the whole text": "Pega una oferta de empleo: su enlace o el texto completo",
  "Paste a posting's link: Claude reads it and fills in the company and the role": "Pega el enlace de una oferta: Claude la lee y rellena la empresa y el puesto",
  "Paste the posting's link or text first": "Pega antes el enlace o el texto de la oferta",
+ "Paste the posting's text here: duties, requirements, pluses. Or send Claude its link or a screenshot.": "Pega aquí el texto de la oferta: funciones, requisitos, valorables. O envía a Claude el enlace o una captura.",
  "Permission mode": "Modo de permisos",
  "Permission mode: {mode}": "Modo de permisos: {mode}",
  "Permission mode: {mode} (following Claude Code's setting)": "Modo de permisos: {mode} (según la configuración de Claude Code)",
@@ -1311,6 +1314,10 @@
  "Went back to the previous version": "Se volvió a la versión anterior",
  "Went back to v{n}": "De vuelta a v{n}",
  "Went out: {what}": "Enviada: {what}",
+ "Went to {n} role": [
+  "Enviada a {n} puesto",
+  "Enviada a {n} puestos"
+ ],
  "What changed since v{n}": "Qué cambió desde v{n}",
  "What each company is and how it is doing, your notes, and its own careers site: one profile there, several roles in your order of preference.": "Qué es cada empresa y cómo le va, tus notas, y su web de empleo: un perfil allí, varios puestos en tu orden de preferencia.",
  "What happened": "Qué pasó",
@@ -1479,6 +1486,7 @@
  "not found": "no encontrado",
  "not in this copy": "no está en esta copia",
  "not in “{name}”": "no está en «{name}»",
+ "not kept yet": "aún no guardada",
  "not looked into yet": "aún sin investigar",
  "not read yet": "aún sin leer",
  "not scanned yet": "aún sin escanear",

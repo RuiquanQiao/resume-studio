@@ -559,6 +559,8 @@
   "Seine {n} Bewerbung geht mit. Die gesendeten Versionen bleiben bei ihren Teilmengen.",
   "Seine {n} Bewerbungen gehen mit. Die gesendeten Versionen bleiben bei ihren Teilmengen."
  ],
+ "JD": "Stellenbeschreibung",
+ "Job description": "Stellenbeschreibung",
  "Job postings: {name}": "Stellenanzeigen: {name}",
  "Job search": "Jobsuche",
  "Job search background, constraints, preferences": "Hintergrund der Jobsuche, Einschränkungen, Vorlieben",
@@ -807,6 +809,7 @@
  "Paste a job posting: its link, or the whole text": "Stellenanzeige einfügen: Link oder ganzer Text",
  "Paste a posting's link: Claude reads it and fills in the company and the role": "Füge den Link einer Stelle ein: Claude liest sie und füllt Firma und Stelle aus",
  "Paste the posting's link or text first": "Fügen Sie zuerst Link oder Text der Anzeige ein",
+ "Paste the posting's text here: duties, requirements, pluses. Or send Claude its link or a screenshot.": "Füge hier den Text der Stelle ein: Aufgaben, Anforderungen, Pluspunkte. Oder schick Claude den Link oder einen Screenshot.",
  "Permission mode": "Berechtigungsmodus",
  "Permission mode: {mode}": "Berechtigungsmodus: {mode}",
  "Permission mode: {mode} (following Claude Code's setting)": "Berechtigungsmodus: {mode} (gemäß Einstellung von Claude Code)",
@@ -1311,6 +1314,10 @@
  "Went back to the previous version": "Zur vorherigen Version zurückgekehrt",
  "Went back to v{n}": "Zurück zu v{n}",
  "Went out: {what}": "Raus: {what}",
+ "Went to {n} role": [
+  "Ging an {n} Stelle",
+  "Ging an {n} Stellen"
+ ],
  "What changed since v{n}": "Was sich seit v{n} geändert hat",
  "What each company is and how it is doing, your notes, and its own careers site: one profile there, several roles in your order of preference.": "Was jedes Unternehmen ist und wie es ihm geht, deine Notizen und seine Karriereseite: ein Profil dort, mehrere Stellen in deiner Wunschreihenfolge.",
  "What happened": "Was passiert ist",
@@ -1479,6 +1486,7 @@
  "not found": "nicht gefunden",
  "not in this copy": "nicht in dieser Kopie",
  "not in “{name}”": "nicht in „{name}“",
+ "not kept yet": "noch nicht gespeichert",
  "not looked into yet": "noch nicht angesehen",
  "not read yet": "noch nicht gelesen",
  "not scanned yet": "noch nicht gescannt",

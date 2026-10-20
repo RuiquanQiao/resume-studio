@@ -41,6 +41,25 @@ function sentNote(note) {
   return m ? sentText({ subset: m[1], n: m[2] }) + m[3] : note || "";
 }
 
+// the applications that got version n of a subset, oldest send first (null while the tracker hasn't loaded)
+function sentWith(subsetId, n) {
+  if (!H.data) { if (!H.loading) loadHunt({ quiet: true }).then(() => { if (ui.sel.kind === "versions") paintEditor({ keepScroll: true }); }); return null; }
+  const out = [];
+  for (const a of H.data.applications) {
+    const s = (a.sent || []).find((x) => x.subset === subsetId && Number(x.n) === Number(n));
+    if (s) out.push({ a, at: s.at });
+  }
+  return out.sort((x, y) => (x.at || "").localeCompare(y.at || ""));
+}
+
+// one role a version went to, opened in Applying
+function sentRoleChip(a) {
+  const c = huntCompany(a.company) || {};
+  return h("button", { type: "button", class: "role-chip s-" + a.status, title: huntState(a.status),
+    onclick: async () => { if (W.ws !== "fill") setWorkspace("fill"); await openHunt("app", a.id); } },
+  h("span", { class: "rc-dot" }), h("span", { class: "rc-name" }, (c.name ? c.name + " / " : "") + a.role));
+}
+
 function sentText(s) {
   if (!s) return "";
   const v = subsets().find((x) => x.id === s.subset);
@@ -239,6 +258,7 @@ function appProps() {
     { key: "due", label: t("By"), type: "date", width: 120, hidden: true, get: (a) => (a.due || "").slice(0, 10),
       render: (a) => a.due ? h("span", { class: "c-date" + (late(a.due) ? " late" : "") }, a.due) : "", set: (a, v) => cellApp(a, { due: v }) },
     { key: "note", label: t("Notes"), type: "text", width: 220, hidden: true, get: (a) => a.note || "", set: (a, v) => cellApp(a, { note: v }) },
+    { key: "jd", label: t("JD"), type: "text", width: 260, hidden: true, get: (a) => a.jd || "", set: (a, v) => cellApp(a, { jd: v }) },
     { key: "url", label: t("Link"), type: "text", width: 200, hidden: true, get: (a) => a.url || "", set: (a, v) => cellApp(a, { url: v }) },
   ];
 }
@@ -253,7 +273,7 @@ function appsTable() {
   const d = H.data;
   const names = Object.fromEntries(d.companies.map((c) => [c.id, c.name]));
   const all = [...d.applications].sort((a, b) => (names[a.company] || "").localeCompare(names[b.company] || "") || (a.order || 0) - (b.order || 0));
-  const shown = all.filter((a) => matches(names[a.company], a.role, a.note, a.next));
+  const shown = all.filter((a) => matches(names[a.company], a.role, a.note, a.jd, a.next));
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Your applications")),
       h("p", null, t("Every role you apply for, wherever it goes in. Tell Claude on the left what happened (“Xinghe 一面过了”), or change it here."))),
@@ -816,6 +836,11 @@ function appPage(v) {
       h("div", { class: "field" }, h("label", null, t("How it goes in")), h("div", { class: "row wrap" }, channel, plat && plat.el,
         a.channel === "site" && h("span", { class: "muted" }, t("choice {n} on {company}'s site", { n: a.order, company: c.name })))),
       hfield(t("Notes"), a.note, save("note"), { multiline: true }),
+    ]),
+    card(t("Job description"), a.jd ? "" : t("not kept yet"), [
+      h("div", { class: "field" }, h("textarea", { id: "app-jd", rows: 6, value: a.jd || "", spellcheck: "false", "aria-label": t("Job description"),
+        placeholder: t("Paste the posting's text here: duties, requirements, pluses. Or send Claude its link or a screenshot."),
+        onchange: (e) => { const val = e.target.value.trim(); if (val !== (a.jd || "")) { a.jd = val; save("jd")(val); } } }, a.jd || "")),
     ]),
     card(t("Resume sent"), (a.sent || []).length ? t("{n} time", { n: a.sent.length }, "{n} times") : t("not yet"), [
       a.channel !== "site" && h("div", { class: "field" }, h("label", null, t("Goes out with")), h("div", { class: "su-subset" }, pick.el)),

@@ -1091,13 +1091,17 @@ mark.w-add { background: color-mix(in srgb, var(--ok) 30%, transparent); }
 .vrow { border-radius: var(--r-sm); }
 .vrow + .vrow { border-top: 1px solid var(--line); }
 .vrow.open, .vrow.viewing { background: var(--panel-2); }
-.vline { display: flex; align-items: center; gap: 10px; padding: 8px 6px; }
+/* a narrow pane puts the row's buttons under its text rather than squeezing the text away */
+.vline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 6px; }
 .vtoggle { display: inline-flex; align-items: center; gap: 4px; flex: none; border: 0; background: none; padding: 2px 4px; border-radius: var(--r-sm); color: var(--text-3); cursor: pointer; font: inherit; }
 .vtoggle:hover { background: var(--hover); color: var(--text); }
 .vnum { min-width: 28px; font: 600 12.5px var(--mono); color: var(--accent); }
-.vmain { flex: 1; min-width: 0; }
+.vmain { flex: 1 1 140px; min-width: 0; }
 .vtext { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vmeta { font-size: 11.5px; color: var(--text-3); margin-top: 1px; }
+/* the roles a version went to: what each application got, read from the version's side */
+.vsent { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 0 8px 10px 38px; }
+.vsent-label { font-size: 11.5px; color: var(--text-3); margin-right: 2px; }
 .vrow.viewing .btn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .vdiff { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
 .vrow .vdiff, .vrow .vdiff-empty { margin: 0; padding: 4px 8px 12px 38px; }
@@ -1107,9 +1111,10 @@ mark.w-add { background: color-mix(in srgb, var(--ok) 30%, transparent); }
 .chip.vd-removed { background: var(--bad-soft); color: var(--bad); }
 .chip.vd-changed { background: var(--accent-soft); color: var(--accent); }
 .vdiff-empty { margin: 10px 0 0; font-size: 12.5px; }
-.viewing { flex: none; display: flex; align-items: center; gap: 10px; padding: 7px 12px; background: var(--accent-soft); color: var(--text); border-bottom: 1px solid var(--line); font-size: 12.5px; }
-.viewing svg.i { color: var(--accent); }
-.viewing .vw-text { flex: 1; min-width: 0; }
+/* the bar above the preview, not a version row that is being previewed (.vrow.viewing) */
+#viewing { flex: none; display: flex; align-items: center; gap: 10px; padding: 7px 12px; background: var(--accent-soft); color: var(--text); border-bottom: 1px solid var(--line); font-size: 12.5px; }
+#viewing svg.i { color: var(--accent); }
+#viewing .vw-text { flex: 1; min-width: 0; }
 .modal-lines p { margin: 0 0 8px; line-height: 1.55; }
 
 

@@ -11,6 +11,7 @@
     python scripts/hunt.py edit-role 星河科技/服务端 [--role ...] [--url ...] [--order 1] [--note ...] [--deadline ...]
     python scripts/hunt.py status 星河科技/服务端 interview --note "一面 周三 14:00" [--on 2026-10-18]
     python scripts/hunt.py note 星河科技/服务端 "笔试已交" [--on 2026-10-18]
+    python scripts/hunt.py jd 星河科技/服务端 --stdin <<'JD'   # the posting's full text (JD), kept on the role
     python scripts/hunt.py next 星河科技/服务端 "等二面通知" --due 2026-10-25
     python scripts/hunt.py about 星河科技 --stdin <<'JSON'  {"summary": "...", "points": [{"topic": "...", "text": "...",
                                                        "sources": ["https://..."]}], "read_at": "2026-10-16"}  JSON
@@ -168,6 +169,10 @@ def show_app(v: dict) -> None:
     print(app_line(a, c["name"]))
     if a.get("note"):
         print("  notes: " + a["note"].replace("\n", "\n         "))
+    if a.get("jd"):
+        print("  JD:\n    " + a["jd"].replace("\n", "\n    "))
+    else:
+        print("  JD: not kept yet (`jd` saves the posting's text)")
     for s in a.get("sent") or []:
         print(f"  sent {s['at'][:16].replace('T', ' ')}: {s['subset']} v{s['n']}")
     print("  events:" if v["events"] else "  events: none")
@@ -200,6 +205,7 @@ def main() -> int:
     p.add_argument("--on", default="")
     p = sub.add_parser("note"); p.add_argument("ref"); p.add_argument("text"); p.add_argument("--on", default="")
     p = sub.add_parser("next"); p.add_argument("ref"); p.add_argument("text"); p.add_argument("--due", default="")
+    p = sub.add_parser("jd"); p.add_argument("ref"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("about"); p.add_argument("ref"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("fill", description=FILL_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("ref"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
@@ -264,6 +270,11 @@ def main() -> int:
         r = call(url, "note", {"ref": args.ref, "note": args.text, "on": args.on})
     elif c == "next":
         r = call(url, "next", {"ref": args.ref, "next": args.text, "due": args.due})
+    elif c == "jd":
+        raw = sys.stdin.buffer.read().decode("utf-8") if args.stdin else Path(args.file).read_text(encoding="utf-8") if args.file else ""
+        if not raw.strip():
+            sys.exit("error: give the JD's text with --stdin or --file")
+        r = call(url, "edit-role", {"ref": args.ref, "jd": raw})
     elif c in ("about", "fill"):
         raw = sys.stdin.buffer.read().decode("utf-8") if args.stdin else Path(args.file).read_text(encoding="utf-8") if args.file else ""
         try:

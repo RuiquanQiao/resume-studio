@@ -1654,6 +1654,7 @@ function versionsView() {
     const key = `${x.n - 1}>${x.n}`;
     const open = VS.open === key;
     const viewing = VS.viewing && VS.viewing.subset === id && VS.viewing.n === x.n;
+    const went = sentWith(id, x.n) || [];
     return h("div", { class: "vrow" + (open ? " open" : "") + (viewing ? " viewing" : ""), "data-n": x.n },
       h("div", { class: "vline" },
         h("button", { class: "vtoggle", "aria-expanded": String(open), title: x.n > 1 ? t("What v{n} changed from v{m}", { n: x.n, m: x.n - 1 }) : t("What v1 holds"),
@@ -1663,6 +1664,8 @@ function versionsView() {
           h("div", { class: "vmeta" }, fmtWhen(x.at), st && st.same_as === x.n ? " · " + t("same as now") : "")),
         h("button", { class: "btn sm" + (viewing ? " on" : ""), onclick: () => (viewing ? stopViewing() : viewVersion(id, x.n)) }, icon("file"), viewing ? t("Back to now") : t("Preview")),
         h("button", { class: "btn icon sm ghost", title: t("More"), "aria-label": t("More"), "aria-haspopup": "menu", onclick: (e) => versionRowMenu(e.currentTarget, x) }, icon("more"))),
+      went.length > 0 && h("div", { class: "vsent" }, h("span", { class: "vsent-label" }, t("Went to {n} role", { n: went.length }, "Went to {n} roles")),
+        went.map((w) => sentRoleChip(w.a))),
       open && changesEl(key));
   });
   out.push(card(t("History"), L.versions.length ? t("{n} version", { n: L.versions.length }, "{n} versions") : "",

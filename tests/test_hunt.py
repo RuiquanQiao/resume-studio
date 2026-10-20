@@ -136,6 +136,20 @@ def test_claude_works_the_tracker_from_its_command(live, data_file):
     assert {p["id"] for p in tab["platforms"]} >= {"linkedin", "boss"}
 
 
+def test_a_roles_jd_is_kept_apart_from_its_notes(live, data_file):
+    cli(data_file, "add-company", "星河科技")
+    cli(data_file, "add-role", "星河科技", "服务端", "--note", "学长内推")
+    jd = "服务端研发工程师｜北京\n\n职位描述：\n· 负责交易系统\t设计\n\n任职要求：\n· 2027 届本硕"
+    code, out = cli(data_file, "jd", "星河科技/服务端", "--stdin", stdin=jd)
+    out = out.replace("\r\n", "\n")
+    assert code == 0 and "  JD:\n    服务端研发工程师｜北京\n    \n    职位描述：" in out and "notes: 学长内推" in out
+    a = live.req("GET", "/api/hunt/apps/A1")[1]["application"]
+    assert a["jd"] == jd.replace("\t", " ") and a["note"] == "学长内推"      # lines and blank lines survive
+    assert cli(data_file, "jd", "星河科技/服务端", "--stdin", stdin="  ")[0] != 0   # nothing to keep
+    assert "JD: not kept yet" in cli(data_file, "add-role", "星河科技", "算法")[1]
+    assert live.req("PUT", "/api/hunt/apps/A1", {"jd": ""})[1]["application"]["jd"] == ""   # the window can clear it
+
+
 def test_the_sign_up_goes_out_with_a_kept_version(live, data_file):
     cli(data_file, "add-company", "星河科技")
     cli(data_file, "add-role", "星河科技", "服务端")

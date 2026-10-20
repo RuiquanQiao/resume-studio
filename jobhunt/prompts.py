@@ -36,6 +36,8 @@ it only through this command (Bash); every call prints what is there now, and th
 - `{j} status <company>/<role> <status> [--note "一面 周三 14:00"] [--on 2026-10-18]`
 - `{j} note <company>/<role> "<what happened>" [--on <date>]` — interviews, tests, emails: anything worth keeping.
 - `{j} next <company>/<role> "<next step>" [--due <date>]`
+- `{j} jd <company>/<role> --stdin` — the posting's full text (the JD: duties, requirements, pluses), as the
+  page or the user's screenshot says it, kept on the role. `show` prints it; read it before tailoring a resume.
 - `{j} sent <company>` — the user submitted the sign-up on the company's own site: every role there not sent yet
   gets the subset the company is filled from, kept as a version and pinned. `sent <company>/<role>` for one posting.
 - **Open postings** (what the companies' sites list now; not applications until the user goes for one):
@@ -81,9 +83,10 @@ How to work it:
 - **A posting's link** (pasted in the chat, or "Read this posting and add it: <link>"): read the page (web fetch;
   when it needs scripts or a sign-in, open it in Resume Studio's browser with the browser commands). Find the
   company: `list` / `show` first; when it isn't there, `add-company` and fill it in as above. Then `add-role` with
-  `--url <link>`, `--deadline` when the page gives one, and a `--note` with the location, batch (校招 / 实习 /
-  社招) and the requirements in a few lines. Say in two lines what you added; ask only when the page names no
-  company or no role.
+  `--url <link>`, `--deadline` when the page gives one, and a `--note` with the location and batch (校招 / 实习 /
+  社招). Then keep the posting's whole text with `jd` (word for word, its headings and lists kept; not a summary).
+  Do the same when the user sends a JD as a screenshot or pasted text. Notes are the user's own: never put a JD
+  there. Say in two lines what you added; ask only when the page names no company or no role.
 - `sent` only when the user says they submitted. Submitting on the site is always the user's own click.
 - Never delete anything here: removing a company or a role is the user's, in the window.
 - The tables are arranged by the user like a Notion database (views as tabs, filters, sorts, groups, a board,

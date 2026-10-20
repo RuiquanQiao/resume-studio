@@ -449,6 +449,8 @@ class Hunt:
                 a[k] = _text(fields[k], limit)
         if "note" in fields:
             a["note"] = _long(fields["note"], 4000)
+        if "jd" in fields:   # the posting's own text, as it was read: kept apart from the user's notes
+            a["jd"] = _long(fields["jd"], 20000)
         if "next" in fields:
             a["next"] = _text(fields["next"], 200)
         if "due" in fields:
@@ -476,7 +478,7 @@ class Hunt:
                 raise ValueError(t("{company} already has {role}", company=c["name"], role=role))
             status = state_of(fields.get("status") or "saved")
             a = {"id": f"A{data['next']}", "company": c["id"], "role": "", "url": "", "channel": "site", "platform": "",
-                 "order": 0, "status": status, "applied": "", "deadline": "", "next": "", "due": "", "note": "", "subset": "",
+                 "order": 0, "status": status, "applied": "", "deadline": "", "next": "", "due": "", "note": "", "jd": "", "subset": "",
                  "sent": [], "co_app": None, "created": _now(), "updated": _now()}
             self._app_fields(a, {"channel": "site", **fields})
             mine = [x for x in data["applications"] if x["company"] == c["id"]]
