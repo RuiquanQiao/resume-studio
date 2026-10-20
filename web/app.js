@@ -1114,7 +1114,7 @@ async function addEvidence(e, kind, replaceIndex = null) {
 }
 
 async function typeEvidence(e) {
-  const p = await modal({ title: t("Type a path"), message: t("The full path of a folder or file. “Choose project folder” is usually easier."), input: "", placeholder: "E:/Forge/Paper2Exam", ok: t("Add") });
+  const p = await modal({ title: t("Type a path"), message: t("The full path of a folder or file. “Choose project folder” is usually easier."), input: "", placeholder: "E:/Forge/QuizLoom", ok: t("Add") });
   if (!p) return;
   const clean = p.trim().replace(/^["']|["']$/g, "");
   if (!e.evidence.includes(clean)) e.evidence.push(clean);

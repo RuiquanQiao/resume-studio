@@ -20,7 +20,7 @@
 <main>
   <section id="top">
     <h1 id="name">Alex Chen</h1>
-    <div id="headline">Student at ANU</div>
+    <div id="headline">Student at HCU</div>
     <button aria-label="Edit intro" onclick="openIntro()">✎</button>
   </section>
   <section id="experience">
@@ -31,7 +31,7 @@
   <div class="spacer"></div>
   <section id="education">
     <h2>Education</h2>
-    <ul><li><b>Australian National University</b><div>Master of Computing</div><div>Jul 2025 – Jun 2027</div></li></ul>
+    <ul><li><b>Harbour City University</b><div>Master of Computer Science</div><div>Feb 2025 – Dec 2026</div></li></ul>
   </section>
   <section id="skills">
     <h2>Skills</h2>
@@ -64,7 +64,7 @@
 <script>
   // what "the server" holds (kept in localStorage, so it outlives a reload like a real site's data)
   const DB = JSON.parse(localStorage.getItem("db") || "null") || {
-    headline: "Student at ANU",
+    headline: "Student at HCU",
     positions: [{ title: "Research Intern", company: "CSIRO", month: "February", year: "2024", current: false, desc: "Mapped flood risk." }],
     saves: 0,
   };

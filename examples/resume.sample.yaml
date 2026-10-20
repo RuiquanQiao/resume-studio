@@ -19,39 +19,39 @@ sections:
 entries:
   - id: EXP-001
     section: education
-    title: {en: Australian National University, zh: 澳大利亚国立大学}
-    subtitle: {en: Master of Computing, zh: 计算机硕士}
-    location: {en: 'Canberra, AU', zh: 堪培拉}
-    start: 2025-07
-    end: 2027-06
+    title: {en: Harbour City University, zh: 海港城市大学}
+    subtitle: {en: Master of Computer Science, zh: 计算机科学硕士}
+    location: {en: 'Harbour City, AU', zh: 海港城}
+    start: 2025-02
+    end: 2026-12
     bullets:
-      - {en: 'Coursework: Statistical ML, Deep Learning, Computer Vision, Software Engineering', zh: 主修课程：统计机器学习、深度学习、计算机视觉、软件工程}
-    notes: 成绩中上，没有奖学金，别写 GPA。
+      - {en: 'Coursework: Machine Learning, Distributed Systems, Databases, Human-Computer Interaction', zh: 主修课程：机器学习、分布式系统、数据库、人机交互}
+    notes: 均分一般，别写 GPA。
   - id: EXP-002
     section: projects
-    title: Paper2Exam
+    title: QuizLoom
     subtitle: {en: Solo developer, zh: 独立开发}
     tech: [Next.js, Prisma, SQLite]
     start: 2025-08
     end: present
-    link: https://github.com/alexchen/paper2exam
+    link: https://github.com/alexchen/quizloom
     bullets:
-      - {en: 'Built a **multi-stage LLM pipeline** that turns research papers into reading-comprehension exams', zh: 搭建**多阶段大模型流水线**，把学术论文自动转成英语阅读理解题}
-      - {en: 'Designed a review UI so teachers can edit every generated question before export', zh: 设计审阅界面，教师可在导出前逐题修改生成内容}
+      - {en: 'Built a **multi-stage LLM pipeline** that turns lecture slides into practice quizzes', zh: 搭建**多阶段大模型流水线**，把课件自动转成练习题}
+      - {en: 'Designed a review UI so users can edit every generated question before export', zh: 设计审阅界面，用户可在导出前逐题修改生成内容}
     notes: |
-      大部分前端代码是 AI 写的，我负责流程设计和 prompt 拆分。
-      "教师" 其实只有两个朋友试用过，没有真实学校用户。
+      导出功能是同组同学写的，我负责流程设计和 prompt 拆分。
+      用户只有三十多个同学，没有付费用户。
     evidence: []
   - id: EXP-003
     section: projects
-    title: {en: EuroSAT Transfer Learning, zh: EuroSAT 遥感图像迁移学习}
+    title: {en: Plant Disease Classifier, zh: 植物病害图像分类}
     subtitle: {en: Course project, zh: 课程项目}
     tech: [PyTorch]
     start: 2025-09
     end: 2025-10
     bullets:
-      - {en: 'Compared 5 transfer strategies; full fine-tuning reached **98.21%** test accuracy', zh: 对比 5 种迁移策略，全量微调测试准确率 **98.21%**}
-    notes: 数字是真实跑出来的，代码在课程仓库里。
+      - {en: 'Compared 4 augmentation strategies; a fine-tuned ResNet reached **94.6%** test accuracy', zh: 对比 4 种数据增强策略，微调后的 ResNet 测试准确率 **94.6%**}
+    notes: 数字来自一次验证集运行，没做交叉验证。
   - id: EXP-004
     section: skills
     title: {en: Languages, zh: 编程语言}
@@ -66,21 +66,21 @@ subsets:
     label: 全部经历
     lang: en
     template: classic
-    headline: {en: 'MSc Computing student', zh: 计算机硕士在读}
+    headline: {en: 'MSc Computer Science student', zh: 计算机硕士在读}
     layout: {}
   # Every other subset is the resume for one kind of role: some of the library's entries.
   - id: RES-TECH-EN
     label: ML 工程（英文）
     lang: en
     template: classic
-    headline: {en: 'MSc Computing student · ML & full-stack', zh: 计算机硕士在读 · 机器学习与全栈开发}
+    headline: {en: 'MSc Computer Science student · ML & full-stack', zh: 计算机硕士在读 · 机器学习与全栈开发}
     entries: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005]
     layout: {}
   - id: RES-TECH-ZH
     label: ML 工程（中文）
     lang: zh
     template: modern
-    headline: {en: 'MSc Computing student · ML & full-stack', zh: 计算机硕士在读 · 机器学习与全栈开发}
+    headline: {en: 'MSc Computer Science student · ML & full-stack', zh: 计算机硕士在读 · 机器学习与全栈开发}
     hide_contacts: [phone]
     entries: [EXP-001, EXP-002, EXP-003, EXP-004, EXP-005]
     layout: {font_size: 10.5}

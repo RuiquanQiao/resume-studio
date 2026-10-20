@@ -170,10 +170,10 @@ def test_the_document_edits_every_card_in_place(page, server, data_file):
     b.fill("Perth WA")
     loc = lambda eid: json.dumps(next(e for e in state(server)["doc"]["entries"] if e["id"] == eid).get("location"), ensure_ascii=False)   # noqa: E731
     wait_until(lambda: "Sydney NSW" in loc("EXP-002") and "Perth WA" in loc("EXP-001"), msg="both saved")
-    assert "堪培拉" in loc("EXP-001")                                         # the other language is untouched
+    assert "海港城" in loc("EXP-001")                                         # the other language is untouched
     assert pg.get_attribute("#active", "data-key") == "entry:EXP-001"          # the card typed in last is the one being edited
     assert pg.locator("#library .entry.on[data-id='EXP-001']").count() == 1
-    assert "澳大利亚国立大学" in pg.inner_text("#chat-context") or "Australian National University" in pg.inner_text("#chat-context")
+    assert "海港城市大学" in pg.inner_text("#chat-context") or "Harbour City University" in pg.inner_text("#chat-context")
     # an entry not in the subset is one folded line; ticking it adds it, opening it shows its card
     pg.click("#library .entry[data-id='EXP-003'] .check")
     wait_until(lambda: "EXP-003" not in subset(server)["entries"], msg="removed from subset")
@@ -246,7 +246,7 @@ def test_external_edit_syncs_open_form(page, server, data_file):
 
 def test_conflict_banner_when_both_edit(page, server, data_file):
     open_entry(page, "EXP-002")
-    page.type("#active input[data-key=location]", "Canberra")        # unsaved local change
+    page.type("#active input[data-key=location]", "Harbour City")        # unsaved local change
     text = data_file.read_text(encoding="utf-8").replace("Solo developer", "Changed elsewhere")
     data_file.write_text(text, encoding="utf-8")                      # same entry changes on disk
     page.wait_for_selector(".banner.warn", timeout=5000)
@@ -543,7 +543,7 @@ def test_polish_shows_diff_and_undo_restores(page, server, data_file, fake_claud
     page.click(".float .menu-item:has-text('润色')")
     page.fill("#polish-box input", "更简洁")
     page.click("#polish-box button")
-    page.wait_for_selector(".msg-user:has-text('Paper2Exam')")
+    page.wait_for_selector(".msg-user:has-text('QuizLoom')")
     page.wait_for_selector(".card.diff h3:text('Claude 改了这一条')", timeout=15000)
     assert "Solo developer (polished)" in page.inner_text(".card.diff")
     page.click(".card.diff button:text('撤销，恢复到改动前')")
@@ -1039,7 +1039,7 @@ def shot_float(pg, name):
 @pytest.mark.parametrize("scheme", ["light", "dark"])
 def test_screenshots_of_new_parts(page, server, fake_claude, monkeypatch, tmp_path, scheme):
     page.emulate_media(color_scheme=scheme)
-    repo = tmp_path / "Paper2Exam"
+    repo = tmp_path / "QuizLoom"
     make_repo(repo)
     monkeypatch.setenv("STUDIO_FAKE_PICK", json.dumps([str(repo)]))
     add_long_bullet(server, page)
@@ -1198,7 +1198,7 @@ def test_evaluate_starts_a_career_ops_chat(connected, page_all, server, fake_cla
     open_job_search(pg)
     pg.click("#evaluate-btn")
     assert pg.locator(".eval-float .btn.primary").is_disabled()
-    pg.fill("#posting-input", "https://jobs.example.com/77\nAI Engineer, Canberra")
+    pg.fill("#posting-input", "https://jobs.example.com/77\nAI Engineer, Harbour City")
     pg.click(".eval-float .btn.primary")
     pg.wait_for_selector("#chat .msg-user")
     wait_until(lambda: any("jobs.example.com/77" in c["stdin"] for c in calls(fake_claude)), msg="evaluation sent")
@@ -1446,7 +1446,7 @@ def test_settings_show_the_checks_and_apply_on_done(connected, page_all, server,
     pg.screenshot(path=str(ART / "jobs-settings-light.png"))
     pg.click(".modal .acts .btn.primary")
     wait_until(lambda: prefs().get("cv_lang") == "zh" and prefs().get("notes") is False, msg="settings saved")
-    wait_until(lambda: "澳大利亚国立大学" in (connected / "cv.md").read_text(encoding="utf-8"), msg="cv in Chinese")
+    wait_until(lambda: "海港城市大学" in (connected / "cv.md").read_text(encoding="utf-8"), msg="cv in Chinese")
 
 
 # ---------------------------------------------------------------- the Job search workspace
@@ -1567,10 +1567,10 @@ def test_one_chat_across_the_workspaces(connected, page_all, server, fake_claude
 # ---------------------------------------------------------------- Autofill (online profiles)
 FILL_NOW = {
     "url": "https://www.linkedin.com/in/alex/",
-    "basics": {"headline": "Student at ANU", "about": ""},
+    "basics": {"headline": "Student at HCU", "about": ""},
     "items": [
-        {"section": "education", "key": None, "fields": {"org": "The Australian National University", "degree": "Master of Computing",
-                                                       "start": "2025-07", "end": "2027-06"}},
+        {"section": "education", "key": None, "fields": {"org": "The Harbour City University", "degree": "Master of Computer Science",
+                                                       "start": "2025-02", "end": "2026-12"}},
         {"section": "projects", "key": None, "fields": {"name": "Old hackathon thing", "start": "2022-03"}},
     ],
     "skills": ["Python"],
@@ -1608,12 +1608,12 @@ def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, m
     pg.wait_for_selector("#fill-tabs .fv-tab.on")
     assert "你的 LinkedIn 副本" in pg.inner_text(".fill-sync")
     head = pg.locator("[data-edit='basics|headline']")
-    assert head.input_value() == "Student at ANU"
+    assert head.input_value() == "Student at HCU"
     # the resume's wording, one click away
     hint = pg.locator(".ff:has([data-edit='basics|headline']) .ff-ref")
-    assert "MSc Computing student" in hint.inner_text()
+    assert "MSc Computer Science student" in hint.inner_text()
     hint.locator("button").click()
-    pg.wait_for_function("() => document.querySelector(\"[data-edit='basics|headline']\").value === 'MSc Computing student'")
+    pg.wait_for_function("() => document.querySelector(\"[data-edit='basics|headline']\").value === 'MSc Computer Science student'")
     assert pg.locator(".ff.changed [data-edit='basics|headline']").count() == 1
     assert "LinkedIn 上现在是：" in pg.inner_text(".ff:has([data-edit='basics|headline'])")
     # typing in the copy: saved, the caret stays
@@ -1626,8 +1626,8 @@ def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, m
     old = pg.locator(".fi.copy", has_text="Old hackathon thing")
     old.locator("button[aria-label='从副本中删除']").click()
     pg.wait_for_selector(".fi.removed >> text=Old hackathon thing")
-    pg.click(".fi.suggest:has-text('EuroSAT') button")
-    pg.wait_for_selector(".fi.copy.open:has(.op-add) >> text=EuroSAT")
+    pg.click(".fi.suggest:has-text('Plant Disease Classifier') button")
+    pg.wait_for_selector(".fi.copy.open:has(.op-add) >> text=Plant Disease Classifier")
     wait_until(lambda: len(fill_view(server)["pending"]) == 4, msg="four changes to push")
     pg.wait_for_selector("#fill-tab-push .fs-n >> text=4")
     pg.locator(".fill-scroll").evaluate("e => { e.scrollTop = 0; }")
@@ -1641,7 +1641,7 @@ def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, m
 
     # meanwhile the site got an About too: a conflict, settled here
     pg.locator(".fill-scroll").evaluate("e => e.focus()")
-    now = {**FILL_NOW, "basics": {"headline": "Student at ANU", "about": "Hello from LinkedIn."}}
+    now = {**FILL_NOW, "basics": {"headline": "Student at HCU", "about": "Hello from LinkedIn."}}
     assert server.req("POST", "/api/autofill/linkedin/current", now)[0] == 200
     pg.wait_for_selector(".ff.conflict .ff-conflict")
     assert "Hello from LinkedIn." in pg.inner_text(".ff-conflict") and "Open to ML roles." in pg.inner_text(".ff-conflict")
@@ -1653,8 +1653,8 @@ def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, m
     # the changes to push: git-style, ticked, one unticked
     pg.click("#fill-review")
     pg.wait_for_selector(".fill-plan .fi[data-id='basics.headline'] .diff")
-    assert "Student at ANU" in pg.inner_text(".fi[data-id='basics.headline'] .dl-del")
-    assert "MSc Computing student" in pg.inner_text(".fi[data-id='basics.headline'] .dl-add")
+    assert "Student at HCU" in pg.inner_text(".fi[data-id='basics.headline'] .dl-del")
+    assert "MSc Computer Science student" in pg.inner_text(".fi[data-id='basics.headline'] .dl-add")
     removal = pg.locator(".fill-plan .fi.op-remove")
     assert removal.count() == 1 and pg.locator(".fill-plan .fi.op-add").count() == 1
     removal.locator(".check").click()
@@ -1674,7 +1674,7 @@ def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, m
     pg.click("#fill-apply")
     wait_until(lambda: any("## The approved changes" in c["stdin"] for c in calls(fake_claude)), timeout=30, msg="apply sent")
     sent = next(c["stdin"] for c in calls(fake_claude) if "## The approved changes" in c["stdin"])
-    assert "basics.about" in sent and "Open to ML roles." in sent and '"op": "remove"' not in sent and "EuroSAT" in sent
+    assert "basics.about" in sent and "Open to ML roles." in sent and '"op": "remove"' not in sent and "Plant Disease Classifier" in sent
     pg.wait_for_selector("#chat-log .msg-user, #chat-log .msg-action")
     assert "LinkedIn" in pg.inner_text("#chat-context")                        # the chat is told which profile is open
     pg.wait_for_selector("#chat-log .msg-ai .md >> text=已经处理", timeout=30000)

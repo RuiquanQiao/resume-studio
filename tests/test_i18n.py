@@ -122,7 +122,7 @@ def test_other_scripts_compile(data_file, lang, text):
     st = Studio(data_file)
     doc, _ = st.store.load()
     doc["entries"][1]["bullets"].append({lang: text})
-    doc["entries"][1]["title"] = {"en": "Paper2Exam", lang: "Paper2Exam " + text.split()[0]}
+    doc["entries"][1]["title"] = {"en": "QuizLoom", lang: "QuizLoom " + text.split()[0]}
     v = to_plain(model.get_item(doc, "subset", "RES-TECH-EN"))
     v["lang"] = lang
     view = model.build_view(doc, v)

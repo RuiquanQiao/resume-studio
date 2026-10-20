@@ -150,7 +150,7 @@ def long_entry(c):
                   "zh": "面向企业知识库的多模态检索增强生成平台（含评测与推理服务）"}
     e["subtitle"] = {"en": "Founding full-stack engineer, later technical lead for the inference and evaluation teams",
                      "zh": "创始全栈工程师，后任推理与评测团队技术负责人"}
-    e["location"] = "Canberra, Australian Capital Territory"
+    e["location"] = "Harbour City, New South Wales"
     c.server.req("PUT", "/api/item", {"kind": "entry", "id": "EXP-002", "data": e, "base": s["hashes"]["entry"]["EXP-002"]})
 
 
@@ -163,7 +163,7 @@ def evidence(states: dict):
 
 def conflict(pg, c):
     open_entry(pg, "EXP-002")
-    pg.type("#active input[data-key=location]", "Canberra")        # unsaved here...
+    pg.type("#active input[data-key=location]", "Harbour City")        # unsaved here...
     c.data["n"] = c.data.get("n", 0) + 1
     f = Path(c.server.inst.studio.store.path)
     f.write_text(re.sub(r"Solo developer|Changed elsewhere \d+", f"Changed elsewhere {c.data['n']}", f.read_text(encoding="utf-8")),
@@ -260,7 +260,7 @@ def linkedin_conflict(pg, c):
     wait_until(lambda: c.server.req("GET", "/api/autofill/linkedin")[1]["local"]["basics"].get("about"), msg="typing saved")
     for _ in range(3):   # under load the site's reading can land before the window settled the edit: send it again
         c.data["n"] = c.data.get("n", 0) + 1
-        now = {**FILL_NOW, "basics": {"headline": "Student at ANU", "about": f"Hello from LinkedIn {c.data['n']}."}}
+        now = {**FILL_NOW, "basics": {"headline": "Student at HCU", "about": f"Hello from LinkedIn {c.data['n']}."}}
         c.server.req("POST", "/api/autofill/linkedin/current", now)
         try:
             pg.wait_for_selector(".ff.conflict .ff-conflict", timeout=6000)

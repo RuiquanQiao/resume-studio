@@ -230,7 +230,7 @@ def same(field: str, a: str, b: str) -> bool:
         return (a or "").strip().rstrip("/").lower().removeprefix("https://").removeprefix("http://") == \
             (b or "").strip().rstrip("/").lower().removeprefix("https://").removeprefix("http://")
     if field in ("org", "issuer", "degree"):
-        # sites pick organisations from their own list ("The Australian National University"): a name
+        # sites pick organisations from their own list ("The Harbour City University"): a name
         # that contains the other is the same organisation, not a change worth making
         x, y = norm_text(a), norm_text(b)
         return x == y or bool(x and y and (x in y or y in x))

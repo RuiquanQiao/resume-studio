@@ -14,7 +14,7 @@ directly. Both sides change the same file; the window watches it and refreshes a
 
 - **`/resume-studio` with no arguments**, or the user asks to open the resume window: don't ask
   anything first. Open the window (next section), say it is open, and stop there.
-- **`/resume-studio <task>`**, e.g. `/resume-studio polish Paper2Exam` or `/resume-studio fit SUB-001 on one
+- **`/resume-studio <task>`**, e.g. `/resume-studio polish QuizLoom` or `/resume-studio fit SUB-001 on one
   page`: edit `resume.yaml` following the rules below. If the window is open it refreshes by itself;
   there is no need to open it.
 - Data file: the one the user names (add `--data`); otherwise the one last opened in the window
@@ -78,7 +78,7 @@ python <skill>/scripts/render.py --check                          # validate the
 ```
 
 - `OVER ONE PAGE` means more than one page.
-- Every render lists the **bullets that take more than one line**: `EXP-002 "Paper2Exam" bullet 2:
+- Every render lists the **bullets that take more than one line**: `EXP-002 "QuizLoom" bullet 2:
   2 lines, text is 117% of one line`. This is measured from LaTeX's actual typesetting, not estimated from
   character counts; 117% means cutting about 15% of the text.
 - `missing <lang> text` lists entries that lack text in that language and fall back to another one.
@@ -119,7 +119,7 @@ entries:                     # the library: every real experience, never limited
       - {en: 'Wrote the onboarding docs', de: ''}    # '' = left off the German resume
     notes: |                 # fact layer: what really happened, never rendered
       ...
-    evidence: [E:/Forge/Paper2Exam]   # fact layer: local paths to read (the user adds them with "Choose project folder")
+    evidence: [E:/Forge/QuizLoom]   # fact layer: local paths to read (the user adds them with "Choose project folder")
 subsets:
   - id: ALL                  # reserved: the full-set preview, always first, can't be deleted or renamed
     label: All entries

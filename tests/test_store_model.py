@@ -125,7 +125,7 @@ def test_all_is_the_full_set(data_file):
     all_view = model.build_view(doc, to_plain(model.get_subset(doc, "ALL")))
     ids = [e["id"] for sec in all_view["sections"] for e in sec["entries"]]
     assert sorted(ids) == sorted(str(e["id"]) for e in doc["entries"])
-    assert all_view["profile"]["headline"] == "MSc Computing student"
+    assert all_view["profile"]["headline"] == "MSc Computer Science student"
     assert len(all_view["profile"]["contacts"]) == 3
     zh = model.build_view(doc, to_plain(model.get_subset(doc, "RES-TECH-ZH")))
     assert [c["label"] for c in zh["profile"]["contacts"]] == ["email", "github"]   # hide_contacts
@@ -256,4 +256,4 @@ def test_bullets_per_language():
     e = {"title": {"en": "Proj"}, "bullets": [{"en": "A", "zh": "甲"}, {"en": "B"}, {"en": "C", "zh": ""}, "Built it"]}
     assert model.missing_text(e, "zh") == {"fields": ["title"], "bullets": [1, 3]}   # plain English text counts too
     assert model.missing_text(e, "en") == {}
-    assert model.missing_text({"title": "Paper2Exam", "bullets": []}, "zh") == {}    # a shared name is fine
+    assert model.missing_text({"title": "QuizLoom", "bullets": []}, "zh") == {}    # a shared name is fine

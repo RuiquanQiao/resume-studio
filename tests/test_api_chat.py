@@ -18,13 +18,13 @@ def test_state_and_item_update(server, data_file):
     code, s = server.req("GET", "/api/state")
     assert code == 200 and s["doc"]["entries"] and s["claude"]["available"]
     e = next(x for x in s["doc"]["entries"] if x["id"] == "EXP-003")
-    e["location"] = "Canberra"
+    e["location"] = "Harbour City"
     code, s2 = server.req("PUT", "/api/item", {"kind": "entry", "id": "EXP-003", "data": e, "base": s["hashes"]["entry"]["EXP-003"]})
     assert code == 200
-    assert "location: Canberra" in data_file.read_text(encoding="utf-8")
+    assert "location: Harbour City" in data_file.read_text(encoding="utf-8")
     # the same stale base now conflicts
     code, err = server.req("PUT", "/api/item", {"kind": "entry", "id": "EXP-003", "data": e, "base": s["hashes"]["entry"]["EXP-003"]})
-    assert code == 409 and err["data"]["current"]["location"] == "Canberra"
+    assert code == 409 and err["data"]["current"]["location"] == "Harbour City"
 
 
 def test_entries_and_versions_lifecycle(server):
@@ -376,7 +376,7 @@ def test_polish_request_and_data_edit(server, data_file, fake_claude, monkeypatc
     monkeypatch.setenv("FAKE_CLAUDE_EDIT", json.dumps({"file": str(data_file), "from": "Solo developer", "to": "Solo developer (polished)"}))
     code, chat = server.req("POST", "/api/chats")
     code, r = _send(server, chat["id"], "更简洁", polish=True, entry_id="EXP-002")
-    assert "Paper2Exam" in r["text"] and "更简洁" in r["text"] and "EXP-002" not in r["text"]
+    assert "QuizLoom" in r["text"] and "更简洁" in r["text"] and "EXP-002" not in r["text"]
     server.wait_idle(chat["id"])
     assert "Solo developer (polished)" in data_file.read_text(encoding="utf-8")
     code, s = server.req("GET", "/api/state")
@@ -407,10 +407,10 @@ def test_bilingual_and_one_line_actions(server, data_file, fake_claude):
     assert code == 409                                                 # already one line each
 
     code, r = send(action="batch_translate", target="zh")
-    assert code == 200 and "Paper2Exam" in r["text"]                   # the entry lacking Chinese is listed
+    assert code == 200 and "QuizLoom" in r["text"]                   # the entry lacking Chinese is listed
     server.wait_idle(cid)
     code, r = send(action="batch_fit")
-    assert code == 200 and "Paper2Exam" in r["text"]
+    assert code == 200 and "QuizLoom" in r["text"]
     server.wait_idle(cid)
     msgs = server.req("GET", f"/api/chats/{cid}")[1]["messages"]
     assert [m["meta"].get("action") for m in msgs if m["role"] == "user"] == ["translate", "fit", "batch_translate", "batch_fit"]

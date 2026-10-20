@@ -130,16 +130,16 @@ def test_use_folder_refuses_something_else(tool, tmp_path):
 def test_cv_markdown_has_the_shape_career_ops_parses(data_file):
     doc, _ = Studio(data_file).store.load()
     md = cv_markdown(doc, "en")
-    assert md.splitlines()[2] == "# Alex Chen" and "MSc Computing student" in md
-    assert "## Education" in md and "### Australian National University — Canberra, AU" in md
-    assert "**Master of Computing**" in md and "Jul 2025 – Jun 2027" in md
+    assert md.splitlines()[2] == "# Alex Chen" and "MSc Computer Science student" in md
+    assert "## Education" in md and "### Harbour City University — Harbour City, AU" in md
+    assert "**Master of Computer Science**" in md and "Feb 2025 – Dec 2026" in md
     assert "- Built a **multi-stage LLM pipeline**" in md
     assert "- **Languages:** Python, TypeScript, Java, C" in md
     assert "别写 GPA" not in md                                             # the fact layer never reaches the CV
     zh = cv_markdown(doc, "zh")
-    assert "## Education" in zh and "### 澳大利亚国立大学 — 堪培拉" in zh      # headings stay English, text follows the language
+    assert "## Education" in zh and "### 海港城市大学 — 海港城" in zh      # headings stay English, text follows the language
     notes = proof_points(doc, "en")
-    assert "别写 GPA" in notes and "## Paper2Exam — Solo developer" in notes
+    assert "别写 GPA" in notes and "## QuizLoom — Solo developer" in notes
     assert "求职方向" not in notes            # the profile's notes are targeting, not proof points a letter may quote
 
 
@@ -149,7 +149,7 @@ def test_sync_writes_then_never_overwrites_edits_made_in_career_ops(tool, checko
     cv = checkout / "cv.md"
     assert "# Alex Chen" in cv.read_text(encoding="utf-8") and (checkout / "article-digest.md").exists()
     assert tool.sync_cv(doc)["state"] == "same"
-    doc["entries"][1]["title"] = "Paper2Exam v2"                           # the library changed: follow it
+    doc["entries"][1]["title"] = "QuizLoom v2"                           # the library changed: follow it
     assert tool.sync_cv(doc)["wrote"] == ["cv.md", "article-digest.md"]
     cv.write_text(cv.read_text(encoding="utf-8") + "\n- Added by a career-ops mode\n", encoding="utf-8")
     r = tool.sync_cv(doc)
@@ -172,7 +172,7 @@ def test_sync_settings_language_notes_and_off(tool, checkout, data_file):
     doc, _ = Studio(data_file).store.load()
     tool.save_settings(cv_lang="zh")
     tool.sync_cv(doc)
-    assert "澳大利亚国立大学" in (checkout / "cv.md").read_text(encoding="utf-8")
+    assert "海港城市大学" in (checkout / "cv.md").read_text(encoding="utf-8")
     tool.save_settings(notes=False)
     tool.sync_cv(doc)
     assert not (checkout / "article-digest.md").exists()                   # ours, unchanged: removed again

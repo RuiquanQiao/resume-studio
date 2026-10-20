@@ -36,18 +36,18 @@ def test_desired_profile_from_a_version(data_file):
     doc = load(data_file)
     all_v = next(v for v in doc["subsets"] if v["id"] == "ALL")
     want = profile.desired(doc, all_v, "en", LI)
-    assert want["basics"] == {"headline": "MSc Computing student"}
+    assert want["basics"] == {"headline": "MSc Computer Science student"}
     by_key = {i["key"]: i for i in want["items"]}
     assert by_key["EXP-001"]["section"] == "education"
-    assert by_key["EXP-001"]["fields"]["org"] == "Australian National University"
-    assert by_key["EXP-001"]["fields"]["degree"] == "Master of Computing"
-    assert by_key["EXP-001"]["fields"]["start"] == "2025-07"
+    assert by_key["EXP-001"]["fields"]["org"] == "Harbour City University"
+    assert by_key["EXP-001"]["fields"]["degree"] == "Master of Computer Science"
+    assert by_key["EXP-001"]["fields"]["start"] == "2025-02"
     p2e = by_key["EXP-002"]
     assert p2e["section"] == "projects" and p2e["fields"]["end"] == "present"
     # the resume's markup is gone, one line per bullet
     assert p2e["fields"]["description"].splitlines()[1] == \
-        "• Built a multi-stage LLM pipeline that turns research papers into reading-comprehension exams"
-    assert "notes" not in json.dumps(want) and "AI 写的" not in json.dumps(want, ensure_ascii=False)   # fact layer stays out
+        "• Built a multi-stage LLM pipeline that turns lecture slides into practice quizzes"
+    assert "notes" not in json.dumps(want) and "同组同学写的" not in json.dumps(want, ensure_ascii=False)   # fact layer stays out
     assert want["skills"][:3] == ["Python", "TypeScript", "Java"] and want["skills"].count("Next.js") == 1
 
 
@@ -57,18 +57,18 @@ def test_desired_follows_the_job_and_the_language(data_file):
     job["entries"] = ["EXP-003", "EXP-001"]
     want = profile.desired(doc, job, "zh", PRESETS["boss"])
     assert [i["key"] for i in want["items"]] == ["EXP-001", "EXP-003"]   # the job's section order: education first
-    assert want["items"][0]["fields"]["org"] == "澳大利亚国立大学"
+    assert want["items"][0]["fields"]["org"] == "海港城市大学"
     assert want["basics"] == {} and want["skills"] == []                 # BOSS has no headline or skills list
 
 
 SITE_NOW = {
     "url": "https://www.linkedin.com/in/alex/",
-    "basics": {"headline": "Student at ANU", "about": ""},
+    "basics": {"headline": "Student at HCU", "about": ""},
     "items": [
-        {"section": "education", "key": None, "fields": {"org": "The Australian National University", "degree": "Master of Computing",
-                                                       "start": "Jul 2025", "end": "Jun 2027",
-                                                       "description": "Coursework: Statistical ML, Deep Learning, Computer Vision, Software Engineering"}},
-        {"section": "projects", "key": None, "fields": {"name": "Paper2Exam", "start": "2025-08", "end": "present",
+        {"section": "education", "key": None, "fields": {"org": "The Harbour City University", "degree": "Master of Computer Science",
+                                                       "start": "Feb 2025", "end": "Dec 2026",
+                                                       "description": "Coursework: Machine Learning, Distributed Systems, Databases, Human-Computer Interaction"}},
+        {"section": "projects", "key": None, "fields": {"name": "QuizLoom", "start": "2025-08", "end": "present",
                                                        "description": "Turns papers into exams"}},
         {"section": "projects", "key": None, "fields": {"name": "Old hackathon thing", "start": "2022-03"}},
     ],
@@ -96,14 +96,14 @@ def test_sync_brings_site_changes_in_and_keeps_mine():
     # the site's: the internship's description, the headline too, a skill, a new project; dates written its own way
     m = sync.merge(base, local, _p(("experience", {"title": "Intern", "org": "CSIRO", "start": "Feb 2024", "description": "Flood risk maps."}),
                                    ("projects", {"name": "P2E", "description": "old"}),
-                                   ("projects", {"name": "EuroSAT", "description": "z"}),
-                                   basics={"headline": "Student at ANU"}, skills=["Python", "Go", "Rust"]))
-    assert m["conflicts"] == {"basics.headline": {"site": "Student at ANU", "local": "ML engineer"}}
+                                   ("projects", {"name": "Plant Disease Classifier", "description": "z"}),
+                                   basics={"headline": "Student at HCU"}, skills=["Python", "Go", "Rust"]))
+    assert m["conflicts"] == {"basics.headline": {"site": "Student at HCU", "local": "ML engineer"}}
     loc = {i["id"]: i for i in m["local"]["items"]}
     assert loc["i1"]["fields"]["description"] == "Flood risk maps."          # only the site changed it: in
     assert loc["i1"]["fields"]["start"] == "2024-02"                         # the same date written differently: no change
     assert loc["i2"]["fields"]["description"] == "new"                       # only I changed it: mine stays
-    assert loc["i3"]["fields"]["name"] == "EuroSAT" and "i9" in loc          # new on the site: in; my new one stays
+    assert loc["i3"]["fields"]["name"] == "Plant Disease Classifier" and "i9" in loc          # new on the site: in; my new one stays
     assert m["local"]["skills"] == ["Python", "Rust"] and m["synced"] == 3
     pend = {p["id"]: p for p in sync.pending(m["base"], m["local"])}
     assert set(pend) == {"basics.headline", "item.i2", "item.i9", "skills"}
@@ -140,8 +140,8 @@ def test_a_read_covers_only_its_sections():
 
 
 def test_same_school_with_the_degree_worded_differently_is_one_item():
-    old = [{"section": "education", "fields": {"org": "Australian National University", "degree": "Master of Computing"}}]
-    new = [{"section": "education", "fields": {"org": "The Australian National University", "degree": "Master's degree, Computing"}}]
+    old = [{"section": "education", "fields": {"org": "Harbour City University", "degree": "Master of Computer Science"}}]
+    new = [{"section": "education", "fields": {"org": "The Harbour City University", "degree": "Master's degree, Computer Science"}}]
     assert sync.match(old, new) == {0: 0}   # not "removed one, added another"
 
 
@@ -184,17 +184,17 @@ def test_routes_from_a_read_to_edits_to_report(server, data_file):
     st, r = server.req("POST", "/api/autofill/linkedin/current", {"items": [{"section": "pets"}]})
     assert st == 400 and "items[0].section" in r["error"]
     st, r = server.req("POST", "/api/autofill/linkedin/current", SITE_NOW)
-    assert st == 200 and "synced." in r["text"] and "projects: Paper2Exam" in r["text"]
+    assert st == 200 and "synced." in r["text"] and "projects: QuizLoom" in r["text"]
     v = server.req("GET", "/api/autofill/linkedin")[1]
     assert v["synced"] and v["synced_at"] and v["pending"] == [] and v["local"] == v["base"]
-    assert [i["fields"].get("start") for i in v["local"]["items"]] == ["2025-07", "2025-08", "2022-03"]   # dates as YYYY-MM
+    assert [i["fields"].get("start") for i in v["local"]["items"]] == ["2025-02", "2025-08", "2022-03"]   # dates as YYYY-MM
     assert (data_file.parent / ".studio" / "autofill" / "linkedin.json").is_file()   # next to the data file
     # the resume, next to the copy: wording it differs in, entries and skills the copy lacks
     ref = v["reference"]
-    p2e = next(i for i in v["local"]["items"] if i["fields"].get("name") == "Paper2Exam")
+    p2e = next(i for i in v["local"]["items"] if i["fields"].get("name") == "QuizLoom")
     assert ref["items"][p2e["id"]]["key"] == "EXP-002" and "description" in ref["items"][p2e["id"]]["fields"]
     assert any(m["key"] == "EXP-003" for m in ref["missing"]) and "TypeScript" in ref["skills"]
-    assert ref["basics"]["headline"] == "MSc Computing student"
+    assert ref["basics"]["headline"] == "MSc Computer Science student"
 
     # the user's edits: each one a change to push
     def edit(**op):
@@ -232,11 +232,11 @@ def test_routes_from_a_read_to_edits_to_report(server, data_file):
     # the site changed the same field meanwhile: a conflict, and pushing waits for it
     now = json.loads(json.dumps(SITE_NOW))
     now["basics"]["headline"] = "ML engineer in training"
-    now["items"][1]["fields"]["description"] = "Turns research papers into exams"
+    now["items"][1]["fields"]["description"] = "Turns lecture slides into quizzes"
     server.req("POST", "/api/autofill/linkedin/current", now)
     v = server.req("GET", "/api/autofill/linkedin")[1]
     key = f"{p2e['id']}.description"
-    assert list(v["conflicts"]) == [key] and v["conflicts"][key]["site"] == "Turns research papers into exams"
+    assert list(v["conflicts"]) == [key] and v["conflicts"][key]["site"] == "Turns lecture slides into quizzes"
     st, r = server.req("POST", "/api/autofill/linkedin/apply", {})
     assert st == 409 and "冲突" in r["error"]
     v = edit(op="settle", key=key, take="site")
@@ -282,7 +282,7 @@ def test_the_user_picks_the_sites(server, data_file):
 
     # the first read has to say what the site has; the copy then fits it
     now = {"url": "https://www.seek.com.au/profile/me", "basics": {"about": ""},
-           "items": [{"section": "experience", "key": None, "fields": {"title": "Tutor", "org": "ANU", "start": "2026-02"}}]}
+           "items": [{"section": "experience", "key": None, "fields": {"title": "Tutor", "org": "HCU", "start": "2026-02"}}]}
     st, r = server.req("POST", "/api/autofill/seek/current", now)
     assert st == 400 and "`site`" in r["error"]
     st, r = server.req("POST", "/api/autofill/seek/current", {**now, "site": {"sections": ["experience", "pets"]}})
@@ -380,7 +380,7 @@ def test_browser_command_drives_a_real_page(live, data_file, fake_site):
     assert "ok: Alex Chen | Profile" in out(r)
     snap = out(cli(data_file, "snapshot"))
     # the whole document, also below the fold
-    assert "## Education" in snap and "Australian National University" in snap and "[1] button \"Edit intro\"" in snap
+    assert "## Education" in snap and "Harbour City University" in snap and "[1] button \"Edit intro\"" in snap
     r = cli(data_file, "click", ref_of(snap, '"Edit intro"'))
     assert r.returncode == 0, out(r)
     assert 'target: button "Edit intro"' in out(r)   # what the chat shows as the step
@@ -515,7 +515,7 @@ def test_claude_records_a_route_then_checks_need_no_claude(live, data_file, fake
     runs = calls(Path(str(fake_claude) + ".run"))
     assert all(x["code"] == 0 for x in runs), runs
     extracted = json.loads(runs[1]["out"])
-    assert extracted["basics"] == {"headline": "Student at ANU"} and extracted["skills"] == ["Python"]
+    assert extracted["basics"] == {"headline": "Student at HCU"} and extracted["skills"] == ["Python"]
     assert "Running it read this" in runs[2]["out"] and "CSIRO" in runs[2]["out"]
     assert "synced." in runs[3]["out"]
     v = live.req("GET", "/api/autofill/linkedin")[1]
@@ -555,7 +555,7 @@ def test_claude_records_a_route_then_checks_need_no_claude(live, data_file, fake
     assert v["applying"] == [] and v["pending"] == []
     # fake Claude didn't really type it, so the check after the push shows the site still has the old one:
     # that is a site-side change against what was reported, not a silent loss of the user's text
-    assert v["local"]["basics"]["headline"] == "Student at ANU"
+    assert v["local"]["basics"]["headline"] == "Student at HCU"
 
     # a redesign: the route stops reading, and the window offers to let Claude record it anew
     live.inst.browser._eval_page("localStorage.setItem('exp-heading', 'Work'); 1")
@@ -585,15 +585,15 @@ def test_signed_out_shows_up(live, data_file, fake_site, monkeypatch):
 def test_degree_first_resumes_and_fields_a_site_lacks(data_file):
     doc = load(data_file)
     edu = next(e for e in doc["entries"] if e["id"] == "EXP-001")
-    edu["title"], edu["subtitle"] = edu["subtitle"], edu["title"]   # "Master of Computing" on top, the school under it
+    edu["title"], edu["subtitle"] = edu["subtitle"], edu["title"]   # "Master of Computer Science" on top, the school under it
     want = profile.desired(doc, next(v for v in doc["subsets"] if v["id"] == "ALL"), "en", LI)
     by_key = {i["key"]: i for i in want["items"]}
-    assert by_key["EXP-001"]["fields"]["org"] == "Australian National University"
-    assert by_key["EXP-001"]["fields"]["degree"] == "Master of Computing"
+    assert by_key["EXP-001"]["fields"]["org"] == "Harbour City University"
+    assert by_key["EXP-001"]["fields"]["degree"] == "Master of Computer Science"
     # LinkedIn's projects have no role field: it leads the description instead of disappearing
     p2e = by_key["EXP-002"]["fields"]
     assert "role" not in p2e and p2e["description"].startswith("Solo developer\n• Built")
-    assert by_key["EXP-002"]["label"] == "Paper2Exam"
+    assert by_key["EXP-002"]["label"] == "QuizLoom"
     boss = profile.desired(doc, next(v for v in doc["subsets"] if v["id"] == "ALL"), "zh", PRESETS["boss"])
     assert next(i for i in boss["items"] if i["key"] == "EXP-002")["fields"]["role"] == "独立开发"
     _, errs = profile.validate_current({"items": [{"section": "projects", "fields": {"role": "x"}}]}, LI)
