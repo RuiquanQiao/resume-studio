@@ -159,7 +159,9 @@ body[data-chat="off"] .workspace { grid-template-columns: minmax(600px, 1fr) 5px
 #chat { display: flex; flex-direction: column; overflow: hidden; }
 .chat-head { display: flex; gap: 4px; align-items: center; padding: 10px 10px 8px; border-bottom: 1px solid var(--line); flex: none; }
 .chat-head .select { flex: 1; }
-.chat-log { flex: 1; min-height: 0; overflow: auto; padding: 14px 14px 8px; display: flex; flex-direction: column; gap: 14px; }
+/* its size comes from the pane, never from its messages: with that said (contain), a keystroke in the
+   composer no longer lays out every message of a long chat again (~30ms a key at a few thousand nodes) */
+.chat-log { flex: 1; min-height: 0; overflow: auto; padding: 14px 14px 8px; display: flex; flex-direction: column; gap: 14px; contain: size layout; }
 .msg-user { align-self: flex-end; max-width: 88%; padding: 8px 12px; border-radius: 12px 12px 4px 12px; background: var(--accent-soft); white-space: pre-wrap; word-break: break-word; }
 .msg-ai { max-width: 100%; word-break: break-word; }
 .msg-ai .md > :first-child { margin-top: 0; }
@@ -216,7 +218,9 @@ body[data-chat="off"] .workspace { grid-template-columns: minmax(600px, 1fr) 5px
   transition: border-color .12s, box-shadow .12s; }
 .composer-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 .composer-row { display: flex; align-items: flex-end; gap: 6px; }
-.composer-box textarea { flex: 1; border: 0; outline: none; resize: none; background: transparent; padding: 4px 0; max-height: 200px; line-height: 1.5; min-width: 0; }
+/* grows with its text by itself: measuring it from script (height auto → scrollHeight) re-laid out the
+   whole chat log on every keystroke, which made typing lag in a long chat */
+.composer-box textarea { flex: 1; field-sizing: content; border: 0; outline: none; resize: none; background: transparent; padding: 4px 0; max-height: 200px; line-height: 1.5; min-width: 0; }
 .composer-box textarea:focus-visible { box-shadow: none; }
 .composer-box textarea::placeholder { color: var(--text-3); }
 .composer-box textarea:placeholder-shown { overflow: hidden; }

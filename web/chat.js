@@ -88,7 +88,6 @@ function relTime(epoch) {
   if (d < 60 * 24) return rtf.format(-Math.floor(d / 60), "hour");
   return new Date(epoch * 1000).toLocaleDateString(LOCALE);
 }
-function autosize(ta) { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 200) + "px"; }
 // the chat is on screen: its tab in Resume, or the left pane of Autofill and Job search (where it has no tab)
 const chatShown = () => W.chat === "on";
 const fileUrl = (path) => `/api/chats/${ui.chat.id}/file?path=${encodeURIComponent(path)}`;
@@ -991,13 +990,12 @@ function applySlash(i = slash.active) {
   const input = $("#chat-input");
   closeSlash();
   input.value = `/${c.name} `;
-  autosize(input);
   input.focus();
   input.setSelectionRange(input.value.length, input.value.length);
   if (c.local && !c.hint.startsWith("<")) runLocal(input.value.trim()) && clearInput();
   else if (!c.local && !c.hint && !TERMINAL_ONLY.has(c.name)) submitComposer();   // nothing to fill in: run it, like Claude Code
 }
-function clearInput() { const ta = $("#chat-input"); ta.value = ""; autosize(ta); }
+function clearInput() { $("#chat-input").value = ""; }
 
 // /model, /effort, /permissions, /clear, /rename are this window's own; true = handled
 function runLocal(text) {
@@ -1030,7 +1028,6 @@ function startChatWith(text) {
   showChat();
   const ta = $("#chat-input");
   ta.value = text;
-  autosize(ta);
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);
 }
@@ -1198,7 +1195,7 @@ function wireChat() {
   $("#chat-send").onclick = submitComposer;
   $("#chat-stop").onclick = () => ui.chat.id && api("POST", `/api/chats/${ui.chat.id}/cancel`);
   const input = $("#chat-input");
-  input.addEventListener("input", () => { autosize(input); updateSlash(); });
+  input.addEventListener("input", updateSlash);
   input.addEventListener("keydown", (e) => {
     if (slash.open) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); moveSlash(e.key === "ArrowDown" ? 1 : -1); return; }
