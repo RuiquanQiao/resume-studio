@@ -23,7 +23,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from core.i18n import t
 
-from .store import Hunt, _date, _key, _now, _text
+from .store import Hunt, _date, _key, _now, _places, _text
 
 BATCHES = ["campus", "intern", "social", "other"]
 
@@ -217,10 +217,17 @@ class Postings:
                 return self.hunt.application(p["app"])
             except KeyError:
                 pass
-        note = " · ".join(x for x in (p.get("location"), p.get("category")) if x)
+        # its location becomes the role's places ("北京/上海" is two); what can't be read so stays in the note
+        loc = p.get("location") or ""
+        try:
+            places = [x for x in re.split(r"\s*[/,，、;；|]\s*", loc) if x]
+            places = [] if not places else _places(places)
+        except ValueError:
+            places = []
+        note = " · ".join(x for x in ("" if places else loc, p.get("category")) if x)
         try:
             a = self.hunt.add_application(p["company"], {"role": p["title"], "url": p.get("url") or "", "deadline": p.get("deadline") or "",
-                                                         "note": note}, source=source)
+                                                         "note": note, "places": places}, source=source)
         except ValueError:   # the same role is on the list already: link to it
             a = next(x for x in self.hunt.applications(p["company"]) if _key(x["role"]) == _key(p["title"]))
         with self.hunt.lock:

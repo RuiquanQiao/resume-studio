@@ -190,6 +190,16 @@ def test_postings_are_matched_across_scans(hunt):
     a = ps.apply(agent["id"])
     assert a["role"] == "AI Agent 工程师" and a["url"].endswith("postId=3") and ps.get(agent["id"])["app"] == a["id"]
     assert ps.apply(agent["id"])["id"] == a["id"] and len(hunt.applications()) == 1
+    # its location becomes the role's places; one that can't be read so stays in the note
+    ps.merge("Tencent", [{"title": "前端开发", "url": "https://careers.tencent.com/jobdesc.html?postId=4", "location": "北京/深圳"},
+                         {"title": "海外研发", "url": "https://careers.tencent.com/jobdesc.html?postId=5", "location": "Remote"}],
+             how="tencent", complete=False)
+    two = ps.apply(next(p for p in ps.all() if p["title"] == "前端开发")["id"])
+    assert two["places"] == [{"kind": "onsite", "area": "北京"}, {"kind": "onsite", "area": "深圳"}] and "北京" not in two["note"]
+    away = ps.apply(next(p for p in ps.all() if p["title"] == "海外研发")["id"])
+    assert away["places"] == [] and away["note"] == "Remote"
+    for x in (two, away):
+        hunt.delete_application(x["id"])
     # a role added by hand before the scan found it: linked, not offered again
     hunt.add_application("Tencent", {"role": "后台开发工程师"})
     ps.merge("Tencent", second, how="tencent")

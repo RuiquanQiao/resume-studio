@@ -209,6 +209,60 @@ def test_a_roles_referral_code_has_its_own_field(live, data_file):
     assert live.req("PUT", "/api/hunt/apps/A1", {"referral": ""})[1]["application"]["referral"] == ""
 
 
+def test_a_role_is_in_several_places_and_remote_says_where(live, data_file):
+    cli(data_file, "add-company", "星河科技")
+    code, out = cli(data_file, "add-role", "星河科技", "服务端", "--place", "南京", "--place", "上海", "--place", "远程（中国大陆）",
+                    "--place", "hybrid: 悉尼", "--place", "南京")
+    assert code == 0 and "in 南京; 上海; remote: 中国大陆; 悉尼 (hybrid)" in out
+    a = live.req("GET", "/api/hunt/apps/A1")[1]["application"]
+    assert a["places"] == [{"kind": "onsite", "area": "南京"}, {"kind": "onsite", "area": "上海"},
+                           {"kind": "remote", "area": "中国大陆"}, {"kind": "hybrid", "area": "悉尼"}]
+    # remote must say the region it is open to
+    status, r = live.req("PUT", "/api/hunt/apps/A1", {"places": [{"kind": "remote", "area": ""}]})
+    assert status == 400 and r["error"]
+    assert cli(data_file, "edit-role", "A1", "--place", "remote")[0] != 0
+    v = live.req("PUT", "/api/hunt/apps/A1", {"places": [{"kind": "remote", "area": "不限"}]})[1]["application"]
+    assert v["places"] == [{"kind": "remote", "area": "不限"}]
+    assert live.req("GET", "/api/hunt/apps/A1")[1]["application"]["places"] == v["places"]
+    assert cli(data_file, "edit-role", "A1", "--no-places")[0] == 0
+    assert live.req("GET", "/api/hunt/apps/A1")[1]["application"]["places"] == []
+
+
+def test_places_are_found_on_the_map_by_any_name():
+    from jobhunt.geo import find
+    hangzhou = find("杭州")
+    assert hangzhou["name"] == "Hangzhou" and hangzhou["country"] == "CN"
+    for same in ("杭州·余杭区", "杭州市", "Hangzhou"):
+        assert find(same)["lat"] == hangzhou["lat"]
+    assert find("北京市海淀区")["name"] == "Beijing"            # by its start
+    assert find("悉尼")["country"] == "AU" and find("Sydney, NSW")["country"] == "AU"   # the bigger Sydney
+    assert find("München")["name"] == "Munich" and find("東京")["name"] == "Tokyo"
+    assert find("湾区") is None and find("") is None
+
+
+def test_companies_hire_in_places_and_the_map_knows_where_they_are(live, data_file):
+    cli(data_file, "add-company", "星河科技")
+    code, out = cli(data_file, "fill", "星河科技", "--stdin", stdin=json.dumps(
+        {"location": "上海", "places": ["上海", "北京", "remote: 中国大陆", "滨江园区"], "sources": {"places": "https://xinghe.example/jobs"}}))
+    assert code == 0 and "hires in: 上海; 北京; remote: 中国大陆; 滨江园区  [https://xinghe.example/jobs]" in out
+    cli(data_file, "add-role", "星河科技", "服务端", "--place", "杭州·余杭区")
+    geo = live.req("GET", "/api/hunt")[1]["geo"]
+    assert geo["上海"]["name"] == "Shanghai" and geo["杭州·余杭区"]["name"] == "Hangzhou"
+    assert geo["滨江园区"] is None and "中国大陆" not in geo        # remote isn't a spot on the map
+    # one the map can't find is pinned where the user (or Claude) says
+    code, out = cli(data_file, "pin", "滨江园区", "30.21", "120.21")
+    assert code == 0 and "30.21, 120.21 (pinned)" in out
+    assert live.req("GET", "/api/hunt")[1]["geo"]["滨江园区"]["pinned"]
+    assert "滨江园区: 30.21, 120.21 (pinned)" in cli(data_file, "where")[1]
+    assert live.req("PUT", "/api/hunt/geo", {"area": "滨江园区", "lat": None})[0] == 200
+    assert live.req("GET", "/api/hunt")[1]["geo"]["滨江园区"] is None
+    assert live.req("PUT", "/api/hunt/geo", {"area": "x", "lat": 95, "lon": 0})[0] == 400
+    # edited in the window, the places are the user's: a later fill leaves them
+    live.req("PUT", "/api/hunt/companies/C1", {"places": ["杭州"]})
+    code, out = cli(data_file, "fill", "星河科技", "--stdin", stdin=json.dumps({"places": ["广州"]}))
+    assert "left as the user set them: places" in out and "hires in: 杭州" in out
+
+
 def test_booked_from_the_window_and_from_claude_end_in_one_calendar_file(live, data_file):
     cli(data_file, "add-company", "星河科技")
     cli(data_file, "add-role", "星河科技", "服务端")

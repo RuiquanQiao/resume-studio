@@ -247,6 +247,7 @@ function appProps() {
     { key: "url", label: t("Link"), type: "text", width: 200, get: (a) => a.url || "", set: (a, v) => cellApp(a, { url: v }),
       render: (a) => !/^https?:\/\//.test(a.url || "") ? h("span", { class: "c-muted" }, a.url || "") : h("a", { href: a.url, class: "c-link", title: a.url, onclick: (e) => { e.preventDefault(); openInBrowser(a.url); } },
         a.url.replace(/^https?:\/\//, "")) },
+    placesProp("places", t("Location"), (a, v) => cellApp(a, { places: v })),
     { key: "referral", label: t("Referral code"), type: "text", width: 130, get: (a) => a.referral || "", set: (a, v) => cellApp(a, { referral: v }) },
     { key: "channel", label: t("How"), type: "select", width: 150, min: 120, wrap: true, hidden: true, get: (a) => a.channel || "site", options: channels,
       render: (a) => h("span", { class: "c-muted" }, channelText(a)),
@@ -271,7 +272,94 @@ const APP_VIEWS = () => [
   { id: "v3", name: t("Board"), layout: "board", group: "status" },
   { id: "v4", name: t("Calendar"), layout: "calendar" },
   { id: "v5", name: t("Gantt"), layout: "gantt" },
+  { id: "v6", name: t("Map"), layout: "map" },
 ];
+
+// ---- where a role is: cities, hybrid, remote with the region it is open to (docs/JOB_HUNT.md, 2026-10-21) ----
+const PLACE_KINDS = { onsite: "On site", hybrid: "Hybrid", remote: "Remote" };
+const PLACE_ICONS = { onsite: "pin", hybrid: "home", remote: "globe" };
+const placeText = (p) => p.kind === "remote" ? t("Remote · {area}", { area: p.area }) : p.kind === "hybrid" ? t("{area} · hybrid", { area: p.area }) : p.area;
+const placeKey = (p) => p.kind + "|" + p.area.replace(/\s+/g, "").toLowerCase();
+function placeChip(p, remove) {
+  return h("span", { class: "pl-chip k-" + p.kind, title: t(PLACE_KINDS[p.kind]) }, icon(PLACE_ICONS[p.kind]), h("span", null, placeText(p)),
+    remove && h("button", { type: "button", class: "pl-x", title: t("Remove"), "aria-label": t("Remove {what}", { what: placeText(p) }), onclick: remove }, icon("x")));
+}
+
+// a table's column of places: chips, edited over the cell and saved when the editor closes
+function placesProp(key, label, save, extra = {}) {
+  return { key, label, type: "custom", width: 180, wrap: true, get: (x) => (x.places || []).map(placeText),
+    render: (x) => h("span", { class: "c-places" }, (x.places || []).map((p) => placeChip(p))),
+    edit: (td, x) => {
+      let next = null;
+      const ed = placesEditor(x.places, (v) => { next = v; });
+      openFloat(td, h("div", { class: "menu dbv-pop pl-pop" }, ed), { minWidth: Math.max(td.offsetWidth, 360), focus: ed.querySelector(".pl-input"),
+        onClose: () => { if (next) save(x, next); dbvAfterClose(); } });
+    }, ...extra };
+}
+
+// for the world maps: where each place is (the server looked them up: H.data.geo)
+const placeAt = (area) => ((H.data && H.data.geo) || {})[area] || null;
+const located = (places, kind = null) => (places || []).map((p) => {
+  const at = p.kind === "remote" ? null : placeAt(p.area);
+  return { area: p.area, kind: kind || p.kind, lat: at ? at.lat : null, lon: at ? at.lon : null };
+});
+const appLocated = (a) => located(a.places);
+function companyLocated(c) {
+  const out = located(c.places);
+  const hq = c.location && placeAt(c.location);
+  // its headquarters, when it isn't one of the places it hires in already
+  if (hq && !out.some((p) => p.lat === hq.lat && p.lon === hq.lon)) out.push({ area: c.location, kind: "hq", lat: hq.lat, lon: hq.lon });
+  return out;
+}
+async function pinPlace(area, lat, lon) {
+  try {
+    await api("PUT", "/api/hunt/geo", { area, lat, lon });
+    toast(t("“{area}” is on the map now", { area }));
+  } catch (e) { toast(e.message); }
+  await loadHunt({ quiet: true });
+}
+
+// on a role's page and over a table's cell; change() gets the whole new list each time
+function placesEditor(list, change) {
+  let cur = [...(list || [])];
+  let kind = "onsite";
+  const wrap = h("div", { class: "pl-ed" });
+  const set = (next) => {
+    const seen = new Set();
+    cur = next.filter((p) => !seen.has(placeKey(p)) && seen.add(placeKey(p)));
+    change(cur);
+    paint();
+    wrap.querySelector(".pl-input").focus();
+  };
+  const paint = () => {
+    const input = h("input", { type: "text", class: "pl-input", spellcheck: "false", "aria-label": kind === "remote" ? t("Region") : t("City"),
+      placeholder: kind === "remote" ? t("Open to which region? 中国大陆, APAC, 不限…") : t("City: 南京, 上海…") });
+    const add = () => {
+      const v = input.value.trim();
+      if (!v) { toast(kind === "remote" ? t("Say which region a remote role is open to (不限 if anywhere)") : t("Say which city")); input.focus(); return; }
+      // several cities at once: 南京、上海
+      const areas = kind === "remote" ? [v] : v.split(/\s*[,，、;；/]\s*/).filter(Boolean);
+      set([...cur, ...areas.map((area) => ({ kind, area }))]);
+    };
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); add(); } });
+    // what the user's other roles say, one click away (cities for on site and hybrid, regions for remote)
+    const same = (k) => (kind === "remote") === (k === "remote");
+    const mine = new Set(cur.filter((p) => p.kind === kind).map((p) => placeKey(p)));
+    const used = [...new Set(((H.data && H.data.applications) || []).flatMap((x) => (x.places || []).filter((p) => same(p.kind)).map((p) => p.area)))]
+      .filter((area) => !mine.has(placeKey({ kind, area })));
+    wrap.replaceChildren(
+      h("div", { class: "pl-list" }, cur.length ? cur.map((p, i) => placeChip(p, () => set(cur.filter((_, j) => j !== i))))
+        : h("span", { class: "muted" }, t("Not said yet"))),
+      h("div", { class: "pl-add" },
+        uiSeg(Object.entries(PLACE_KINDS).map(([value, label]) => ({ value, label: t(label) })), kind, (k) => { kind = k; paint(); wrap.querySelector(".pl-input").focus(); },
+          { cls: "sm", label: t("Kind of place") }),
+        input, h("button", { type: "button", class: "btn sm", onclick: add }, icon("plus"), t("Add"))),
+      ...(used.length ? [h("div", { class: "bk-chips", role: "group", "aria-label": t("Common ones") }, used.map((area) =>
+        h("button", { type: "button", class: "bk-chip", onclick: () => set([...cur, { kind, area }]) }, area)))] : []));
+  };
+  paint();
+  return wrap;
+}
 
 // ---- what is booked for a role: tests, 一面, 二面… (docs/JOB_HUNT.md, 2026-10-21) ----
 // the usual ones, offered as chips; the user's own titles join them
@@ -392,7 +480,7 @@ function appsTable() {
   const d = H.data;
   const names = Object.fromEntries(d.companies.map((c) => [c.id, c.name]));
   const all = [...d.applications].sort((a, b) => (names[a.company] || "").localeCompare(names[b.company] || "") || (a.order || 0) - (b.order || 0));
-  const shown = all.filter((a) => matches(names[a.company], a.role, a.note, a.jd, ...(a.schedule || []).map((e) => e.title)));
+  const shown = all.filter((a) => matches(names[a.company], a.role, a.note, a.jd, ...(a.schedule || []).map((e) => e.title), ...(a.places || []).map(placeText)));
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Your applications")),
       h("p", null, t("Every role you apply for, wherever it goes in. Tell Claude on the left what happened (“Xinghe 一面过了”), or change it here."))),
@@ -402,7 +490,7 @@ function appsTable() {
       h("button", { class: "btn sm", id: "hunt-ics", title: t("Every interview, test and deadline as an .ics file, opened in your calendar app (Outlook…)"),
         disabled: !d.applications.some((a) => (a.schedule || []).length || a.deadline), onclick: () => exportIcs({}) }, icon("calendar"), t("Add to my calendar"))),
     dbView({ table: "apps", props: appProps(), rows: shown, rowId: (a) => a.id, open: (a) => openHunt("app", a.id), defaults: APP_VIEWS(), repaint: paintHunt,
-      dated: appDated,
+      dated: appDated, located: appLocated, pin: pinPlace, sub: (a) => (huntCompany(a.company) || {}).name || "",
       empty: !d.applications.length
         ? h("div", null, h("div", { class: "t" }, t("No applications yet")),
           h("p", null, t("Add one here, or a company with the roles you apply for on its own site (网申).")))
@@ -574,6 +662,7 @@ function companyProps() {
     { key: "roles", label: t("Roles"), type: "relation", width: 300, get: (c) => (c.apps || []).map((a) => a.role),
       render: (c) => h("div", { class: "role-chips" }, (c.apps || []).map(roleChip), openChip(c),
         !(c.apps || []).length && !openChip(c) && h("span", { class: "c-muted" }, scanning(c.id) ? t("Scanning…") : t("none yet"))) },
+    placesProp("places", t("Hires in"), (c, v) => cellCompany(c, { places: v })),
     text("location", t("Headquarters"), 130, { hidden: true, group: true }),
     text("size", t("Size"), 120, { hidden: true }),
     text("site", t("Careers site"), 220, { hidden: true }),
@@ -583,7 +672,7 @@ function companyProps() {
 
 function companiesTable() {
   const d = H.data;
-  const shown = d.companies.filter((c) => matches(c.name, (c.aliases || []).join(" "), c.industry, c.strength, c.note));
+  const shown = d.companies.filter((c) => matches(c.name, (c.aliases || []).join(" "), c.industry, c.strength, c.note, c.location, ...(c.places || []).map(placeText)));
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Companies")),
       h("p", null, t("What each company is and how it is doing, your notes, and its own careers site: one profile there, several roles in your order of preference."))),
@@ -591,7 +680,8 @@ function companiesTable() {
       d.companies.length > 0 && scanAllButton()),
     d.companies.length > 0 && scanNews(),
     dbView({ table: "companies", props: companyProps(), rows: shown, rowId: (c) => c.id, open: (c) => openHunt("company", c.id),
-      defaults: [{ id: "v1", name: t("All companies") }], repaint: paintHunt,
+      defaults: [{ id: "v1", name: t("All companies") }, { id: "v2", name: t("Map"), layout: "map" }], repaint: paintHunt,
+      located: companyLocated, pin: pinPlace, sub: (c) => c.industry || "",
       empty: !d.companies.length
         ? h("div", null, h("div", { class: "t" }, t("No companies yet")), h("p", null, t("Add the companies you're applying to; Claude can tell you about each one.")))
         : t("Nothing matches") }),
@@ -846,6 +936,8 @@ function companyPage(v) {
         hfield(t("Strength"), c.strength, save("strength"), { placeholder: t("e.g. market cap, or the latest valuation"), hint: keptHint(c, "strength") })),
       h("div", { class: "grid2" }, hfield(t("Headquarters"), c.location, save("location"), { hint: keptHint(c, "location") }),
         hfield(t("Size"), c.size, save("size"), { hint: keptHint(c, "size") })),
+      h("div", { class: "field", id: "company-places" }, h("label", null, t("Hires in"), h("span", { class: "hint" }, keptHint(c, "places") || t("the cities it hires in: they put it on the map"))),
+        placesEditor(c.places, (v) => { c.places = v; save("places")(v); })),
       hfield(t("Notes"), c.note, save("note"), { multiline: true, placeholder: t("e.g. which batch (提前批 / 正式批), what you heard") }),
     ]),
     card(t("What happened"), v.events.length ? t("{n} event", { n: v.events.length }, "{n} events") : "", [timeline(v.events, apps)]),
@@ -868,7 +960,7 @@ function keptHint(c, key) {
 // Claude researches the company and fills every field (docs/JOB_HUNT.md, 2026-10-18)
 function askFill(c) {
   if (!ui.chat.available) return;
-  sendChat(t("Find out about {company} and fill in all its fields: industry, strength, headquarters, size, its careers sites, its logo and the About, each with a source.", { company: c.name }));
+  sendChat(t("Find out about {company} and fill in all its fields: industry, strength, headquarters, the cities it hires in, size, its careers sites, its logo and the About, each with a source.", { company: c.name }));
 }
 
 async function moveApp(a, place) {
@@ -953,6 +1045,7 @@ function appPage(v) {
     ]),
     card(t("The role"), "", [
       h("div", { class: "grid2" }, hfield(t("Role"), a.role, save("role")), hfield(t("Link"), a.url, save("url"), { placeholder: "https://…" })),
+      h("div", { class: "field", id: "app-places" }, h("label", null, t("Location")), placesEditor(a.places, (v) => { a.places = v; save("places")(v); })),
       h("div", { class: "grid2" }, hfield(t("Deadline"), a.deadline, save("deadline"), { type: "date", id: "app-deadline" }),
         hfield(t("Referral code"), a.referral, save("referral"), { placeholder: t("none: no referral") })),
       h("div", { class: "field" }, h("label", null, t("How it goes in")), h("div", { class: "row wrap" }, channel, plat && plat.el,

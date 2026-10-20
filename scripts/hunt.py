@@ -8,7 +8,9 @@
     python scripts/hunt.py fill 星河科技 --stdin <<'JSON'   # Claude's research, every field at once (see `fill --help`)
     python scripts/hunt.py add-role 星河科技 "服务端研发工程师" [--url ...] [--channel site|platform|referral|other]
                                        [--platform boss] [--order 2] [--status saved] [--deadline 2026-10-31]
+                                       [--place 南京 --place 上海 --place "remote: 中国大陆" --place "hybrid: 悉尼"]
     python scripts/hunt.py edit-role 星河科技/服务端 [--role ...] [--url ...] [--referral <内推码>] [--order 1] [--note ...] [--deadline ...]
+                                       [--place ... (the whole list, again) | --no-places]
     python scripts/hunt.py status 星河科技/服务端 interview --note "一面 周三 14:00" [--on 2026-10-18]
     python scripts/hunt.py note 星河科技/服务端 "笔试已交" [--on 2026-10-18]
     python scripts/hunt.py jd 星河科技/服务端 --stdin <<'JD'   # the posting's full text (JD), kept on the role
@@ -16,6 +18,8 @@
     python scripts/hunt.py rebook 星河科技/服务端 E2 [--title 二面] [--at ..] [--minutes ..] [--where ..] [--note ..]
     python scripts/hunt.py unbook 星河科技/服务端 E2        # (or its title: 二面)
     python scripts/hunt.py ics [星河科技/服务端]             # everything booked (and deadlines) as an .ics file
+    python scripts/hunt.py where                            # every place in the tracker and where the map puts it
+    python scripts/hunt.py pin "滨江" 30.21 120.21 | pin "滨江" --unpin   # put a place the map can't find (or got wrong)
     python scripts/hunt.py about 星河科技 --stdin <<'JSON'  {"summary": "...", "points": [{"topic": "...", "text": "...",
                                                        "sources": ["https://..."]}], "read_at": "2026-10-16"}  JSON
     python scripts/hunt.py sent 星河科技                      # the sign-up on its site went out (every role not sent yet)
@@ -52,6 +56,7 @@ FILL_HELP = """Claude's research on a company, every field at once, as JSON on s
    "strength": "市值约 1,600 亿美元 (NASDAQ: XHT, 2026-10-17)",   # listed: market cap, exchange, ticker, date;
                                                      # not listed: valuation, latest round or headcount, with the date
    "location": "上海 (注册地都柏林)",
+   "places": ["上海", "北京", "深圳", "remote: 中国大陆"],    # every city it hires in (see `add-role --help` for the forms)
    "size": "约 2.3 万人 (2025 年报)",
    "sites": [{"url": "https://careers.xinghe.example/campus", "kind": "campus", "system": "own site"},
              {"url": "https://careers.xinghe.example/intern", "kind": "intern", "system": "own site"}],
@@ -88,6 +93,10 @@ def call(url: str, cmd: str, args: dict) -> dict:
         sys.exit(f"error: can't reach Resume Studio at {url} ({e}). Is the window open?")
 
 
+def place_text(p: dict) -> str:
+    return {"remote": f"remote: {p['area']}", "hybrid": f"{p['area']} (hybrid)"}.get(p["kind"], p["area"])
+
+
 def app_line(a: dict, company: str = "") -> str:
     ch = a.get("channel") or "site"
     how = CHANNELS.get(ch, ch).format(platform=a.get("platform") or "a platform")
@@ -97,6 +106,8 @@ def app_line(a: dict, company: str = "") -> str:
     if a.get("sent"):
         s = a["sent"][-1]
         parts.append(f"sent {s['at'][:10]}: {s['subset']} v{s['n']}")
+    if a.get("places"):
+        parts.append("in " + "; ".join(place_text(x) for x in a["places"]))
     if a.get("deadline"):
         parts.append(f"deadline {a['deadline']}")
     soon = [e for e in a.get("schedule") or [] if e["at"][:10] >= time.strftime("%Y-%m-%d")]
@@ -120,6 +131,9 @@ def show_company(v: dict) -> None:
     print(f"{c['id']} {c['name']}" + (f" (also: {', '.join(c['aliases'])})" if c.get("aliases") else ""))
     src = c.get("sources") or {}
     kept = set(c.get("kept") or [])
+    if c.get("places"):
+        print("  hires in: " + "; ".join(place_text(x) for x in c["places"]) + ("  [" + src["places"] + "]" if src.get("places") else "")
+              + ("  (the user's: fill leaves it)" if "places" in kept else ""))
     for k, label in (("industry", "industry"), ("strength", "strength"), ("location", "headquarters"), ("size", "size"),
                      ("site", "careers site"), ("account", "account"), ("subset", "filled from")):
         if c.get(k):
@@ -202,6 +216,7 @@ def main() -> int:
         for opt in ("site", "industry", "strength", "location", "size", "account", "subset", "note"):
             p.add_argument("--" + opt)
         p.add_argument("--alias", action="append", help="another name it goes by (repeat for more)")
+        p.add_argument("--place", action="append", help='a city it hires in, or "remote: <region>" (repeat; the whole list)')
     for name in ("add-role", "edit-role"):
         p = sub.add_parser(name)
         if name == "add-role":
@@ -210,6 +225,10 @@ def main() -> int:
             p.add_argument("ref"); p.add_argument("--role")
         for opt in ("url", "referral", "channel", "platform", "order", "note", "subset", "deadline") + (("status",) if name == "add-role" else ()):
             p.add_argument("--" + opt)
+        p.add_argument("--place", action="append", help='where it is: a city, "remote: <region it is open to>" or "hybrid: <city>" '
+                       "(repeat for each; on edit-role the list replaces the old one)")
+        if name == "edit-role":
+            p.add_argument("--no-places", action="store_true", help="it no longer says where")
     p = sub.add_parser("status"); p.add_argument("ref"); p.add_argument("status"); p.add_argument("--note", default="")
     p.add_argument("--on", default="")
     p = sub.add_parser("note"); p.add_argument("ref"); p.add_argument("text"); p.add_argument("--on", default="")
@@ -223,6 +242,9 @@ def main() -> int:
             p.add_argument("--" + opt)
     p = sub.add_parser("unbook"); p.add_argument("ref"); p.add_argument("event")
     p = sub.add_parser("ics"); p.add_argument("ref", nargs="?", default="")
+    p = sub.add_parser("where")
+    p = sub.add_parser("pin"); p.add_argument("area"); p.add_argument("lat", nargs="?", type=float); p.add_argument("lon", nargs="?", type=float)
+    p.add_argument("--unpin", action="store_true", help="back to where the city list puts it")
     p = sub.add_parser("jd"); p.add_argument("ref"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("about"); p.add_argument("ref"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("fill", description=FILL_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -268,12 +290,16 @@ def main() -> int:
             a.update(ref=args.ref, **pick("name"))
         if args.alias:
             a["aliases"] = args.alias
+        if args.place:
+            a["places"] = args.place
         r = call(url, c, a)
         print(r["text"] + ":")
         show_company(r["company"])
         return 0
     if c in ("add-role", "edit-role"):
         a = pick("url", "referral", "channel", "platform", "order", "note", "subset", "status", "deadline")
+        if args.place or getattr(args, "no_places", False):
+            a["places"] = args.place or []
         if c == "add-role":
             a.update(company=args.company, role=args.role)
         else:
@@ -291,6 +317,19 @@ def main() -> int:
                           **pick("at", "minutes", "where", "note")})
     elif c == "unbook":
         r = call(url, c, {"ref": args.ref, "event": args.event})
+    elif c == "where":
+        r = call(url, c, {})
+        for area, w in sorted(r["geo"].items()):
+            print(f"  {area}: " + (f"{w['lat']}, {w['lon']} ({'pinned' if w.get('pinned') else w['name'] + ', ' + w['country']})" if w
+                                   else "not found: pin it (hunt.py pin)"))
+        return 0
+    elif c == "pin":
+        if not args.unpin and (args.lat is None or args.lon is None):
+            sys.exit("error: give its latitude and longitude, or --unpin")
+        r = call(url, c, {"area": args.area, "lat": None if args.unpin else args.lat, "lon": None if args.unpin else args.lon})
+        w = r["where"]
+        print(f"{args.area}: " + (f"{w['lat']}, {w['lon']}" + (" (pinned)" if w.get("pinned") else f" ({w.get('name')})") if w else "not found"))
+        return 0
     elif c == "ics":
         r = call(url, c, {"ref": args.ref})
         print(f"written: {r['path']} (opening it imports it into the user's calendar app)")

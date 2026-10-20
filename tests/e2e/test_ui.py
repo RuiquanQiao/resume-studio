@@ -1333,9 +1333,33 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.fill(".float .dbv-date", "2026-11-01")
     wait_until(lambda: app(a2)["deadline"] == "2026-11-01", msg="deadline saved")
     pg.keyboard.press("Escape")
+    # places: several cities at once, then remote, which must say its region; saved when the panel closes
+    server.req("PUT", f"/api/hunt/apps/{a1}", {"places": ["杭州"]})   # another role's, offered as a suggestion below
+    pg.click(f"{row(a2)} td[data-key=places]")
+    pg.fill(".float .pl-input", "南京、上海")
+    pg.press(".float .pl-input", "Enter")
+    pg.click(".float .pl-add .seg button[data-value=remote]")
+    pg.press(".float .pl-input", "Enter")                       # no region: not added
+    pg.wait_for_selector(".toast:has-text('不限')")
+    assert pg.locator(".float .pl-list .pl-chip").count() == 2
+    pg.fill(".float .pl-input", "APAC")
+    pg.press(".float .pl-input", "Enter")
+    pg.wait_for_selector(".float .pl-chip.k-remote:has-text('APAC')")
+    pg.screenshot(path=str(ART / "hunt-places-cell-light.png"))
+    pg.keyboard.press("Escape")
+    wait_until(lambda: app(a2)["places"] == [{"kind": "onsite", "area": "南京"}, {"kind": "onsite", "area": "上海"},
+                                             {"kind": "remote", "area": "APAC"}], msg="places saved")
+    pg.wait_for_selector(f"{row(a2)} td[data-key=places] .pl-chip.k-remote:has-text('远程 · APAC')")
     # the title opens the row's page; other cells don't
     pg.click(f"{row(a2)} .dbv-title")
     pg.wait_for_selector("#app-status")
+    # the same places on the role's page: one removed, one suggested from another role
+    pg.click("#app-places .pl-chip:has-text('上海') .pl-x")
+    wait_until(lambda: [p["area"] for p in app(a2)["places"]] == ["南京", "APAC"], msg="a place removed on the page")
+    pg.click("#app-places .bk-chip:has-text('杭州')")
+    wait_until(lambda: [p["area"] for p in app(a2)["places"]] == ["南京", "APAC", "杭州"], msg="a place suggested and added")
+    pg.locator("#app-places").scroll_into_view_if_needed()
+    pg.screenshot(path=str(ART / "hunt-places-page-light.png"))
     pg.click(".hunt-back")
     pg.wait_for_selector(".dbv-view[data-table=apps]")
 
@@ -1393,7 +1417,7 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     # a new view, renamed; then deleted
     pg.click(".dbv-addview")
     pg.click(".float .menu-item:has-text('表格')")
-    pg.wait_for_selector(".dbv-tab.on[data-view=v6]")
+    pg.wait_for_selector(".dbv-tab.on[data-view=v7]")
     pg.click(".dbv-tab.on")
     pg.click(".float .menu-item:has-text('改名')")
     pg.fill("#fm-name", "本周截止")
@@ -1406,10 +1430,10 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
         pg.emulate_media(color_scheme=scheme)
         pg.screenshot(path=str(ART / f"hunt-board-{scheme}.png"))
     pg.emulate_media(color_scheme="light")
-    pg.click(".dbv-tab[data-view=v6]")
+    pg.click(".dbv-tab[data-view=v7]")
     pg.click(".dbv-tab.on")
     pg.click(".float .menu-item:has-text('删除这个视图')")
-    pg.wait_for_selector(".dbv-tab[data-view=v6]", state="detached")
+    pg.wait_for_selector(".dbv-tab[data-view=v7]", state="detached")
     no_native(pg)
 
     # the calendar: what is booked, on its day; a click opens the role (docs/JOB_HUNT.md, 2026-10-21)
@@ -1450,14 +1474,54 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.emulate_media(color_scheme="light")
     no_native(pg)
 
+    # the world map (docs/JOB_HUNT.md, 2026-10-21): a pin per city; remote and unknown places beside it
+    server.req("PUT", f"/api/hunt/apps/{a1}", {"places": ["杭州", "滨江园区"]})
+    pg.click(".dbv-tab[data-view=v6]")
+    pg.wait_for_selector(".dbv-map .dbv-land[d]")
+    pg.wait_for_selector(".dbv-pin")
+    assert pg.locator("#dbv-apps-group").count() == 0 and pg.locator("#dbv-apps-sort").count() == 0
+    pg.wait_for_selector(".dbv-offrow[data-area='APAC']:has-text('远程 · APAC')")
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"hunt-map-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+    # a place the city list doesn't know: put on the map by a click, where the user says
+    pg.click(".dbv-offrow[data-area='滨江园区'] .dbv-place")
+    pg.wait_for_selector(".dbv-pinbar:has-text('滨江园区')")
+    pg.mouse.click(*pg.evaluate("() => { const r = document.querySelector('.dbv-mapstage').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }"))
+    wait_until(lambda: (server.req("GET", "/api/hunt")[1]["geo"].get("滨江园区") or {}).get("pinned"), msg="pinned where clicked")
+    pg.wait_for_selector(".dbv-offrow[data-area='滨江园区']", state="detached")
+    # a pin lists its roles; close ones join until zoomed in
+    for _ in range(4):
+        pin = pg.locator(".dbv-pin[data-area*='南京']").first
+        joined = "many" in (pin.get_attribute("class") or "")
+        pin.click()
+        if not joined:
+            break
+    pg.wait_for_selector(".float.dbv-spot .dbv-maprow:has-text('算法工程师')")
+    pg.click(".float.dbv-spot .dbv-maprow:has-text('算法工程师')")
+    pg.wait_for_selector("#app-status")
+    pg.click(".hunt-back")
+    pg.wait_for_selector(".dbv-map")
+    # the companies' map: where they hire, and the headquarters
+    server.req("PUT", f"/api/hunt/companies/{c1}", {"places": ["上海", "北京", "remote: 中国大陆"], "location": "深圳"})
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.click(".dbv-tab[data-view=v2]")
+    pg.wait_for_selector(".dbv-pin.hq[data-area='深圳']")
+    pg.screenshot(path=str(ART / "hunt-companies-map-light.png"))
+    pg.click(".dbv-tab[data-view=v1]")
+    wait_until(lambda: views()["companies"]["active"] == "v1", msg="companies back to their table")
+    pg.click(".hunt-tab[data-tab=apps]")
+    no_native(pg)
+
     # the views come back after a reload: they live with the data
     pg.click(".dbv-tab[data-view=v1]")
     wait_until(lambda: views()["apps"]["active"] == "v1", msg="active view saved")
     pg.reload()
     pg.keyboard.press("Control+3")
     pg.wait_for_selector(".dbv-tab.on[data-view=v1]")
-    assert pg.locator(".dbv-th[data-key=last]").count() == 0 and pg.locator(".dbv-tab").count() == 5
-    assert [v["layout"] for v in views()["apps"]["views"]][3:] == ["calendar", "gantt"]   # kept as they are, not turned into tables
+    assert pg.locator(".dbv-th[data-key=last]").count() == 0 and pg.locator(".dbv-tab").count() == 6
+    assert [v["layout"] for v in views()["apps"]["views"]][3:] == ["calendar", "gantt", "map"]   # kept as they are, not turned into tables
 
     # the companies table: a field typed in its cell is the user's (Claude's fills keep it)
     pg.click(".hunt-tab[data-tab=companies]")

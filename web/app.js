@@ -163,11 +163,11 @@ const ui = {
   w: {},         // custom controls created once: subset, chat, tpl
 };
 
-const doc = () => S.doc;
+const doc = () => S && S.doc;   // null until the first state arrives
 const langs = () => (doc().settings && doc().settings.languages) || ["en"];
 const sections = () => doc().sections || [];
 const entries = () => doc().entries || [];
-const subsets = () => doc().subsets || [];
+const subsets = () => (doc() && doc().subsets) || [];   // none yet while the file loads (Applying can draw first)
 const subset = () => subsets().find((v) => v.id === ui.subsetId) || null;
 const ALL = "ALL";
 const isAll = () => ui.subsetId === ALL;

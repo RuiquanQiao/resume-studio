@@ -71,11 +71,13 @@ with the C# compiler that ships with Windows.
     (`jobs/base.py`), and hosting a tool's web interface is generic (`core/webhost.py`), so another tool can
     replace career-ops later without changing the window.
 - **Applying (Ctrl+3)**: Resume Studio's own job-hunt tracker, in three tables:
-  - **Progress**: every application (company and role), how it goes in (the company's own site, a platform, a
+  - **Progress**: every application (company and role), where it is (cities, hybrid, remote and the region it
+    is open to), how it goes in (the company's own site, a platform, a
     referral), its status, the subset version it got, the latest event and what is booked (interviews,
-    tests), shown on a calendar and a Gantt chart and exported as .ics. Each has a timeline.
-  - **Companies**: logo, industry, strength and open roles. Add one by its name or paste a posting's link:
-    Claude fills in every field (with a source for each), finds its careers sites and logo. **Scan all** reads
+    tests), shown on a calendar, a Gantt chart and a world map, and exported as .ics. Each has a timeline.
+  - **Companies**: logo, industry, strength, the cities it hires in and open roles, also on a world map. Add one
+    by its name or paste a posting's link: Claude fills in every field (with a source for each), finds its
+    careers sites and logo. **Scan all** reads
     every company's sites for open roles (career-ops' providers for Moka, Feishu, Tencent, Greenhouse, Lever…;
     a route Claude records once for any other site) and says what is new today. On a company's page: its open
     roles ("Want to apply" adds one to your applications), the roles there in your order of preference
@@ -108,3 +110,6 @@ with the C# compiler that ships with Windows.
 
 Data format and Claude's editing rules: [SKILL.md](SKILL.md). How changes are verified: [TESTING.md](TESTING.md).
 Where the job-hunt side is going (applications, companies and platforms, a tracker of our own): [docs/JOB_HUNT.md](docs/JOB_HUNT.md).
+
+The world maps use place names and coordinates from [GeoNames](https://www.geonames.org) (CC BY 4.0) and land
+from [Natural Earth](https://www.naturalearthdata.com) (public domain), both kept in the repository and used offline.

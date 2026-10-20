@@ -14,6 +14,7 @@ from resume import model
 from resume.service import Studio
 
 from . import ics, logos
+from .geo import Geo
 from .logos import fetch_logo
 from .postings import Postings
 from .scan import Scanner
@@ -48,6 +49,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     hunt.on_change = lambda: app.bus.publish("hunt", {})
     posts = Postings(hunt)
     views = Views(hunt.dir)
+    geo = Geo(hunt.dir)
     scanner = Scanner(hunt, posts, tool, browser, lambda: app.bus.publish("hunt", {}))
     hunt.scanner = scanner   # the app (and tests) reach the scanner through the tracker
     studio.on_subset_renamed.append(hunt.rename_subset)
@@ -57,6 +59,11 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         old = Signups(studio.store.state_dir).all()
         if old:
             hunt.import_signups(old)
+
+    def located() -> dict:
+        """Where every place in the tracker is, for the world maps: {area: {lat, lon, name, country} | None}."""
+        areas = [p["area"] for x in hunt.applications() + hunt.companies() for p in x.get("places") or [] if p["kind"] != "remote"]
+        return geo.lookup(areas + [c["location"] for c in hunt.companies() if c.get("location")])
 
     def tracker() -> str:
         v = (prefs.load() or {}).get("tracker")
@@ -212,7 +219,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         return {**tb, "platforms": platforms(), "tracker": tracker(), "career_ops": tool.installed(),
                 "scan": {"keywords": sc["keywords"], "daily": sc["daily"], "last_all": sc["last_all"],
                          "running": dict(scanner.running), "providers": scanner.providers_ready()},
-                "changes": posts.changes()}
+                "changes": posts.changes(), "geo": located()}
 
     # ---- open postings: scanning the companies' sites ----
     def scan_ids(b: dict) -> list[str]:
@@ -244,6 +251,14 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     def apply_posting(req: Request):
         a = guard(lambda: posts.apply(req.params["pid"]))
         return app_view(a["id"])
+
+    @app.route("PUT", "/api/hunt/geo")
+    def put_geo(req: Request):
+        """Pin a place where the user put it on the map ({area, lat, lon}), or let it go ({area, lat: null})."""
+        b = body(req)
+        where = guard(lambda: geo.pin(str(b.get("area") or ""), b.get("lat"), b.get("lon")))
+        app.bus.publish("hunt", {})
+        return where
 
     @app.route("GET", "/api/hunt/views")
     def get_views(req: Request):
@@ -442,6 +457,12 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 x = hunt.application(str(a.get("ref") or ""))
                 hunt.delete_booked(x["id"], str(a.get("event") or ""))
                 return {"app": app_view(x["id"]), "text": "removed"}
+            if cmd == "pin":
+                where = geo.pin(str(a.get("area") or ""), a.get("lat"), a.get("lon"))
+                app.bus.publish("hunt", {})
+                return {"where": where, "text": "pinned" if a.get("lat") is not None else "unpinned"}
+            if cmd == "where":
+                return {"geo": located(), "text": "where"}
             if cmd == "ics":
                 return {"path": export_ics(str(a.get("ref") or "")), "text": "exported"}
             if cmd == "about":

@@ -30,10 +30,17 @@ it only through this command (Bash); every call prints what is there now, and th
   "size": "..", "sites": [{{"url": "..", "kind": "campus|intern|social|other", "system": "own site|Moka|北森|飞书|Greenhouse|.."}}],
   "logo_url": "https://..", "sources": {{"<field>": "https://.."}},
   "about": {{"summary": "..", "points": [{{"topic": "..", "text": "..", "sources": ["https://.."]}}], "read_at": "YYYY-MM-DD"}}}}`.
-  `{j} fill --help` shows a full example.
+  `{j} fill --help` shows a full example. Always look up **where it hires** (its campus/careers pages' work
+  locations, offices) and send them as `"places": ["上海", "北京", "remote: 中国大陆"]` with a source: they put the
+  company on the user's world map.
+- `{j} where` — every place in the tracker and where the map puts it ("not found" ones show off the map).
+  `{j} pin "<area as written>" <lat> <lon>` places one the map can't find or got wrong (`--unpin` undoes it).
 - `{j} add-role <company> "<role>" [--url ..] [--channel site|platform|referral|other] [--platform boss]
   [--order 2] [--status saved] [--deadline YYYY-MM-DD]` · `edit-role <company>/<role> [--role|--url|--referral|--order|--note|--deadline ..]`
   (`--referral` is the 内推码 for that role: put it there, not in a note; no code means no referral)
+  `--place 南京 --place 上海 --place "remote: 中国大陆" --place "hybrid: 悉尼"`: where the role is, one flag per city
+  (on edit-role the flags are the whole list). Put places here, never in the role's name ("软件开发工程师", not
+  "软件开发工程师（南京）"). A remote role always says the region it is open to; "remote: 不限" only when the posting says anywhere.
 - `{j} status <company>/<role> <status> [--note "一面 周三 14:00"] [--on 2026-10-18]`
 - `{j} note <company>/<role> "<what happened>" [--on <date>]` — interviews, tests, emails: anything worth keeping.
 - `{j} book <company>/<role> 一面 --at "2026-10-25 14:00" [--minutes 45] [--where "腾讯会议 123 / 地址"] [--note ..]`

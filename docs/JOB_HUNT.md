@@ -244,6 +244,49 @@ user's own calendar app, such as Outlook. In the same pass: every page in Applyi
 - **Claude**: `hunt.py book / rebook / unbook / ics`; told to book a round whenever the user mentions one with a
   date or time.
 
+## 2026-10-21: where a role is
+
+The request: the location had been written into the role's name ("算法工程师（上海）"). It gets a field of
+its own, with several values (one posting is often open in many cities), and remote as a value. Remote often has a
+region limit, so a remote one must say which region.
+
+- **Data**: `places` on the application: `[{kind: "onsite" | "hybrid" | "remote", area}]`. `area` is the city, or
+  for remote the region it is open to (中国大陆, APAC…). A remote place without a region is refused; "不限" says
+  anywhere. Hybrid was added next to the two asked for because postings say it as often as remote.
+- **The window**: a Location column of chips (city with a pin, remote with a globe, hybrid with a house); a click
+  opens the editor over the cell, saved when it closes. The same editor is on the role's page: the kind
+  (on site / hybrid / remote), a box (several cities at once: 南京、上海), Add, and the places the user's other
+  roles have, one click away. Search and filters ("Location contains 南京") read them.
+- **Postings**: applying to a scanned posting turns its location into places ("北京/深圳" is two); one that can't be
+  read as places (a bare "Remote", with no region) stays in the note as before.
+- **Claude**: `add-role / edit-role --place 南京 --place "remote: 中国大陆" --place "hybrid: 悉尼"` (on edit-role the
+  flags are the whole list; `--no-places` clears it), and is told never to put the place in the role's name.
+
+## 2026-10-21: the world map
+
+The request: Progress gets a world-map view of where its roles are; Companies gets one too, which needs Claude to
+find out, when it fills a company in, which cities it hires in.
+
+- **Companies hire in places**: `places` on a company, the same shape as a role's. It is one of the fields Claude
+  fills (with a source, and told to always look it up); edited in the window it becomes the user's, like the others.
+  A "Hires in" column and a field on the company's page, with the same editor as a role's.
+- **Where a name is** (`jobhunt/geo.py`), worked out on this computer, never by an online service: GeoNames'
+  list of every place of 15,000 people or more (CC BY 4.0), with its Chinese, Japanese and Korean names, built
+  into `jobhunt/data/cities.tsv.gz` (1.1 MB) by `scripts/build_geo.py`. "杭州·余杭区" is found by its parts,
+  "北京市海淀区" by its start; of two places with one name, the bigger wins. `GET /api/hunt` carries `geo`:
+  every area in the tracker → `{lat, lon, name, country}` or null.
+- **Pinning**: what the list doesn't know (a park, a campus), or puts wrong, the user places by a click on the map
+  (from "Not found on the map", or a pin's "wrong place?") and Claude with `hunt.py pin "<area>" <lat> <lon>`.
+  Pins live in `.studio/hunt/geo.json` and win over the list. `hunt.py where` shows where everything landed.
+- **The map** (a view layout, `o.located` on a table, like `o.dated` for the calendar): Natural Earth's land
+  (public domain, 50m) drawn as one SVG path in the Miller projection, `web/geo/land.txt` (285 KB, fetched when a
+  map first shows). Coastlines only, no country borders: borders are disputed, and the user's question is "where
+  are my roles", which cities answer. A pin per city with how many rows are there; pins that would overlap join
+  ("上海 +2") and a click on a join zooms in; a click on a pin lists its rows. Wheel zooms where the pointer is,
+  dragging pans, "Show every place" fits them all. A company's headquarters is a hollow pin when it doesn't hire
+  there too. Beside the map: remote rows by region, places not found, and rows with no place yet. Filters apply;
+  sort, group and properties don't show.
+
 ## Why the button said "Open LinkedIn"
 
 The Autofill page is organised around **the selected profile site**: LinkedIn and BOSS直聘 are its tabs,

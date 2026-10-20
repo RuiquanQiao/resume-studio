@@ -40,7 +40,7 @@ def test_the_window_saves_views_through_the_api(live):
     code, tb = live.req("PUT", "/api/hunt/views/apps", {"active": "v2", "views": [{"id": "v1", "name": "进行中"}, {"id": "v2", "name": "全部", "layout": "board", "group": "status"}]})
     assert code == 200 and tb["active"] == "v2"
     assert live.req("GET", "/api/hunt/views")[1]["apps"]["views"][1]["layout"] == "board"
-    lay = [{"id": f"v{i}", "name": x, "layout": x} for i, x in enumerate(("table", "board", "calendar", "gantt"), 1)]
-    assert [v["layout"] for v in live.req("PUT", "/api/hunt/views/apps", {"views": lay})[1]["views"]] == ["table", "board", "calendar", "gantt"]
+    lay = [{"id": f"v{i}", "name": x, "layout": x} for i, x in enumerate(("table", "board", "calendar", "gantt", "map"), 1)]
+    assert [v["layout"] for v in live.req("PUT", "/api/hunt/views/apps", {"views": lay})[1]["views"]] == ["table", "board", "calendar", "gantt", "map"]
     assert live.req("PUT", "/api/hunt/views/apps", {"views": []})[0] == 400
     assert live.req("PUT", "/api/hunt/views/nope", {"views": [{"id": "v1"}]})[0] == 404

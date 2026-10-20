@@ -17,7 +17,7 @@ from typing import Any
 from core.i18n import t
 
 TABLES = ("apps", "companies", "platforms")
-LAYOUTS = ("table", "board", "calendar", "gantt")
+LAYOUTS = ("table", "board", "calendar", "gantt", "map")
 OPS = ("is", "is_not", "contains", "not_contains", "before", "after", "empty", "not_empty")
 KEY = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 

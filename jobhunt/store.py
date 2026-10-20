@@ -3,10 +3,11 @@
 Plain files next to the data file, in our own schema, so switching trackers loses nothing:
 
     .studio/hunt/companies.json     {"next": 3, "companies": [{id: "C1", name, aliases, site, sites, industry,
-                                     strength, location, size, logo, sources, kept, note, account, subset,
-                                     about, created, updated}]}
+                                     strength, location, places, size, logo, sources, kept, note, account,
+                                     subset, about, created, updated}]}
     .studio/hunt/applications.json  {"next": 5, "applications": [{id: "A1", company: "C1", role, url, channel,
                                      platform, order, status, applied, deadline, note, subset,
+                                     places: [{kind: "onsite"|"hybrid"|"remote", area}],
                                      sent: [{at, subset, n}], schedule: [{id, title, at, minutes, where, note}],
                                      co_app, created, updated}]}
     .studio/hunt/logos/C1.png       a company's logo, downloaded once (docs/JOB_HUNT.md, 2026-10-18)
@@ -24,6 +25,11 @@ An application's `channel` is how it goes in: "site" (the company's own careers 
 one profile there, several roles in order of preference, `order` 1, 2, …), "platform" (`platform` names
 the Autofill site: LinkedIn, BOSS直聘…), "referral" or "other". `referral` is the 内推码 the user got for
 it, entered on the sign-up: empty means none.
+
+An application's `places` say where the role is (docs/JOB_HUNT.md, 2026-10-21): one or more, since a
+role is often open in several cities. A company's `places` are where it hires, the same way (Claude finds them
+when it fills the company in). Both are drawn on a world map (jobhunt/geo.py). Each is on site, hybrid or remote; `area` is the city, or for
+remote the region it is open to (APAC, 中国大陆…), which must be said: "不限" when it is anywhere.
 
 An application's `schedule` holds what is booked for it (docs/JOB_HUNT.md, 2026-10-21): a test, 一面, 二面,
 HR 面…, each with its date and time. The window shows them on a calendar and a Gantt chart, and
@@ -68,8 +74,13 @@ ALIASES = {
     "withdrawn": ["withdraw", "discarded", "gave up", "放弃", "不去", "撤回"],
 }
 CHANNELS = ["site", "platform", "referral", "other"]
+PLACE_KINDS = ["onsite", "hybrid", "remote"]
+# what people (and Claude) write before the area: "remote: APAC", "远程：中国大陆", "hybrid 悉尼"
+PLACE_WORDS = {"remote": "remote", "远程": "remote", "wfh": "remote", "居家": "remote",
+               "hybrid": "hybrid", "混合": "hybrid", "混合办公": "hybrid",
+               "onsite": "onsite", "on-site": "onsite", "office": "onsite", "现场": "onsite", "坐班": "onsite"}
 # what Claude fills on a company (the name stays the user's: an official name goes into the aliases)
-FILLABLE = ["aliases", "industry", "strength", "location", "size", "site", "sites", "logo", "about"]
+FILLABLE = ["aliases", "industry", "strength", "location", "places", "size", "site", "sites", "logo", "about"]
 SITE_KINDS = ["campus", "intern", "social", "other"]
 LOGO_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif",
               "image/svg+xml": "svg", "image/x-icon": "ico", "image/vnd.microsoft.icon": "ico"}
@@ -107,6 +118,32 @@ def _minutes(v: Any) -> int:
     except ValueError:
         raise ValueError(t("“{value}” isn't a number of minutes", value=_text(v, 20)))
     return max(0, min(n, 24 * 60))
+
+
+def _place(v: Any) -> dict:
+    """{kind, area} from a dict or from what someone wrote: "南京", "remote: APAC", "远程（中国大陆）"."""
+    if isinstance(v, dict):
+        kind, area = _text(v.get("kind"), 20).casefold() or "onsite", _text(v.get("area"), 80)
+    else:
+        s, kind, area = _text(v, 100), "onsite", _text(v, 80)
+        m = re.match(r"^\s*(" + "|".join(sorted(map(re.escape, PLACE_WORDS), key=len, reverse=True)) + r")(?![a-z])\s*[:：·,，\-(（]?\s*(.*?)[)）]?\s*$",
+                     s, re.IGNORECASE)
+        if m:
+            kind, area = PLACE_WORDS[m.group(1).casefold()], _text(m.group(2), 80)
+    if kind not in PLACE_KINDS:
+        raise ValueError(t("Unknown kind of place “{value}”: use one of {kinds}", value=kind, kinds=", ".join(PLACE_KINDS)))
+    if not area:
+        raise ValueError(t("Say which region a remote role is open to (不限 if anywhere)") if kind == "remote" else t("Say which city"))
+    return {"kind": kind, "area": area}
+
+
+def _places(v: Any) -> list[dict]:
+    out: list[dict] = []
+    for x in v if isinstance(v, list) else [v] if v else []:
+        p = _place(x)
+        if not any(o["kind"] == p["kind"] and _key(o["area"]) == _key(p["area"]) for o in out):
+            out.append(p)
+    return out[:40]
 
 
 def _now() -> str:
@@ -275,6 +312,8 @@ class Hunt:
             c["aliases"] = [a for a in dict.fromkeys(_text(x, 60) for x in xs) if a][:12]
         if "about" in fields:
             c["about"] = Hunt._about(fields["about"])
+        if "places" in fields:
+            c["places"] = _places(fields["places"])
         if not c.get("name"):
             raise ValueError(t("Name the company first"))
         site = c.get("site") or ""
@@ -320,8 +359,8 @@ class Hunt:
             if name and any(_key(c["name"]) == _key(name) for c in data["companies"]):
                 raise ValueError(t("{name} is already on the list", name=name))
             c = {"id": f"C{data['next']}", "name": "", "aliases": [], "site": "", "sites": [], "industry": "", "strength": "",
-                 "location": "", "size": "", "logo": "", "sources": {}, "kept": [], "note": "", "account": "", "subset": "",
-                 "about": None, "created": _now(), "updated": _now()}
+                 "location": "", "places": [], "size": "", "logo": "", "sources": {}, "kept": [], "note": "", "account": "",
+                 "subset": "", "about": None, "created": _now(), "updated": _now()}
             self._company_fields(c, fields)
             data["next"] += 1
             data["companies"].insert(0, c)
@@ -479,6 +518,8 @@ class Hunt:
             a["jd"] = _long(fields["jd"], 20000)
         if "deadline" in fields:
             a["deadline"] = _date(fields["deadline"])
+        if "places" in fields:
+            a["places"] = _places(fields["places"])
         if "channel" in fields:
             ch = _text(fields["channel"], 20) or "site"
             if ch not in CHANNELS:
@@ -501,7 +542,7 @@ class Hunt:
             status = state_of(fields.get("status") or "saved")
             a = {"id": f"A{data['next']}", "company": c["id"], "role": "", "url": "", "referral": "", "channel": "site", "platform": "",
                  "order": 0, "status": status, "applied": "", "deadline": "", "note": "", "jd": "", "subset": "",
-                 "sent": [], "schedule": [], "co_app": None, "created": _now(), "updated": _now()}
+                 "places": [], "sent": [], "schedule": [], "co_app": None, "created": _now(), "updated": _now()}
             self._app_fields(a, {"channel": "site", **fields})
             mine = [x for x in data["applications"] if x["company"] == c["id"]]
             order = fields.get("order")

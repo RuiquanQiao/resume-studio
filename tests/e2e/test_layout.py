@@ -391,6 +391,8 @@ STATES = [
           [".float.dbv-textpanel"], prepare=companies),
     State("applying, the calendar", then(applying("apps"), click(".dbv-tab[data-view=v4]")), [".dbv-cal"], prepare=companies),
     State("applying, the Gantt chart", then(applying("apps"), click(".dbv-tab[data-view=v5]")), [".dbv-gantt"], prepare=companies),
+    State("applying, the world map", then(applying("apps"), click(".dbv-tab[data-view=v6]")), [".dbv-map .dbv-mapstage"], prepare=companies),
+    State("applying, the companies' map", then(applying("companies"), click(".dbv-tab[data-view=v2]")), [".dbv-map .dbv-mapstage"], prepare=companies),
     State("applying, a filter being set", then(applying("apps"), click(".dbv-chip[data-key=status]")), [".float.dbv-filterpanel .dbv-check"],
           prepare=companies),
     State("applying, sorts being set", then(applying("apps"), js("() => { DBV.tables.apps.views[0].sorts = [{key: 'deadline', dir: 'desc'}]; paintHunt(); }"),

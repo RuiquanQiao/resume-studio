@@ -294,6 +294,9 @@ python scripts/hunt.py list [--status interview]          # applications
 python scripts/hunt.py show 星河科技                         # a company (or 星河科技/服务端 for one application)
 python scripts/hunt.py add-company 星河科技 --site https://careers.xinghe.example/campus --alias Xinghe
 python scripts/hunt.py add-role 星河科技 服务端研发工程师      # --channel site|platform|referral|other
+python scripts/hunt.py edit-role 星河科技/服务端 --place 南京 --place "remote: 中国大陆"   # where it is: never in the role's name
+python scripts/hunt.py where                              # every place and where the world map puts it
+python scripts/hunt.py pin "滨江园区" 30.21 120.21          # one the map can't find (or got wrong)
 python scripts/hunt.py status 星河科技/服务端 interview --note "一面 周三 14:00"
 python scripts/hunt.py note 星河科技/服务端 "二面约在下周二"
 python scripts/hunt.py book 星河科技/服务端 二面 --at "2026-10-28 14:00"   # a round with its time: on the calendar

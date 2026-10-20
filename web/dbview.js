@@ -11,7 +11,8 @@
 // Each table has several views (tabs), each with its own layout (table | board | calendar | gantt), columns
 // (order, width, hidden, wrapped), filters, sorts and group. They are saved with the data (.studio/hunt/views.json).
 // A table whose rows have dates (o.dated(row) -> {start, end, cls, items: [{at, label, sub, kind}]}) can also be
-// a calendar (the items, by day) or a Gantt chart (a bar per row from start to end, its items on it).
+// a calendar (the items, by day) or a Gantt chart (a bar per row from start to end, its items on it). One whose
+// rows have places (o.located) can be a world map.
 // Loaded after ui.js and before hunt.js: only definitions.
 "use strict";
 
@@ -23,10 +24,10 @@ const DBV = {
   saved: 0,            // when this window last saved: the "views" event that follows is its own echo
   month: {},           // table -> "YYYY-MM" the calendar shows (this window's, not saved)
 };
-const LAYOUT_ICONS = { table: "table", board: "columns", calendar: "calendar", gantt: "gantt" };
-const LAYOUT_NAMES = { table: "Table", board: "Board", calendar: "Calendar", gantt: "Gantt" };
-const LAYOUT_AS = { table: "Show as a table", board: "Show as a board", calendar: "Show as a calendar", gantt: "Show as a Gantt chart" };
-const dbvLayouts = (o) => (o.dated ? ["table", "board", "calendar", "gantt"] : ["table", "board"]);
+const LAYOUT_ICONS = { table: "table", board: "columns", calendar: "calendar", gantt: "gantt", map: "map" };
+const LAYOUT_NAMES = { table: "Table", board: "Board", calendar: "Calendar", gantt: "Gantt", map: "Map" };
+const LAYOUT_AS = { table: "Show as a table", board: "Show as a board", calendar: "Show as a calendar", gantt: "Show as a Gantt chart", map: "Show on a world map" };
+const dbvLayouts = (o) => ["table", "board", ...(o.dated ? ["calendar", "gantt"] : []), ...(o.located ? ["map"] : [])];
 
 const FILTER_OPS = {
   is: "is", is_not: "is not", contains: "contains", not_contains: "does not contain", before: "is before",
@@ -172,7 +173,7 @@ function dbvShow(p, row) {
 }
 
 function dbvCell(p, row, col, ctx) {
-  const td = h("td", { class: "dbv-td t-" + p.type + (col.wrap ? " wrap" : "") + (p.set ? " editable" : ""), "data-key": p.key });
+  const td = h("td", { class: "dbv-td t-" + p.type + (col.wrap ? " wrap" : "") + (p.set || p.edit ? " editable" : ""), "data-key": p.key });
   if (p.type === "title") {
     td.append(h("button", { type: "button", class: "dbv-title", onclick: (e) => { e.stopPropagation(); ctx.open(row); } }, dbvShow(p, row) || t("Untitled")));
     return td;
@@ -182,6 +183,7 @@ function dbvCell(p, row, col, ctx) {
   td.addEventListener("click", (e) => {
     if (e.target.closest("button, a, input")) return;
     e.stopPropagation();
+    if (p.edit) { p.edit(td, row); return; }   // a property with its own editor (a role's places)
     if (!p.set) { ctx.open(row); return; }
     dbvEdit(td, p, row);
   });
@@ -316,10 +318,10 @@ function dbvTools(o, tb, view, cols, repaint) {
   const btn = (id, ic, label, count, onClick) => h("button", { type: "button", class: "btn sm ghost dbv-tool" + (count ? " on" : ""), id: `dbv-${o.table}-${id}`, onclick: onClick },
     icon(ic), label, count ? h("span", { class: "n" }, count) : null);
   const groupP = byKey[view.group];
-  const dated = ["calendar", "gantt"].includes(view.layout);   // rows by date: no columns, no groups
+  const dated = ["calendar", "gantt", "map"].includes(view.layout);   // rows by date or by place: no columns, no groups
   return h("div", { class: "dbv-tools" },
     btn("filter", "filter", t("Filter"), n("filters"), (e) => dbvFilterAdd(e.currentTarget, o, view, repaint)),
-    view.layout !== "calendar" && btn("sort", "sort", t("Sort"), n("sorts"), (e) => dbvSortPanel(e.currentTarget, o, view, repaint)),
+    !["calendar", "map"].includes(view.layout) && btn("sort", "sort", t("Sort"), n("sorts"), (e) => dbvSortPanel(e.currentTarget, o, view, repaint)),
     !dated && btn("group", "layers", groupP ? t("Group: {name}", { name: groupP.label }) : t("Group"), 0, (e) => dbvGroupMenu(e.currentTarget, o, view, repaint)),
     !dated && btn("props", "eye", t("Properties"), 0, (e) => dbvPropsPanel(e.currentTarget, o, view, repaint)));
 }
@@ -748,6 +750,217 @@ function dbvGanttEl(o, rows) {
   return el;
 }
 
+// ---------------------------------------------------------------- places: the world map
+// o.located(row) -> [{area, kind, lat?, lon?}]: kind onsite | hybrid | remote | hq; no lat when it isn't on the map
+// (remote, or a place the city list doesn't know). o.pin(area, lat, lon) saves where the user put one.
+// The land (web/geo/land.txt, Natural Earth) is one SVG path in 1/20 degrees, Miller projection, y down.
+const dbvProject = (lon, lat) => [lon, -1.25 * (180 / Math.PI) * Math.log(Math.tan(Math.PI / 4 + 0.4 * (Math.max(-85, Math.min(85, lat)) * Math.PI / 180)))];
+const dbvUnproject = (x, y) => [x, (2.5 * (Math.atan(Math.exp((-y / 1.25) * Math.PI / 180)) - Math.PI / 4)) * 180 / Math.PI];
+const MAP_Y = [dbvProject(0, 84)[1], dbvProject(0, -58)[1]];   // the world from the Arctic to Cape Horn
+
+function dbvLand(repaint) {
+  if (DBV.land || DBV.landLoading) return DBV.land;
+  DBV.landLoading = true;
+  fetch("geo/land.txt").then((r) => (r.ok ? r.text() : "")).then((d) => { DBV.land = d || " "; repaint(); })
+    .catch(() => { DBV.land = " "; });
+  return null;
+}
+
+function dbvMapEl(o, rows, repaint) {
+  // every place on the map: one per spot, with the rows there; the rest by area, beside it
+  const spots = new Map(), off = { remote: new Map(), unknown: new Map() }, none = [];
+  for (const row of rows) {
+    const places = o.located(row) || [];
+    if (!places.length) none.push(row);
+    for (const p of places) {
+      if (p.lat == null) {
+        const m = off[p.kind === "remote" ? "remote" : "unknown"];
+        if (!m.has(p.area)) m.set(p.area, new Set());
+        m.get(p.area).add(row);
+        continue;
+      }
+      const k = `${p.lat},${p.lon}`;
+      if (!spots.has(k)) spots.set(k, { lat: p.lat, lon: p.lon, areas: new Set(), rows: new Map() });
+      const s = spots.get(k);
+      s.areas.add(p.area);
+      const was = s.rows.get(row);
+      s.rows.set(row, was && was !== "hq" ? was : p.kind);   // a company that hires where its HQ is: a place, not just the HQ
+    }
+  }
+  const list = [...spots.values()].map((s) => ({ ...s, xy: dbvProject(s.lon, s.lat), label: [...s.areas].sort((a, b) => a.length - b.length)[0] }));
+
+  // the view: its centre and width in projected degrees, kept for this window
+  const fit = () => {
+    if (!list.length) return { cx: 10, cy: (MAP_Y[0] + MAP_Y[1]) / 2, w: 360 };
+    const xs = list.map((s) => s.xy[0]), ys = list.map((s) => s.xy[1]);
+    const w = Math.max(24, (Math.max(...xs) - Math.min(...xs)) * 1.5, (Math.max(...ys) - Math.min(...ys)) * 1.5 * 1.8);
+    return { cx: (Math.max(...xs) + Math.min(...xs)) / 2, cy: (Math.max(...ys) + Math.min(...ys)) / 2, w: Math.min(360, w) };
+  };
+  DBV.mapView = DBV.mapView || {};
+  const v = DBV.mapView[o.table] = DBV.mapView[o.table] || fit();
+  const land = dbvLand(repaint);
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "dbv-mapsvg");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  const g = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  g.setAttribute("class", "dbv-land");
+  g.setAttribute("transform", "scale(0.05)");
+  if (land) g.setAttribute("d", land);
+  svg.append(g);
+  const pins = h("div", { class: "dbv-mappins" });
+  const stage = h("div", { class: "dbv-mapstage" + (DBV.pinning ? " pinning" : ""), tabindex: "-1" }, svg, pins);
+
+  // projected degrees <-> pixels on the stage
+  const box = () => { const W = stage.clientWidth || 800, H = stage.clientHeight || 480; return { W, H, k: W / v.w }; };
+  const toPx = ([x, y]) => { const { W, H, k } = box(); return [(x - v.cx) * k + W / 2, (y - v.cy) * k + H / 2]; };
+  const fromPx = (px, py) => { const { W, H, k } = box(); return [(px - W / 2) / k + v.cx, (py - H / 2) / k + v.cy]; };
+
+  const draw = () => {
+    const { W, H, k } = box();
+    v.w = Math.max(0.5, Math.min(400, v.w));
+    svg.setAttribute("viewBox", `${v.cx - W / k / 2} ${v.cy - H / k / 2} ${W / k} ${H / k}`);
+    // close spots join while they would overlap; a join opens by zooming in
+    const pts = list.map((s) => ({ s, p: toPx(s.xy) })).filter(({ p }) => p[0] > -40 && p[0] < W + 40 && p[1] > -40 && p[1] < H + 40)
+      .sort((a, b) => b.s.rows.size - a.s.rows.size);
+    const groups = [];
+    for (const x of pts) {
+      const near = groups.find((gr) => Math.hypot(gr.p[0] - x.p[0], gr.p[1] - x.p[1]) < 30);
+      if (near) near.items.push(x); else groups.push({ p: x.p, items: [x] });
+    }
+    pins.replaceChildren(...groups.map((gr) => {
+      const rowsHere = new Map();
+      for (const { s } of gr.items) for (const [r, kind] of s.rows) rowsHere.set(r, rowsHere.get(r) && rowsHere.get(r) !== "hq" ? rowsHere.get(r) : kind);
+      const many = gr.items.length > 1;
+      const hqOnly = [...rowsHere.values()].every((x) => x === "hq");
+      const label = many ? t("{place} +{n}", { place: gr.items[0].s.label, n: gr.items.length - 1 }) : gr.items[0].s.label;
+      const b = h("button", { type: "button", class: "dbv-pin" + (many ? " many" : "") + (hqOnly ? " hq" : ""), style: `left:${gr.p[0]}px;top:${gr.p[1]}px`,
+        "data-area": gr.items.map(({ s }) => s.label).join("|"), title: gr.items.map(({ s }) => s.label).join(" · "), "aria-label": `${label}: ${rowsHere.size}`,
+        onclick: (e) => {
+          e.stopPropagation();
+          if (many) {   // zoom to see them apart
+            const xs = gr.items.map(({ s }) => s.xy[0]), ys = gr.items.map(({ s }) => s.xy[1]);
+            v.cx = (Math.max(...xs) + Math.min(...xs)) / 2; v.cy = (Math.max(...ys) + Math.min(...ys)) / 2;
+            v.w = Math.max(0.5, Math.min(v.w / 3, (Math.max(...xs) - Math.min(...xs) + Math.max(...ys) - Math.min(...ys)) * 2.5));
+            draw();
+            return;
+          }
+          dbvSpotMenu(o, e.currentTarget, gr.items[0].s, repaint);
+        } },
+      h("span", { class: "dbv-pindot" }, rowsHere.size), h("span", { class: "dbv-pinlabel" }, label));
+      return b;
+    }));
+  };
+
+  // wheel zooms where the pointer is; dragging pans; a click in pin mode places the place
+  stage.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const r = stage.getBoundingClientRect();
+    const before = fromPx(e.clientX - r.left, e.clientY - r.top);
+    v.w *= Math.exp(e.deltaY * 0.0015);
+    v.w = Math.max(0.5, Math.min(400, v.w));
+    const after = fromPx(e.clientX - r.left, e.clientY - r.top);
+    v.cx += before[0] - after[0]; v.cy += before[1] - after[1];
+    draw();
+  }, { passive: false });
+  let drag = null;
+  stage.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || e.target.closest(".dbv-pin, button")) return;
+    drag = { x: e.clientX, y: e.clientY, cx: v.cx, cy: v.cy, moved: false };
+    stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const { k } = box();
+    if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 3) drag.moved = true;
+    v.cx = drag.cx - (e.clientX - drag.x) / k; v.cy = drag.cy - (e.clientY - drag.y) / k;
+    if (drag.moved) { stage.classList.add("dragging"); draw(); }
+  });
+  stage.addEventListener("pointerup", (e) => {
+    const d = drag;
+    drag = null;
+    stage.classList.remove("dragging");
+    if (!d || d.moved || !DBV.pinning) return;
+    const r = stage.getBoundingClientRect();
+    const [lon, lat] = dbvUnproject(...fromPx(e.clientX - r.left, e.clientY - r.top));
+    const area = DBV.pinning;
+    DBV.pinning = null;
+    o.pin(area, Math.round(lat * 1e4) / 1e4, Math.round(lon * 1e4) / 1e4);
+  });
+  stage.addEventListener("dblclick", (e) => {
+    if (e.target.closest(".dbv-pin")) return;
+    const r = stage.getBoundingClientRect();
+    [v.cx, v.cy] = fromPx(e.clientX - r.left, e.clientY - r.top);
+    v.w /= 2;
+    draw();
+  });
+  const zoom = (f) => { v.w *= f; draw(); };
+  const ro = new ResizeObserver(() => { if (stage.isConnected) draw(); else ro.disconnect(); });
+  ro.observe(stage);
+
+  // what isn't on the map
+  const offRow = (area, set, kind) => h("div", { class: "dbv-offrow", "data-area": area },
+    h("span", { class: "dbv-offname" }, kind === "remote" ? t("Remote · {area}", { area }) : area),
+    h("span", { class: "n" }, set.size),
+    kind === "unknown" && h("button", { type: "button", class: "btn sm ghost dbv-place", title: t("Click the map where “{area}” is", { area }),
+      onclick: () => { DBV.pinning = area; repaint(); } }, icon("pin"), t("Place it")),
+    h("div", { class: "dbv-offrows" }, [...set].map((r) => dbvRowButton(o, r))));
+  const side = h("div", { class: "dbv-mapside" },
+    off.remote.size > 0 && h("div", { class: "dbv-offgroup" }, h("b", null, t("Remote")), [...off.remote].map(([a, s]) => offRow(a, s, "remote"))),
+    off.unknown.size > 0 && h("div", { class: "dbv-offgroup" }, h("b", null, t("Not found on the map")),
+      h("p", { class: "muted" }, t("Place each one yourself, or ask Claude to.")), [...off.unknown].map(([a, s]) => offRow(a, s, "unknown"))),
+    none.length > 0 && h("div", { class: "dbv-offgroup" }, h("b", null, t("No place yet ({n})", { n: none.length })),
+      h("div", { class: "dbv-offrows open" }, none.map((r) => dbvRowButton(o, r)))));
+  const hasSide = off.remote.size || off.unknown.size || none.length;
+
+  DBV.pinRepaint = repaint;
+  const el = h("div", { class: "dbv-map" + (hasSide ? "" : " full") },
+    h("div", { class: "dbv-mapwrap" }, stage,
+      h("div", { class: "dbv-mapbtns" },
+        h("button", { type: "button", class: "btn icon sm", title: t("Zoom in"), "aria-label": t("Zoom in"), onclick: () => zoom(1 / 1.6) }, icon("plus")),
+        h("button", { type: "button", class: "btn icon sm", title: t("Zoom out"), "aria-label": t("Zoom out"), onclick: () => zoom(1.6) }, icon("minus")),
+        h("button", { type: "button", class: "btn sm", onclick: () => { Object.assign(v, fit()); draw(); } }, t("Show every place"))),
+      DBV.pinning && h("div", { class: "dbv-pinbar" }, icon("pin"), t("Click the map where “{area}” is", { area: DBV.pinning }),
+        h("button", { type: "button", class: "btn sm ghost", onclick: () => { DBV.pinning = null; repaint(); } }, t("Cancel"))),
+      !list.length && !DBV.pinning && h("div", { class: "dbv-mapempty" }, t("Nothing to show on the map yet: give the roles their places.")),
+      h("span", { class: "dbv-mapcredit" }, "GeoNames · Natural Earth")),
+    hasSide ? side : null);
+  // as tall as the window has room for below it (the companies' page has more above it)
+  requestAnimationFrame(() => {
+    if (innerWidth > 760) el.style.height = Math.max(420, innerHeight - el.getBoundingClientRect().top - 20) + "px";
+    draw();
+  });
+  return el;
+}
+
+// a row in a list on the map: its title (and a line under it), opening it
+function dbvRowButton(o, row) {
+  const title = o.props.find((p) => p.type === "title");
+  const sub = o.sub ? o.sub(row) : "";
+  return h("button", { type: "button", class: "dbv-maprow", onclick: () => { closeFloat(); o.open(row); } },
+    h("span", { class: "dbv-maprow-t" }, dbvText(title, row) || t("Untitled")), sub && h("span", { class: "dbv-maprow-s" }, sub));
+}
+
+// what is at one spot: its rows, and moving it if the map put it in the wrong place
+function dbvSpotMenu(o, anchor, s, repaint) {
+  const rows = [...s.rows];
+  const panel = h("div", { class: "menu dbv-pop dbv-spot" },
+    h("div", { class: "dbv-spothead" }, [...s.areas].map((a) => h("span", { class: "dbv-spotarea" }, h("b", null, a),
+      h("button", { type: "button", class: "btn icon sm ghost", title: t("In the wrong place? Put “{area}” where it is", { area: a }),
+        "aria-label": t("In the wrong place? Put “{area}” where it is", { area: a }), onclick: () => { closeFloat(); DBV.pinning = a; repaint(); } }, icon("pin"))))),
+    h("div", { class: "dbv-spotrows" }, rows.map(([r, kind]) => {
+      const b = dbvRowButton(o, r);
+      if (kind === "hq") b.append(h("span", { class: "chip" }, t("Headquarters")));
+      if (kind === "hybrid") b.append(h("span", { class: "chip" }, t("Hybrid")));
+      return b;
+    })));
+  openFloat(anchor, panel, { minWidth: 240, focus: panel.querySelector(".dbv-maprow") });
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && DBV.pinning && !Float.cur) { DBV.pinning = null; if (DBV.pinRepaint) DBV.pinRepaint(); }
+});
+
 // ---------------------------------------------------------------- the whole view
 // o: {table, props, rows, rowId(row), open(row), defaults: [views], empty (node when there are no rows at all),
 //     repaint()}
@@ -760,6 +973,7 @@ function dbView(o) {
     : !rows.length ? h("div", { class: "hunt-empty" }, t("Nothing matches"))
     : view.layout === "calendar" && o.dated ? dbvCalendarEl(o, rows, o.repaint)
     : view.layout === "gantt" && o.dated ? dbvGanttEl(o, rows)
+    : view.layout === "map" && o.located ? dbvMapEl(o, rows, o.repaint)
     : view.layout === "board" ? dbvBoardEl(o, view, cols, rows, o.repaint) : dbvTableEl(o, view, cols, rows, o.repaint);
   if (DBV.refit) { DBV.refit = false; requestAnimationFrame(() => dbvRefit()); }   // drawn before its pane existed: fit it now
   return h("div", { class: "dbv-view", "data-table": o.table, "data-layout": view.layout },
