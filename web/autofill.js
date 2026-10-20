@@ -295,7 +295,7 @@ function syncCard(v) {
     : reading ? h("span", { class: "fs-status" }, h("span", { class: "spin" }), t("Claude is reading…"))
     : lc.error ? h("span", { class: "fs-status bad" }, icon("alert"), lc.signed_out ? t("{site} wants you to sign in.", { site: site.name }) : t("The last check didn't finish."))
     : h("span", { class: "fs-status" }, icon("check"),
-      lc.mode === "claude" && !lc.synced ? t("Claude read {site}", { site: site.name })
+      (lc.mode === "claude" || !lc.at) && !lc.synced ? t("Claude read {site}", { site: site.name })   // no check yet: the copy is Claude's first read
         : lc.synced ? t("{n} change from {site} came into the copy", { n: lc.synced, site: site.name }, "{n} changes from {site} came into the copy")
         : t("Nothing new on {site}", { site: site.name }));
   const menu = (e) => openMenu(e.currentTarget, [

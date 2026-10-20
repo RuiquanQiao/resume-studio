@@ -257,6 +257,28 @@ The window connects a job-posting tool. Today that is
   user marks a posting sent, its linked subset is kept as a version (unless it already is one) and `{subset, n}`
   is pinned on it. Read that version in `.studio/subsets/<subset>.json`.
 
+## The plan (the Plan workspace, Ctrl+4)
+
+One Markdown document the user works out with Claude: where they stand, the easiest way forward, and their
+progress against what they committed to (design: `docs/PLAN.md`). It has **no fixed
+shape**: no template, no form, no ratings. It lives in `.studio/plan/plan.md`. Rewrites are kept as versions
+with their reason in `.studio/plan/versions.json`. Work it through `scripts/plan.py`; the window needn't be
+open:
+
+```bash
+python scripts/plan.py show                                   # the plan and its latest versions
+python scripts/plan.py write --stdin --why "算法比预想慢，先砍掉 CV" <<'MD' ... MD   # the whole plan, a new version
+python scripts/plan.py note "做了 2 道双指针" [--under 进展]      # a dated line of progress (into the latest version)
+python scripts/plan.py done "每天 2 道题" [--undo]               # tick the box with those words
+```
+
+When the user talks about what worries them, what they want or how they are doing, sort it out in the chat
+and put it in the plan, then say in one line what changed. Never delete their words. Never invent figures.
+Before working out or reworking a plan, read `skills/planning/SKILL.md`: the method (measure where they stand,
+work back from the nearest live deadline, small checkable commitments, when to replan) and the hiring
+calendars to check today's date against (China's 校招 rounds and 届, Australia's internships, graduate
+programs and work rights).
+
 ## The job-hunt tracker (the Applying workspace, Ctrl+3)
 
 Resume Studio's own tracker (design and the user's vision: `docs/JOB_HUNT.md`). Three tables under tabs:

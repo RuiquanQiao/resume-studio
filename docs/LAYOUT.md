@@ -144,6 +144,12 @@ evidence state and Claude's before/after diff are painted on every card. When th
 changes (an entry ticked, moved, added, deleted, another subset or language), it is painted again at the
 same place; otherwise only the cards that changed are.
 
+## 4. A fourth workspace: Plan (2026-10-19)
+
+After Applying, Ctrl+4. It holds one Markdown document the user works out with Claude, with versions. It has
+no fixed shape: empty, it says one line. The chat on the left is the same chat. Design:
+`docs/PLAN.md`.
+
 ## Building it, in order
 
 1. One chat (part 1) and no Applications tab (part 2).

@@ -454,6 +454,7 @@ function screenLine() {
     return a ? t("{name}'s page for {job}", { name: jobsTool().name, job: [a.company, a.role].filter(Boolean).join(" — ") })
       : t("{name}'s interface", { name: jobsTool().name });
   }
+  if (W.ws === "plan") return planLine();
   if (W.ws === "fill") {
     const p = H.page;
     if (p && p.kind === "platform") return t("your profile on {site}", { site: platformName(p.id) });
@@ -474,6 +475,7 @@ function renderChat() {
   log.replaceChildren();
   ui.chat.liveEl = null;
   if (!ui.chat.messages.length && !ui.chat.running && W.ws === "fill") { log.append(fillWelcome()); return; }
+  if (!ui.chat.messages.length && !ui.chat.running && W.ws === "plan") { log.append(planWelcome()); return; }
   if (!ui.chat.messages.length && !ui.chat.running && W.ws === "jobs" && jobsReady() && (!ui.chat.id || inToolFolder(ui.chat.meta))) {
     const name = jobsTool().name;
     const suggest = [

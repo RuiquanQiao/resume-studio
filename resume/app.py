@@ -21,6 +21,7 @@ from jobhunt import api as hunt_api
 from jobs import api as jobs_api
 from jobs import career_ops
 from jobs.base import JobTool
+from studyplan import api as plan_api
 
 from . import api, prompts
 from .evidence import EvidenceTracker
@@ -48,6 +49,7 @@ class Instance:
     prefs: i18n.Prefs | None = None
     jobtool: JobTool | None = None             # the job-posting tool (per computer, survives data switches)
     jobs_watcher: SignatureWatcher | None = None
+    plan_watcher: SignatureWatcher | None = None   # the plan's files (Claude writes them straight)
     web: WebHost | None = None                 # the tool's own web interface, hosted in the window
     browser: ManagedBrowser | None = None      # the browser Autofill drives (its own profile, per computer)
 
@@ -57,6 +59,8 @@ class Instance:
         self.watcher.stop()
         if self.jobs_watcher:
             self.jobs_watcher.stop()
+        if self.plan_watcher:
+            self.plan_watcher.stop()
 
     def shutdown(self) -> None:
         """At exit."""
@@ -267,3 +271,6 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
 
     # ---- the job hunt: applications, companies and platforms (Resume Studio's own tracker) ----
     inst.hunt = hunt_api.register(app, studio, tool, prefs, platforms=fill.summary, browser=inst.browser)
+
+    # ---- the plan: one document Claude helps the user write, with its versions (docs/PLAN.md) ----
+    inst.plan, inst.plan_watcher = plan_api.register(app, studio, chats, watch_interval=watch_interval)

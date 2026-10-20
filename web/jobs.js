@@ -747,6 +747,9 @@ function setWorkspace(ws, { path = null } = {}) {
     paintFill();
     loadFill();
     loadHunt();
+  } else if (ws === "plan") {
+    paintPlan();
+    loadPlan();
   } else if (typeof applyZoom === "function" && ui.zoom === "fit") applyZoom();
   renderWsTools();
 }
@@ -880,6 +883,7 @@ function renderWsTools() {
   if (W.ws === "resume") { el.replaceChildren(); return; }
   if (Float.cur && el.contains(Float.cur.anchor)) return;   // a menu hangs off these buttons: redrawn when it closes
   if (W.ws === "fill") { renderFillTools(el); return; }
+  if (W.ws === "plan") { renderPlanTools(el); return; }
   const name = jobsTool().name;
   const out = [];
   if (jobsReady()) out.push(h("button", { class: "btn ghost", id: "evaluate-btn", "aria-haspopup": "dialog", disabled: !ui.chat.available,
@@ -995,7 +999,7 @@ window.addEventListener("blur", () => setTimeout(() => {
 
 function initWorkspaces() {
   for (const b of document.querySelectorAll(".ws-btn")) {
-    b.prepend(icon({ jobs: "briefcase", fill: "globe" }[b.dataset.ws] || "file"));
+    b.prepend(icon({ jobs: "briefcase", fill: "globe", plan: "compass" }[b.dataset.ws] || "file"));
     b.onclick = () => setWorkspace(b.dataset.ws);
   }
   W.path = store("jobs-path") || "/";
@@ -1008,5 +1012,5 @@ function initWorkspaces() {
   F.site = store("fill-site") || F.site;
   F.tab = store("fill-tab") === "push" ? "push" : "copy";
   restoreHunt();
-  setWorkspace(["jobs", "fill"].includes(store("ws")) ? store("ws") : "resume");
+  setWorkspace(["jobs", "fill", "plan"].includes(store("ws")) ? store("ws") : "resume");
 }

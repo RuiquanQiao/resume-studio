@@ -209,6 +209,9 @@ class App:
         class _Server(ThreadingHTTPServer):
             # on Windows SO_REUSEADDR lets two servers share a port; never want that
             allow_reuse_address = os.name != "nt"
+            # the page asks for a dozen scripts at once; the default backlog of 5 made Windows refuse some of
+            # them (ERR_CONNECTION_REFUSED), and a page missing a script does nothing when clicked
+            request_queue_size = 128
 
             def __init__(self, *a, **kw):
                 super().__init__(*a, **kw)

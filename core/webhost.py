@@ -407,6 +407,7 @@ class WebHost:
         class Server(ThreadingHTTPServer):
             allow_reuse_address = os.name != "nt"
             daemon_threads = True
+            request_queue_size = 128   # as core/server.py: the default 5 refuses a page's parallel requests on Windows
 
             def __init__(self, *a, **kw):
                 super().__init__(*a, **kw)

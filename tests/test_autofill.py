@@ -629,3 +629,16 @@ def test_browser_commands_become_steps():
                               {"cmd": "type", "ref": "13", "text": "a; b && c"}, {"cmd": "screenshot"}]
     # older chats kept only the first 160 characters of a command: a cut-off call is left out
     assert steps_of("B='python E:/x/scripts/browser.py --data E:/x/r.yaml'; $B text | sed -n 1p; $B screensho") == [{"cmd": "text"}]
+
+
+def test_a_copy_read_by_an_older_version_counts_as_read(server, data_file):
+    # older versions kept the time of Claude's first read as read_at: the table and the page must agree it was read
+    server.req("POST", "/api/autofill/linkedin/current", SITE_NOW)
+    f = data_file.parent / ".studio" / "autofill" / "linkedin.json"
+    st = json.loads(f.read_text(encoding="utf-8"))
+    st["read_at"] = st.pop("synced_at")
+    st.pop("last_check", None)
+    f.write_text(json.dumps(st), encoding="utf-8")
+    row = next(s for s in server.req("GET", "/api/autofill")[1]["sites"] if s["id"] == "linkedin")
+    v = server.req("GET", "/api/autofill/linkedin")[1]
+    assert v["synced"] and v["synced_at"] == st["read_at"] and row["synced_at"] == st["read_at"]

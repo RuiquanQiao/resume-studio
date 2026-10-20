@@ -84,6 +84,12 @@ with the C# compiler that ships with Windows.
   - Tell Claude in the chat on the left what happened ("Xinghe 一面过了") and it updates the tables through
     `scripts/hunt.py`. Settings → Applications tracker can also copy sent roles into career-ops' tracker.
     The design and where it is going: [docs/JOB_HUNT.md](docs/JOB_HUNT.md).
+- **Plan (Ctrl+4)**: one document you work out with Claude, so what you sort out together outlasts the chat:
+  where you stand, the easiest way forward, and your progress against what you set yourself. It has no
+  fixed shape. Empty, it is one line asking you to tell Claude what worries you. Boxes tick with a click,
+  Edit opens the Markdown, and Versions shows every time the plan changed course and why. You can compare
+  any version with now or go back to it, and nothing is deleted. It is plain Markdown in
+  `.studio/plan/plan.md`. See [docs/PLAN.md](docs/PLAN.md).
 - **Platforms**: a local copy of each online profile (LinkedIn and BOSS直聘 come with notes for
   Claude; add any other site by its address). Edit the copy here or the profile on the site: "Check for
   updates" brings the site's changes in, your edits wait as git-style diffs until you push them, and a

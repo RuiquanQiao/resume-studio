@@ -254,7 +254,7 @@ class Autofill:
         st = self.load(site.id)
         r = st.get("route")
         return {"site": site.public(), "subset_id": str(subset.get("id")), "lang": lang,
-                "local": local, "base": base, "synced": base is not None, "synced_at": st.get("synced_at"),
+                "local": local, "base": base, "synced": base is not None, "synced_at": st.get("synced_at") or st.get("read_at"),
                 "conflicts": st.get("conflicts") or {}, "notes": st.get("notes") or [],
                 "last_check": st.get("last_check"), "checking": st.get("checking"),
                 "route": {"recorded": bool(r), "pages": len((r or {}).get("pages") or []), "covers": route.covers(r),
@@ -268,7 +268,7 @@ class Autofill:
         for site in self.sites():
             st = self.load(site.id)
             pend = [p for p in self.pending(site, st) if p["checked"]] if st.get("base") or st.get("current") else None
-            out.append({**site.public(), "synced_at": st.get("synced_at"), "signed_out": bool(st.get("signed_out")),
+            out.append({**site.public(), "synced_at": st.get("synced_at") or st.get("read_at"), "signed_out": bool(st.get("signed_out")),
                         "changes": len(pend) if pend is not None else None, "conflicts": len(st.get("conflicts") or {})})
         return out
 

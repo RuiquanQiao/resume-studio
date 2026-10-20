@@ -87,10 +87,12 @@ function mdBlocks(text) {
   let i = 0;
   const isTableSep = (l) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l);
   const cells = (l) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => mdInline(c.trim()));
+  const isRule = (l) => /^\s*([-*_])(\s*\1){2,}\s*$/.test(l);
   while (i < lines.length) {
     const l = lines[i];
     if (!l.trim()) { i++; continue; }
     let m;
+    if (isRule(l)) { out.push("<hr>"); i++; continue; }
     if ((m = l.match(/^(#{1,4})\s+(.*)/))) { out.push(`<h${m[1].length}>${mdInline(m[2])}</h${m[1].length}>`); i++; continue; }
     if (l.includes("|") && i + 1 < lines.length && isTableSep(lines[i + 1])) {
       const head = cells(l); i += 2;
@@ -106,7 +108,9 @@ function mdBlocks(text) {
         let item = lines[i].replace(/^\s*([-*•]|\d+[.)])\s+/, "");
         i++;
         while (i < lines.length && /^\s{2,}\S/.test(lines[i]) && !/^\s*([-*•]|\d+[.)])\s+/.test(lines[i])) item += " " + lines[i++].trim();
-        items.push(`<li>${mdInline(item)}</li>`);
+        const task = /^\[([ xX])\](\s+|$)/.exec(item);   // - [ ] / - [x]: a checkbox (the plan ticks it, docs/PLAN.md)
+        items.push(task ? `<li class="task"><span class="check${task[1] === " " ? "" : " on"}" role="checkbox" aria-checked="${task[1] !== " "}"></span><span>${mdInline(item.slice(task[0].length))}</span></li>`
+          : `<li>${mdInline(item)}</li>`);
       }
       out.push(ordered ? `<ol>${items.join("")}</ol>` : `<ul>${items.join("")}</ul>`);
       continue;
@@ -118,7 +122,7 @@ function mdBlocks(text) {
       continue;
     }
     const para = [];
-    while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|>|\s*([-*•]|\d+[.)])\s+)/.test(lines[i])) para.push(lines[i++]);
+    while (i < lines.length && lines[i].trim() && !isRule(lines[i]) && !/^(#{1,4}\s|>|\s*([-*•]|\d+[.)])\s+)/.test(lines[i])) para.push(lines[i++]);
     out.push(`<p>${para.map(mdInline).join("<br>")}</p>`);
   }
   return out.join("");
@@ -2261,6 +2265,7 @@ function connect() {
   listenJobs(es);
   listenFill(es);
   listenHunt(es);
+  listenPlan(es);
 }
 
 function wire() {
@@ -2292,7 +2297,7 @@ function wire() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveDraft(); }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "j") { e.preventDefault(); setChatPane(W.chat !== "on"); }
     if ((e.ctrlKey || e.metaKey) && e.key === ",") { e.preventDefault(); openSettings(); }
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && ["1", "2", "3"].includes(e.key)) { e.preventDefault(); setWorkspace({ 1: "resume", 2: "jobs", 3: "fill" }[e.key]); }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && ["1", "2", "3", "4"].includes(e.key)) { e.preventDefault(); setWorkspace({ 1: "resume", 2: "jobs", 3: "fill", 4: "plan" }[e.key]); }
     if (e.key === "Escape" && !Float.cur && ui.layoutOpen) { ui.layoutOpen = false; renderPreviewToolbar(); }
   });
   window.addEventListener("beforeunload", () => { saveDraft(); if (ui.headPending) ui.headPending(); });

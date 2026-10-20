@@ -496,16 +496,44 @@ function formModal({ title, message = "", fields, ok = t("OK") }) {
       if (missing) { inputs[missing.key].focus(); return; }
       close(out);
     };
+    const suggests = [];
     const onKey = (e) => {
-      if (e.key === "Escape") { e.stopPropagation(); close(null); }
+      const open = suggests.find((s) => !s.hidden);
+      if (e.key === "Escape") { e.stopPropagation(); if (open) { open.hidden = true; return; } close(null); }
+      if (e.key === "Enter" && e.target.closest(".fm-suggest")) return;   // the option's own click picks it
       if (e.key === "Enter" && !e.isComposing && e.target.tagName !== "TEXTAREA") { e.preventDefault(); done(); }
     };
     document.addEventListener("keydown", onKey, true);
+    // a field with known values (the companies) suggests them as you type: our own list, never a native one
+    const suggest = (f, input) => {
+      const box = h("div", { class: "listbox fm-suggest", role: "listbox", id: "fm-" + f.key + "-list", "aria-label": f.label, hidden: true });
+      const paint = () => {
+        const q = input.value.trim().toLowerCase();
+        const hits = f.list.filter((x) => x.toLowerCase() !== q && (!q || x.toLowerCase().includes(q))).slice(0, 8);
+        box.replaceChildren(...hits.map((x) => h("button", { type: "button", role: "option", class: "lb-opt", tabindex: "-1",
+          onmousedown: (e) => e.preventDefault(), onclick: () => { input.value = x; box.hidden = true; input.focus(); } }, x)));
+        box.hidden = !hits.length;
+      };
+      input.setAttribute("role", "combobox");
+      input.setAttribute("aria-autocomplete", "list");
+      input.setAttribute("aria-controls", box.id);
+      input.addEventListener("input", paint);   // only while typing (or ↓): a dialog that just opened still closes with one Esc
+      input.addEventListener("blur", () => setTimeout(() => { if (!box.contains(document.activeElement)) box.hidden = true; }, 0));
+      input.addEventListener("keydown", (e) => {
+        if (e.key !== "ArrowDown") return;
+        if (box.hidden) paint();
+        const first = !box.hidden && box.querySelector(".lb-opt");
+        if (first) { e.preventDefault(); first.focus(); }
+      });
+      box.addEventListener("keydown", (e) => { menuKeys(e, box, ".lb-opt"); if (e.key === "Tab") box.hidden = true; });
+      box.addEventListener("focusout", () => setTimeout(() => { if (!box.contains(document.activeElement) && document.activeElement !== input) box.hidden = true; }, 0));
+      suggests.push(box);
+      return box;
+    };
     const rows = fields.map((f) => {
-      const list = f.list && f.list.length ? "dl-" + f.key : null;
-      inputs[f.key] = h("input", { id: "fm-" + f.key, value: f.value || "", placeholder: f.placeholder || "", spellcheck: "false", list });
-      return h("div", { class: "field" }, h("label", { for: "fm-" + f.key }, f.label, f.hint && h("span", { class: "hint" }, f.hint)), inputs[f.key],
-        list && h("datalist", { id: list }, f.list.map((x) => h("option", { value: x }))));
+      inputs[f.key] = h("input", { id: "fm-" + f.key, value: f.value || "", placeholder: f.placeholder || "", spellcheck: "false", autocomplete: "off" });
+      return h("div", { class: "field" + (f.list && f.list.length ? " fm-combo" : "") }, h("label", { for: "fm-" + f.key }, f.label, f.hint && h("span", { class: "hint" }, f.hint)), inputs[f.key],
+        f.list && f.list.length && suggest(f, inputs[f.key]));
     });
     root.replaceChildren(h("div", { class: "modal-back", onmousedown: (e) => { if (e.target === e.currentTarget) close(null); } },
       h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-label": title },

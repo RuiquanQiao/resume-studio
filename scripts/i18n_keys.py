@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CATALOGS = ROOT / "web" / "i18n"
-PY_DIRS = [ROOT / "core", ROOT / "resume", ROOT / "jobs", ROOT / "autofill", ROOT / "jobhunt", ROOT / "scripts"]
+PY_DIRS = [ROOT / "core", ROOT / "resume", ROOT / "jobs", ROOT / "autofill", ROOT / "jobhunt", ROOT / "studyplan", ROOT / "scripts"]
 T_NAMES = {"t", "_t"}
 
 _JS_STR = r'"((?:[^"\\]|\\.)*)"'

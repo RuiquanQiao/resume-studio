@@ -19,6 +19,7 @@
       <button class="ws-btn" role="tab" data-ws="resume" title="Resume: library, subsets and preview (Ctrl+1)"><span class="lbl" data-t>Resume</span></button>
       <button class="ws-btn" role="tab" data-ws="jobs" title="Job search: postings, pipeline, follow-ups (Ctrl+2)"><span class="lbl" data-t>Job search</span><span id="ws-jobs-dot" class="tab-dot hidden"></span></button>
       <button class="ws-btn" role="tab" data-ws="fill" title="Applying: your applications, the companies and the platforms (Ctrl+3)"><span class="lbl" data-t>Applying</span></button>
+      <button class="ws-btn" role="tab" data-ws="plan" title="Plan: where you stand, the way forward and your progress, worked out with Claude (Ctrl+4)"><span class="lbl" data-t>Plan</span></button>
     </div>
     <div class="subset-switch rs-only">
       <span id="subset-slot"></span>
@@ -95,6 +96,7 @@
     </section>
     <section id="jobspace" class="pane jobspace jobs-only" aria-label="Job search"></section>
     <section id="fillspace" class="pane fillspace fill-only" aria-label="Applying"></section>
+    <section id="planspace" class="pane planspace plan-only" aria-label="Plan"></section>
   </div>
 
   <div id="toast" class="toast" role="status"></div>
@@ -107,6 +109,7 @@
   <script src="dbview.js"></script>
   <script src="autofill.js"></script>
   <script src="hunt.js"></script>
+  <script src="plan.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

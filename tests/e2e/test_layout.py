@@ -275,6 +275,48 @@ FILL_TROUBLE = js("""() => { const v = F.view[F.site];
     paintPlatform(); paintFillBrowser(); }""")
 
 
+# ---- the plan (docs/PLAN.md): a long document, with versions
+PLAN_DOC = """# 2026-11 到 2027-02：找到一份实习，一个很长很长的标题看它会不会好好换行而不是撑出去
+
+## 现在的处境
+- 时间：离春季实习招聘还有大约 **4 个月**，期间还有期末考试（11 月中）。
+- 缺的是底子：算法题练得少，数学基础还要补。
+- 一个没有空格的长链接 https://leetcode.cn/problem-list/2cktkvj/very-long-path-without-any-spaces-at-all-to-break-it
+
+> 先补底子，再谈投递。
+
+| 要过的关 | 现在 | 2 月前要到 | 备注 | 另一列 | 再一列 |
+| --- | --- | --- | --- | --- | --- |
+| 算法题 | 刚开始 | hot 100 中等题 30 分钟写出 | 每天一道，周日复盘 | 很长的一格内容很长的一格内容 | x |
+
+---
+
+## 这周
+- [x] 选定方向：全栈 / AI 应用
+- [ ] 每天 2 道 LeetCode（数组、双指针），做不出就看题解再默写一遍，第二天再做一次
+- [ ] 读懂一个开源项目的数据库 schema
+
+```
+for (let i = 0; i < n; i++) { /* 一行很长的代码，看它在代码块里横向滚动而不是撑出页面 */ }
+```
+
+## 进展
+- 2026-10-19 和 Claude 理了一遍处境，定下方向
+"""
+
+
+def plan_versions(c):
+    st = c.server.req("GET", "/api/plan")[1]
+    st = c.server.req("PUT", "/api/plan", {"text": PLAN_DOC, "why": "第一次盘点：定下全栈 / AI 应用方向", "base": st["digest"]})[1]
+    c.server.req("PUT", "/api/plan", {"text": PLAN_DOC.replace("每天 2 道", "每天 1 道"),
+                                       "why": "期末周，每天两道太多，先减到一道；这条原因写得很长，看版本列表里会不会好好换行", "base": st["digest"]})
+
+
+def plan(pg, c):
+    pg.keyboard.press("Control+4")
+    pg.wait_for_selector("#planspace .plan-empty, #planspace .plan-doc", timeout=20000)
+
+
 STATES = [
     # ---- Resume: the document, its rail and the panes around it
     State("resume, ALL", nothing, ["#library .lib-hint", "#editor .doc-card", "#editor .doc-empty"]),   # the sample has no Experience
@@ -358,6 +400,14 @@ STATES = [
           [".ff-conflict", "#fill-tabs .fs-n.warn", ".fill-banner.warn"], prepare=read_linkedin),
     State("applying, a platform in trouble", then(open_platform, wait("#fill-tabs .fv-tab.on"), FILL_TROUBLE),
           [".fill-banner.warn"], prepare=read_linkedin),
+    State("plan, empty", plan, ["#planspace .plan-empty", "#chat .chat-welcome"]),
+    State("plan, a long document", then(plan, wait("#planspace .plan-doc")), ["#planspace .plan-doc li.task .check", "#planspace .plan-doc table"],
+          prepare=plan_versions),
+    State("plan, being edited while Claude changed it", then(plan, click("#plan-edit"), wait("#planspace .plan-text"),
+          js("() => { P.stale = true; paintPlanEditBar(); }")), ["#planspace .plan-text", "#planspace .pe-stale", "#planspace .plan-why"],
+          prepare=plan_versions),
+    State("plan, its versions and a comparison", then(plan, click("#plan-versions"), click(".plan-side .ps-item >> nth=2"),
+          wait(".plan-vbar"), click(".plan-vbar [role=radio] >> nth=1")), [".plan-side .ps-why", ".plan-diff .dl-add"], prepare=plan_versions),
 ]
 
 

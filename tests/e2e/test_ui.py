@@ -1758,3 +1758,54 @@ def test_autofill_sites_are_the_users_to_pick(page_all, server):
     pg.wait_for_selector(".fs-site.on[data-site='linkedin']")
     pg.wait_for_selector("#fillspace .fill-start")
     no_native(pg)
+
+
+def test_the_plan_is_one_document_with_versions(page_all, server, data_file):
+    """docs/PLAN.md: empty it says one line; Claude writes it from its command and the window follows; the
+    user ticks a box, edits it with a reason, sees every version, compares one with now and goes back."""
+    import subprocess
+    pg = page_all
+    plan = lambda: server.req("GET", "/api/plan")[1]
+    pg.keyboard.press("Control+4")
+    pg.wait_for_selector("#planspace .plan-empty")
+    assert pg.inner_text("#planspace").strip() == "有什么焦虑，就跟 Claude 说：它会帮你在这里理清。"   # one line, no template
+    assert "跟 Claude 说说你在担心什么" in pg.inner_text("#chat .chat-welcome")
+    assert pg.locator("#chat .chat-welcome .suggest").count() == 0
+    assert "你的计划" in pg.inner_text("#chat-context")
+    assert pg.is_disabled("#plan-versions")
+    doc = "# 实习\n\n## 这周\n- [ ] 每天 2 道题\n- [ ] 读懂自己的项目\n\n## 进展\n- 2026-10-18 盘点\n"
+    p = subprocess.run([sys.executable, str(ROOT / "scripts" / "plan.py"), "--data", str(data_file), "write", "--stdin", "--why", "第一次盘点"],
+                       input=doc.encode("utf-8"), capture_output=True, timeout=60)
+    assert p.returncode == 0, p.stderr
+    pg.wait_for_selector("#planspace .plan-doc h1 >> text=实习")               # Claude's write shows up by itself
+    assert pg.locator("#planspace li.task .check").count() == 2
+    pg.wait_for_selector("#plan-versions >> text=版本（1）")
+
+    pg.click("#planspace li.task >> nth=0 >> .check")
+    wait_until(lambda: "- [x] 每天 2 道题" in plan()["text"], msg="ticked")
+    assert len(plan()["versions"]) == 1                                         # a tick goes into the latest version
+    pg.wait_for_selector("#planspace li.task >> nth=0 >> .check.on")
+
+    pg.click("#plan-edit")
+    pg.wait_for_selector("#planspace .plan-text")
+    assert pg.input_value("#planspace .plan-text") == plan()["text"]
+    pg.fill("#planspace .plan-text", plan()["text"].replace("每天 2 道题", "每天 1 道题"))
+    pg.fill("#planspace .plan-why", "期末周，减量")
+    pg.click("#plan-save")
+    pg.wait_for_selector("#planspace .plan-doc >> text=每天 1 道题")
+    assert [v["why"] for v in plan()["versions"]] == ["第一次盘点", "期末周，减量"]
+
+    pg.click("#plan-versions")
+    pg.wait_for_selector(".plan-side .ps-item >> text=期末周，减量")
+    pg.click(".plan-side .ps-item >> text=第一次盘点")
+    pg.wait_for_selector(".plan-vbar >> text=v1")
+    assert "你的计划的 v1" in pg.inner_text("#chat-context")
+    assert pg.locator("#planspace .plan-doc li.task .check.ro").count() == 2   # an old version's boxes don't tick
+    pg.click(".plan-vbar [role=radio] >> text=之后的改动")
+    pg.wait_for_selector(".plan-diff .dl-del >> text=每天 2 道题")
+    pg.wait_for_selector(".plan-diff .dl-add >> text=每天 1 道题")
+    pg.click(".plan-vbar .btn >> text=回到这一版")
+    wait_until(lambda: len(plan()["versions"]) == 3, msg="restored as v3")
+    assert "每天 2 道题" in plan()["text"] and plan()["versions"][-1]["why"] == "回到 v1"
+    pg.wait_for_selector(".plan-side .ps-item.on >> text=当前")
+    no_native(pg)
