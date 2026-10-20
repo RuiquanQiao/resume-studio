@@ -236,7 +236,9 @@ def failed_scan(c):
 
 
 def applying(tab):
-    return then(key("Control+3"), click(f".hunt-tab[data-tab={tab}]"))
+    # the tables arrive with the tracker's data: wait for them before a state reaches into DBV
+    return then(key("Control+3"), click(f".hunt-tab[data-tab={tab}]"),
+                lambda pg, c: pg.wait_for_function(f"() => typeof DBV !== 'undefined' && DBV.tables && DBV.tables['{tab}']"))
 
 
 def open_platform(pg, c, sid="linkedin"):
