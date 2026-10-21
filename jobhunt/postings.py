@@ -33,7 +33,9 @@ def _norm_url(url: str) -> str:
         p = urlsplit(url.strip())
     except ValueError:
         return url.strip()
-    return urlunsplit((p.scheme.lower(), p.netloc.lower(), p.path.rstrip("/"), p.query, ""))
+    # a hash router's route is the posting itself (Moka: …/10001#/job/<id>); any other fragment is not
+    route = p.fragment.rstrip("/") if p.fragment.startswith("/") else ""
+    return urlunsplit((p.scheme.lower(), p.netloc.lower(), p.path.rstrip("/"), p.query, route))
 
 
 def fingerprint(p: dict) -> str:

@@ -245,7 +245,7 @@ function appProps() {
         companyLogo(co(a), "xs"), h("span", { class: "rc-name" }, co(a).name || "")) },
     { key: "status", label: t("Status"), type: "select", width: 140, get: (a) => a.status, options: states, set: (a, v) => cellStatus(a, v) },
     { key: "url", label: t("Link"), type: "text", width: 200, get: (a) => a.url || "", set: (a, v) => cellApp(a, { url: v }),
-      render: (a) => !/^https?:\/\//.test(a.url || "") ? h("span", { class: "c-muted" }, a.url || "") : h("a", { href: a.url, class: "c-link", title: a.url, onclick: (e) => { e.preventDefault(); openInBrowser(a.url); } },
+      render: (a) => !/^https?:\/\//.test(a.url || "") ? h("span", { class: "c-muted" }, a.url || "") : h("a", { href: a.url, class: "c-link", title: a.url },
         a.url.replace(/^https?:\/\//, "")) },
     placesProp("places", t("Location"), (a, v) => cellApp(a, { places: v })),
     { key: "referral", label: t("Referral code"), type: "text", width: 130, get: (a) => a.referral || "", set: (a, v) => cellApp(a, { referral: v }) },
@@ -656,7 +656,9 @@ function postingsCard(v) {
       p.changed && p.changed.deadline && h("span", { class: "chip", title: p.changed.deadline.join(" → ") }, t("deadline changed")),
       h("span", { class: "pr-meta" }, [p.location, p.category, p.batch && t(BATCH_NAMES[p.batch] || p.batch)].filter(Boolean).join(" · "),
         p.deadline && h("span", { class: "c-due" + (p.deadline < today() ? " late" : "") }, t("closes {date}", { date: p.deadline })))),
-    p.app ? h("button", { class: "btn sm ghost", onclick: () => openHunt("app", p.app) }, hChip(((v.applications || []).find((a) => a.id === p.app) || {}).status || "saved"))
+    // added already: a tick and where it stands, so it never reads like the "+ Want to apply" next to it
+    p.app ? h("button", { class: "btn sm ghost pr-added", title: t("In your applications: open it"), "aria-label": t("In your applications: open it"), onclick: () => openHunt("app", p.app) },
+      icon("check"), hChip(((v.applications || []).find((a) => a.id === p.app) || {}).status || "saved"))
       : !p.closed && h("button", { class: "btn sm", title: t("Add it to your applications"), onclick: () => applyPosting(p) }, icon("plus"), t("Want to apply")));
   const search = h("input", { class: "hunt-search", type: "search", id: "posting-search", value: H.pq || "", placeholder: t("Search these roles"),
     oninput: (e) => { H.pq = e.target.value; const pos = e.target.selectionStart; paintHunt(); const el = $("#posting-search"); if (el) { el.focus(); el.setSelectionRange(pos, pos); } } });
@@ -668,6 +670,9 @@ function postingsCard(v) {
     !sc.ok && sc.error && h("div", { class: "note-bar warn" }, icon("alert"), h("span", { class: "nb-text" }, sc.error),
       sc.signed_out && c.site && h("button", { class: "btn sm", onclick: () => signInMode(c.site) }, icon("user"), t("Sign in to {site}", { site: c.name }))),
     sc.needs === "sites" && h("p", { class: "muted card-p" }, t("No careers site known yet: ask Claude to fill the company in, or type one below.")),
+    // read fine and found nothing: say so, or an empty card looks like a scan that never ran
+    sc.ok && !busy && !open.length && h("p", { class: "muted card-p", id: "company-no-postings" },
+      t("Its sites list no open roles right now. If you know they hire, check the addresses under Its careers sites.")),
     open.length > 0 && h("div", { class: "row wrap" }, search, hidden > 0 && h("button", { class: "btn sm ghost", onclick: () => { H.pall = !H.pall; paintHunt(); } },
       showAll ? t("Only the roles you look for") : t("Show all ({n} more)", { n: hidden }))),
     shown.length ? h("div", { class: "post-list" }, shown.slice(0, limit).map(row),
@@ -686,7 +691,9 @@ async function applyPosting(p) {
   try {
     const v = await api("POST", `/api/hunt/postings/${encodeURIComponent(p.id)}/apply`);
     await loadHunt({ quiet: true });
-    toast(t("Added to your applications: {role}", { role: v.application.role }));
+    toast((v.reading || {}).running ? t("Added to your applications: {role}. Its description is being read from its page.", { role: v.application.role })
+      : t("Added to your applications: {role}", { role: v.application.role }),
+    { ms: 6000, action: { label: t("Open"), fn: () => openHunt("app", v.application.id) } });
   } catch (e) { toast(e.message); }
 }
 
@@ -943,10 +950,12 @@ function companyPage(v) {
     h("div", { class: "ed-head" }, companyLogo(c, "lg"), h("h1", null, c.name), h("span", { class: "id" }, c.id), h("span", { class: "spacer" }),
       h("button", { class: "btn sm", id: "company-fill", disabled: !ui.chat.available, onclick: () => askFill(c) }, icon("sparkle"),
         filledSome(c) ? t("Ask Claude to fill it in again") : t("Ask Claude to fill it in")),
-      c.site && h("button", { class: "btn sm", onclick: () => openOnSite(c.site) }, icon("external"), t("Open its site")),
+      c.site && h("button", { class: "btn sm", title: c.site, onclick: () => openInBrowser(c.site) }, icon("external"), t("Open its site")),
       h("button", { class: "btn icon ghost", title: t("More"), "aria-label": t("More"), onclick: (e) => openMenu(e.currentTarget, [
+        c.site && { label: t("Open it in Resume Studio's browser"), icon: "globe", onClick: () => openOnSite(c.site) },
         c.site && { label: t("Sign in to it in Resume Studio's browser"), icon: "user", onClick: () => signInMode(c.site) },
-        c.site && { label: t("Open it in your everyday browser"), icon: "external", onClick: () => openInBrowser(c.site) },
+        { label: c.logo ? t("Change the logo…") : t("Add a logo…"), icon: "file", onClick: () => pickLogo(c) },
+        c.logo && { label: t("Remove the logo"), icon: "x", onClick: () => removeLogo(c) },
         (c.kept || []).length > 0 && { label: t("Let Claude fill the fields you edited too"), icon: "sparkle", onClick: () => editCompany(c.id, { kept: [] }) },
         "sep",
         { label: t("Delete this company"), icon: "trash", danger: true, onClick: () => deleteCompany(c, apps.length) }], { align: "end" }) }, icon("more"))),
@@ -956,10 +965,8 @@ function companyPage(v) {
     ]),
     postingsCard(v),
     card(t("Its careers site"), t("one profile there, filled from a subset"), [
-      (c.sites || []).length > 0 && h("div", { class: "co-sites" }, c.sites.map((x) => h("div", { class: "co-site" },
-        h("span", { class: "chip" }, t(SITE_KINDS[x.kind] || "Other")), h("a", { href: x.url, "data-ext": "", class: "co-site-url" }, x.url.replace(/^https?:\/\//, "")),
-        x.system && h("span", { class: "muted" }, x.system)))),
-      h("div", { class: "grid2" }, hfield(t("Careers site"), c.site, save("site"), { placeholder: "https://careers.example.com/campus", hint: keptHint(c, "site") }),
+      h("div", { class: "field" }, h("label", null, t("Its careers sites"), h("span", { class: "hint" }, keptHint(c, "sites") || t("scanned for open roles"))), sitesEditor(c)),
+      h("div", { class: "grid2" }, hfield(t("Where you sign up"), c.site, save("site"), { placeholder: "https://careers.example.com/campus", hint: keptHint(c, "site") }),
         hfield(t("Account"), c.account, save("account"), { placeholder: t("e.g. the phone or email you signed up with"), hint: t("never a password") })),
       h("div", { class: "field" }, h("label", null, t("Filled from"), h("span", { class: "hint" }, t("the subset this site gets"))), h("div", { class: "su-subset" }, pick.el,
         st && h("span", { class: "chip" + (st.latest && !st.same_as ? " vd-changed" : "") }, !st.latest ? t("No versions yet") : st.same_as ? `v${st.same_as}` : t("v{n} · changed", { n: st.latest })),
@@ -991,6 +998,29 @@ function companyPage(v) {
 }
 
 const SITE_KINDS = { campus: "Campus", intern: "Internships", social: "Experienced", other: "Other" };
+
+// the company's careers sites, each one changeable: its kind, its address (emptied, it goes), or gone; and more
+function sitesEditor(c) {
+  const sites = (c.sites || []).map((x) => ({ ...x }));
+  const save = () => editCompany(c.id, { sites });
+  const kinds = Object.entries(SITE_KINDS).map(([value, label]) => ({ value, label: t(label) }));
+  const rows = sites.map((x, i) => h("div", { class: "co-site co-site-edit" },
+    uiSelect({ label: t("Kind"), menuWidth: 170, value: x.kind, cls: "sm", options: kinds, onChange: (v) => { x.kind = v; save(); } }).el,
+    h("input", { class: "co-site-input", value: x.url, spellcheck: "false", "aria-label": t("Address"),
+      onchange: (e) => { const v = e.target.value.trim(); if (v === x.url) return; if (v) x.url = v; else sites.splice(i, 1); save(); } }),
+    x.system && h("span", { class: "muted" }, x.system),
+    h("button", { class: "btn icon sm ghost", title: t("Open it in your everyday browser"), "aria-label": t("Open it in your everyday browser"), onclick: () => openInBrowser(x.url) }, icon("external")),
+    h("button", { class: "btn icon sm ghost", title: t("Remove this site"), "aria-label": t("Remove this site"), onclick: () => { sites.splice(i, 1); save(); } }, icon("x"))));
+  const add = h("input", { class: "su-add-input", id: "company-add-site", spellcheck: "false", placeholder: t("Add a careers site: paste its address and press Enter"),
+    onkeydown: (e) => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      const url = e.target.value.trim();
+      if (!url) return;
+      sites.push({ url, kind: sites.some((x) => x.kind === "campus") ? "other" : "campus", system: "" });
+      save().then(() => { const again = $("#company-add-site"); if (again) again.focus(); });
+    } });
+  return h("div", { class: "co-sites" }, rows, add);
+}
 const filledSome = (c) => !!(c.industry || c.strength || c.logo || (c.about && c.about.summary));
 
 // next to a field's label: where Claude found it, or that it is the user's now
@@ -1001,6 +1031,26 @@ function keptHint(c, key) {
   let host = src;
   try { host = new URL(src).hostname.replace(/^www\./, ""); } catch (e) { /* keep it as written */ }
   return h("a", { href: src, "data-ext": "", class: "src-link", title: src }, t("source: {site}", { site: host }));
+}
+
+// the logo is the user's to change: a picture they pick, or none (a wrong one); either way Claude leaves it
+async function pickLogo(c) {
+  try {
+    const r = await api("POST", "/api/pick", { kind: "files" });
+    const path = (r.paths || [])[0];
+    if (!path) return;
+    H.view = await api("PUT", `/api/hunt/logos/${encodeURIComponent(c.id)}`, { path });
+    paintHunt();
+    loadHunt({ quiet: true });
+  } catch (e) { toast(e.message); }
+}
+
+async function removeLogo(c) {
+  try {
+    H.view = await api("DELETE", `/api/hunt/logos/${encodeURIComponent(c.id)}`);
+    paintHunt();
+    loadHunt({ quiet: true });
+  } catch (e) { toast(e.message); }
 }
 
 // Claude researches the company and fills every field (docs/JOB_HUNT.md, 2026-10-18)
@@ -1101,11 +1151,15 @@ function appPage(v) {
         a.channel === "site" && h("span", { class: "muted" }, t("choice {n} on {company}'s site", { n: a.order, company: c.name })))),
       hfield(t("Notes"), a.note, save("note"), { multiline: true }),
     ]),
-    card(t("Job description"), a.jd ? "" : t("not kept yet"), [
+    card(t("Job description"), jdSub(a, v.reading), [
+      (v.reading || {}).error && h("div", { class: "note-bar warn" }, icon("alert"),
+        h("span", { class: "nb-text" }, t("Its page didn't read: {error}", { error: v.reading.error })),
+        ui.chat.available && h("button", { class: "btn sm", onclick: () => sendChat(t("Read the posting at {url} and fill in {role} at {company}: its job description, location and apply-by date.", { url: a.url, role: a.role, company: c.name })) },
+          icon("sparkle"), t("Ask Claude to read it"))),
       h("div", { class: "field" }, h("textarea", { id: "app-jd", rows: 6, value: a.jd || "", spellcheck: "false", "aria-label": t("Job description"),
         placeholder: t("Paste the posting's text here: duties, requirements, pluses. Or send Claude its link or a screenshot."),
-        onchange: (e) => { const val = e.target.value.trim(); if (val !== (a.jd || "")) { a.jd = val; save("jd")(val); } } }, a.jd || "")),
-    ]),
+        onchange: (e) => { const val = e.target.value.trim(); if (val !== (a.jd || "")) { a.jd = val; a.jd_read = ""; editApp(a.id, { jd: val, jd_read: "" }, { repaint: false }); } } }, a.jd || "")),
+    ], { actions: readButton(a, v.reading) }),
     card(t("Resume sent"), (a.sent || []).length ? t("{n} time", { n: a.sent.length }, "{n} times") : t("not yet"), [
       a.channel !== "site" && h("div", { class: "field" }, h("label", null, t("Goes out with")), h("div", { class: "su-subset" }, pick.el)),
       a.channel === "site" && h("p", { class: "card-p muted" }, t("It goes out with the sign-up on {company}'s site: mark that as sent on the company's page.", { company: c.name })),
@@ -1119,6 +1173,30 @@ function appPage(v) {
         h("button", { class: "btn sm ghost", onclick: () => showSent(x.subset, x.n) }, icon("history"), t("See what went out"))))),
     ]),
   ];
+}
+
+// the role's page, read for its description (jobhunt/reader.py): what the card says about it, and the button
+function jdSub(a, reading) {
+  if ((reading || {}).running) return h("span", { class: "fs-status" }, h("span", { class: "spin" }), t("Reading its page…"));
+  if (a.jd && a.jd_read) return t("read from its page {date}", { date: a.jd_read });
+  return a.jd ? "" : t("not kept yet");
+}
+
+function readButton(a, reading) {
+  const link = /^https?:\/\//.test(a.url || "");
+  return h("button", { class: "btn sm", id: "app-read", disabled: !link || !!(reading || {}).running,
+    title: link ? a.url : t("Give the role its link first"), onclick: () => readPosting(a) },
+  icon("refresh"), a.jd ? t("Read its page again") : t("Fill in from its page"));
+}
+
+async function readPosting(a) {
+  if (a.jd && !(await modal({ title: t("Replace the job description?"),
+    message: t("The description here is replaced by the one on its page now. The location and the apply-by date are only filled where they are empty."),
+    ok: t("Replace") }))) return;
+  try {
+    H.view = await api("POST", `/api/hunt/apps/${encodeURIComponent(a.id)}/read`, { replace: true });
+    paintHunt();
+  } catch (e) { toast(e.message); }
 }
 
 async function setAppStatus(a, status) {

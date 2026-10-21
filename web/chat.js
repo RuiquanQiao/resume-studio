@@ -1218,9 +1218,5 @@ function wireChat() {
     addBrowserFiles([...e.dataTransfer.files]);
     input.focus();
   });
-  $("#chat-log").addEventListener("click", (e) => {
-    const a = e.target.closest("a[data-ext]");
-    if (a) { e.preventDefault(); api("POST", "/api/open", { url: a.getAttribute("href") }).catch(() => window.open(a.href, "_blank")); }
-  });
   renderPickers();
 }

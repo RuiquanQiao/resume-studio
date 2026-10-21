@@ -1,9 +1,14 @@
 """The tracker's routes: the window's tables and pages, and one command endpoint for scripts/hunt.py."""
 from __future__ import annotations
 
+import base64
+import binascii
+import mimetypes
 import os
+import re
 import threading
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from core.i18n import t
@@ -13,7 +18,7 @@ from jobs.signups import Signups
 from resume import model
 from resume.service import Studio
 
-from . import ics, logos
+from . import ics, logos, reader
 from .geo import Geo
 from .logos import fetch_logo
 from .postings import Postings
@@ -167,7 +172,51 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     def app_view(ref: str) -> dict:
         a = hunt.application(ref)
         c = hunt.company(a["company"])
-        return {"application": a, "company": c, "events": hunt.events(a["id"])}
+        return {"application": a, "company": c, "events": hunt.events(a["id"]), "reading": reading.get(a["id"]) or {}}
+
+    # ---- reading a role's own page: its description, where and until when (jobhunt/reader.py), no Claude ----
+    reading: dict[str, dict] = {}   # application id -> {"running": True} while it reads, {"error": ...} after it failed
+
+    def read_app(aid: str, replace: bool) -> None:
+        """Fill the role from its link. The description is replaced only when asked (`replace`) or when there is
+        none; the location and the apply-by date are filled only where the role has none yet."""
+        try:
+            a = hunt.application(aid)
+            if scanner.browser is None:   # the scanner's: the same browser, and the one tests swap
+                raise RuntimeError(t("Resume Studio's browser isn't available here"))
+            got = reader.read_posting(scanner.browser, a.get("url") or "")
+            if not got["jd"]:
+                raise RuntimeError(t("No job description was found on its page"))
+            a = hunt.application(aid)   # it may have changed while the page was read
+            fields: dict = {"jd_read": time.strftime("%Y-%m-%d")}
+            if replace or not a.get("jd"):
+                fields["jd"] = got["jd"]
+            if got.get("places") and not a.get("places"):
+                fields["places"] = got["places"]
+            ev = next((e for e in a.get("schedule") or [] if e.get("kind") == "apply"), None)
+            if got.get("deadline") and ev is not None and not ev.get("at"):
+                fields["apply_by"] = got["deadline"]
+            hunt.update_application(aid, fields)
+            reading.pop(aid, None)
+        except Exception as e:  # noqa: BLE001  (the browser, the page, a role deleted meanwhile)
+            reading[aid] = {"error": str(e)}
+        app.bus.publish("hunt", {})
+
+    def start_read(aid: str, replace: bool = False) -> None:
+        a = hunt.application(aid)
+        if not re.match(r"https?://", a.get("url") or ""):
+            raise ValueError(t("Give the role its link first"))
+        if (reading.get(a["id"]) or {}).get("running"):
+            return
+        reading[a["id"]] = {"running": True}
+        app.bus.publish("hunt", {})
+        threading.Thread(target=read_app, args=(a["id"], replace), daemon=True, name=f"hunt-read-{a['id']}").start()
+
+    def read_if_new(a: dict) -> dict:
+        """A role that has a link and no description yet gets it from its page, whoever gave it the link."""
+        if not a.get("jd") and re.match(r"https?://", a.get("url") or ""):
+            start_read(a["id"])
+        return a
 
     # ---- sending: the subset is kept as a version and pinned; career-ops gets the rows if it is the tracker ----
     def copy_to_tracker(apps: list[dict], c: dict, label: str, n: int) -> int:
@@ -249,8 +298,13 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
 
     @app.route("POST", "/api/hunt/postings/{pid}/apply")
     def apply_posting(req: Request):
-        a = guard(lambda: posts.apply(req.params["pid"]))
+        a = read_if_new(guard(lambda: posts.apply(req.params["pid"])))   # its description comes in from its page
         return app_view(a["id"])
+
+    @app.route("POST", "/api/hunt/apps/{aid}/read")
+    def read_role(req: Request):
+        guard(lambda: start_read(req.params["aid"], replace=bool(body(req).get("replace", True))))
+        return guard(lambda: app_view(req.params["aid"]))
 
     @app.route("PUT", "/api/hunt/geo")
     def put_geo(req: Request):
@@ -277,6 +331,31 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         if path is None:
             raise HttpError(404, "no logo")
         return FileResponse(path)
+
+    @app.route("PUT", "/api/hunt/logos/{cid}")
+    def put_logo(req: Request):
+        """The user's own picture for the logo: a file they picked ({path}) or its bytes ({data: base64, type}).
+        It stays theirs."""
+        b = body(req)
+        ctype = str(b.get("type") or "")
+        try:
+            if b.get("path"):
+                p = Path(str(b["path"]))
+                ctype = mimetypes.guess_type(p.name)[0] or ""
+                if not ctype.startswith("image/") or not p.is_file() or p.stat().st_size > 2_000_000:
+                    raise ValueError
+                data = p.read_bytes()
+            else:
+                data = base64.b64decode(str(b.get("data") or ""), validate=True)
+        except (binascii.Error, ValueError, OSError):
+            raise HttpError(400, t("That isn't a picture Resume Studio can show ({type})", type=ctype or "?"))
+        guard(lambda: hunt.save_logo(req.params["cid"], data, ctype, source="window"))
+        return guard(lambda: company_view(req.params["cid"]))
+
+    @app.route("DELETE", "/api/hunt/logos/{cid}")
+    def delete_logo(req: Request):
+        guard(lambda: hunt.remove_logo(req.params["cid"]))
+        return guard(lambda: company_view(req.params["cid"]))
 
     @app.route("PUT", "/api/hunt/settings")
     def save_settings(req: Request):
@@ -317,7 +396,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
 
     @app.route("POST", "/api/hunt/companies/{cid}/roles")
     def new_role(req: Request):
-        a = guard(lambda: hunt.add_application(req.params["cid"], body(req)))
+        a = read_if_new(guard(lambda: hunt.add_application(req.params["cid"], body(req))))
         return app_view(a["id"])
 
     @app.route("POST", "/api/hunt/companies/{cid}/sent")
@@ -332,7 +411,10 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
 
     @app.route("PUT", "/api/hunt/apps/{aid}")
     def edit_app(req: Request):
-        guard(lambda: hunt.update_application(req.params["aid"], body(req)))
+        b = body(req)
+        a = guard(lambda: hunt.update_application(req.params["aid"], b))
+        if "url" in b:
+            read_if_new(a)
         return guard(lambda: app_view(req.params["aid"]))
 
     @app.route("POST", "/api/hunt/apps/{aid}/status")
@@ -432,10 +514,11 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 return {"company": company_view(cid), "text": "changed"}
             if cmd == "add-role":
                 ref = str(a.pop("company", "") or "")
-                return {"app": app_view(hunt.add_application(ref, a, source=src)["id"]), "text": "added"}
+                return {"app": app_view(read_if_new(hunt.add_application(ref, a, source=src))["id"]), "text": "added"}
             if cmd == "edit-role":
                 ref = str(a.pop("ref", "") or "")
-                return {"app": app_view(hunt.update_application(ref, a)["id"]), "text": "changed"}
+                x = hunt.update_application(ref, a)
+                return {"app": app_view((read_if_new(x) if "url" in a else x)["id"]), "text": "changed"}
             if cmd == "status":
                 x = hunt.set_status(str(a.get("ref") or ""), a.get("status"), note=str(a.get("note") or ""), source=src,
                                     on=str(a.get("on") or ""))
@@ -486,7 +569,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 return {"scanned": [{"company": c["id"], "found": res["found"], "new": len(res["new"]), "closed": len(res["closed"]),
                                      "changed": len(res["changed"])}], "company": company_view(c["id"]), "text": "postings saved"}
             if cmd == "apply":
-                x = posts.apply(str(a.get("ref") or ""), source=src)
+                x = read_if_new(posts.apply(str(a.get("ref") or ""), source=src))
                 return {"app": app_view(x["id"]), "text": "added"}
             if cmd == "keywords":
                 return {"settings": posts.settings(keywords=a.get("keywords")), "text": "keywords"}

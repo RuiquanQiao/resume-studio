@@ -318,6 +318,21 @@ document.addEventListener("scroll", (e) => {
   const r = f.anchor.getBoundingClientRect();
   if (r.bottom < 0 || r.top > innerHeight) closeFloat(); else placeFloat(f);
 }, true);
+// A link to another site opens in the computer's own browser, never in this window: followed here, it
+// would replace Resume Studio with the site (a long blank, then the page, and no way back but restarting).
+// One handler for every link, so a link added anywhere later can't forget it.
+function externalLink(e) {
+  const a = e.target.closest && e.target.closest("a[href]");
+  if (!a || e.defaultPrevented || (e.type === "auxclick" && e.button !== 1)) return;
+  let url;
+  try { url = new URL(a.getAttribute("href"), location.href); } catch (err) { return; }
+  if (!/^https?:$/.test(url.protocol) || url.origin === location.origin) return;
+  e.preventDefault();
+  e.stopPropagation();   // a link's own onclick would open it a second time
+  api("POST", "/api/open", { url: url.href }).catch((err) => toast(err.message));
+}
+document.addEventListener("click", externalLink, true);
+document.addEventListener("auxclick", externalLink, true);
 window.addEventListener("resize", closeFloat);
 window.addEventListener("blur", closeFloat);
 document.addEventListener("keydown", (e) => {

@@ -494,6 +494,21 @@ class Hunt:
         self._changed()
         return me
 
+    def remove_logo(self, ref: str) -> dict:
+        """The user takes the logo away (a wrong one): it stays away, Claude's fill and the site's icon skip it."""
+        c = self.company(ref)
+        for old in (self.dir / "logos").glob(c["id"] + ".*"):
+            old.unlink(missing_ok=True)
+        with self.lock:
+            cs = self._companies()
+            me = next(x for x in cs["companies"] if x["id"] == c["id"])
+            me["logo"] = ""
+            me["kept"] = sorted(set(me.get("kept") or []) | {"logo"})
+            me["updated"] = _now()
+            self._write("companies.json", cs)
+        self._changed()
+        return me
+
     def migrate(self) -> None:
         """Deadlines belong to roles (2026-10-18): a company's deadline moves to its roles that have none.
         A role's next step and its date (until 2026-10-21) become something booked when they had a date,
@@ -576,6 +591,8 @@ class Hunt:
             a["note"] = _long(fields["note"], 4000)
         if "jd" in fields:   # the posting's own text, as it was read: kept apart from the user's notes
             a["jd"] = _long(fields["jd"], 20000)
+        if "jd_read" in fields:   # when it was read from the role's page (jobhunt/reader.py), "" when typed
+            a["jd_read"] = _text(fields["jd_read"], 20)
         if "apply_by" in fields:
             _set_apply_by(a, fields["apply_by"])
         if "places" in fields:

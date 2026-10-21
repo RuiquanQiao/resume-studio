@@ -253,6 +253,7 @@ class ManagedBrowser:
         self.lock = threading.RLock()
         self.pages: dict[str, dict] = {}      # targetId -> {url, title, opener}
         self.current: str | None = None
+        self.reading: tuple[str, str | None] | None = None   # read_page's own tab, and the one it stands in for
         self.sessions: dict[str, str] = {}    # targetId -> sessionId
         self.contexts: dict[str, int] = {}    # sessionId -> isolated world's execution context
         self.on_change: Callable[[], None] | None = None
@@ -263,7 +264,8 @@ class ManagedBrowser:
 
     def status(self) -> dict:
         found = find_browser(self.prefer)
-        page = self.pages.get(self.current or "") or {}
+        shown = self.reading[1] if self.reading and self.current == self.reading[0] else self.current
+        page = self.pages.get(shown or "") or {}
         if self.state == "running" and (self.conn is None or self.conn.closed):
             self._lost()
         return {"state": self.state, "error": self.error, "browser": NAMES.get(self.kind or (found or ("", ""))[0], ""),
@@ -655,6 +657,43 @@ class ManagedBrowser:
             return json.loads(raw) if isinstance(raw, str) else raw
         except ValueError as e:
             raise BrowserError(f"the script's answer isn't JSON: {e}") from e
+
+    def read_page(self, url: str, script: str, timeout: float = 60.0) -> Any:
+        """Run a read script on `url` in a tab of its own, in a window off the screen, then close it: reading a
+        posting never takes the tab Claude or the user is working in, nor covers the screen. Off the screen,
+        not minimized: a minimized window stops painting, and sites drawn by scripts (Feishu) then never
+        draw the posting."""
+        if not url.startswith(("http://", "https://")):
+            raise BrowserError("only http(s) addresses can be opened")
+        with self.lock:
+            self.ensure()
+            assert self.conn is not None
+            before = self.current
+            tid = self.conn.send("Target.createTarget", {"url": "about:blank", "newWindow": True, "background": True})["targetId"]
+            try:
+                try:
+                    win = self.conn.send("Browser.getWindowForTarget", {"targetId": tid})
+                    self.conn.send("Browser.setWindowBounds", {"windowId": win["windowId"],
+                                                               "bounds": {"left": -32000, "top": 0, "width": 1280, "height": 900}})
+                except CdpError:
+                    pass   # headless, or a browser that can't: it reads all the same
+                self.current, self.reading = tid, (tid, before)
+                r = self._send("Page.navigate", {"url": url})
+                if r.get("errorText"):
+                    raise BrowserError(f"couldn't open {url}: {r['errorText']}")
+                self.wait_loaded()
+                return self.run_script(script, timeout=timeout)
+            finally:
+                try:
+                    self.conn.send("Target.closeTarget", {"targetId": tid})
+                except CdpError:
+                    pass
+                self.pages.pop(tid, None)
+                sid = self.sessions.pop(tid, None)
+                if sid:
+                    self.contexts.pop(sid, None)
+                self.current = before if before in self.pages else (list(self.pages)[-1] if self.pages else None)
+                self.reading = None
 
     def _mouse_click(self, x: float, y: float, count: int = 1) -> None:
         base = {"x": x, "y": y, "button": "left", "clickCount": count}

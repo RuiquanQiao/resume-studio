@@ -1404,6 +1404,10 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-sel
 .co-sites { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .co-site { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: 13px; min-width: 0; }
 .co-site-url { min-width: 0; overflow-wrap: anywhere; }
+.co-site-edit { flex-wrap: nowrap; }
+.co-site-edit .select { flex: none; width: 128px; }
+.co-site-input { flex: 1; min-width: 0; height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--panel); color: var(--text); font: inherit; font-size: 13px; }
+.co-site-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 
 /* ---- open postings: the scan's news, the open-roles chip, a company's list ---- */
 .role-chip.open-chip { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text-2); }

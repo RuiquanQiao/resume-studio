@@ -373,6 +373,20 @@ def ref_of(text: str, needle: str) -> str:
     return line.split("]")[0].strip(" [")
 
 
+def test_a_posting_is_read_in_a_tab_of_its_own(live, data_file, fake_site):
+    """jobhunt/reader.py on a page drawn by its script after loading: its JD, where and until when; the tab the
+    user (or Claude) works in is left where it was, and the reading tab is gone afterwards."""
+    from jobhunt.reader import read_posting
+    b = live.inst.browser
+    b.open(fake_site + "/linkedin/profile.html")
+    got = read_posting(b, fake_site + "/jobs/posting.html")
+    assert got["jd"].startswith("岗位职责") and "任职要求" in got["jd"] and got["jd"].rstrip().endswith("项目经验者优先。")
+    assert "立即投递" not in got["jd"] and "首页" not in got["jd"] and "工作地点" not in got["jd"]
+    assert [p["area"] for p in got["places"]] == ["杭州", "上海"] and got["deadline"] == "2026-11-30"
+    assert not any("/jobs/posting.html" in x["url"] for x in b.tabs()) and b.here()["url"].endswith("/linkedin/profile.html")
+    assert live.req("GET", "/api/browser")[1]["url"].endswith("/linkedin/profile.html")
+
+
 def test_browser_command_drives_a_real_page(live, data_file, fake_site):
     """scripts/browser.py → the window → CDP → a headless Edge with its own profile."""
     r = cli(data_file, "open", fake_site + "/linkedin/profile.html")

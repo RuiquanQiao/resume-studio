@@ -91,6 +91,25 @@ def test_a_logo_is_found_on_the_companys_own_site():
                             download=download, types=LOGO_TYPES) is None
 
 
+def test_the_user_changes_or_removes_a_logo(live, tmp_path):
+    hunt = live.inst.hunt
+    live.req("POST", "/api/hunt/companies", {"name": "星河科技"})
+    hunt.save_logo("C1", b"GIF89a", "image/gif")                       # a wrong one, from the site
+    pic = tmp_path / "mine.png"
+    pic.write_bytes(PNG)
+    code, v = live.req("PUT", "/api/hunt/logos/C1", {"path": str(pic)})
+    assert code == 200 and v["company"]["logo"] == "C1.png" and "logo" in v["company"]["kept"]
+    assert hunt.logo_path("C1").read_bytes() == PNG and not (hunt.dir / "logos" / "C1.gif").exists()
+    hunt.save_logo("C1", b"GIF89a", "image/gif")                       # Claude's next fill leaves it
+    assert hunt.company("C1")["logo"] == "C1.png"
+    (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
+    assert live.req("PUT", "/api/hunt/logos/C1", {"path": str(tmp_path / "notes.txt")})[0] == 400
+    code, v = live.req("DELETE", "/api/hunt/logos/C1")
+    assert code == 200 and v["company"]["logo"] == "" and hunt.logo_path("C1") is None
+    hunt.save_logo("C1", PNG, "image/png")                             # gone stays gone
+    assert hunt.company("C1")["logo"] == ""
+
+
 def test_a_company_with_a_site_gets_its_logo_by_itself(live, data_file):
     hunt = live.inst.hunt
     looked = []
@@ -208,6 +227,10 @@ def test_postings_are_matched_across_scans(hunt):
     ps.merge("Tencent", second, how="tencent")
     assert next(p for p in ps.all() if p["title"] == "后台开发工程师")["app"] == hunt.application("Tencent/后台开发工程师")["id"]
     assert fingerprint({"url": "HTTPS://Careers.Tencent.com/a/"}) == "https://careers.tencent.com/a"
+    # Moka links every posting through its hash router: two ids are two postings, a plain anchor is nothing
+    moka = "https://app.mokahr.com/campus-recruitment/example/10001#/job/"
+    assert fingerprint({"url": moka + "a1"}) != fingerprint({"url": moka + "b2"})
+    assert fingerprint({"url": "https://x.example/jobs#apply"}) == "https://x.example/jobs"
     assert clean({"title": "管培生 2027 校园招聘"})["batch"] == "campus"
 
 
@@ -225,6 +248,10 @@ class FakeBrowser:
 
     def run_script(self, script, timeout=60.0):
         return self.pages[self.at]
+
+    def read_page(self, url, script, timeout=60.0):
+        self.opened.append(url)
+        return self.pages[url]
 
 
 class NoTool:
@@ -271,7 +298,13 @@ export async function loadProviders(dir) { const m = new Map();
     { const p = (await import(pathToFileURL(path.join(dir, f)).href)).default; m.set(p.id, p); } return m; }
 export function resolveProvider(entry, providers) { for (const p of providers.values()) if (p.detect?.(entry)) return { provider: p }; return null; }
 """, encoding="utf-8")
-    (co / "providers" / "_http.mjs").write_text("export function makeHttpCtx() { return { fetchJson: async () => ({}) }; }\n", encoding="utf-8")
+    (co / "providers" / "_http.mjs").write_text("export function makeHttpCtx() { return { fetchJson: async (url, opts) => ({ opts }) }; }\n", encoding="utf-8")
+    # a Feishu tenant answers for the portal named in the header: the bridge names it from the site's address
+    (co / "providers" / "feishu.mjs").write_text("""
+export default { id: 'feishu-jobs', detect: (e) => (e.careers_url.includes('.jobs.feishu.cn') ? { url: e.careers_url } : null),
+  async fetch(entry, ctx) { const { opts } = await ctx.fetchJson('https://x.jobs.feishu.cn/api', { headers: { a: '1' } });
+    return [{ title: opts.headers['website-path'] || 'none', url: 'https://x.jobs.feishu.cn/index/position/7/detail' }]; } };
+""", encoding="utf-8")
     (co / "providers" / "demo.mjs").write_text("""
 export default { id: 'demo', detect: (e) => (e.careers_url.includes('jobs.example.com') ? { url: e.careers_url } : null),
   async fetch(entry) { console.log('noise on stdout'); return [
@@ -298,13 +331,18 @@ export default { id: 'demo', detect: (e) => (e.careers_url.includes('jobs.exampl
     assert (res["found"], res["new"], res["needs"]) == (1, 1, "claude")         # the other site still needs Claude
     p = ps.all()[0]
     assert (p["title"], p["location"], p["category"], p["posted"]) == ("Graduate Engineer", "Sydney", "Eng", "2026-10-01")
+    hunt.add_company({"name": "示例基金", "sites": [{"url": "https://gf.jobs.feishu.cn/123456", "kind": "campus"}]})
+    sc.scan("示例基金")
+    p = next(x for x in ps.all() if x["company"] == "C2")
+    assert (p["title"], p["url"]) == ("123456", "https://x.jobs.feishu.cn/123456/position/7/detail")
 
 
 def test_the_window_and_claude_scan_and_apply(live, data_file, monkeypatch):
     cli(data_file, "add-company", "星河科技", "--site", "https://careers.xinghe.example/campus")
     page = "https://careers.xinghe.example/campus/jobs"
     fake = FakeBrowser({page: {"postings": [{"title": "服务端研发工程师", "url": page + "/1"},
-                                            {"title": "算法工程师", "url": page + "/2", "deadline": "2026-10-31"}]}})
+                                            {"title": "算法工程师", "url": page + "/2", "deadline": "2026-10-31"}]},
+                        page + "/2": {"jd": "岗位职责\n1、训练模型", "text": "工作地点\n工作地点\n杭州/上海\n截止日期：2026-11-30"}})
     monkeypatch.setattr(live.inst.hunt.scanner, "browser", fake)
     code, out = cli(data_file, "scan")
     assert "C1: needs claude" in out
@@ -319,6 +357,28 @@ def test_the_window_and_claude_scan_and_apply(live, data_file, monkeypatch):
     assert len(v["postings"]) == 2 and v["scan"]["recorded"] and v["scan"]["how"] == "route"
     code, r = live.req("POST", "/api/hunt/postings/P2/apply")
     assert code == 200 and r["application"]["role"] == "算法工程师" and r["application"]["schedule"][0]["at"] == "2026-10-31"
+    # going for it reads its page: the description and the cities; the scanned deadline stays
+    aid = r["application"]["id"]
+    end = time.time() + 10
+    while time.time() < end and (r["reading"].get("running") or not r["application"]["jd"]):
+        time.sleep(0.05)
+        r = live.req("GET", f"/api/hunt/apps/{aid}")[1]
+    a = r["application"]
+    assert a["jd"] == "岗位职责\n1、训练模型" and [p["area"] for p in a["places"]] == ["杭州", "上海"] and a["jd_read"]
+    assert a["schedule"][0]["at"] == "2026-10-31" and not r["reading"]
+    # reading it again on request replaces the description; a page with none says so
+    fake.pages[page + "/2"]["jd"] = "岗位职责\n2、部署模型"
+    live.req("POST", f"/api/hunt/apps/{aid}/read", {})
+    end = time.time() + 10
+    while time.time() < end and live.req("GET", f"/api/hunt/apps/{aid}")[1]["application"]["jd"] != "岗位职责\n2、部署模型":
+        time.sleep(0.05)
+    fake.pages[page + "/2"]["jd"] = ""
+    live.req("POST", f"/api/hunt/apps/{aid}/read", {})
+    end = time.time() + 10
+    while time.time() < end and not live.req("GET", f"/api/hunt/apps/{aid}")[1]["reading"].get("error"):
+        time.sleep(0.05)
+    r = live.req("GET", f"/api/hunt/apps/{aid}")[1]
+    assert r["reading"]["error"] and r["application"]["jd"] == "岗位职责\n2、部署模型"
     code, out = cli(data_file, "keywords", "后端, 服务端")
     assert "keywords: 后端, 服务端" in out
     # Claude's own reading, when no route can be recorded
@@ -328,6 +388,17 @@ def test_the_window_and_claude_scan_and_apply(live, data_file, monkeypatch):
     assert live.req("PUT", "/api/hunt/scan-settings", {"daily": False})[1]["daily"] is False
     assert live.req("POST", "/api/hunt/scan", {"auto": True})[1]["skipped"]
 
+
+
+def test_a_posting_page_says_where_and_until_when():
+    from jobhunt.reader import details
+    # Moka: the label twice, then "-" for nothing
+    assert details("工作地点\n工作地点\n-\n发布日期\n2026-09-29") == {}
+    # Workday: an English label, the date in Chinese under its own heading
+    d = details("locations\nSydney: 1 Market St\ntime left to apply\n结束日期：2026年10月31日 (申请时间还剩 9 天)")
+    assert d == {"places": [{"kind": "onsite", "area": "Sydney: 1 Market St"}], "deadline": "2026-10-31"}
+    assert details("Location is flexible\nApplications close 31 Oct 2026") == {"deadline": "2026-10-31"}
+    assert details("工作地点：北京、上海")["places"] == [{"kind": "onsite", "area": "北京"}, {"kind": "onsite", "area": "上海"}]
 
 
 def test_claude_is_told_to_fill_scan_and_read_links():

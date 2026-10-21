@@ -371,6 +371,36 @@ subset's versions, kept when a version is restored.
 - The questions are written in the resume language being edited, so an English and a Chinese set can sit side
   by side.
 
+## 2026-10-21: a role reads its own page; links leave the window; what Claude fills, the user can change
+
+Found in use: "Want to apply" added a role with an empty JD; clicking a careers site's link blanked the whole
+window and loaded the site inside it; the careers sites Claude found could not be changed; one company's
+Feishu site scanned "OK" with 0 roles while it had 37 open.
+
+- **A role with a link reads its page** (`jobhunt/reader.py`, no Claude): whenever a role gets a link and has
+  no JD (Want to apply, a link typed in, `add-role --url`), its page is opened in Resume Studio's browser, in a
+  tab of its own in a window off the screen (not minimized: a minimized window stops painting and script-drawn
+  sites never draw the posting), and closed again. The JD is the smallest part of the page holding the most
+  section headings (岗位职责, 任职要求, Responsibilities…); without headings, the longest run of text, and only a
+  long one (a short notice must never replace a JD). The location and the apply-by date are taken from labelled
+  lines, and only where the role has none. The JD card says "read from its page" with the date, "Read its page
+  again" replaces it after asking, a JD edited by hand drops the mark, and a page that didn't read says so and
+  offers Claude. Checked on Moka, 北森 (zhiye), Feishu and Workday postings.
+- **Links open in the computer's own browser.** One handler in `web/ui.js` catches every link to another site
+  (left or middle click), anywhere in the window. Before, only the chat and the plan caught theirs; any other
+  link replaced Resume Studio with the site. "Open its site" uses the everyday browser too; Resume Studio's
+  browser is in the menu, for signing in and for Claude's work.
+- **The careers sites are the user's to change**: each row's kind and address, removed, or one added; an edit
+  makes them the user's (`kept`), so Claude's next fill leaves them. The field below is now "Where you sign up".
+  The same for the logo: change it (a picture from the computer) or remove it, and it stays so.
+- **Feishu portals**: a Feishu tenant has a portal per kind of hiring, named by the first part of its address
+  (`/123456` campus, `/index` experienced), and its search API answers for the portal in a `website-path`
+  header, with nothing at all without it. career-ops' provider sends none; `jobs/co_scan.mjs` adds it from the
+  site's address (career-ops' file is left alone, so its updates keep flowing) and points each role's link at
+  that portal. An address that is no portal now reports an error instead of an empty "OK".
+- **Nothing silent**: a scan that read fine and found nothing says so and where to look; a role already added
+  shows a tick and its status, so it never reads like the "+ Want to apply" button next to it.
+
 ## Why the button said "Open LinkedIn"
 
 The Autofill page is organised around **the selected profile site**: LinkedIn and BOSS直聘 are its tabs,

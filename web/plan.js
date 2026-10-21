@@ -65,10 +65,6 @@ function planDoc(text, live) {
     c.addEventListener("click", go);
     c.addEventListener("keydown", (e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); go(); } });
   });
-  art.addEventListener("click", (e) => {
-    const a = e.target.closest("a[data-ext]");
-    if (a) { e.preventDefault(); api("POST", "/api/open", { url: a.getAttribute("href") }).catch(() => window.open(a.href, "_blank")); }
-  });
   return art;
 }
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -235,6 +236,20 @@ def failed_scan(c):
     c.server.inst.hunt.scanner.postings.failed("C1", "the site asks to sign in", how="route", signed_out=True)
 
 
+def read_failed(c):
+    """A role added from the open postings (its row says so), whose page then didn't read."""
+    filled_companies(c)
+
+    class NoPage:
+        def read_page(self, url, script, timeout=60.0):
+            raise RuntimeError("couldn't open https://careers.xinghe.example/campus/job/2: net::ERR_NAME_NOT_RESOLVED")
+    c.server.inst.hunt.scanner.browser = NoPage()
+    aid = c.server.req("POST", "/api/hunt/postings/P3/apply")[1]["application"]["id"]
+    end = time.time() + 10
+    while time.time() < end and not c.server.req("GET", f"/api/hunt/apps/{aid}")[1]["reading"].get("error"):
+        time.sleep(0.05)
+
+
 def applying(tab):
     # the tables arrive with the tracker's data: wait for them before a state reaches into DBV
     return then(key("Control+3"), click(f".hunt-tab[data-tab={tab}]"),
@@ -382,7 +397,11 @@ STATES = [
     State("applying, companies filled in, with today's changes", applying("companies"),
           [".htable .co-logo img", ".htable .role-chip.open-chip", ".scan-news .news-row", ".scan-news .note-bar"], prepare=filled_companies),
     State("applying, a company's open roles", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
-          [".post-list .post-row", ".co-sites .co-site", ".post-row .new-chip"], prepare=filled_companies),
+          [".post-list .post-row", ".co-sites .co-site-edit .co-site-input", ".post-row .new-chip"], prepare=filled_companies),
+    State("applying, a company's open roles, one added", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
+          [".post-row .pr-added"], prepare=read_failed),
+    State("applying, a role whose page didn't read", then(applying("apps"), click(".dbv-view tr[data-id='A4'] .dbv-title"),
+          lambda pg, c: (pg.wait_for_selector(".note-bar.warn #app-read, #app-read"), pg.evaluate("() => document.querySelector('#app-read').scrollIntoView({block: 'center'})"))), ["section.card .note-bar.warn", "#app-read"], prepare=read_failed),
     State("applying, a company whose scan failed", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
           [".post-tools .fs-status.bad", ".note-bar.warn"], prepare=failed_scan),
     State("applying, progress as a board", then(applying("apps"), click(".dbv-tab[data-view=v3]")), [".dbv-board .dbv-card"], prepare=companies),

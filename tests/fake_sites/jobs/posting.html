@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh">
+<head><meta charset="utf-8"><title>星河科技校园招聘</title></head>
+<body>
+  <nav>首页 职位列表 登录</nav>
+  <div id="app">加载中…</div>
+  <footer>© 星河科技</footer>
+  <script>
+    // drawn by a script after the page has loaded, like Moka, Feishu and Workday
+    setTimeout(() => {
+      document.getElementById("app").innerHTML = `
+        <h1>算法工程师（2027届）</h1>
+        <button>分享</button>
+        <aside><div>工作地点</div><div>工作地点</div><div>杭州/上海</div>
+               <div>截止日期：2026-11-30</div></aside>
+        <section class="desc">
+          <h3>职位描述</h3>
+          <div class="body">
+            <p>岗位职责</p>
+            <p>1、负责推荐与广告方向的模型训练、评估与上线，持续提升线上效果与稳定性；</p>
+            <p>2、跟进业界前沿方法，结合业务场景做方案设计与实验验证。</p>
+            <p>任职要求</p>
+            <p>1、2027届硕士及以上学历，计算机、人工智能、数学等相关专业；</p>
+            <p>2、熟悉 PyTorch，有大模型或推荐系统项目经验者优先。</p>
+            <button>立即投递</button>
+          </div>
+        </section>`;
+    }, 600);
+  </script>
+</body>
+</html>
