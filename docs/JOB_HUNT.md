@@ -304,7 +304,7 @@ Graduate Program or a Summer Internship intake.
     most one per role. Without a date it is on neither the calendar nor the .ics; with one it keeps the UID the
     field had, so importing again updates it.
   - `deadline` stays the word the window and Claude send to set it: a date, `rolling` (or 招满即止 / 滚动招聘),
-    or "" to clear. The old field moves into the event once (`HuntStore.migrate`).
+    or "" to clear. The old field moves into the event once (`Hunt.migrate`).
   - The table's Deadline column reads it: a date (red once past while the role is open), or "滚动招聘 · 招满即止".
     Its cell has a date box, a "rolling" choice and Clear. On the role's page it is the first row of Events; its edit
     has the same rolling choice, and a date ends it.
@@ -314,6 +314,23 @@ Graduate Program or a Summer Internship intake.
   whole. On the role's page it is a box offering the same names.
 - **Claude**: `add-role / edit-role --deadline YYYY-MM-DD|rolling --batch 27秋招`, told to reuse the batch names the
   user has rather than invent a scheme.
+
+## 2026-10-21: booking a round moves the status
+
+The question: are the status and the events linked? They weren't: setting Interviewing booked nothing, and booking
+一面 left the status at Applied. They mean the same thing, so now:
+
+- **Booking moves the status forward** (`Hunt._advance`). An interview (a title with 面, or "interview")
+  moves the role to Interviewing; a test (笔试, 测评, 机试, OA, assessment…) moves it to Tests. It only goes forward
+  along Want to apply → Applied → Tests → Interviewing, never back, and never off an outcome (offer, rejected…).
+  A title it can't read (宣讲会) changes nothing; the deadline never does. A renamed event counts too (笔试 → 一面).
+  The ledger gets the status line ("约了一面", by window or chat). The window says "状态已改为面试中" with Undo.
+- **A status doesn't book anything.** An undated 一面 would be noise (it may not be arranged yet, or it is already
+  the second round). Instead the Add row on the role's page has the next round ready: in interviews the first of
+  一面 / 二面 / 三面 / 终面 not booked yet, in tests 笔试 or 测评. Only a date is missing.
+- **No automatic outcome**: a round whose time has passed says nothing about how it went, so it changes nothing.
+- **"Late" is for roles not applied to yet**: a deadline past on a role already applied to no longer shows red.
+- **Claude** is told booking does the status, so `status` is for outcomes or when nothing was booked.
 
 ## Why the button said "Open LinkedIn"
 

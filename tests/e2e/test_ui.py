@@ -1451,7 +1451,7 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
 
     # the calendar: what is booked, on its day; a click opens the role (docs/JOB_HUNT.md, 2026-10-21)
     day = pg.evaluate("() => dbvYmd(new Date())")
-    server.req("POST", f"/api/hunt/apps/{a1}/schedule", {"title": "一面", "at": day + " 14:00"})
+    server.req("POST", f"/api/hunt/apps/{a1}/schedule", {"title": "一面", "at": day})   # all day: still to come whatever the time now
     server.req("PUT", f"/api/hunt/apps/{a2}", {"deadline": day})
     pg.click(".dbv-tab[data-view=v4]")
     pg.wait_for_selector(f".dbv-calday.today[data-day='{day}'] .dbv-item.k-event:has-text('一面')")
@@ -1484,13 +1484,25 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     assert pg.locator(".bk-edit .dl-rolling.on").count() == 0                 # a date ends 招满即止
     pg.click(".bk-edit .btn.primary")
     wait_until(lambda: due(app(a1))["at"] == "2030-01-10" and not due(app(a1))["rolling"], msg="deadline dated from the page")
+    # in interviews, the next round waits in the Add row; booking one moves the status forward, with Undo
+    pg.wait_for_function("() => document.querySelector('.bk-new .bk-title').value === '三面'")
+    server.req("POST", f"/api/hunt/apps/{a1}/status", {"status": "applied"})
+    pg.wait_for_function("() => document.querySelector('.bk-new .bk-title').value === ''")
+    pg.fill(".bk-new .bk-title", "三面")
+    pg.fill(".bk-new .bk-day", "2030-01-20")
+    pg.click("#bk-add")
+    wait_until(lambda: app(a1)["status"] == "interview", msg="booking moved the status")
+    pg.click("#toast.show:has-text('状态已改为') .btn:has-text('撤销')")
+    wait_until(lambda: app(a1)["status"] == "applied", msg="undone")
+    server.req("POST", f"/api/hunt/apps/{a1}/status", {"status": "interview"})
+    pg.wait_for_function("() => document.querySelector('.bk-new .bk-title').value === '终面'")
     assert pg.evaluate("() => { const w = document.querySelector('.bk-item').closest('.hunt-wrap'); return w.offsetWidth >= w.parentNode.clientWidth - 2; }")   # the page uses the whole pane
     pg.screenshot(path=str(ART / "hunt-role-events-light.png"))
     pg.click(".hunt-back")
     # the Gantt chart: a bar per role, what is booked on it
     pg.click(".dbv-tab[data-view=v5]")
     pg.wait_for_selector(f".dbv-grow[data-id='{a1}'] .dbv-gbar")
-    assert pg.locator(f".dbv-grow[data-id='{a1}'] .dbv-gitem").count() == 3          # 一面, 二面 and its deadline
+    assert pg.locator(f".dbv-grow[data-id='{a1}'] .dbv-gitem").count() == 4          # 一面, 二面, 三面 and its deadline
     assert pg.locator(f".dbv-grow[data-id='{a1}'] .dbv-gitem.k-deadline").count() == 1
     for scheme in ("light", "dark"):
         pg.emulate_media(color_scheme=scheme)

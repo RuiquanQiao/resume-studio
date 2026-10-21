@@ -268,7 +268,7 @@ function appProps() {
       set: (a, v) => cellApp(a, { batch: v }) },
     { key: "deadline", label: t("Deadline"), type: "date", width: 130, get: dueOf,
       render: (a) => rollingOf(a) ? h("span", { class: "c-rolling", title: rollingText() }, t("Rolling"))
-        : dueOf(a) ? h("span", { class: "c-date" + (late(dueOf(a)) && huntOpen(a) ? " late" : "") }, dueOf(a)) : "",
+        : dueOf(a) ? h("span", { class: "c-date" + (late(dueOf(a)) && a.status === "saved" ? " late" : "") }, dueOf(a)) : "",
       edit: (td, a) => deadlinePanel(td, a) },
     { key: "sent", label: t("Resume sent"), type: "custom", width: 190, min: 130, get: (a) => (a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : ""),
       render: (a) => h("span", { class: "c-muted c-resume" }, a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : "", resumeButton(a)) },
@@ -438,13 +438,29 @@ async function exportIcs(what) {
 }
 
 async function bookedCall(method, path, body) {
+  const before = H.view && H.view.application;
   try {
     H.view = await api(method, path, body);
     H.editing = null;
     paintHunt();
     loadHunt({ quiet: true });
+    // booking a round moves the status forward (the server does it): say so, and offer it back
+    const a = H.view.application;
+    if (before && a && before.id === a.id && before.status !== a.status) {
+      const was = before.status;
+      toast(t("Status moved to {status}", { status: huntState(a.status) }), { ms: 7000, action: { label: t("Undo"), fn: () => setAppStatus(a, was) } });
+    }
     return true;
   } catch (e) { toast(e.message); return false; }
+}
+
+// what comes next for a role in interviews (一面, then 二面…) or in tests (笔试): ready in the Add row, never booked by itself
+const ROUNDS = ["一面", "二面", "三面", "终面"];
+function nextRound(a) {
+  const had = new Set((a.schedule || []).map((e) => e.title));
+  if (a.status === "interview") return ROUNDS.find((x) => !had.has(x)) || "";
+  if (a.status === "assessment") return ["笔试", "测评"].find((x) => !had.has(x)) || "";
+  return "";
 }
 
 // the card on a role's page: what is booked, each with its own edit, and an Add row like the timeline's
@@ -460,7 +476,7 @@ function bookedCard(a) {
       input.focus();
     } }, x)));
   const form = (e) => {
-    const title = h("input", { type: "text", class: "bk-title", value: e ? e.title : "", placeholder: t("What: 一面, 笔试…"), spellcheck: "false", "aria-label": t("What") });
+    const title = h("input", { type: "text", class: "bk-title", value: e ? e.title : nextRound(a), placeholder: t("What: 一面, 笔试…"), spellcheck: "false", "aria-label": t("What") });
     const day = h("input", { type: "date", class: "bk-day", value: e ? e.at.slice(0, 10) : today(), "aria-label": t("Date") });
     const time = h("input", { type: "time", class: "bk-time", value: e && e.at.length > 10 ? e.at.slice(11, 16) : "", "aria-label": t("Time") });
     const due = !!e && e.kind === "apply";   // the deadline: its date may wait, or there is none (招满即止)

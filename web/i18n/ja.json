@@ -1715,5 +1715,7 @@
  "Add “{name}”": "「{name}」を追加",
  "27秋招, 2027 Graduate Program…": "27卒本選考、2027 Graduate Program…",
  "{role} has its deadline already: change that one": "{role} にはもう締切があります。そちらを変更してください",
- "Rolling": "随時募集"
+ "Rolling": "随時募集",
+ "{what} booked": "{what}を予定",
+ "Status moved to {status}": "ステータスを「{status}」にしました"
 }

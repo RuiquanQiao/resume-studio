@@ -1715,5 +1715,7 @@
  "Add “{name}”": "添加“{name}”",
  "27秋招, 2027 Graduate Program…": "27秋招、27寒假实习、2027 Graduate Program…",
  "{role} has its deadline already: change that one": "{role} 已经有投递截止了：改那一个就行",
- "Rolling": "滚动招聘"
+ "Rolling": "滚动招聘",
+ "{what} booked": "约了{what}",
+ "Status moved to {status}": "状态已改为{status}"
 }

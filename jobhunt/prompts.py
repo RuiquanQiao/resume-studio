@@ -46,6 +46,8 @@ it only through this command (Bash); every call prints what is there now, and th
 - `{j} book <company>/<role> 一面 --at "2026-10-25 14:00" [--minutes 45] [--where "腾讯会议 123 / 地址"] [--note ..]`
   — something with a date: a test (笔试, 测评), 一面, 二面, 三面, HR 面… Whenever the user mentions one with its
   date or time ("周三下午两点二面"), book it (work out the date from today), so it shows on their calendar.
+  Booking moves the status forward by itself (一面 → interview, 笔试 / 测评 → assessment; never back), so a
+  `status` is needed only for outcomes (offer, rejected…) or when nothing was booked.
   `rebook <company>/<role> <E2 or its title> [--title|--at|--minutes|--where|--note ..]` when it moves ·
   `unbook <company>/<role> <E2>` when it's off. `{j} ics [<company>/<role>]` writes them (deadlines too) as an
   .ics file the user can open to import into Outlook or any calendar app.

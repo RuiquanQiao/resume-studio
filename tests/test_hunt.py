@@ -133,6 +133,30 @@ def test_a_roles_deadline_is_an_event_that_may_have_no_date(hunt):
     assert [(e["id"], e.get("kind"), e["at"]) for e in a["schedule"]] == [("E2", None, "2026-10-25"), ("E3", "apply", "2026-12-01")]
 
 
+def test_booking_a_round_moves_the_status_forward_only(hunt):
+    from jobhunt.store import booked_stage
+    assert [booked_stage(x) for x in ("一面", "HR 面", "Final interview", "笔试", "测评", "OA", "Board meeting", "宣讲会")] == \
+        ["interview", "interview", "interview", "assessment", "assessment", "assessment", None, None]
+    hunt.add_company({"name": "Xinghe"})
+    a = hunt.add_application("Xinghe", {"role": "后端"})
+    hunt.add_booked(a["id"], {"title": "宣讲会", "at": "2026-10-20"})            # says nothing: stays
+    assert hunt.application(a["id"])["status"] == "saved"
+    hunt.add_booked(a["id"], {"title": "笔试", "at": "2026-10-22"}, source="chat")
+    a = hunt.application(a["id"])
+    assert a["status"] == "assessment" and a["applied"]                          # it went in, then
+    ev = hunt.events(a["id"])[-1]
+    assert (ev["kind"], ev["from"], ev["to"], ev["source"]) == ("status", "saved", "assessment", "chat") and "笔试" in ev["note"]
+    hunt.update_booked(a["id"], "宣讲会", {"title": "一面"})                    # renamed to a later round
+    assert hunt.application(a["id"])["status"] == "interview"
+    hunt.add_booked(a["id"], {"title": "测评", "at": "2026-10-30"})              # never back
+    assert hunt.application(a["id"])["status"] == "interview"
+    hunt.set_status(a["id"], "rejected")
+    hunt.add_booked(a["id"], {"title": "二面", "at": "2026-11-02"})              # never off an outcome
+    assert hunt.application(a["id"])["status"] == "rejected"
+    hunt.update_application(a["id"], {"deadline": "2026-10-31"})                 # the deadline is no round
+    assert hunt.application(a["id"])["status"] == "rejected"
+
+
 def test_a_deadline_field_from_before_becomes_the_event(hunt):
     hunt.add_company({"name": "Xinghe"})
     a1 = hunt.add_application("Xinghe", {"role": "后端"})

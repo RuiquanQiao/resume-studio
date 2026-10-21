@@ -1823,5 +1823,7 @@
  "Add “{name}”": "Añadir «{name}»",
  "27秋招, 2027 Graduate Program…": "27秋招, 2027 Graduate Program…",
  "{role} has its deadline already: change that one": "{role} ya tiene un plazo: cambie ese",
- "Rolling": "Continuo"
+ "Rolling": "Continuo",
+ "{what} booked": "{what} programado",
+ "Status moved to {status}": "Estado cambiado a {status}"
 }

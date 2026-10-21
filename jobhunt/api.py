@@ -446,11 +446,11 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 return {"app": app_view(x["id"]), "text": "noted"}
             if cmd == "book":
                 x = hunt.application(str(a.pop("ref", "") or ""))
-                hunt.add_booked(x["id"], a)
+                hunt.add_booked(x["id"], a, source=src)
                 return {"app": app_view(x["id"]), "text": "booked"}
             if cmd == "rebook":
                 x = hunt.application(str(a.pop("ref", "") or ""))
-                hunt.update_booked(x["id"], str(a.pop("event", "") or ""), a)
+                hunt.update_booked(x["id"], str(a.pop("event", "") or ""), a, source=src)
                 return {"app": app_view(x["id"]), "text": "changed"}
             if cmd == "unbook":
                 x = hunt.application(str(a.get("ref") or ""))

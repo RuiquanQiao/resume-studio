@@ -35,7 +35,9 @@ remote the region it is open to (APAC, 中国大陆…), which must be said: "�
 An application's `schedule` holds what is booked for it (docs/JOB_HUNT.md, 2026-10-21): a test, 一面, 二面,
 HR 面…, each with its date and time. The window shows them on a calendar and a Gantt chart, and
 exports them as an .ics file for the user's own calendar (jobhunt/ics.py). Unlike the ledger, they
-are edited and deleted freely: a rescheduled interview moves.
+are edited and deleted freely: a rescheduled interview moves. Booking one moves the status forward
+(never back): an interview (一面, HR 面…) to interviewing, a test (笔试, 测评, OA) to tests; a line in the
+ledger says so, and the user can set it back.
 
 A role's deadline is one of them (docs/JOB_HUNT.md, 2026-10-21: the deadline is an event): the one of
 kind "apply", which every new role starts with. Its `at` is when applications close, empty when no date
@@ -83,6 +85,9 @@ ALIASES = {
     "withdrawn": ["withdraw", "discarded", "gave up", "放弃", "不去", "撤回"],
 }
 CHANNELS = ["site", "platform", "referral", "other"]
+# how far a role has come, for what booking a round moves it to (forward only)
+STAGES = ["saved", "applied", "assessment", "interview"]
+_TEST = re.compile(r"笔试|测评|机试|测试|性格|\boa\b|assessment|\btests?\b|exam|hackerrank|codility", re.IGNORECASE)
 # a deadline that is no date: the role closes when it is filled
 ROLLING = {"rolling", "滚动", "滚动招聘", "招满即止", "招满为止", "until filled", "open until filled"}
 PLACE_KINDS = ["onsite", "hybrid", "remote"]
@@ -137,6 +142,15 @@ def _deadline(v: Any) -> tuple[str, bool]:
     if s.casefold() in ROLLING:
         return "", True
     return _date(s), False
+
+
+def booked_stage(title: Any) -> str | None:
+    """What a booked thing says about the role: an interview (一面, HR 面, interview), a test (笔试, 测评, OA),
+    or nothing (a title it can't tell)."""
+    s = _text(title, 60)
+    if "面" in s or "interview" in s.casefold():
+        return "interview"
+    return "assessment" if _TEST.search(s) else None
 
 
 def apply_event(a: dict) -> dict | None:
@@ -716,7 +730,14 @@ class Hunt:
         self._changed()
         return out
 
-    def add_booked(self, ref: str, fields: dict) -> dict:
+    def _advance(self, ref: str, e: dict, source: str) -> None:
+        """A round was booked: the status moves forward to it (never back, never off an outcome)."""
+        to = booked_stage(e.get("title")) if e.get("kind") != "apply" else None
+        a = self.application(ref)
+        if to and a["status"] in STAGES and STAGES.index(to) > STAGES.index(a["status"]):
+            self.set_status(a["id"], to, note=t("{what} booked", what=e["title"]), source=source)
+
+    def add_booked(self, ref: str, fields: dict, *, source: str = "window") -> dict:
         """Something booked for this application: a test, 一面, 二面… with its date (and time)."""
         def add(a: dict) -> dict:
             e = {"id": _next_eid(a), "title": "", "at": "", "minutes": 0, "where": "", "note": ""}
@@ -727,14 +748,19 @@ class Hunt:
             self._booked_fields(e, fields)
             a["schedule"].append(e)
             return e
-        return self._booked(ref, add)
+        e = self._booked(ref, add)
+        self._advance(ref, e, source)
+        return e
 
-    def update_booked(self, ref: str, eid: str, fields: dict) -> dict:
+    def update_booked(self, ref: str, eid: str, fields: dict, *, source: str = "window") -> dict:
         def edit(a: dict) -> dict:
             e = self._booked_one(a, eid)
             self._booked_fields(e, fields)
             return e
-        return self._booked(ref, edit)
+        e = self._booked(ref, edit)
+        if "title" in fields:   # renamed to a later round (笔试 → 一面)
+            self._advance(ref, e, source)
+        return e
 
     def delete_booked(self, ref: str, eid: str) -> dict:
         def drop(a: dict) -> dict:
