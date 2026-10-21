@@ -226,7 +226,7 @@ class Postings:
             places = []
         note = " · ".join(x for x in ("" if places else loc, p.get("category")) if x)
         try:
-            a = self.hunt.add_application(p["company"], {"role": p["title"], "url": p.get("url") or "", "deadline": p.get("deadline") or "",
+            a = self.hunt.add_application(p["company"], {"role": p["title"], "url": p.get("url") or "", "apply_by": p.get("deadline") or "",
                                                          "note": note, "places": places}, source=source)
         except ValueError:   # the same role is on the list already: link to it
             a = next(x for x in self.hunt.applications(p["company"]) if _key(x["role"]) == _key(p["title"]))

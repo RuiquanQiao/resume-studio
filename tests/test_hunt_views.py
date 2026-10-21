@@ -5,8 +5,17 @@ import json
 
 import pytest
 
-from jobhunt.views import Views, clean_table
+from jobhunt.views import Views, clean_table, clean_view
 from test_hunt import live  # noqa: F401
+
+
+def test_the_deadline_column_from_before_becomes_the_next_step():
+    v = clean_view({"columns": [{"key": "role"}, {"key": "deadline", "width": 130}, {"key": "sent"}, {"key": "events", "width": 250, "wrap": True}],
+                    "filters": [{"key": "deadline", "op": "before", "value": "2026-11-01"}, {"key": "status", "op": "is", "value": ["saved"]}],
+                    "sorts": [{"key": "deadline", "dir": "asc"}]}, 1)
+    assert [c["key"] for c in v["columns"]] == ["role", "events", "sent"]          # in the deadline's place, its own width
+    assert v["columns"][1] == {"key": "events", "width": 250, "hidden": False, "wrap": True}
+    assert [f["key"] for f in v["filters"]] == ["status"] and v["sorts"] == [{"key": "events", "dir": "asc"}]
 
 
 def test_views_are_cleaned_and_kept_with_the_data(tmp_path):
@@ -16,7 +25,7 @@ def test_views_are_cleaned_and_kept_with_the_data(tmp_path):
         {"id": "v1", "name": "  进行中 ", "layout": "table",
          "columns": [{"key": "role", "width": 20}, {"key": "status", "width": 5000, "hidden": 1}, {"key": "role"}, {"key": "Bad Key!"}],
          "filters": [{"key": "status", "op": "is", "value": ["saved", "applied"]}, {"key": "status", "op": "explode"}],
-         "sorts": [{"key": "deadline", "dir": "desc"}, {"key": "role", "dir": "sideways"}], "group": "status"},
+         "sorts": [{"key": "batch", "dir": "desc"}, {"key": "role", "dir": "sideways"}], "group": "status"},
         {"id": "v1", "name": "", "layout": "gallery"}]})
     v1, v2 = saved["views"]
     assert saved["active"] == "v1"                                             # an unknown active view falls back to the first
@@ -24,7 +33,7 @@ def test_views_are_cleaned_and_kept_with_the_data(tmp_path):
     assert v1["columns"] == [{"key": "role", "width": 60, "hidden": False, "wrap": False},     # widths kept in range,
                              {"key": "status", "width": 900, "hidden": True, "wrap": False}]   # a key once, bad keys dropped
     assert v1["filters"] == [{"key": "status", "op": "is", "value": ["saved", "applied"]}]
-    assert v1["sorts"] == [{"key": "deadline", "dir": "desc"}, {"key": "role", "dir": "asc"}]
+    assert v1["sorts"] == [{"key": "batch", "dir": "desc"}, {"key": "role", "dir": "asc"}]
     assert v2["id"] != "v1" and v2["layout"] == "table" and v2["name"]       # ids stay unique; a known layout
     on_disk = json.loads((tmp_path / "hunt" / "views.json").read_text(encoding="utf-8"))
     assert on_disk["apps"] == saved and Views(tmp_path / "hunt").all()["apps"] == saved

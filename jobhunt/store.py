@@ -8,7 +8,7 @@ Plain files next to the data file, in our own schema, so switching trackers lose
     .studio/hunt/applications.json  {"next": 5, "applications": [{id: "A1", company: "C1", role, url, channel,
                                      platform, order, status, applied, batch, note, subset,
                                      places: [{kind: "onsite"|"hybrid"|"remote", area}],
-                                     sent: [{at, subset, n}], schedule: [{id, kind?, title, at, rolling?, minutes,
+                                     sent: [{at, subset, n}], schedule: [{id, kind?, title, at, minutes,
                                      where, note}],
                                      co_app, created, updated}]}
     .studio/hunt/logos/C1.png       a company's logo, downloaded once (docs/JOB_HUNT.md, 2026-10-18)
@@ -39,10 +39,10 @@ are edited and deleted freely: a rescheduled interview moves. Booking one moves 
 (never back): an interview (一面, HR 面…) to interviewing, a test (笔试, 测评, OA) to tests; a line in the
 ledger says so, and the user can set it back.
 
-A role's deadline is one of them (docs/JOB_HUNT.md, 2026-10-21: the deadline is an event): the one of
-kind "apply", which every new role starts with. Its `at` is when applications close, empty when no date
-is known; `rolling` says it closes when the role is filled (滚动招聘, 招满即止), with no date. The
-`deadline` field the window and Claude send ("2026-10-31", "rolling", "") sets it.
+When to apply by is one of them, not a field of the role (docs/JOB_HUNT.md, 2026-10-21): the one of kind
+"apply", which every new role starts with. Its `at` is the date applications close, or empty: no date
+said means it closes when the role is filled (滚动招聘, 招满即止). The `apply_by` field the window and Claude
+send ("2026-10-31", "rolling", "") sets it. The table shows it as the role's next step until it is applied to.
 
 An application's `batch` is the user's own name for the hiring round it belongs to: 27秋招, 2027 Graduate
 Program, Summer Internship 2027… Free text: what rounds there are differs by country, so none is built in.
@@ -88,7 +88,7 @@ CHANNELS = ["site", "platform", "referral", "other"]
 # how far a role has come, for what booking a round moves it to (forward only)
 STAGES = ["saved", "applied", "assessment", "interview"]
 _TEST = re.compile(r"笔试|测评|机试|测试|性格|\boa\b|assessment|\btests?\b|exam|hackerrank|codility", re.IGNORECASE)
-# a deadline that is no date: the role closes when it is filled
+# what people write for "no date": the role closes when it is filled (an apply event with no date)
 ROLLING = {"rolling", "滚动", "滚动招聘", "招满即止", "招满为止", "until filled", "open until filled"}
 PLACE_KINDS = ["onsite", "hybrid", "remote"]
 # what people (and Claude) write before the area: "remote: APAC", "远程：中国大陆", "hybrid 悉尼"
@@ -136,12 +136,10 @@ def _minutes(v: Any) -> int:
     return max(0, min(n, 24 * 60))
 
 
-def _deadline(v: Any) -> tuple[str, bool]:
-    """(date, rolling) from what someone wrote: "2026-10-31", "rolling", "招满即止", ""."""
+def _apply_by(v: Any) -> str:
+    """When to apply by, from what someone wrote: "2026-10-31", or no date: "", "rolling", "招满即止"."""
     s = _text(v, 40)
-    if s.casefold() in ROLLING:
-        return "", True
-    return _date(s), False
+    return "" if s.casefold() in ROLLING else _date(s)
 
 
 def booked_stage(title: Any) -> str | None:
@@ -154,7 +152,7 @@ def booked_stage(title: Any) -> str | None:
 
 
 def apply_event(a: dict) -> dict | None:
-    """The role's deadline: the booked thing of kind "apply" (None once the user deleted it)."""
+    """When to apply by: the booked thing of kind "apply" (None once the user deleted it)."""
     return next((e for e in a.get("schedule") or [] if e.get("kind") == "apply"), None)
 
 
@@ -162,14 +160,13 @@ def _next_eid(a: dict) -> str:
     return "E" + str(max((int(e["id"][1:]) for e in a.get("schedule") or [] if str(e.get("id", ""))[1:].isdigit()), default=0) + 1)
 
 
-def _set_deadline(a: dict, v: Any) -> None:
-    """The role's apply event gets this deadline (and is made when the role has none)."""
-    at, rolling = _deadline(v)
+def _set_apply_by(a: dict, v: Any) -> None:
+    """The role's apply event gets this date, or none (招满即止); it is made when the role has none."""
     e = apply_event(a)
     if not e:
-        e = {"id": _next_eid(a), "kind": "apply", "title": t("Apply by"), "at": "", "rolling": False, "minutes": 0, "where": "", "note": ""}
+        e = {"id": _next_eid(a), "kind": "apply", "title": t("Apply by"), "at": "", "minutes": 0, "where": "", "note": ""}
         a.setdefault("schedule", []).append(e)
-    e["at"], e["rolling"] = at, rolling
+    e["at"] = _apply_by(v)
     a["schedule"].sort(key=lambda x: x["at"])
 
 
@@ -500,14 +497,18 @@ class Hunt:
     def migrate(self) -> None:
         """Deadlines belong to roles (2026-10-18): a company's deadline moves to its roles that have none.
         A role's next step and its date (until 2026-10-21) become something booked when they had a date,
-        else a line in its notes. A role's deadline field (until 2026-10-21) becomes its apply event."""
+        else a line in its notes. A role's deadline field (until 2026-10-21) becomes its apply event, which
+        has no "rolling" flag any more: no date is 招满即止."""
         with self.lock:
             cs = self._companies()
             moving = {c["id"]: c.pop("deadline") for c in cs["companies"] if "deadline" in c}
             apps = self._apps()
             old = [a for a in apps["applications"] if "next" in a or "due" in a]
             fields = [a for a in apps["applications"] if "deadline" in a]
-            if not moving and not old and not fields:
+            flags = [e for a in apps["applications"] for e in a.get("schedule") or [] if "rolling" in e]
+            for e in flags:
+                del e["rolling"]
+            if not moving and not old and not fields and not flags:
                 return
             for a in apps["applications"]:
                 if moving.get(a["company"]) and not a.get("deadline"):
@@ -516,7 +517,7 @@ class Hunt:
                     day = str(a.pop("deadline") or "")
                     e = apply_event(a)
                     if not e or (day and not e.get("at")):
-                        _set_deadline(a, day)
+                        _set_apply_by(a, day)
             for a in old:
                 nxt, due = _text(a.pop("next", "")), str(a.pop("due", "") or "")
                 if nxt and due:
@@ -575,8 +576,8 @@ class Hunt:
             a["note"] = _long(fields["note"], 4000)
         if "jd" in fields:   # the posting's own text, as it was read: kept apart from the user's notes
             a["jd"] = _long(fields["jd"], 20000)
-        if "deadline" in fields:
-            _set_deadline(a, fields["deadline"])
+        if "apply_by" in fields:
+            _set_apply_by(a, fields["apply_by"])
         if "places" in fields:
             a["places"] = _places(fields["places"])
         if "channel" in fields:
@@ -602,8 +603,8 @@ class Hunt:
             a = {"id": f"A{data['next']}", "company": c["id"], "role": "", "url": "", "referral": "", "channel": "site", "platform": "",
                  "order": 0, "status": status, "applied": "", "batch": "", "note": "", "jd": "", "subset": "",
                  "places": [], "sent": [], "schedule": [], "co_app": None, "created": _now(), "updated": _now()}
-            # every role starts with its apply event, its deadline still unknown
-            self._app_fields(a, {"channel": "site", "deadline": "", **fields})
+            # every role starts with its apply event: no date unless one was read (no date is 招满即止)
+            self._app_fields(a, {"channel": "site", "apply_by": "", **fields})
             mine = [x for x in data["applications"] if x["company"] == c["id"]]
             order = fields.get("order")
             a["order"] = max((x.get("order") or 0 for x in mine), default=0) + 1
@@ -698,14 +699,8 @@ class Hunt:
     def _booked_fields(e: dict, fields: dict) -> None:
         if "title" in fields:
             e["title"] = _text(fields["title"], 60)
-        if "at" in fields:
-            e["at"] = _date(fields["at"])
-        if e.get("kind") == "apply":
-            # the deadline: a date, no date yet, or none at all (it closes when the role is filled)
-            if "rolling" in fields:
-                e["rolling"] = bool(fields["rolling"])
-            if e["at"]:
-                e["rolling"] = False
+        if "at" in fields:   # applying may have no date (招满即止); everything else booked has one
+            e["at"] = _apply_by(fields["at"]) if e.get("kind") == "apply" else _date(fields["at"])
         if "minutes" in fields:
             e["minutes"] = _minutes(fields["minutes"])
         if "where" in fields:
@@ -743,8 +738,8 @@ class Hunt:
             e = {"id": _next_eid(a), "title": "", "at": "", "minutes": 0, "where": "", "note": ""}
             if fields.get("kind") == "apply":
                 if apply_event(a):
-                    raise ValueError(t("{role} has its deadline already: change that one", role=a["role"]))
-                e.update(kind="apply", title=t("Apply by"), rolling=False)
+                    raise ValueError(t("{role} has its “{what}” already: change that one", role=a["role"], what=t("Apply by")))
+                e.update(kind="apply", title=t("Apply by"))
             self._booked_fields(e, fields)
             a["schedule"].append(e)
             return e

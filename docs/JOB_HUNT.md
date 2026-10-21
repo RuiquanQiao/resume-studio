@@ -289,6 +289,8 @@ find out, when it fills a company in, which cities it hires in.
 
 ## 2026-10-21: the deadline is an event; the batch
 
+(Superseded in part by "no deadline column; the next step" below: no `rolling` flag, no Deadline column.)
+
 The request: a role's deadline was a field of its own, set once and never changed, and many roles have none
 (招满即止: they close when filled). Roles already keep events with times, so the deadline becomes one of them,
 which every new role starts with. A date field that can say "rolling" was asked for too. And a **batch** (27秋招,
@@ -314,6 +316,24 @@ Graduate Program or a Summer Internship intake.
   whole. On the role's page it is a box offering the same names.
 - **Claude**: `add-role / edit-role --deadline YYYY-MM-DD|rolling --batch 27秋招`, told to reuse the batch names the
   user has rather than invent a scheme.
+
+## 2026-10-21: no deadline column; the next step
+
+The complaint: the deadline field was meant to be gone, events alone. The data had no field any more, but the table
+still had a Deadline column (it read the 投递 event), so on screen it was still a field of the role. And "no date
+yet" was a third state beside a date and 招满即止, where the user meant two: a date read from the posting, or none,
+and none is 招满即止.
+
+- **One column for one thing to do: 下一步 (Next step)**, what CRMs call the next activity (Pipedrive, HubSpot): what
+  and when in one cell, like an entry in a calendar, so a date never reads as a field of the role. It shows the
+  soonest thing still ahead: the 投递 event while the role is not applied to yet (with "还有 N 天", or "已过 N 天" in
+  red), then each round to come. "+N more" when there are others; the full list is on the role's page, which a
+  click on the cell opens at its events. Sorting by it is sorting by date, 招满即止 last. The Deadline column is gone,
+  and the old Events column became this one; saved views put it where the Deadline column was (`views.clean_view`).
+- **The 投递 event has a date or none**: none is 招满即止. The `rolling` flag is dropped (`Hunt.migrate`), and so is
+  "no date yet". Its edit has "不设日期（招满即止）", which clears the date.
+- **Claude** sets it with `--apply-by YYYY-MM-DD` (the field is `apply_by`), only when the posting gives a date.
+  A scanned posting's closing date goes into the new role's 投递 event the same way.
 
 ## 2026-10-21: booking a round moves the status
 

@@ -332,8 +332,6 @@
  "Data file": "Fichier de données",
  "Date": "Date",
  "Dates are written YYYY-MM-DD, not “{value}”": "Les dates s’écrivent AAAA-MM-JJ, pas « {value} »",
- "Deadline": "Date limite",
- "Deadline: {what}": "Date limite : {what}",
  "Deep sea blue (default)": "Bleu abysse (par défaut)",
  "Deepest, uses the most quota": "Le plus approfondi, consomme le plus de quota",
  "Default": "Par défaut",
@@ -722,6 +720,7 @@
  "New task": "Nouvelle tâche",
  "New…": "Nouveau…",
  "Next month": "Mois suivant",
+ "Next step": "Prochaine étape",
  "Next steps with {name}": "Étapes suivantes avec {name}",
  "No answer yet": "Pas encore de réponse",
  "No application “{ref}”: give its id (A3) or Company/Role": "Pas de candidature « {ref} » : donnez son id (A3) ou Entreprise/Poste",
@@ -734,6 +733,7 @@
  "No checkbox {n} in the plan": "Le plan n’a pas de case {n}",
  "No companies yet": "Pas encore d'entreprise",
  "No company “{ref}”": "Pas d'entreprise « {ref} »",
+ "No date (until filled)": "Sans date (jusqu'à pourvu)",
  "No differences": "Aucune différence",
  "No entries in this section yet.": "Cette section n'a pas encore d'entrées.",
  "No grouping": "Sans groupes",
@@ -1724,6 +1724,14 @@
   "{n} conflit",
   "{n} conflits"
  ],
+ "{n} day late": [
+  "{n} jour de retard",
+  "{n} jours de retard"
+ ],
+ "{n} day left": [
+  "{n} jour restant",
+  "{n} jours restants"
+ ],
  "{n} entry": [
   "{n} entrée",
   "{n} entrées"
@@ -1824,6 +1832,7 @@
  "{place} +{n}": "{place} +{n}",
  "{program} took too long and was stopped.": "{program} a pris trop de temps et a été arrêté.",
  "{program} was not found on this computer.": "{program} est introuvable sur cet ordinateur.",
+ "{role} has its “{what}” already: change that one": "{role} a déjà « {what} » : modifiez celui-là",
  "{role} has nothing booked called “{ref}”": "{role} n'a rien de prévu nommé « {ref} »",
  "{role} is already on this company's list": "{role} est déjà dans la liste de cette entreprise",
  "{score}% by word match": "{score} % par correspondance de mots",
@@ -1856,14 +1865,10 @@
  "…and {n} more": "…et {n} de plus",
  "Apply by": "Date limite de candidature",
  "Rolling: until filled": "En continu, jusqu’à pourvu",
- "No date yet": "Pas encore de date",
  "Batch": "Campagne",
- "Add a deadline": "Ajouter une date limite",
  "Find or type a new one": "Chercher ou en saisir un nouveau",
  "Add “{name}”": "Ajouter « {name} »",
  "27秋招, 2027 Graduate Program…": "27秋招, 2027 Graduate Program…",
- "{role} has its deadline already: change that one": "{role} a déjà une date limite : modifiez-la",
- "Rolling": "En continu",
  "{what} booked": "{what} prévu",
  "Status moved to {status}": "Statut passé à {status}"
 }

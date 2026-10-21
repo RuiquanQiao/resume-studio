@@ -33,8 +33,15 @@ def _key(v: Any) -> str:
 
 def clean_view(v: Any, n: int) -> dict:
     v = v if isinstance(v, dict) else {}
+    columns = [c for c in v.get("columns") or [] if isinstance(c, dict)]
+    if any(c.get("key") == "deadline" for c in columns):
+        # a role's deadline column (until 2026-10-21) became its next step: that column takes its place
+        ev = next((c for c in columns if c.get("key") == "events"), {})
+        columns = [{**ev, "key": "events"} if c.get("key") == "deadline" else c for c in columns if c.get("key") != "events"]
+        v = {**v, "filters": [f for f in v.get("filters") or [] if not (isinstance(f, dict) and f.get("key") == "deadline")],
+             "sorts": [{**s, "key": "events"} if isinstance(s, dict) and s.get("key") == "deadline" else s for s in v.get("sorts") or []]}
     cols, seen = [], set()
-    for c in v.get("columns") or []:
+    for c in columns:
         if not isinstance(c, dict) or not _key(c.get("key")) or c["key"] in seen:
             continue
         seen.add(c["key"])

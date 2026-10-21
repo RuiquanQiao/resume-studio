@@ -1533,9 +1533,10 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .dl-rolling { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; border: 1px dashed var(--line-strong); border-radius: 999px;
   background: var(--panel); color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
 .dl-rolling:hover { background: var(--hover); color: var(--text); }
-.dl-rolling.on { border-style: solid; border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+
 .dl-rolling .icon { width: 14px; height: 14px; }
-.dbv-in .c-rolling { color: var(--text-2); font-size: 12.5px; }
+.dbv-in .c-booked .c-left { color: var(--text-3); }
+.dbv-in .c-booked.late .c-when, .dbv-in .c-booked.late .c-left { color: var(--warn); }
 .bk-item.is-due .bk-when.muted { color: var(--text-3); }
 .bk-row { gap: 8px; flex-wrap: wrap; }
 .bk-row input, .bk-where, .bk-note { height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--panel); color: var(--text); font: inherit; }

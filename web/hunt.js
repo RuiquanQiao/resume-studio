@@ -208,7 +208,6 @@ function lastText(ev) {
 }
 
 // ---- the tables are Notion-style database views (web/dbview.js; docs/JOB_HUNT.md, 2026-10-19) ----
-const late = (d) => !!d && String(d).slice(0, 10) < today();
 
 // a change made in a table's cell: shown at once, then saved; the "hunt" event brings the saved row back
 async function cellApp(a, fields) {
@@ -223,17 +222,6 @@ async function cellStatus(a, status) {
   paintHunt();
   try { await api("POST", `/api/hunt/apps/${encodeURIComponent(a.id)}/status`, { status }); }   // a timeline event, as on the role's page
   catch (e) { toast(e.message); }
-  loadHunt({ quiet: true });
-}
-// the deadline set in a cell: its apply event changes at once (made when the role has none), then it is saved
-async function cellDeadline(a, v) {
-  let e = applyEvent(a);
-  if (!e) { e = { id: "", kind: "apply", title: t("Apply by"), at: "", rolling: false }; a.schedule = [...(a.schedule || []), e]; }
-  e.at = v === "rolling" ? "" : v;
-  e.rolling = v === "rolling";
-  paintHunt();
-  try { await api("PUT", `/api/hunt/apps/${encodeURIComponent(a.id)}`, { deadline: v }); }
-  catch (err) { toast(err.message); }
   loadHunt({ quiet: true });
 }
 async function cellCompany(c, fields) {
@@ -266,16 +254,13 @@ function appProps() {
       set: (a, v) => cellApp(a, { channel: v, ...(v === "platform" && !a.platform && (F.sites || []).length ? { platform: F.sites[0].id } : {}) }) },
     { key: "batch", label: t("Batch"), type: "select", width: 130, free: true, get: (a) => a.batch || "", options: batches,
       set: (a, v) => cellApp(a, { batch: v }) },
-    { key: "deadline", label: t("Deadline"), type: "date", width: 130, get: dueOf,
-      render: (a) => rollingOf(a) ? h("span", { class: "c-rolling", title: rollingText() }, t("Rolling"))
-        : dueOf(a) ? h("span", { class: "c-date" + (late(dueOf(a)) && a.status === "saved" ? " late" : "") }, dueOf(a)) : "",
-      edit: (td, a) => deadlinePanel(td, a) },
     { key: "sent", label: t("Resume sent"), type: "custom", width: 190, min: 130, get: (a) => (a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : ""),
       render: (a) => h("span", { class: "c-muted c-resume" }, a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : "", resumeButton(a)) },
     { key: "last", label: t("Latest"), type: "custom", width: 220, get: (a) => (a.last ? a.last.at : ""),
       render: (a) => a.last ? h("span", { class: "c-last" }, h("span", { class: "c-when" }, huntWhen(a.last.at)), h("span", { class: "c-what" }, lastText(a.last))) : "" },
-    { key: "events", label: t("Events"), type: "custom", width: 190, get: (a) => { const e = nextBooked(a); return e ? `${e.at} ${e.title}` : ""; },
-      render: (a) => bookedCell(a) },
+    // one cell for one thing to do: what and when together, sorted by when (an apply with no date, 招满即止, last)
+    { key: "events", label: t("Next step"), type: "custom", width: 220, get: (a) => { const e = nextSteps(a)[0]; return e ? `${e.at || "~"} ${e.title}` : ""; },
+      render: (a) => bookedCell(a), edit: (td, a) => openEvents(a) },
     { key: "note", label: t("Notes"), type: "text", width: 220, hidden: true, get: (a) => a.note || "", set: (a, v) => cellApp(a, { note: v }) },
     { key: "jd", label: t("JD"), type: "text", width: 260, hidden: true, get: (a) => a.jd || "", set: (a, v) => cellApp(a, { jd: v }) },
   ];
@@ -381,30 +366,28 @@ function placesEditor(list, change) {
 const BOOKED_TITLES = ["笔试", "测评", "一面", "二面", "三面", "HR 面", "终面"];
 const nowAt = () => { const d = new Date(); return `${dbvYmd(d)} ${dbvPad(d.getHours())}:${dbvPad(d.getMinutes())}`; };
 const bookedPast = (e) => !!e.at && (e.at.length > 10 ? e.at : e.at + " 23:59") < nowAt();
-const nextBooked = (a) => (a.schedule || []).find((e) => e.at && !bookedPast(e)) || null;
-// a role's deadline is its apply event (docs/JOB_HUNT.md, 2026-10-21): a date, none yet, or none at all (招满即止)
+// when a role is applied for is its apply event (docs/JOB_HUNT.md, 2026-10-21): a date, or none (招满即止)
 const applyEvent = (a) => (a.schedule || []).find((e) => e.kind === "apply") || null;
-const dueOf = (a) => (applyEvent(a) || {}).at || "";
-const rollingOf = (a) => { const e = applyEvent(a); return !!(e && e.rolling && !e.at); };
 const rollingText = () => t("Rolling: until filled");
-const bookedWhenOf = (e) => (e.at ? bookedWhen(e.at) : e.rolling ? rollingText() : t("No date yet"));
+const bookedWhenOf = (e) => (e.at ? bookedWhen(e.at) : rollingText());
+// what is still ahead for a role, soonest first: its apply event until it is applied to (even when late), then
+// every round to come; an apply with no date (招满即止) comes last
+function nextSteps(a) {
+  const apply = a.status === "saved" ? applyEvent(a) : null;
+  const ahead = (a.schedule || []).filter((e) => e.kind !== "apply" && e.at && !bookedPast(e));
+  if (apply && apply.at) ahead.push(apply);
+  ahead.sort((x, y) => x.at.localeCompare(y.at));
+  return apply && !apply.at ? [...ahead, apply] : ahead;
+}
+function daysTo(at) { return Math.round((dbvDay(at.slice(0, 10)) - dbvDay(today())) / 864e5); }
+async function openEvents(a) {   // the role's page, at its events
+  await openHunt("app", a.id);
+  const box = document.querySelector(".bk-list") || document.querySelector(".bk-new");
+  if (box) box.scrollIntoView({ block: "center" });
+}
 // the rounds the user's roles are in (27秋招, 2027 Graduate Program…), for picking one again
 const usedBatches = () => [...new Set(((H.data && H.data.applications) || []).map((a) => a.batch).filter(Boolean))].sort((x, y) => x.localeCompare(y, I18N.lang));
 
-// a table cell's deadline: a date, or "rolling", or cleared
-function deadlinePanel(td, a) {
-  const cur = dueOf(a);
-  const input = h("input", { type: "date", class: "dbv-date", value: cur.slice(0, 10), "aria-label": t("Deadline") });
-  const pick = (v, close) => { if (close) closeFloat(); if (v !== (rollingOf(a) ? "rolling" : cur)) cellDeadline(a, v); };
-  input.addEventListener("change", () => { if (input.value) pick(input.value + cur.slice(10), false); });
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); closeFloat(); } });
-  const panel = h("div", { class: "menu dbv-pop dbv-datepanel" }, input,
-    h("button", { type: "button", class: "dl-rolling" + (rollingOf(a) ? " on" : ""), "aria-pressed": String(rollingOf(a)), onclick: () => pick("rolling", true) },
-      rollingOf(a) ? icon("check") : null, rollingText()),
-    h("div", { class: "row" }, h("span", { class: "spacer" }),
-      h("button", { type: "button", class: "btn sm ghost", onclick: () => pick("", true) }, t("Clear"))));
-  openFloat(td, panel, { onClose: dbvAfterClose, focus: input });
-}
 function bookedWhen(at, { weekday = true } = {}) {
   const d = dbvDay(at);
   const day = new Intl.DateTimeFormat(dbvLocale(), { month: "short", day: "numeric", ...(weekday ? { weekday: "short" } : {}),
@@ -412,11 +395,15 @@ function bookedWhen(at, { weekday = true } = {}) {
   return at.length > 10 ? `${day} ${at.slice(11, 16)}` : day;
 }
 function bookedCell(a) {
-  const e = nextBooked(a);
+  const steps = nextSteps(a);
+  const e = steps[0];
   if (!e) return "";
-  const more = (a.schedule || []).filter((x) => x.at && !bookedPast(x)).length - 1;
-  return h("span", { class: "c-booked" }, h("b", null, e.title), " ", h("span", { class: "c-when" }, bookedWhen(e.at)),
-    more > 0 && h("span", { class: "c-more" }, t("+{n} more", { n: more })));
+  const n = e.kind === "apply" && e.at ? daysTo(e.at) : null;   // how long is left to apply
+  const left = n === null ? null : n < 0 ? t("{n} day late", { n: -n }, "{n} days late") : n === 0 ? t("Today") : t("{n} day left", { n }, "{n} days left");
+  return h("span", { class: "c-booked" + (n !== null && n < 0 ? " late" : "") }, h("b", null, e.title), " ",
+    h("span", { class: "c-when" }, e.at ? bookedWhen(e.at) : rollingText()),
+    left && h("span", { class: "c-left" }, " · " + left),
+    steps.length > 1 && h("span", { class: "c-more" }, t("+{n} more", { n: steps.length - 1 })));
 }
 // for the calendar and the Gantt chart: from when it went in (or was added) to now, or to its last event once it is over
 function appDated(a) {
@@ -479,15 +466,10 @@ function bookedCard(a) {
     const title = h("input", { type: "text", class: "bk-title", value: e ? e.title : nextRound(a), placeholder: t("What: 一面, 笔试…"), spellcheck: "false", "aria-label": t("What") });
     const day = h("input", { type: "date", class: "bk-day", value: e ? e.at.slice(0, 10) : today(), "aria-label": t("Date") });
     const time = h("input", { type: "time", class: "bk-time", value: e && e.at.length > 10 ? e.at.slice(11, 16) : "", "aria-label": t("Time") });
-    const due = !!e && e.kind === "apply";   // the deadline: its date may wait, or there is none (招满即止)
-    let rolling = due && !!e.rolling && !e.at;
-    const roll = due && h("button", { type: "button", class: "dl-rolling" + (rolling ? " on" : ""), "aria-pressed": String(rolling), onclick: () => {
-      rolling = !rolling;
-      roll.classList.toggle("on", rolling); roll.setAttribute("aria-pressed", String(rolling));
-      if (rolling) { day.value = ""; time.value = ""; }
-    } }, rollingText());
-    if (due) day.addEventListener("change", () => { if (day.value && rolling) roll.click(); });
-    const fields = () => ({ title: title.value.trim(), at: day.value ? day.value + (time.value ? " " + time.value : "") : "", ...(due ? { rolling } : {}) });
+    const due = !!e && e.kind === "apply";   // applying: a date, or none at all (招满即止)
+    const roll = due && h("button", { type: "button", class: "dl-rolling", title: rollingText(), onclick: () => { day.value = ""; time.value = ""; } },
+      t("No date (until filled)"));
+    const fields = () => ({ title: title.value.trim(), at: day.value ? day.value + (time.value ? " " + time.value : "") : "" });
     title.addEventListener("input", () => { const box = title.parentNode && title.parentNode.parentNode.querySelector(".bk-chips"); if (box) for (const c of box.children) c.classList.toggle("on", c.textContent === title.value); });
     if (!e) {   // a new one: what, when, Add
       const add = () => {
@@ -534,7 +516,7 @@ function bookedCard(a) {
     list.length > 0 && h("div", { class: "bk-list" }, list.map((e) => (H.editing === e.id ? form(e) : row(e)))),
     form(null),
     (!applyEvent(a) || list.some((e) => e.at)) && h("div", { class: "row" },
-      !applyEvent(a) && h("button", { class: "btn sm ghost", id: "bk-add-due", onclick: () => bookedCall("POST", base, { kind: "apply" }) }, icon("plus"), t("Add a deadline")),
+      !applyEvent(a) && h("button", { class: "btn sm ghost", id: "bk-add-due", onclick: () => bookedCall("POST", base, { kind: "apply" }) }, icon("plus"), t("Add “{name}”", { name: t("Apply by") })),
       h("span", { class: "spacer" }),
       list.some((e) => e.at) && h("button", { class: "btn sm ghost", onclick: () => exportIcs({ app: a.id }) }, icon("calendar"), t("Add all to my calendar"))),
   ]);

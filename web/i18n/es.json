@@ -332,8 +332,6 @@
  "Data file": "Archivo de datos",
  "Date": "Fecha",
  "Dates are written YYYY-MM-DD, not “{value}”": "Las fechas se escriben AAAA-MM-DD, no «{value}»",
- "Deadline": "Fecha límite",
- "Deadline: {what}": "Plazo: {what}",
  "Deep sea blue (default)": "Azul mar profundo (predeterminado)",
  "Deepest, uses the most quota": "El más profundo, consume más cuota",
  "Default": "Predeterminado",
@@ -722,6 +720,7 @@
  "New task": "Tarea nueva",
  "New…": "Nuevo…",
  "Next month": "Mes siguiente",
+ "Next step": "Siguiente paso",
  "Next steps with {name}": "Siguientes pasos con {name}",
  "No answer yet": "Aún sin respuesta",
  "No application “{ref}”: give its id (A3) or Company/Role": "No hay candidatura «{ref}»: da su id (A3) o Empresa/Puesto",
@@ -734,6 +733,7 @@
  "No checkbox {n} in the plan": "El plan no tiene la casilla {n}",
  "No companies yet": "Aún no hay empresas",
  "No company “{ref}”": "No hay empresa «{ref}»",
+ "No date (until filled)": "Sin fecha (hasta cubrirse)",
  "No differences": "Sin diferencias",
  "No entries in this section yet.": "Esta sección aún no tiene entradas.",
  "No grouping": "Sin agrupar",
@@ -1724,6 +1724,14 @@
   "{n} conflicto",
   "{n} conflictos"
  ],
+ "{n} day late": [
+  "{n} día de retraso",
+  "{n} días de retraso"
+ ],
+ "{n} day left": [
+  "queda {n} día",
+  "quedan {n} días"
+ ],
  "{n} entry": [
   "{n} entrada",
   "{n} entradas"
@@ -1824,6 +1832,7 @@
  "{place} +{n}": "{place} +{n}",
  "{program} took too long and was stopped.": "{program} tardó demasiado y se detuvo.",
  "{program} was not found on this computer.": "No se encontró {program} en este ordenador.",
+ "{role} has its “{what}” already: change that one": "{role} ya tiene «{what}»: cambia ese",
  "{role} has nothing booked called “{ref}”": "{role} no tiene nada previsto llamado «{ref}»",
  "{role} is already on this company's list": "{role} ya está en la lista de esta empresa",
  "{score}% by word match": "{score} % por coincidencia de palabras",
@@ -1856,14 +1865,10 @@
  "…and {n} more": "…y {n} más",
  "Apply by": "Plazo de postulación",
  "Rolling: until filled": "Continuo, hasta cubrirse",
- "No date yet": "Sin fecha aún",
  "Batch": "Convocatoria",
- "Add a deadline": "Añadir un plazo",
  "Find or type a new one": "Buscar o escribir uno nuevo",
  "Add “{name}”": "Añadir «{name}»",
  "27秋招, 2027 Graduate Program…": "27秋招, 2027 Graduate Program…",
- "{role} has its deadline already: change that one": "{role} ya tiene un plazo: cambie ese",
- "Rolling": "Continuo",
  "{what} booked": "{what} programado",
  "Status moved to {status}": "Estado cambiado a {status}"
 }

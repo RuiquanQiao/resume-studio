@@ -1,4 +1,4 @@
-"""What is booked for the applications, and their deadlines, as an iCalendar file (RFC 5545) that
+"""What is booked for the applications, and when to apply by, as an iCalendar file (RFC 5545) that
 Outlook, Apple Calendar, Google Calendar and the rest import (docs/JOB_HUNT.md, 2026-10-21).
 
 Times are written as the user typed them, without a time zone ("floating"): a 14:00 一面 stays at 14:00
@@ -58,11 +58,11 @@ def calendar(apps: list[dict], companies: dict[str, str]) -> str:
         who = " · ".join(x for x in (companies.get(a.get("company") or "", ""), a.get("role") or "") if x)
         url = a.get("url") or ""
         for e in a.get("schedule") or []:
-            if not e.get("at"):   # a deadline not known yet, or none (招满即止)
+            if not e.get("at"):   # no date: it closes once filled (招满即止)
                 continue
             desc = "\n".join(x for x in (e.get("note") or "", url) if x)
-            if e.get("kind") == "apply":   # the deadline: the UID it had as a field, so importing again updates it
-                event(f"{a['id']}-deadline", t("Deadline: {what}", what=who), _when(e["at"], 0), "", desc, url)
+            if e.get("kind") == "apply":   # applying: the UID it had when it was a field, so importing again updates it
+                event(f"{a['id']}-deadline", f"{e['title']} · {who}", _when(e["at"], 0), "", desc, url)
                 continue
             event(f"{a['id']}-{e['id']}", f"{e['title']} · {who}", _when(e["at"], int(e.get("minutes") or 0)),
                   e.get("where") or "", desc, url)

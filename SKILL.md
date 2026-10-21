@@ -311,7 +311,7 @@ python scripts/hunt.py pin "滨江园区" 30.21 120.21          # one the map ca
 python scripts/hunt.py status 星河科技/服务端 interview --note "一面 周三 14:00"
 python scripts/hunt.py note 星河科技/服务端 "二面约在下周二"
 python scripts/hunt.py book 星河科技/服务端 二面 --at "2026-10-28 14:00"   # a round with its time: on the calendar
-python scripts/hunt.py ics                                # every round and deadline as an .ics for the user's calendar
+python scripts/hunt.py ics                                # every round and apply-by date as an .ics for the user's calendar
 python scripts/hunt.py fill 星河科技 --stdin <<'JSON' ... JSON    # research: every field at once, each with a source
 python scripts/hunt.py sent 星河科技                         # the user submitted the sign-up on its site
 python scripts/hunt.py scan [星河科技]                        # read the companies' sites for open postings
@@ -322,9 +322,10 @@ python scripts/hunt.py apply P12                          # the user goes for po
 - **A company fills itself** (docs/JOB_HUNT.md, 2026-10-18): when one is added or asked about, research it and
   send everything with one `fill` (official name, aliases, industry, strength, HQ, size, its careers sites and
   their hiring systems, a logo link, the About), never only the About. Fields the user edited stay theirs.
-  Deadlines belong to roles (`--deadline 2026-10-31`, or `--deadline rolling` for 招满即止), not companies; a
-  role's deadline is one of its events. `--batch` is the round in the user's own words (27秋招…). A posting's
-  link: read it, add or fill the company, add the role with its deadline.
+  When to apply by is an event of the role (every role starts with its 投递 event), never a field and never the
+  company's: `--apply-by 2026-10-31` when the posting gives a date; no date means 招满即止. `--batch` is the round
+  in the user's own words (27秋招…). A posting's link: read it, add or fill the company, add the role with its
+  apply-by date.
 - **Open postings** are scanned, never typed: career-ops' providers (Moka, Feishu/ByteDance, Tencent, Meituan,
   Alibaba, Greenhouse, Lever, Ashby…) read public job APIs; any other site gets a read route Claude records
   once in the browser (`scan-route`), replayed with no Claude. `keywords` are the roles the user looks for.

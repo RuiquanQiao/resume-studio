@@ -399,7 +399,7 @@ STATES = [
     State("applying, the companies' map", then(applying("companies"), click(".dbv-tab[data-view=v2]")), [".dbv-map .dbv-mapstage"], prepare=companies),
     State("applying, a filter being set", then(applying("apps"), click(".dbv-chip[data-key=status]")), [".float.dbv-filterpanel .dbv-check"],
           prepare=companies),
-    State("applying, sorts being set", then(applying("apps"), js("() => { DBV.tables.apps.views[0].sorts = [{key: 'deadline', dir: 'desc'}]; paintHunt(); }"),
+    State("applying, sorts being set", then(applying("apps"), js("() => { DBV.tables.apps.views[0].sorts = [{key: 'events', dir: 'desc'}]; paintHunt(); }"),
                                             click("#dbv-apps-sort"), click(".float .select.dbv-sortkey")), [".float.dbv-sortpanel .dbv-inlist"],
           prepare=companies),
     State("applying, the properties panel", then(applying("apps"), click("#dbv-apps-props")), [".float.dbv-propspanel .dbv-proprow"], prepare=companies),

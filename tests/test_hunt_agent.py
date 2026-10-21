@@ -123,7 +123,7 @@ def test_a_company_with_a_site_gets_its_logo_by_itself(live, data_file):
 def test_a_companys_deadline_moves_to_its_roles(hunt):
     hunt.add_company({"name": "星河科技"})
     hunt.add_application("星河科技", {"role": "服务端"})
-    hunt.add_application("星河科技", {"role": "算法", "deadline": "2026-11-30"})
+    hunt.add_application("星河科技", {"role": "算法", "apply_by": "2026-11-30"})
     data = json.loads((hunt.dir / "companies.json").read_text(encoding="utf-8"))
     data["companies"][0]["deadline"] = "2026-10-31"                                # a file from before 2026-10-18
     (hunt.dir / "companies.json").write_text(json.dumps(data), encoding="utf-8")
@@ -157,10 +157,10 @@ def test_claude_fills_a_company_from_its_command(live, data_file, monkeypatch):
     code, out = cli(data_file, "fill", "C1", "--stdin", stdin=json.dumps({"strength": "别的"}, ensure_ascii=False))
     assert "left as the user set them: strength" in out and "strength: 我自己写的" in out
     # deadlines are the roles'
-    code, out = cli(data_file, "add-role", "星河科技", "服务端研发工程师", "--deadline", "2026-10-31", "--url", "https://careers.xinghe.example/job/1")
-    assert "deadline 2026-10-31" in out
-    code, out = cli(data_file, "edit-role", "星河科技/服务端研发", "--deadline", "rolling", "--batch", "27秋招")
-    assert code == 0 and "deadline rolling (招满即止)" in out and "batch 27秋招" in out
+    code, out = cli(data_file, "add-role", "星河科技", "服务端研发工程师", "--apply-by", "2026-10-31", "--url", "https://careers.xinghe.example/job/1")
+    assert "apply by 2026-10-31" in out
+    code, out = cli(data_file, "edit-role", "星河科技/服务端研发", "--apply-by", "", "--batch", "27秋招")
+    assert code == 0 and "apply by until filled (招满即止)" in out and "batch 27秋招" in out
 
 
 # ---------------------------------------------------------------- open postings

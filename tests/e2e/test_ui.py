@@ -1362,7 +1362,7 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.keyboard.press("Control+3")
     pg.wait_for_selector(".dbv-view[data-table=apps] .dbv-tab.on[data-view=v1]")
     row = lambda aid: f".dbv-view tr[data-id='{aid}']"
-    assert pg.locator(".dbv-view tbody tr").count() == 2                     # "Active": the rejected role is filtered out
+    pg.wait_for_function("() => document.querySelectorAll('.dbv-view tbody tr').length === 2")                    # "Active": the rejected role is filtered out
     assert pg.locator(".dbv-chip[data-key=status]").count() == 1
 
     # a status, picked in its cell: the same event as on the role's page
@@ -1383,16 +1383,22 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.wait_for_selector(".float", state="detached")
     time.sleep(0.4)
     assert app(a1)["referral"] == "NTA8X2"
-    # the deadline: a date, or none at all (招满即止); it is the role's apply event (docs/JOB_HUNT.md, 2026-10-21)
+    # the next step: what and when in one cell, no deadline column (docs/JOB_HUNT.md, 2026-10-21); a role not applied
+    # to yet shows its 投递 event: no date said is 招满即止
     due = lambda a: next(e for e in a["schedule"] if e.get("kind") == "apply")  # noqa: E731
-    pg.click(f"{row(a2)} td[data-key=deadline]")
-    pg.fill(".float .dbv-date", "2026-11-01")
-    wait_until(lambda: due(app(a2))["at"] == "2026-11-01", msg="deadline saved")
-    pg.keyboard.press("Escape")
-    pg.click(f"{row(a1)} td[data-key=deadline]")
-    pg.click(".float .dl-rolling")
-    wait_until(lambda: due(app(a1))["rolling"] and not due(app(a1))["at"], msg="rolling saved")
-    pg.wait_for_selector(f"{row(a1)} td[data-key=deadline] .c-rolling:has-text('滚动招聘')")
+    assert pg.locator(".dbv-view th[data-key=deadline]").count() == 0
+    pg.wait_for_selector(f"{row(a2)} td[data-key=events]:has-text('投递截止'):has-text('招满即止')")
+    assert pg.inner_text(f"{row(a1)} td[data-key=events]").strip() == ""      # interviewing, nothing booked: applying is done
+    server.req("PUT", f"/api/hunt/apps/{a2}", {"apply_by": "2030-11-01"})
+    pg.wait_for_selector(f"{row(a2)} td[data-key=events] .c-left:has-text('还有')")
+    server.req("PUT", f"/api/hunt/apps/{a2}", {"apply_by": "2020-11-01"})
+    pg.wait_for_selector(f"{row(a2)} td[data-key=events] .c-booked.late .c-left:has-text('已过')")
+    server.req("PUT", f"/api/hunt/apps/{a2}", {"apply_by": ""})
+    pg.wait_for_selector(f"{row(a2)} td[data-key=events]:has-text('招满即止')")
+    pg.click(f"{row(a2)} td[data-key=events]")                                # opens the role, at its events
+    pg.wait_for_selector(".bk-item.is-due")
+    pg.click(".hunt-back")
+    pg.wait_for_selector(f"{row(a1)} td[data-key=batch]")
     # the batch: the user's own options, a new one typed, an old one picked
     pg.click(f"{row(a1)} td[data-key=batch]")
     pg.fill(".float .dbv-optinput", "27秋招")
@@ -1507,7 +1513,7 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     # the calendar: what is booked, on its day; a click opens the role (docs/JOB_HUNT.md, 2026-10-21)
     day = pg.evaluate("() => dbvYmd(new Date())")
     server.req("POST", f"/api/hunt/apps/{a1}/schedule", {"title": "一面", "at": day})   # all day: still to come whatever the time now
-    server.req("PUT", f"/api/hunt/apps/{a2}", {"deadline": day})
+    server.req("PUT", f"/api/hunt/apps/{a2}", {"apply_by": day})
     pg.click(".dbv-tab[data-view=v4]")
     pg.wait_for_selector(f".dbv-calday.today[data-day='{day}'] .dbv-item.k-event:has-text('一面')")
     assert pg.locator(f".dbv-calday[data-day='{day}'] .dbv-item.k-deadline").count() == 1
@@ -1530,15 +1536,20 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     wait_until(lambda: [e["title"] for e in booked()] == ["一面", "二面"], msg="booked from the page")
     assert booked()[1]["at"] == "2030-01-15 09:30"
     pg.wait_for_selector(".bk-item:has-text('二面')")
-    # its deadline among them: 招满即止 shown as such, and given a date again from its own edit
+    # its 投递 among them: no date is 招满即止; given a date from its own edit, and cleared again
     pg.wait_for_selector(".bk-item.is-due .bk-when:has-text('招满即止')")
     pg.hover(".bk-item.is-due")
     pg.click(".bk-item.is-due .btn[aria-label='修改']")
-    pg.wait_for_selector(".bk-edit .dl-rolling.on")
     pg.fill(".bk-edit .bk-day", "2030-01-10")
-    assert pg.locator(".bk-edit .dl-rolling.on").count() == 0                 # a date ends 招满即止
     pg.click(".bk-edit .btn.primary")
-    wait_until(lambda: due(app(a1))["at"] == "2030-01-10" and not due(app(a1))["rolling"], msg="deadline dated from the page")
+    wait_until(lambda: due(app(a1))["at"] == "2030-01-10", msg="apply-by dated from the page")
+    pg.hover(".bk-item.is-due")
+    pg.click(".bk-item.is-due .btn[aria-label='修改']")
+    pg.click(".bk-edit .dl-rolling")
+    assert pg.input_value(".bk-edit .bk-day") == ""
+    pg.click(".bk-edit .btn.primary")
+    wait_until(lambda: due(app(a1))["at"] == "", msg="no date again: 招满即止")
+    server.req("PUT", f"/api/hunt/apps/{a1}", {"apply_by": "2030-01-10"})
     # in interviews, the next round waits in the Add row; booking one moves the status forward, with Undo
     pg.wait_for_function("() => document.querySelector('.bk-new .bk-title').value === '三面'")
     server.req("POST", f"/api/hunt/apps/{a1}/status", {"status": "applied"})
