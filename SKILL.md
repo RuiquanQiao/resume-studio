@@ -120,6 +120,11 @@ entries:                     # the library: every real experience, never limited
     notes: |                 # fact layer: what really happened, never rendered
       ...
     evidence: [E:/Forge/QuizLoom]   # fact layer: local paths to read (the user adds them with "Choose project folder")
+    interview:               # mock interview, private like notes: never rendered, never in a version
+      - q: Why a multi-stage pipeline instead of one prompt?
+        a: ...               # what the user would say, first person; 【to fill in: …】 where the facts run out
+        follow_ups:          # what the interviewer asks after hearing that answer; may nest further
+          - {q: How did you know each stage worked?, a: ...}
 subsets:
   - id: ALL                  # reserved: the full-set preview, always first, can't be deleted or renamed
     label: All entries
@@ -178,7 +183,8 @@ subsets:
    conservatively, and tell the user what information is missing. The notes are what the user would tell
    their lawyer: present them well, never invent.
 3. **Don't edit the fact layer**: leave `notes` and `evidence` alone unless the user asks, and never copy
-   notes verbatim into bullets.
+   notes verbatim into bullets. `interview` changes only when the user asks for mock-interview questions,
+   and then keep the questions already there and the user's own answers.
 4. **Stable IDs**: never change an existing entry's `id`, not even when it moves section. New entries take
    the next global `EXP-xxx`. When deleting, update every subset's `entries`. IDs are for references only and
    the user never sees them: in replies, call entries by name (or "Projects #2", the number inside its
@@ -211,6 +217,11 @@ subsets:
 - **Polish one entry**: read its notes and evidence (and the repository and README when needed), then
   rewrite the bullets: start with a verb, put the user's own decisions and results first, one line each
   (check with render.py).
+- **Mock interview**: predict what an interviewer asks about one entry, starting from what the resume
+  claims (every bullet, number and technology can be drilled into), then the reasons behind decisions, the
+  hardest problem and the basics of the tech it names. Answers are spoken, first person, about a minute,
+  STAR for behavioural questions, and stay inside the fact boundary like bullets do: where the facts run
+  out, leave 【to fill in: …】 instead of inventing. Follow-ups go under the answer they react to.
 - **A project changed**: the window records each evidence folder's state when Claude last read it (git
   HEAD + uncommitted changes, or a file list, in `.studio/evidence.json`) and tells the user when it
   changes. "Update from project progress" sends the new commits and changed files; read them, put only

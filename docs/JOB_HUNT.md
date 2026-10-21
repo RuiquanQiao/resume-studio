@@ -332,6 +332,25 @@ The question: are the status and the events linked? They weren't: setting Interv
 - **"Late" is for roles not applied to yet**: a deadline past on a role already applied to no longer shows red.
 - **Claude** is told booking does the status, so `status` is for outcomes or when nothing was booked.
 
+## 2026-10-21: a mock interview on every entry
+
+Interviewers ask about what the resume says, so the preparation lives with the entry, under its bullets:
+`interview: [{q, a, follow_ups: [{q, a, follow_ups…}]}]`. It is private like `notes`: never rendered, never in a
+subset's versions, kept when a version is restored.
+
+- **Predict the questions** (`mock`): Claude reads the entry's bullets, notes and project folders and adds about 8
+  questions, most likely first, each with an answer and one or two follow-ups. An optional line says the role or
+  JD to aim at. It adds; it never rewrites questions already there or answers the user wrote.
+- **Answers stay inside the fact boundary**: first person, about a minute, STAR for behavioural questions, and
+  where the facts run out a 【to fill in: …】 says what the user must supply. A made-up number is worse in an
+  interview than on paper, because the follow-up finds it.
+- **Follow up** (`probe`) on any answered question: the 2–3 things the interviewer asks after hearing that answer.
+  **Answer it** (`answer`) on a question the user wrote.
+- **Hide answers** to practise: each answer opens on its own; the choice is remembered in this window.
+- Claude's change shows in the usual before/after card (the questions as an outline) with Undo.
+- The questions are written in the resume language being edited, so an English and a Chinese set can sit side
+  by side.
+
 ## Why the button said "Open LinkedIn"
 
 The Autofill page is organised around **the selected profile site**: LinkedIn and BOSS直聘 are its tabs,

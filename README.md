@@ -40,6 +40,11 @@ with the C# compiler that ships with Windows.
   (entries the subset leaves out fold to one line). An **outline** beside it ticks, orders and adds entries
   and jumps to any card; it can fold into a strip above the document that opens on hover. The fact layer
   folds under each card. The preview can be hidden for room. ([docs/LAYOUT.md](docs/LAYOUT.md))
+- **Mock interview** per entry (`interview`, private like the notes): Claude predicts what an interviewer
+  will ask about it, starting from what the resume claims, with spoken first-person answers built only from
+  the entry's facts (gaps left as 【to fill in】), and the follow-ups each answer invites. Answers can be
+  hidden to practise and opened one at a time; "Follow up" asks for the next questions after any answer;
+  questions of your own can be added and answered by Claude.
 - **Live preview** as page images; in a subset a second page is flagged as overflow.
 - **One chat with Claude Code** on the left, the same in every workspace (hide it with the Claude button, Ctrl+J):
   streamed replies, tool steps, resumable sessions. Claude is told what is on screen (the entry being edited,

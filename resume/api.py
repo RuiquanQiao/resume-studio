@@ -400,7 +400,8 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
             raise HttpError(409, t("Rendering failed; see the error above the preview first"))
         return studio.bullet_report(r)
 
-    ACTIONS = ("polish", "translate", "fit", "sync", "batch_translate", "batch_fit", "batch_sync")
+    ACTIONS = ("polish", "translate", "fit", "sync", "mock", "probe", "answer", "batch_translate", "batch_fit", "batch_sync")
+    ONE_ENTRY = ("polish", "translate", "fit", "sync", "mock", "probe", "answer")
 
     @app.route("POST", "/api/chats/{cid}/send")
     def send(req: Request):
@@ -417,7 +418,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         action = "polish" if b.get("polish") else b.get("action")
         if action and action not in ACTIONS:
             raise HttpError(400, f"unknown action {action}")
-        if action in ("polish", "translate", "fit", "sync") and entry is None:
+        if action in ONE_ENTRY and entry is None:
             raise HttpError(404, t("Entry not found"))
         lang = str(b.get("lang") or vlang)
         name = lambda e: model.tr(e.get("title"), lang) or model.tr(e.get("title"), "en") or t("this entry")  # noqa: E731
@@ -448,6 +449,15 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
                                                                else "- " + t("{path} (not read yet, please go through all of it)", path=r["path"])
                                                                for r in rows), langs, vid, data_path)
             synced = [entry]
+        elif action == "mock":
+            text = prompts.mock_message(name(entry), lang, instruction)
+        elif action in ("probe", "answer"):
+            path = b.get("path")
+            q = model.interview_question(entry, path) if isinstance(path, list) else None
+            if q is None:
+                raise HttpError(404, t("That question isn't there any more"))
+            msg = prompts.probe_message if action == "probe" else prompts.answer_message
+            text = msg(name(entry), str(q.get("q") or "").strip(), model.interview_path(path), lang, instruction)
         elif action == "batch_translate":
             target = str(b.get("target") or "")
             if target not in langs:

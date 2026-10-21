@@ -1032,7 +1032,7 @@ function startChatWith(text) {
   ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
-async function sendChat(text, { action = null, entryId = null, target = null, lang = null, files = [] } = {}) {
+async function sendChat(text, { action = null, entryId = null, target = null, lang = null, path = null, files = [] } = {}) {
   if (!ui.chat.available) { toast(t("The claude command was not found")); return false; }
   if (!action && !text.trim() && !files.length) return false;
   if (action && ui.chat.running) { toast(t("Claude is still replying; wait or stop it first")); return false; }
@@ -1047,7 +1047,7 @@ async function sendChat(text, { action = null, entryId = null, target = null, la
   const batch = action && action.startsWith("batch_");
   const attachments = files.map((f) => (f.data ? { name: f.name, data: f.data } : { name: f.name, path: f.path }));
   const editing = W.ws === "resume" && ui.sel.kind === "entry" ? ui.sel.id : null;   // elsewhere the resume isn't on screen
-  const body = { text, subset_id: ui.subsetId, entry_id: batch ? null : entryId || editing, action, target, lang, attachments, screen: screenLine() };
+  const body = { text, subset_id: ui.subsetId, entry_id: batch ? null : entryId || editing, action, target, lang, path, attachments, screen: screenLine() };
   const queued = ui.chat.running;
   if (!queued) {
     ui.chat.running = true;

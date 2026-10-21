@@ -146,6 +146,8 @@ const ui = {
   lastDoc: null,    // {kind, id}: where the document was, for "Back to the document" from a page
   docOpen: new Set(),   // entries not in the subset, opened as cards anyway
   factOpen: new Set(),  // entries whose fact layer is unfolded
+  mockOpen: new Set(),  // entries whose mock interview is unfolded
+  mockSeen: new Set(),  // "entryId:path" answers opened one by one while answers are hidden
   here: null,       // the card at the top of the document (marked in the outline)
   saving: 0, refreshAfterSave: false,
   editLang: null,
@@ -962,6 +964,7 @@ function entryForm(e = ui.draft, { out = false } = {}) {
   parts.push(card(t("Basics"), null, basics));
 
   if (!isList) parts.push(bulletsCard(e));
+  parts.push(mockFold(e));
 
   // what only Claude reads, folded under the card (opened on a click, remembered while the window is open)
   parts.push(h("details", { class: "fact-fold", open: ui.factOpen.has(e.id) || null,
@@ -978,6 +981,110 @@ function entryForm(e = ui.draft, { out = false } = {}) {
 function factFlag(id) {
   const st = (ui.evidence[id] || {}).state;
   return st === "changed" ? h("span", { class: "chip new" }, t("new progress")) : st === "missing" ? h("span", { class: "chip bad" }, t("a folder is missing")) : null;
+}
+
+// ---------------------------------------------------------------- mock interview
+// entry.interview: [{q, a, follow_ups: [{q, a, follow_ups…}]}], private like the notes; a path [2, 0]
+// is the first follow-up of the third question. Hiding the answers (to practise) is remembered per window.
+const mockHidden = () => store("mockHidden") === "1";
+const mockAt = (list, path) => path.reduce((q, i, n) => (n ? (q.follow_ups || [])[i] : list[i]), null);
+function mockCount(list) {   // follow-ups at every depth
+  let n = 0;
+  const walk = (xs) => { for (const x of xs || []) { n++; walk(x.follow_ups); } };
+  for (const x of list) walk(x.follow_ups);
+  return n;
+}
+function mockOutline(list) {
+  const lines = [];
+  const walk = (xs, depth) => xs.forEach((x, i) => { lines.push("  ".repeat(depth) + (depth ? "↳ " : `${i + 1}. `) + (x.q || "")); walk(x.follow_ups || [], depth + 1); });
+  walk(list, 0);
+  return lines.join("\n");
+}
+
+function mockFold(e) {
+  const list = e.interview || [];
+  const n = mockCount(list);
+  const sum = list.length ? t("{n} question", { n: list.length }, "{n} questions") + (n ? " · " + t("{n} follow-up", { n }, "{n} follow-ups") : "") : "";
+  return h("details", { class: "mock-fold", "data-aid": "mock", open: ui.mockOpen.has(e.id) || null,
+    ontoggle: (x) => { if (x.target.open) ui.mockOpen.add(e.id); else ui.mockOpen.delete(e.id); } },
+  h("summary", null, icon("chevRight"), h("span", { class: "ff-t" }, t("Mock interview")),
+    h("span", { class: "ff-sub" }, sum || t("The questions an interviewer will ask about this, and your answers"))),
+  h("div", { class: "card mock" }, h("div", { class: "card-b" }, mockBody(e))));
+}
+
+function mockBody(e) {
+  const box = h("div", { class: "mock-body" });
+  const redraw = () => { const fold = box.closest(".mock-fold"); if (fold) fold.replaceWith(mockFold(e)); else box.replaceWith(mockBody(e)); };
+  const list = e.interview || [];
+  const hidden = mockHidden();
+  const L = ui.editLang;
+  const instr = h("input", { class: "mock-instr", placeholder: t("Optional: the role, the JD, what to focus on…"), spellcheck: "false",
+    onkeydown: (ev) => { if (ev.key === "Enter" && !ev.isComposing) aiEntry("mock", e.id, { text: instr.value, lang: L }); } });
+  const addQ = (path) => {   // path: the question to follow up, or null for a new question
+    e.interview = e.interview || [];
+    let into = e.interview;
+    if (path) { const q = mockAt(e.interview, path); into = q.follow_ups = q.follow_ups || []; }
+    into.push({ q: "", a: "" });
+    touch(); redraw();
+    const key = JSON.stringify([...(path || []), into.length - 1]);
+    setTimeout(() => { const ta = document.querySelector(`.mq[data-path='${key}'] > .mq-q`); if (ta) ta.focus(); }, 0);
+  };
+  box.append(h("div", { class: "mock-bar" },
+    h("button", { class: "btn sm primary mock-run", disabled: !ui.chat.available,
+      title: ui.chat.available ? t("Claude reads this entry's bullets, notes and project folders") : t("The claude command was not found"),
+      onclick: () => aiEntry("mock", e.id, { text: instr.value, lang: L }) }, icon("sparkle"), list.length ? t("Predict more questions") : t("Predict the questions")),
+    instr,
+    h("button", { class: "btn sm ghost mock-hide" + (hidden ? " on" : ""), "aria-pressed": String(hidden),
+      title: hidden ? t("Answers are hidden: answer out loud first, then open each one") : t("Hide the answers to practise"),
+      onclick: () => { store("mockHidden", hidden ? null : "1"); ui.mockSeen.clear(); redraw(); } },
+    icon(hidden ? "eyeOff" : "eye"), hidden ? t("Show all answers") : t("Hide answers"))));
+  if (!list.length) box.append(h("p", { class: "muted mock-empty" }, t("No questions yet. Claude reads this entry's bullets, notes and project folders and predicts what an interviewer will ask, with answers built only from those facts; where they run out, it leaves a 【to fill in】 for you.")));
+  box.append(h("div", { class: "mock-list" }, list.map((q, i) => mockItem(e, q, [i], hidden, redraw, addQ))),
+    h("div", { class: "row" }, h("button", { class: "btn sm mock-add", onclick: () => addQ(null) }, icon("plus"), t("Add a question"))));
+  return box;
+}
+
+function mockItem(e, q, path, hidden, redraw, addQ) {
+  const key = JSON.stringify(path);
+  const seenKey = e.id + ":" + key;
+  const seen = !hidden || ui.mockSeen.has(seenKey);
+  const top = path.length === 1;
+  const L = ui.editLang;
+  const answered = (q.a || "").trim();
+  const del = async () => {
+    const n = mockCount([q]);
+    if (n && !(await modal({ title: t("Delete this question and its {n} follow-ups?", { n }), ok: t("Delete"), danger: true }))) return;
+    const parent = top ? e.interview : mockAt(e.interview, path.slice(0, -1)).follow_ups;
+    parent.splice(path[path.length - 1], 1);
+    if (!e.interview.length) delete e.interview;
+    touch(); redraw();
+  };
+  // follow up once there is an answer; before that, Claude can answer it (shown as the user types)
+  const probe = h("button", { class: "btn sm ghost mq-probe", title: t("Claude asks what the interviewer would ask after this answer"),
+    onclick: () => aiEntry("probe", e.id, { path, lang: L }) }, icon("sparkle"), t("Follow up"));
+  const ans = h("button", { class: "btn sm ghost mq-answer", title: t("Claude answers it from this entry's facts"),
+    onclick: () => aiEntry("answer", e.id, { path, lang: L }) }, icon("sparkle"), t("Answer it"));
+  const sync = () => {
+    probe.hidden = !ui.chat.available || !(q.a || "").trim();
+    ans.hidden = !ui.chat.available || !(q.q || "").trim() || !!(q.a || "").trim();
+  };
+  sync();
+  const tools = h("div", { class: "mq-tools" }, probe, ans,
+    hidden && seen && h("button", { class: "btn icon sm ghost", title: t("Hide it again"), "aria-label": t("Hide it again"), onclick: () => { ui.mockSeen.delete(seenKey); redraw(); } }, icon("eyeOff")),
+    h("button", { class: "btn icon sm ghost", title: t("Add your own follow-up"), "aria-label": t("Add your own follow-up"), onclick: () => addQ(path) }, icon("plus")),
+    h("button", { class: "btn icon sm ghost danger", title: t("Delete this question"), "aria-label": t("Delete this question"), onclick: del }, icon("trash")));
+  const answer = seen
+    ? h("div", { class: "mq-a" },
+      h("textarea", { class: "mq-ans", rows: 2, spellcheck: "false", placeholder: t("The answer…"), oninput: (ev) => { q.a = ev.target.value; touch(); sync(); } }, q.a || ""))
+    : h("div", { class: "mq-a" }, h("button", { class: "btn sm ghost mq-show", onclick: () => { ui.mockSeen.add(seenKey); redraw(); } },
+      icon("eye"), answered ? t("Show the answer") : t("No answer yet")));
+  return h("div", { class: "mq" + (top ? "" : " is-follow"), "data-path": key },
+    // the label and buttons get their own row, so the question and answer keep the column's full width
+    h("div", { class: "mq-top" }, h("span", { class: "mq-n" }, top ? "Q" + (path[0] + 1) : t("Follow-up")), tools),
+    h("textarea", { class: "mq-q", rows: 1, spellcheck: "false", placeholder: top ? t("What would they ask?") : t("What would they ask next?"),
+      oninput: (ev) => { q.q = ev.target.value; touch(); sync(); } }, q.q || ""),
+    answer,
+    (q.follow_ups || []).length ? h("div", { class: "mq-more" }, q.follow_ups.map((f, i) => mockItem(e, f, [...path, i], hidden, redraw, addQ))) : null);
 }
 
 // ---------------------------------------------------------------- bullets
@@ -1760,7 +1867,7 @@ async function restoreVersion(n) {
 }
 
 // ================================================================ AI polish (runs in the chat)
-const AI_LABELS = { polish: "Polish", translate: "Another language", fit: "Fit on one line", sync: "Update from the project", batch_translate: "Fill in a language", batch_fit: "Fit on one line", batch_sync: "Update from the project",
+const AI_LABELS = { mock: "Mock interview", probe: "Follow-up", answer: "Answer", polish: "Polish", translate: "Another language", fit: "Fit on one line", sync: "Update from the project", batch_translate: "Fill in a language", batch_fit: "Fit on one line", batch_sync: "Update from the project",
   autofill_read: "Read a profile", autofill_apply: "Update a profile" };
 
 function aiDiff(id) {
@@ -1769,15 +1876,16 @@ function aiDiff(id) {
   const after = entryById(id) || {};
   const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])]
     .filter((k) => JSON.stringify(before[k] ?? null) !== JSON.stringify(after[k] ?? null));
-  const fmt = (v) => {
+  const fmt = (v, k) => {
+    if (k === "interview") return mockOutline(v || []);   // the questions only: the answers are in the card below
     const one = (x) => (x && typeof x === "object" ? Object.entries(x).map(([l, s]) => `[${l}] ${s === "" ? t("(hidden)") : s}`).join("\n   ") : String(x ?? ""));
     if (Array.isArray(v)) return v.map((x) => "• " + one(x)).join("\n");
     return one(v);
   };
-  const names = { title: t("Name"), subtitle: t("Subtitle"), bullets: t("Bullets"), tech: t("Tech"), location: t("Location"), start: t("Start"), end: t("End"), date: t("Date"), link: t("Link"), notes: t("Fact layer"), evidence: t("Evidence paths") };
+  const names = { title: t("Name"), subtitle: t("Subtitle"), bullets: t("Bullets"), tech: t("Tech"), location: t("Location"), start: t("Start"), end: t("End"), date: t("Date"), link: t("Link"), notes: t("Fact layer"), evidence: t("Evidence paths"), interview: t("Mock interview") };
   const close = () => { delete ui.ai[id]; paintItem(edFor("entry", id)); };
   return card(keys.length ? t("Claude changed this entry") : t("Claude didn't change this entry"), `${a.action in AI_LABELS ? t(AI_LABELS[a.action]) : ""} · ${t("the chat explains why")}`, [
-    keys.map((k) => [h("div", { class: "k" }, names[k] || k), h("div", { class: "before" }, fmt(before[k])), h("div", { class: "after" }, fmt(after[k]))]),
+    keys.map((k) => [h("div", { class: "k" }, names[k] || k), h("div", { class: "before" }, fmt(before[k], k)), h("div", { class: "after" }, fmt(after[k], k))]),
     h("div", { class: "row", style: "margin-top:12px" },
       h("button", { class: "btn sm", onclick: close }, icon("check"), keys.length ? t("Keep") : t("Got it")),
       keys.length && h("button", { class: "btn sm danger-soft", onclick: () => undoAi(id) }, icon("undo"), t("Undo, back to before")),
@@ -1804,7 +1912,8 @@ async function aiEntry(action, entryId, extra = {}) {
   await saveDraft();
   const snapshot = clone(entryById(entryId));
   delete ui.ai[entryId];
-  const ok = await sendChat(extra.text || "", { action, entryId, target: extra.target, lang: extra.lang });
+  if (["mock", "probe", "answer"].includes(action)) ui.mockOpen.add(entryId);   // the result shows where it was asked
+  const ok = await sendChat(extra.text || "", { action, entryId, target: extra.target, lang: extra.lang, path: extra.path });
   if (ok) ui.ai[entryId] = { chat: ui.chat.id, action, snapshot, done: false };
 }
 

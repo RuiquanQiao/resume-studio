@@ -332,6 +332,10 @@ STATES = [
     State("resume, progress in one project, a folder gone", evidence({"EXP-002": "changed", "EXP-003": "missing"}),
           ["#library .lib-update .btn", "#library .e-dot.bad"]),
     State("resume, a card with its facts open", lambda pg, c: (open_entry(pg, "EXP-002"), open_facts(pg)), ["#evidence .ev-empty"]),
+    State("resume, a card's mock interview, empty", lambda pg, c: (open_entry(pg, "EXP-002"), open_mock(pg)), ["#active .mock-empty"]),
+    State("resume, a card's mock interview, answers hidden",
+          lambda pg, c: (open_entry(pg, "EXP-002"), open_mock(pg), pg.click("#active .mock-hide"), pg.wait_for_selector("#active .mq-show")),
+          ["#active .mq.is-follow .mq-show"], prepare=lambda c: add_mock(c.server)),
     State("resume, a card's conflict", conflict, ["#active .banner.warn"]),
     State("resume, long titles", lambda pg, c: open_entry(pg, "EXP-002"), ["#active"], prepare=long_entry),
     State("resume, line chips and issues", then(lambda pg, c: open_entry(pg, "EXP-002"), wait("#bullets .line-chip.long")),
@@ -471,6 +475,22 @@ NOT_SHOWN = {
     "banner warn": "covered as '#active .banner.warn'; the other 'banner warn's are job-search pages' error lines",
     "outline-strip": "covered by 'resume, outline folded'",
 }
+
+
+def open_mock(pg):
+    pg.click("#active .mock-fold > summary")
+    pg.wait_for_selector("#active .mock-body", state="visible")
+
+
+def add_mock(server):
+    """EXP-002 with a mock interview: long questions, an answer, a follow-up with none yet."""
+    s = state(server)
+    e = next(x for x in s["doc"]["entries"] if x["id"] == "EXP-002")
+    e["interview"] = [{"q": "Why did you split the pipeline into stages instead of writing one long prompt that does everything at once?",
+                       "a": "One prompt drifted: questions stopped matching the slides after a few pages. " * 3,
+                       "follow_ups": [{"q": "How did you notice the drift, and how did you measure it?", "a": ""}]},
+                      {"q": "为什么拆成多阶段？", "a": "【待补充：一个具体例子】"}]
+    server.req("PUT", "/api/item", {"kind": "entry", "id": "EXP-002", "data": e, "base": s["hashes"]["entry"]["EXP-002"]})
 
 
 def classes_in_code() -> set[str]:

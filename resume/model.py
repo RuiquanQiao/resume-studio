@@ -2,7 +2,8 @@
 
 See SKILL.md for the documented schema. Principles:
   - `entries` is the experience library: append-only in spirit, never limited to one page.
-  - Every entry has a fact layer (`notes`, `evidence`) that no template ever renders.
+  - Every entry has a fact layer (`notes`, `evidence`) that no template ever renders, and may have
+    `interview`, its mock interview (questions, answers, follow-ups), private in the same way.
   - A `subset` is the resume for one kind of role: it references entry ids plus its own
     headline, template and layout; it never copies content. The reserved subset `ALL` is the
     full set: every entry and every contact, in library order (its `entries` are ignored).
@@ -229,6 +230,22 @@ def get_item(doc: Any, kind: str, item_id: str | None = None) -> Any:
         if str(item.get("id")) == str(item_id):
             return item
     return None
+
+
+def interview_question(entry: Any, path: list[int]) -> Any:
+    """One question of an entry's mock interview: `path` [2, 0] is the first follow-up of the third question."""
+    items, q = entry.get("interview") or [], None
+    for i in path:
+        if not isinstance(i, int) or not 0 <= i < len(items):
+            return None
+        q = items[i]
+        items = q.get("follow_ups") or []
+    return q
+
+
+def interview_path(path: list[int]) -> str:
+    """[2, 0] -> interview[2].follow_ups[0], the way Claude finds it in the file."""
+    return "interview" + "".join(f"[{i}]" if n == 0 else f".follow_ups[{i}]" for n, i in enumerate(path))
 
 
 def get_subset(doc: Any, subset_id: str) -> Any:

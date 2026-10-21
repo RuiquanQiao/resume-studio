@@ -552,6 +552,61 @@ def test_polish_shows_diff_and_undo_restores(page, server, data_file, fake_claud
     assert original.splitlines()[0] == data_file.read_text(encoding="utf-8").splitlines()[0]
 
 
+def test_mock_interview_predicts_hides_answers_and_follows_up(page, server, data_file, fake_claude, monkeypatch):
+    mock = ("    evidence: []\n    interview:\n      - q: 为什么拆成多阶段？\n        a: 一个 prompt 会跑偏。\n"
+            "        follow_ups:\n          - {q: 怎么发现跑偏的？, a: 【待补充：一个具体例子】}\n  - id: EXP-003")
+    monkeypatch.setenv("FAKE_CLAUDE_EDIT", json.dumps({"file": str(data_file), "from": "    evidence: []\n  - id: EXP-003", "to": mock}))
+    open_entry(page, "EXP-002")
+    page.click("#active .mock-fold > summary")
+    page.wait_for_selector("#active .mock-empty", state="visible")
+    page.fill("#active .mock-instr", "字节后端")
+    page.click("#active .mock-run")
+    page.wait_for_selector(".msg-user:has-text('字节后端')")
+    page.wait_for_selector("#active .card.diff", timeout=15000)
+    assert "1. 为什么拆成多阶段？" in page.inner_text("#active .card.diff")       # the diff lists the questions
+    page.wait_for_selector("#active .mq[data-path='[0]'] .mq-q")
+    assert page.input_value("#active .mq[data-path='[0]'] > .mq-q") == "为什么拆成多阶段？"
+    assert page.input_value("#active .mq[data-path='[0,0]'] .mq-ans") == "【待补充：一个具体例子】"
+    assert page.inner_text("#active .mock-fold .ff-sub") == "1 题 · 1 个追问"
+    page.click("#active .card.diff button:text('保留')")
+
+    # hide the answers to practise: each opens on its own
+    page.click("#active .mock-hide")
+    assert page.locator("#active .mq-ans").count() == 0 and page.locator("#active .mq-show").count() == 2
+    page.click("#active .mq[data-path='[0]'] > .mq-a .mq-show")
+    assert page.input_value("#active .mq[data-path='[0]'] .mq-ans") == "一个 prompt 会跑偏。"
+    assert page.locator("#active .mq-ans").count() == 1
+    page.click("#active .mock-hide")
+    assert page.locator("#active .mq-ans").count() == 2
+
+    # a question of my own: Claude can answer it, and once answered, follow it up
+    page.click("#active .mock-add")
+    q2 = "#active .mq[data-path='[1]']"
+    page.wait_for_selector(f"{q2} .mq-q:focus")
+    assert not page.is_visible(f"{q2} .mq-answer")
+    page.keyboard.type("最难的问题是什么？")
+    assert page.is_visible(f"{q2} .mq-answer") and not page.is_visible(f"{q2} .mq-probe")
+    page.click(f"{q2} .mq-answer")
+    page.wait_for_selector(".msg-user .msg-action:has-text('回答')")
+    page.wait_for_selector("#active .card.diff h3:text('Claude 没有改动这一条')", timeout=15000)   # the fake one changes nothing
+    page.click("#active .card.diff button:text('知道了')")
+    wait_until(lambda: "最难的问题是什么？" in data_file.read_text(encoding="utf-8"), msg="my question saved")
+    page.fill(f"{q2} .mq-ans", "把课件切块。")
+    assert page.is_visible(f"{q2} .mq-probe") and not page.is_visible(f"{q2} .mq-answer")
+    page.click(f"{q2} > .mq-top button[aria-label='自己加一个追问']")
+    page.wait_for_selector(f"{q2} .mq[data-path='[1,0]'] .mq-q:focus")
+    page.keyboard.type("怎么切的？")
+    wait_until(lambda: "怎么切的？" in data_file.read_text(encoding="utf-8"), msg="my follow-up saved")
+    e = next(x for x in state(server)["doc"]["entries"] if x["id"] == "EXP-002")
+    assert e["interview"][1] == {"q": "最难的问题是什么？", "a": "把课件切块。", "follow_ups": [{"q": "怎么切的？", "a": ""}]}
+    assert len(e["interview"][0]["follow_ups"]) == 1
+
+    # delete a question with follow-ups: asked first
+    page.click(f"{q2} > .mq-top button[aria-label='删除这个问题']")
+    page.click("#modal-root button:text('删除')")
+    wait_until(lambda: "最难的问题是什么？" not in data_file.read_text(encoding="utf-8"), msg="deleted")
+
+
 @needs_tex
 def test_export_and_overflow_warning(page, server, data_file):
     page.click("#export-btn")

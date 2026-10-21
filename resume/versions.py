@@ -2,9 +2,9 @@
 
 A subset's resume depends on the shared library (entries, profile, section titles), so a version
 freezes everything the subset renders: its own settings plus the visible layer of the entries it
-picks, in every resume language. The fact layer (notes, evidence) is left out: it is private and
-never part of what an employer got. The subset's name (`label`) and its linked postings are kept
-but don't count as a change: renaming a subset doesn't make a new version.
+picks, in every resume language. The fact layer (notes, evidence) and the mock interview are left
+out: they are private and never part of what an employer got. The subset's name (`label`) and its
+linked postings are kept but don't count as a change: renaming a subset doesn't make a new version.
 
 Versions live next to the data file, one JSON file per subset in `.studio/subsets/`, oldest first,
 numbered 1, 2, 3… They stay when a subset is deleted (an application may still point at one).
@@ -24,7 +24,7 @@ from core.store import fingerprint, merge_into, to_plain
 
 from . import model
 
-FACT_KEYS = ("notes", "evidence")
+FACT_KEYS = ("notes", "evidence", "interview")
 UNCOUNTED = ("id", "label", "postings", "posting")   # kept with a version, but not what makes it different
 
 

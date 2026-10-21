@@ -384,6 +384,36 @@ def test_polish_request_and_data_edit(server, data_file, fake_claude, monkeypatc
     assert e["subtitle"]["en"] == "Solo developer (polished)"
 
 
+def test_mock_interview_questions_follow_ups_and_answers(server, data_file, fake_claude):
+    s = server.req("GET", "/api/state")[1]
+    e = next(x for x in s["doc"]["entries"] if x["id"] == "EXP-002")
+    e["interview"] = [{"q": "Why a multi-stage pipeline?", "a": "Because one prompt drifted.",
+                       "follow_ups": [{"q": "How did you see it drift?", "a": ""}]}]
+    server.req("PUT", "/api/item", {"kind": "entry", "id": "EXP-002", "data": e, "base": s["hashes"]["entry"]["EXP-002"]})
+    code, chat = server.req("POST", "/api/chats")
+    cid = chat["id"]
+    send = lambda **b: server.req("POST", f"/api/chats/{cid}/send", {"subset_id": "RES-TECH-EN", "entry_id": "EXP-002", **b})  # noqa: E731
+
+    code, r = send(action="mock", lang="zh", text="字节后端")
+    assert code == 200 and "QuizLoom" in r["text"] and "`interview`" in r["text"] and "字节后端" in r["text"]
+    assert "简体中文" in r["text"] and "【待补充" in r["text"]               # its language; never invent facts
+    server.wait_idle(cid)
+    code, r = send(action="probe", path=[0], lang="en")
+    assert code == 200 and "Why a multi-stage pipeline?" in r["text"] and "interview[0]" in r["text"] and "follow_ups" in r["text"]
+    server.wait_idle(cid)
+    code, r = send(action="answer", path=[0, 0], lang="en")
+    assert code == 200 and "How did you see it drift?" in r["text"] and "interview[0].follow_ups[0]" in r["text"]
+    server.wait_idle(cid)
+    assert send(action="probe", path=[3])[0] == 404                        # a question that isn't there
+    assert send(action="answer", path="0")[0] == 404
+    msgs = server.req("GET", f"/api/chats/{cid}")[1]["messages"]
+    assert [m["meta"].get("action") for m in msgs if m["role"] == "user"] == ["mock", "probe", "answer"]
+
+    from resume import model                                             # private: never on the resume
+    doc = server.req("GET", "/api/state")[1]["doc"]
+    assert "one prompt drifted" in json.dumps(doc) and "one prompt drifted" not in json.dumps(model.build_view(doc, model.get_subset(doc, "ALL")))
+
+
 def test_bilingual_and_one_line_actions(server, data_file, fake_claude):
     s = server.req("GET", "/api/state")[1]
     e = next(x for x in s["doc"]["entries"] if x["id"] == "EXP-002")

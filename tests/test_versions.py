@@ -29,11 +29,13 @@ def test_a_version_freezes_what_the_subset_renders(data_file):
     assert not st.commit_subset("RES-TECH-EN")["created"]                # nothing changed: no new version
 
     # the fact layer, the name and the linked postings are not what was sent
-    edit_entry(st, "EXP-002", lambda e: e.update(notes="private story", evidence=["E:/x"]))
+    edit_entry(st, "EXP-002", lambda e: e.update(notes="private story", evidence=["E:/x"],
+                                                 interview=[{"q": "Why?", "a": "private answer"}]))
     edit_subset(st, "RES-TECH-EN", lambda v: v.update(label="Renamed", postings=[{"tool": "career-ops", "id": "9"}]))
     assert st.state()["subset_versions"]["RES-TECH-EN"]["changed"] is False
     stored = json.loads((data_file.parent / ".studio/subsets/RES-TECH-EN.json").read_text(encoding="utf-8"))
     assert "private story" not in json.dumps(stored, ensure_ascii=False) and "notes" not in stored["versions"][0]["content"]["entries"][0]
+    assert "private answer" not in json.dumps(stored, ensure_ascii=False)          # nor the mock interview
 
     # a shared entry it uses changed: this subset changed, one that doesn't use it didn't
     st.commit_subset("RES-TECH-ZH")
@@ -75,7 +77,7 @@ def test_going_back_keeps_now_as_a_version_and_says_who_else_is_affected(data_fi
     st = Studio(data_file)
     st.commit_subset("RES-TECH-EN")
     before = json.dumps(to_plain(model.get_item(st.store.load()[0], "entry", "EXP-002")), ensure_ascii=False)
-    edit_entry(st, "EXP-002", lambda e: (e["bullets"].append({"en": "Shipped v2"}), e.update(notes="newer notes")))
+    edit_entry(st, "EXP-002", lambda e: (e["bullets"].append({"en": "Shipped v2"}), e.update(notes="newer notes", interview=[{"q": "Why?", "a": "kept"}])))
     edit_subset(st, "RES-TECH-EN", lambda v: v.update(template="modern", label="Kept name"))
     impact = st.restore_impact("RES-TECH-EN", 1)
     assert impact["entries"] and not impact["profile"]
@@ -88,6 +90,7 @@ def test_going_back_keeps_now_as_a_version_and_says_who_else_is_affected(data_fi
     assert sub["template"] != "modern" and sub["label"] == "Kept name"           # the name stays
     e = to_plain(model.get_item(st.store.load()[0], "entry", "EXP-002"))
     assert e["notes"] == "newer notes"                                            # the fact layer stays
+    assert e["interview"] == [{"q": "Why?", "a": "kept"}]                         # and so does the mock interview
     assert "Shipped v2" not in json.dumps(e) and json.loads(before)["bullets"] == e["bullets"]
     vs = st.subset_versions("RES-TECH-EN")
     assert [v["n"] for v in vs["versions"]] == [2, 1] and vs["versions"][0]["auto"]   # what it said before is v2

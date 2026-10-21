@@ -140,6 +140,42 @@ def fit_message(name: str, lang: str, subset_id: str, data_path: str, long_bulle
             + one_line(f"`{render_cmd(subset_id, data_path, lang)}`"))
 
 
+def interview_rules(lang: str) -> str:
+    """How every mock-interview answer is written."""
+    return t("Answers are what the user would say out loud, in the first person, about a minute each; behavioural "
+             "questions in STAR order (situation, task, action, result). Every fact, number and decision in an answer "
+             "must come from this entry's bullets, notes or evidence (read the project's code and README when "
+             "needed); where the facts run out, write a 【to fill in: …】 placeholder saying what the user must "
+             "supply, never invent it. Write in {lang}. Change only this entry's `interview` (the format is in the "
+             "skill): leave the bullets, notes and evidence alone, and keep the questions already there and the "
+             "user's own answers as they are.", lang=lang_name(lang))
+
+
+def mock_message(name: str, lang: str, instruction: str = "") -> str:
+    """Mock interview: predict the questions about one entry, with answers and follow-ups."""
+    return (t("Predict the questions an interviewer is most likely to ask about the entry “{name}”. Start from what "
+              "the resume claims (every bullet, number and technology is something they can drill into), then the "
+              "reasons behind the decisions, the hardest problem, what you'd do differently, and the basics of the "
+              "technology it names. Add about 8 new questions to its `interview`, most likely first, each with an "
+              "answer and the one or two follow-ups an interviewer would ask after hearing that answer (with answers "
+              "too).", name=name) + "\n" + interview_rules(lang) + _extra(instruction))
+
+
+def probe_message(name: str, question: str, path: str, lang: str, instruction: str = "") -> str:
+    """Follow-up: what the interviewer asks after hearing one answer."""
+    return (t("In the entry “{name}”, the interviewer has just heard the answer to “{question}” (`{path}`). Add 2 or "
+              "3 follow-ups they would ask next to its `follow_ups`, each digging into that answer (why this way, what "
+              "the alternatives were, how you know it worked, what went wrong), with answers.",
+              name=name, question=question, path=path) + "\n" + interview_rules(lang) + _extra(instruction))
+
+
+def answer_message(name: str, question: str, path: str, lang: str, instruction: str = "") -> str:
+    """The user wrote a question themselves: Claude answers it."""
+    return (t("In the entry “{name}”, write the answer to the interview question “{question}” (`{path}`), which "
+              "has none yet.", name=name, question=question, path=path) + "\n" + interview_rules(lang)
+            + _extra(instruction))
+
+
 def sync_rules(codes: list[str], subset_id: str, data_path: str) -> str:
     names = ", ".join(lang_name(c) for c in codes)
     return (t("Look at these changes (commits, changed files, README), decide what is worth putting on the resume, then "
