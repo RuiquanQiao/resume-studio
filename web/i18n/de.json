@@ -1813,5 +1813,15 @@
   "… {n} weitere Zeile",
   "… {n} weitere Zeilen"
  ],
- "…and {n} more": "…und {n} weitere"
+ "…and {n} more": "…und {n} weitere",
+ "Apply by": "Bewerbungsschluss",
+ "Rolling: until filled": "Laufend, bis besetzt",
+ "No date yet": "Noch kein Datum",
+ "Batch": "Runde",
+ "Add a deadline": "Frist hinzufügen",
+ "Find or type a new one": "Suchen oder neu eingeben",
+ "Add “{name}”": "„{name}“ hinzufügen",
+ "27秋招, 2027 Graduate Program…": "27秋招, 2027 Graduate Program…",
+ "{role} has its deadline already: change that one": "{role} hat schon eine Frist: ändern Sie diese",
+ "Rolling": "Laufend"
 }

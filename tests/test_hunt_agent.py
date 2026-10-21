@@ -129,9 +129,10 @@ def test_a_companys_deadline_moves_to_its_roles(hunt):
     (hunt.dir / "companies.json").write_text(json.dumps(data), encoding="utf-8")
     hunt.migrate()
     assert "deadline" not in hunt.company("C1")
-    assert {a["role"]: a["deadline"] for a in hunt.applications()} == {"服务端": "2026-10-31", "算法": "2026-11-30"}
+    due = lambda a: next(e["at"] for e in a["schedule"] if e.get("kind") == "apply")  # noqa: E731
+    assert {a["role"]: due(a) for a in hunt.applications()} == {"服务端": "2026-10-31", "算法": "2026-11-30"}
     hunt.migrate()                                                                # once only
-    assert hunt.application("星河科技/服务端")["deadline"] == "2026-10-31"
+    assert due(hunt.application("星河科技/服务端")) == "2026-10-31"
 
 
 def test_claude_fills_a_company_from_its_command(live, data_file, monkeypatch):
@@ -158,6 +159,8 @@ def test_claude_fills_a_company_from_its_command(live, data_file, monkeypatch):
     # deadlines are the roles'
     code, out = cli(data_file, "add-role", "星河科技", "服务端研发工程师", "--deadline", "2026-10-31", "--url", "https://careers.xinghe.example/job/1")
     assert "deadline 2026-10-31" in out
+    code, out = cli(data_file, "edit-role", "星河科技/服务端研发", "--deadline", "rolling", "--batch", "27秋招")
+    assert code == 0 and "deadline rolling (招满即止)" in out and "batch 27秋招" in out
 
 
 # ---------------------------------------------------------------- open postings
@@ -315,7 +318,7 @@ def test_the_window_and_claude_scan_and_apply(live, data_file, monkeypatch):
     v = live.req("GET", "/api/hunt/companies/C1")[1]
     assert len(v["postings"]) == 2 and v["scan"]["recorded"] and v["scan"]["how"] == "route"
     code, r = live.req("POST", "/api/hunt/postings/P2/apply")
-    assert code == 200 and r["application"]["role"] == "算法工程师" and r["application"]["deadline"] == "2026-10-31"
+    assert code == 200 and r["application"]["role"] == "算法工程师" and r["application"]["schedule"][0]["at"] == "2026-10-31"
     code, out = cli(data_file, "keywords", "后端, 服务端")
     assert "keywords: 后端, 服务端" in out
     # Claude's own reading, when no route can be recorded

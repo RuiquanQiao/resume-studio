@@ -1705,5 +1705,15 @@
  "“{value}” isn't a latitude and longitude": "“{value}”은(는) 위도와 경도가 아닙니다",
  "“{value}” isn't a number of minutes": "“{value}”은(는) 분 단위 숫자가 아닙니다",
  "… {n} more line": "… {n}줄 더",
- "…and {n} more": "…외 {n}개"
+ "…and {n} more": "…외 {n}개",
+ "Apply by": "지원 마감",
+ "Rolling: until filled": "수시 채용 · 마감 시 종료",
+ "No date yet": "날짜 미정",
+ "Batch": "채용 차수",
+ "Add a deadline": "마감 추가",
+ "Find or type a new one": "찾거나 새로 입력",
+ "Add “{name}”": "“{name}” 추가",
+ "27秋招, 2027 Graduate Program…": "27 하반기 공채, 2027 Graduate Program…",
+ "{role} has its deadline already: change that one": "{role}에는 이미 마감이 있습니다: 그것을 바꾸세요",
+ "Rolling": "수시 채용"
 }

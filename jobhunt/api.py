@@ -369,7 +369,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         guard(lambda: hunt.delete_booked(req.params["aid"], req.params["eid"]))
         return guard(lambda: app_view(req.params["aid"]))
 
-    def export_ics(app_ref: str = "", eid: str = "", deadlines: bool = True) -> str:
+    def export_ics(app_ref: str = "", eid: str = "") -> str:
         """The calendar file, in the export folder: every application's, or one role's, or one booked thing."""
         apps = hunt.applications()
         name = "applying"
@@ -379,12 +379,11 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             if eid and not apps[0]["schedule"]:
                 raise KeyError(t("{role} has nothing booked called “{ref}”", role=a["role"], ref=eid))
             name = f"applying-{a['id']}" + (f"-{eid}" if eid else "")
-            deadlines = deadlines and not eid
         doc, _ = studio.store.load()
         out = studio.data_dir / str((doc.get("settings") or {}).get("export_dir") or "exports") / f"{name}.ics"
         out.parent.mkdir(parents=True, exist_ok=True)
         names = {c["id"]: c["name"] for c in hunt.companies()}
-        out.write_text(ics.calendar(apps, names, deadlines=deadlines), encoding="utf-8", newline="")
+        out.write_text(ics.calendar(apps, names), encoding="utf-8", newline="")
         return str(out)
 
     @app.route("POST", "/api/hunt/ics")

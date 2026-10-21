@@ -7,9 +7,9 @@
     python scripts/hunt.py edit-company 星河科技 --subset SUB-002 --industry 电商
     python scripts/hunt.py fill 星河科技 --stdin <<'JSON'   # Claude's research, every field at once (see `fill --help`)
     python scripts/hunt.py add-role 星河科技 "服务端研发工程师" [--url ...] [--channel site|platform|referral|other]
-                                       [--platform boss] [--order 2] [--status saved] [--deadline 2026-10-31]
+                                       [--platform boss] [--order 2] [--status saved] [--deadline 2026-10-31|rolling] [--batch 27秋招]
                                        [--place 南京 --place 上海 --place "remote: 中国大陆" --place "hybrid: 悉尼"]
-    python scripts/hunt.py edit-role 星河科技/服务端 [--role ...] [--url ...] [--referral <内推码>] [--order 1] [--note ...] [--deadline ...]
+    python scripts/hunt.py edit-role 星河科技/服务端 [--role ...] [--url ...] [--referral <内推码>] [--order 1] [--note ...] [--deadline ...] [--batch ...]
                                        [--place ... (the whole list, again) | --no-places]
     python scripts/hunt.py status 星河科技/服务端 interview --note "一面 周三 14:00" [--on 2026-10-18]
     python scripts/hunt.py note 星河科技/服务端 "笔试已交" [--on 2026-10-18]
@@ -17,7 +17,7 @@
     python scripts/hunt.py book 星河科技/服务端 一面 --at "2026-10-25 14:00" [--minutes 45] [--where 腾讯会议 123] [--note ..]
     python scripts/hunt.py rebook 星河科技/服务端 E2 [--title 二面] [--at ..] [--minutes ..] [--where ..] [--note ..]
     python scripts/hunt.py unbook 星河科技/服务端 E2        # (or its title: 二面)
-    python scripts/hunt.py ics [星河科技/服务端]             # everything booked (and deadlines) as an .ics file
+    python scripts/hunt.py ics [星河科技/服务端]             # everything booked (deadlines too) as an .ics file
     python scripts/hunt.py where                            # every place in the tracker and where the map puts it
     python scripts/hunt.py pin "滨江" 30.21 120.21 | pin "滨江" --unpin   # put a place the map can't find (or got wrong)
     python scripts/hunt.py about 星河科技 --stdin <<'JSON'  {"summary": "...", "points": [{"topic": "...", "text": "...",
@@ -29,6 +29,9 @@
     python scripts/hunt.py postings 星河科技 --stdin [--partial]   # the postings you read yourself (no route possible)
     python scripts/hunt.py apply P12                        # the user goes for posting P12: it becomes an application
     python scripts/hunt.py keywords "算法, AI, Agent, 后端"  # the roles the user looks for (others are folded away)
+
+A role's deadline is an event of its own (every role starts with one): --deadline sets it, "rolling" when it
+closes once filled (招满即止), "" when it isn't known. --batch is the user's own name for the hiring round.
 
 Statuses: saved (want to apply), applied, assessment (测评/笔试), interview (rounds are booked: `book`), offer, hired,
 rejected, withdrawn; Chinese words work too (一面 → interview, 笔试 → assessment, 挂 → rejected).
@@ -108,9 +111,12 @@ def app_line(a: dict, company: str = "") -> str:
         parts.append(f"sent {s['at'][:10]}: {s['subset']} v{s['n']}")
     if a.get("places"):
         parts.append("in " + "; ".join(place_text(x) for x in a["places"]))
-    if a.get("deadline"):
-        parts.append(f"deadline {a['deadline']}")
-    soon = [e for e in a.get("schedule") or [] if e["at"][:10] >= time.strftime("%Y-%m-%d")]
+    if a.get("batch"):
+        parts.append(f"batch {a['batch']}")
+    due = next((e for e in a.get("schedule") or [] if e.get("kind") == "apply"), None)
+    if due and (due["at"] or due.get("rolling")):
+        parts.append(f"deadline {due['at'] or 'rolling (招满即止)'}")
+    soon = [e for e in a.get("schedule") or [] if e["at"] and e.get("kind") != "apply" and e["at"][:10] >= time.strftime("%Y-%m-%d")]
     if soon:
         parts.append(f"next: {soon[0]['title']} {soon[0]['at']}")
     if a.get("referral"):
@@ -196,7 +202,9 @@ def show_app(v: dict) -> None:
         print(f"  sent {s['at'][:16].replace('T', ' ')}: {s['subset']} v{s['n']}")
     print("  booked:" if a.get("schedule") else "  booked: nothing")
     for e in a.get("schedule") or []:
-        print(f"    {e['id']:<4} {e['at']}  {e['title']}" + (f" ({e['minutes']} min)" if e.get("minutes") else "")
+        when = e["at"] or ("rolling (招满即止)" if e.get("rolling") else "no date yet")
+        print(f"    {e['id']:<4} {when}  {e['title']}" + (" [the deadline]" if e.get("kind") == "apply" else "")
+              + (f" ({e['minutes']} min)" if e.get("minutes") else "")
               + (f" @ {e['where']}" if e.get("where") else "") + (f": {e['note']}" if e.get("note") else ""))
     print("  events:" if v["events"] else "  events: none")
     for e in v["events"]:
@@ -223,7 +231,7 @@ def main() -> int:
             p.add_argument("company"); p.add_argument("role")
         else:
             p.add_argument("ref"); p.add_argument("--role")
-        for opt in ("url", "referral", "channel", "platform", "order", "note", "subset", "deadline") + (("status",) if name == "add-role" else ()):
+        for opt in ("url", "referral", "channel", "platform", "order", "note", "subset", "deadline", "batch") + (("status",) if name == "add-role" else ()):
             p.add_argument("--" + opt)
         p.add_argument("--place", action="append", help='where it is: a city, "remote: <region it is open to>" or "hybrid: <city>" '
                        "(repeat for each; on edit-role the list replaces the old one)")
@@ -297,7 +305,9 @@ def main() -> int:
         show_company(r["company"])
         return 0
     if c in ("add-role", "edit-role"):
-        a = pick("url", "referral", "channel", "platform", "order", "note", "subset", "status", "deadline")
+        a = pick("url", "referral", "channel", "platform", "order", "note", "subset", "status", "batch")
+        if args.deadline is not None:   # "" clears it
+            a["deadline"] = args.deadline
         if args.place or getattr(args, "no_places", False):
             a["places"] = args.place or []
         if c == "add-role":

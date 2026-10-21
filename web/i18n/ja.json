@@ -1705,5 +1705,15 @@
  "“{value}” isn't a latitude and longitude": "「{value}」は緯度・経度ではありません",
  "“{value}” isn't a number of minutes": "「{value}」は分数ではありません",
  "… {n} more line": "… ほか {n} 行",
- "…and {n} more": "…ほか {n} 件"
+ "…and {n} more": "…ほか {n} 件",
+ "Apply by": "応募締切",
+ "Rolling: until filled": "随時募集・定員で締切",
+ "No date yet": "日付未定",
+ "Batch": "採用回",
+ "Add a deadline": "締切を追加",
+ "Find or type a new one": "検索、または新しく入力",
+ "Add “{name}”": "「{name}」を追加",
+ "27秋招, 2027 Graduate Program…": "27卒本選考、2027 Graduate Program…",
+ "{role} has its deadline already: change that one": "{role} にはもう締切があります。そちらを変更してください",
+ "Rolling": "随時募集"
 }

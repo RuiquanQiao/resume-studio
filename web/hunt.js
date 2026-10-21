@@ -225,6 +225,17 @@ async function cellStatus(a, status) {
   catch (e) { toast(e.message); }
   loadHunt({ quiet: true });
 }
+// the deadline set in a cell: its apply event changes at once (made when the role has none), then it is saved
+async function cellDeadline(a, v) {
+  let e = applyEvent(a);
+  if (!e) { e = { id: "", kind: "apply", title: t("Apply by"), at: "", rolling: false }; a.schedule = [...(a.schedule || []), e]; }
+  e.at = v === "rolling" ? "" : v;
+  e.rolling = v === "rolling";
+  paintHunt();
+  try { await api("PUT", `/api/hunt/apps/${encodeURIComponent(a.id)}`, { deadline: v }); }
+  catch (err) { toast(err.message); }
+  loadHunt({ quiet: true });
+}
 async function cellCompany(c, fields) {
   Object.assign(c, fields);
   paintHunt();
@@ -238,6 +249,7 @@ function appProps() {
   const states = () => (d.states || []).map((s) => ({ value: s.id, label: huntState(s.id), cls: "s-" + s.id }));
   const channels = () => Object.entries(HCHANNELS).map(([value, label]) => ({ value, label: t(label), cls: "s-plain" }));
   const co = (a) => huntCompany(a.company) || {};
+  const batches = () => usedBatches().map((b) => ({ value: b, label: b, cls: "s-plain" }));
   return [
     { key: "role", label: t("Role"), type: "title", width: 220, get: (a) => a.role },
     { key: "company", label: t("Company"), type: "relation", width: 170, group: true, get: (a) => co(a).name || "",
@@ -252,9 +264,12 @@ function appProps() {
     { key: "channel", label: t("How"), type: "select", width: 150, min: 120, wrap: true, hidden: true, get: (a) => a.channel || "site", options: channels,
       render: (a) => h("span", { class: "c-muted" }, channelText(a)),
       set: (a, v) => cellApp(a, { channel: v, ...(v === "platform" && !a.platform && (F.sites || []).length ? { platform: F.sites[0].id } : {}) }) },
-    { key: "deadline", label: t("Deadline"), type: "date", width: 120, get: (a) => a.deadline || "",
-      render: (a) => a.deadline ? h("span", { class: "c-date" + (late(a.deadline) && huntOpen(a) ? " late" : "") }, a.deadline) : "",
-      set: (a, v) => cellApp(a, { deadline: v }) },
+    { key: "batch", label: t("Batch"), type: "select", width: 130, free: true, get: (a) => a.batch || "", options: batches,
+      set: (a, v) => cellApp(a, { batch: v }) },
+    { key: "deadline", label: t("Deadline"), type: "date", width: 130, get: dueOf,
+      render: (a) => rollingOf(a) ? h("span", { class: "c-rolling", title: rollingText() }, t("Rolling"))
+        : dueOf(a) ? h("span", { class: "c-date" + (late(dueOf(a)) && huntOpen(a) ? " late" : "") }, dueOf(a)) : "",
+      edit: (td, a) => deadlinePanel(td, a) },
     { key: "sent", label: t("Resume sent"), type: "custom", width: 190, min: 130, get: (a) => (a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : ""),
       render: (a) => h("span", { class: "c-muted c-resume" }, a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : "", resumeButton(a)) },
     { key: "last", label: t("Latest"), type: "custom", width: 220, get: (a) => (a.last ? a.last.at : ""),
@@ -365,8 +380,31 @@ function placesEditor(list, change) {
 // the usual ones, offered as chips; the user's own titles join them
 const BOOKED_TITLES = ["笔试", "测评", "一面", "二面", "三面", "HR 面", "终面"];
 const nowAt = () => { const d = new Date(); return `${dbvYmd(d)} ${dbvPad(d.getHours())}:${dbvPad(d.getMinutes())}`; };
-const bookedPast = (e) => (e.at.length > 10 ? e.at : e.at + " 23:59") < nowAt();
-const nextBooked = (a) => (a.schedule || []).find((e) => !bookedPast(e)) || null;
+const bookedPast = (e) => !!e.at && (e.at.length > 10 ? e.at : e.at + " 23:59") < nowAt();
+const nextBooked = (a) => (a.schedule || []).find((e) => e.at && !bookedPast(e)) || null;
+// a role's deadline is its apply event (docs/JOB_HUNT.md, 2026-10-21): a date, none yet, or none at all (招满即止)
+const applyEvent = (a) => (a.schedule || []).find((e) => e.kind === "apply") || null;
+const dueOf = (a) => (applyEvent(a) || {}).at || "";
+const rollingOf = (a) => { const e = applyEvent(a); return !!(e && e.rolling && !e.at); };
+const rollingText = () => t("Rolling: until filled");
+const bookedWhenOf = (e) => (e.at ? bookedWhen(e.at) : e.rolling ? rollingText() : t("No date yet"));
+// the rounds the user's roles are in (27秋招, 2027 Graduate Program…), for picking one again
+const usedBatches = () => [...new Set(((H.data && H.data.applications) || []).map((a) => a.batch).filter(Boolean))].sort((x, y) => x.localeCompare(y, I18N.lang));
+
+// a table cell's deadline: a date, or "rolling", or cleared
+function deadlinePanel(td, a) {
+  const cur = dueOf(a);
+  const input = h("input", { type: "date", class: "dbv-date", value: cur.slice(0, 10), "aria-label": t("Deadline") });
+  const pick = (v, close) => { if (close) closeFloat(); if (v !== (rollingOf(a) ? "rolling" : cur)) cellDeadline(a, v); };
+  input.addEventListener("change", () => { if (input.value) pick(input.value + cur.slice(10), false); });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); closeFloat(); } });
+  const panel = h("div", { class: "menu dbv-pop dbv-datepanel" }, input,
+    h("button", { type: "button", class: "dl-rolling" + (rollingOf(a) ? " on" : ""), "aria-pressed": String(rollingOf(a)), onclick: () => pick("rolling", true) },
+      rollingOf(a) ? icon("check") : null, rollingText()),
+    h("div", { class: "row" }, h("span", { class: "spacer" }),
+      h("button", { type: "button", class: "btn sm ghost", onclick: () => pick("", true) }, t("Clear"))));
+  openFloat(td, panel, { onClose: dbvAfterClose, focus: input });
+}
 function bookedWhen(at, { weekday = true } = {}) {
   const d = dbvDay(at);
   const day = new Intl.DateTimeFormat(dbvLocale(), { month: "short", day: "numeric", ...(weekday ? { weekday: "short" } : {}),
@@ -376,7 +414,7 @@ function bookedWhen(at, { weekday = true } = {}) {
 function bookedCell(a) {
   const e = nextBooked(a);
   if (!e) return "";
-  const more = (a.schedule || []).filter((x) => !bookedPast(x)).length - 1;
+  const more = (a.schedule || []).filter((x) => x.at && !bookedPast(x)).length - 1;
   return h("span", { class: "c-booked" }, h("b", null, e.title), " ", h("span", { class: "c-when" }, bookedWhen(e.at)),
     more > 0 && h("span", { class: "c-more" }, t("+{n} more", { n: more })));
 }
@@ -386,8 +424,8 @@ function appDated(a) {
   const start = a.applied || (a.created || "").slice(0, 10) || null;
   let end = huntOpen(a) ? today() : ((a.last && a.last.at) || a.updated || "").slice(0, 10) || start;
   if (start && end < start) end = start;
-  const items = (a.schedule || []).map((e) => ({ at: e.at, label: e.title, sub: co, kind: bookedPast(e) ? "past" : "event" }));
-  if (a.deadline) items.push({ at: a.deadline, label: t("Deadline"), sub: co, kind: "deadline" });
+  const items = (a.schedule || []).filter((e) => e.at)
+    .map((e) => ({ at: e.at, label: e.title, sub: co, kind: e.kind === "apply" ? "deadline" : bookedPast(e) ? "past" : "event" }));
   return { start, end, cls: "s-" + a.status, items };
 }
 
@@ -413,7 +451,7 @@ async function bookedCall(method, path, body) {
 function bookedCard(a) {
   const base = `/api/hunt/apps/${encodeURIComponent(a.id)}/schedule`;
   const list = a.schedule || [];
-  const used = [...new Set(((H.data && H.data.applications) || []).flatMap((x) => (x.schedule || []).map((e) => e.title)))];
+  const used = [...new Set(((H.data && H.data.applications) || []).flatMap((x) => (x.schedule || []).filter((e) => e.kind !== "apply").map((e) => e.title)))];
   const titles = [...BOOKED_TITLES, ...used.filter((x) => !BOOKED_TITLES.includes(x))];
   const chips = (input) => h("div", { class: "bk-chips", role: "group", "aria-label": t("Common ones") }, titles.map((x) =>
     h("button", { type: "button", class: "bk-chip" + (input.value === x ? " on" : ""), onclick: (e) => {
@@ -425,7 +463,15 @@ function bookedCard(a) {
     const title = h("input", { type: "text", class: "bk-title", value: e ? e.title : "", placeholder: t("What: 一面, 笔试…"), spellcheck: "false", "aria-label": t("What") });
     const day = h("input", { type: "date", class: "bk-day", value: e ? e.at.slice(0, 10) : today(), "aria-label": t("Date") });
     const time = h("input", { type: "time", class: "bk-time", value: e && e.at.length > 10 ? e.at.slice(11, 16) : "", "aria-label": t("Time") });
-    const fields = () => ({ title: title.value.trim(), at: day.value + (time.value ? " " + time.value : "") });
+    const due = !!e && e.kind === "apply";   // the deadline: its date may wait, or there is none (招满即止)
+    let rolling = due && !!e.rolling && !e.at;
+    const roll = due && h("button", { type: "button", class: "dl-rolling" + (rolling ? " on" : ""), "aria-pressed": String(rolling), onclick: () => {
+      rolling = !rolling;
+      roll.classList.toggle("on", rolling); roll.setAttribute("aria-pressed", String(rolling));
+      if (rolling) { day.value = ""; time.value = ""; }
+    } }, rollingText());
+    if (due) day.addEventListener("change", () => { if (day.value && rolling) roll.click(); });
+    const fields = () => ({ title: title.value.trim(), at: day.value ? day.value + (time.value ? " " + time.value : "") : "", ...(due ? { rolling } : {}) });
     title.addEventListener("input", () => { const box = title.parentNode && title.parentNode.parentNode.querySelector(".bk-chips"); if (box) for (const c of box.children) c.classList.toggle("on", c.textContent === title.value); });
     if (!e) {   // a new one: what, when, Add
       const add = () => {
@@ -445,34 +491,36 @@ function bookedCard(a) {
     const save = () => {
       const f = fields();
       if (!f.title) { title.focus(); return; }
-      if (!day.value) { day.focus(); return; }
+      if (!day.value && !due) { day.focus(); return; }
       bookedCall("PUT", `${base}/${encodeURIComponent(e.id)}`, { ...f, minutes: minutes.value || 0, where: where.value.trim(), note: note.value.trim() });
     };
-    return h("div", { class: "bk-edit", "data-id": e.id }, chips(title),
-      h("div", { class: "row bk-row" }, title, day, time,
-        h("label", { class: "bk-minl" }, minutes, h("span", { class: "muted" }, t("min")))),
-      where, note,
+    return h("div", { class: "bk-edit", "data-id": e.id }, !due && chips(title),
+      h("div", { class: "row bk-row" }, title, day, time, roll,
+        !due && h("label", { class: "bk-minl" }, minutes, h("span", { class: "muted" }, t("min")))),
+      !due && where, note,
       h("div", { class: "row" }, h("span", { class: "spacer" }),
         h("button", { class: "btn sm ghost", onclick: () => { H.editing = null; paintHunt(); } }, t("Cancel")),
         h("button", { class: "btn sm primary", onclick: save }, t("Save"))));
   };
-  const row = (e) => h("div", { class: "bk-item" + (bookedPast(e) ? " past" : ""), "data-id": e.id },
-    h("span", { class: "bk-when" }, bookedWhen(e.at)),
+  const row = (e) => h("div", { class: "bk-item" + (bookedPast(e) ? " past" : "") + (e.kind === "apply" ? " is-due" : ""), "data-id": e.id },
+    h("span", { class: "bk-when" + (e.at ? "" : " muted") }, bookedWhenOf(e)),
     h("span", { class: "bk-what" }, h("b", null, e.title),
       (e.minutes || e.where) && h("span", { class: "muted" }, [e.minutes ? t("{n} min", { n: e.minutes }) : "", e.where].filter(Boolean).join(" · ")),
       e.note && h("span", { class: "bk-notes" }, e.note)),
     h("span", { class: "bk-acts" },
-      h("button", { class: "btn icon sm ghost", title: t("Add to my calendar"), "aria-label": t("Add to my calendar"), onclick: () => exportIcs({ app: a.id, event: e.id }) }, icon("calendar")),
+      e.at && h("button", { class: "btn icon sm ghost", title: t("Add to my calendar"), "aria-label": t("Add to my calendar"), onclick: () => exportIcs({ app: a.id, event: e.id }) }, icon("calendar")),
       h("button", { class: "btn icon sm ghost", title: t("Edit"), "aria-label": t("Edit"), onclick: () => { H.editing = e.id; paintHunt(); } }, icon("pen")),
       h("button", { class: "btn icon sm ghost", title: t("Delete"), "aria-label": t("Delete"), onclick: async () => {
-        if (await modal({ title: t("Delete “{what}”?", { what: e.title }), message: bookedWhen(e.at), ok: t("Delete"), danger: true }))
+        if (await modal({ title: t("Delete “{what}”?", { what: e.title }), message: bookedWhenOf(e), ok: t("Delete"), danger: true }))
           bookedCall("DELETE", `${base}/${encodeURIComponent(e.id)}`);
       } }, icon("trash"))));
   return card(t("Events"), list.length ? t("{n} booked", { n: list.length }) : t("interviews, tests: anything with a date"), [
     list.length > 0 && h("div", { class: "bk-list" }, list.map((e) => (H.editing === e.id ? form(e) : row(e)))),
     form(null),
-    list.length > 0 && h("div", { class: "row" }, h("span", { class: "spacer" }),
-      h("button", { class: "btn sm ghost", onclick: () => exportIcs({ app: a.id }) }, icon("calendar"), t("Add all to my calendar"))),
+    (!applyEvent(a) || list.some((e) => e.at)) && h("div", { class: "row" },
+      !applyEvent(a) && h("button", { class: "btn sm ghost", id: "bk-add-due", onclick: () => bookedCall("POST", base, { kind: "apply" }) }, icon("plus"), t("Add a deadline")),
+      h("span", { class: "spacer" }),
+      list.some((e) => e.at) && h("button", { class: "btn sm ghost", onclick: () => exportIcs({ app: a.id }) }, icon("calendar"), t("Add all to my calendar"))),
   ]);
 }
 
@@ -480,7 +528,7 @@ function appsTable() {
   const d = H.data;
   const names = Object.fromEntries(d.companies.map((c) => [c.id, c.name]));
   const all = [...d.applications].sort((a, b) => (names[a.company] || "").localeCompare(names[b.company] || "") || (a.order || 0) - (b.order || 0));
-  const shown = all.filter((a) => matches(names[a.company], a.role, a.note, a.jd, ...(a.schedule || []).map((e) => e.title), ...(a.places || []).map(placeText)));
+  const shown = all.filter((a) => matches(names[a.company], a.role, a.note, a.jd, a.batch, ...(a.schedule || []).map((e) => e.title), ...(a.places || []).map(placeText)));
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Your applications")),
       h("p", null, t("Every role you apply for, wherever it goes in. Tell Claude on the left what happened (“Xinghe 一面过了”), or change it here."))),
@@ -488,7 +536,7 @@ function appsTable() {
       h("button", { class: "btn sm primary", id: "hunt-new-app", onclick: newApplication }, icon("plus"), t("Add an application")),
       linkButton(),
       h("button", { class: "btn sm", id: "hunt-ics", title: t("Every interview, test and deadline as an .ics file, opened in your calendar app (Outlook…)"),
-        disabled: !d.applications.some((a) => (a.schedule || []).length || a.deadline), onclick: () => exportIcs({}) }, icon("calendar"), t("Add to my calendar"))),
+        disabled: !d.applications.some((a) => (a.schedule || []).some((e) => e.at)), onclick: () => exportIcs({}) }, icon("calendar"), t("Add to my calendar"))),
     dbView({ table: "apps", props: appProps(), rows: shown, rowId: (a) => a.id, open: (a) => openHunt("app", a.id), defaults: APP_VIEWS(), repaint: paintHunt,
       dated: appDated, located: appLocated, pin: pinPlace, sub: (a) => (huntCompany(a.company) || {}).name || "",
       empty: !d.applications.length
@@ -1046,7 +1094,10 @@ function appPage(v) {
     card(t("The role"), "", [
       h("div", { class: "grid2" }, hfield(t("Role"), a.role, save("role")), hfield(t("Link"), a.url, save("url"), { placeholder: "https://…" })),
       h("div", { class: "field", id: "app-places" }, h("label", null, t("Location")), placesEditor(a.places, (v) => { a.places = v; save("places")(v); })),
-      h("div", { class: "grid2" }, hfield(t("Deadline"), a.deadline, save("deadline"), { type: "date", id: "app-deadline" }),
+      h("div", { class: "grid2" }, h("div", { class: "field" }, h("label", { for: "app-batch" }, t("Batch")),
+        h("input", { id: "app-batch", list: "app-batches", value: a.batch || "", placeholder: t("27秋招, 2027 Graduate Program…"), spellcheck: "false",
+          onchange: (e) => { const val = e.target.value.trim(); if (val !== (a.batch || "")) { a.batch = val; save("batch")(val); } } }),
+        h("datalist", { id: "app-batches" }, usedBatches().map((b) => h("option", { value: b })))),
         hfield(t("Referral code"), a.referral, save("referral"), { placeholder: t("none: no referral") })),
       h("div", { class: "field" }, h("label", null, t("How it goes in")), h("div", { class: "row wrap" }, channel, plat && plat.el,
         a.channel === "site" && h("span", { class: "muted" }, t("choice {n} on {company}'s site", { n: a.order, company: c.name })))),

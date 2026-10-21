@@ -6,15 +6,16 @@ Plain files next to the data file, in our own schema, so switching trackers lose
                                      strength, location, places, size, logo, sources, kept, note, account,
                                      subset, about, created, updated}]}
     .studio/hunt/applications.json  {"next": 5, "applications": [{id: "A1", company: "C1", role, url, channel,
-                                     platform, order, status, applied, deadline, note, subset,
+                                     platform, order, status, applied, batch, note, subset,
                                      places: [{kind: "onsite"|"hybrid"|"remote", area}],
-                                     sent: [{at, subset, n}], schedule: [{id, title, at, minutes, where, note}],
+                                     sent: [{at, subset, n}], schedule: [{id, kind?, title, at, rolling?, minutes,
+                                     where, note}],
                                      co_app, created, updated}]}
     .studio/hunt/logos/C1.png       a company's logo, downloaded once (docs/JOB_HUNT.md, 2026-10-18)
 
 A company fills itself: Claude researches it and sends every field at once (`fill`), each with its source.
 A field the user edits in the window goes into `kept`, and Claude's later fills leave it alone. Deadlines
-belong to roles (`deadline`), not to companies; a company deadline from before moves to its roles.
+belong to roles, not to companies; a company deadline from before moves to its roles.
     .studio/hunt/events.tsv         at  app  kind  from  to  source  note      (append-only)
 
 The events are a ledger, like career-ops' status-log.tsv: every status change, note and send is a line,
@@ -35,6 +36,14 @@ An application's `schedule` holds what is booked for it (docs/JOB_HUNT.md, 2026-
 HR 面…, each with its date and time. The window shows them on a calendar and a Gantt chart, and
 exports them as an .ics file for the user's own calendar (jobhunt/ics.py). Unlike the ledger, they
 are edited and deleted freely: a rescheduled interview moves.
+
+A role's deadline is one of them (docs/JOB_HUNT.md, 2026-10-21: the deadline is an event): the one of
+kind "apply", which every new role starts with. Its `at` is when applications close, empty when no date
+is known; `rolling` says it closes when the role is filled (滚动招聘, 招满即止), with no date. The
+`deadline` field the window and Claude send ("2026-10-31", "rolling", "") sets it.
+
+An application's `batch` is the user's own name for the hiring round it belongs to: 27秋招, 2027 Graduate
+Program, Summer Internship 2027… Free text: what rounds there are differs by country, so none is built in.
 """
 from __future__ import annotations
 
@@ -74,6 +83,8 @@ ALIASES = {
     "withdrawn": ["withdraw", "discarded", "gave up", "放弃", "不去", "撤回"],
 }
 CHANNELS = ["site", "platform", "referral", "other"]
+# a deadline that is no date: the role closes when it is filled
+ROLLING = {"rolling", "滚动", "滚动招聘", "招满即止", "招满为止", "until filled", "open until filled"}
 PLACE_KINDS = ["onsite", "hybrid", "remote"]
 # what people (and Claude) write before the area: "remote: APAC", "远程：中国大陆", "hybrid 悉尼"
 PLACE_WORDS = {"remote": "remote", "远程": "remote", "wfh": "remote", "居家": "remote",
@@ -118,6 +129,34 @@ def _minutes(v: Any) -> int:
     except ValueError:
         raise ValueError(t("“{value}” isn't a number of minutes", value=_text(v, 20)))
     return max(0, min(n, 24 * 60))
+
+
+def _deadline(v: Any) -> tuple[str, bool]:
+    """(date, rolling) from what someone wrote: "2026-10-31", "rolling", "招满即止", ""."""
+    s = _text(v, 40)
+    if s.casefold() in ROLLING:
+        return "", True
+    return _date(s), False
+
+
+def apply_event(a: dict) -> dict | None:
+    """The role's deadline: the booked thing of kind "apply" (None once the user deleted it)."""
+    return next((e for e in a.get("schedule") or [] if e.get("kind") == "apply"), None)
+
+
+def _next_eid(a: dict) -> str:
+    return "E" + str(max((int(e["id"][1:]) for e in a.get("schedule") or [] if str(e.get("id", ""))[1:].isdigit()), default=0) + 1)
+
+
+def _set_deadline(a: dict, v: Any) -> None:
+    """The role's apply event gets this deadline (and is made when the role has none)."""
+    at, rolling = _deadline(v)
+    e = apply_event(a)
+    if not e:
+        e = {"id": _next_eid(a), "kind": "apply", "title": t("Apply by"), "at": "", "rolling": False, "minutes": 0, "where": "", "note": ""}
+        a.setdefault("schedule", []).append(e)
+    e["at"], e["rolling"] = at, rolling
+    a["schedule"].sort(key=lambda x: x["at"])
 
 
 def _place(v: Any) -> dict:
@@ -447,21 +486,27 @@ class Hunt:
     def migrate(self) -> None:
         """Deadlines belong to roles (2026-10-18): a company's deadline moves to its roles that have none.
         A role's next step and its date (until 2026-10-21) become something booked when they had a date,
-        else a line in its notes."""
+        else a line in its notes. A role's deadline field (until 2026-10-21) becomes its apply event."""
         with self.lock:
             cs = self._companies()
             moving = {c["id"]: c.pop("deadline") for c in cs["companies"] if "deadline" in c}
             apps = self._apps()
             old = [a for a in apps["applications"] if "next" in a or "due" in a]
-            if not moving and not old:
+            fields = [a for a in apps["applications"] if "deadline" in a]
+            if not moving and not old and not fields:
                 return
             for a in apps["applications"]:
                 if moving.get(a["company"]) and not a.get("deadline"):
                     a["deadline"] = moving[a["company"]]
+                if "deadline" in a:
+                    day = str(a.pop("deadline") or "")
+                    e = apply_event(a)
+                    if not e or (day and not e.get("at")):
+                        _set_deadline(a, day)
             for a in old:
                 nxt, due = _text(a.pop("next", "")), str(a.pop("due", "") or "")
                 if nxt and due:
-                    a.setdefault("schedule", []).append({"id": "E1", "title": nxt, "at": due, "minutes": 0, "where": "", "note": ""})
+                    a.setdefault("schedule", []).append({"id": _next_eid(a), "title": nxt, "at": due, "minutes": 0, "where": "", "note": ""})
                 elif nxt or due:
                     a["note"] = ((a.get("note") or "") + "\n" + " ".join(x for x in (nxt, due) if x)).strip()
             self._write("applications.json", apps)
@@ -509,7 +554,7 @@ class Hunt:
         raise KeyError(t("{company} has no role “{role}”", company=c["name"], role=role.strip()))
 
     def _app_fields(self, a: dict, fields: dict) -> None:
-        for k, limit in (("role", 120), ("url", 500), ("referral", 80), ("subset", 80)):
+        for k, limit in (("role", 120), ("url", 500), ("referral", 80), ("subset", 80), ("batch", 40)):
             if k in fields:
                 a[k] = _text(fields[k], limit)
         if "note" in fields:
@@ -517,7 +562,7 @@ class Hunt:
         if "jd" in fields:   # the posting's own text, as it was read: kept apart from the user's notes
             a["jd"] = _long(fields["jd"], 20000)
         if "deadline" in fields:
-            a["deadline"] = _date(fields["deadline"])
+            _set_deadline(a, fields["deadline"])
         if "places" in fields:
             a["places"] = _places(fields["places"])
         if "channel" in fields:
@@ -541,9 +586,10 @@ class Hunt:
                 raise ValueError(t("{company} already has {role}", company=c["name"], role=role))
             status = state_of(fields.get("status") or "saved")
             a = {"id": f"A{data['next']}", "company": c["id"], "role": "", "url": "", "referral": "", "channel": "site", "platform": "",
-                 "order": 0, "status": status, "applied": "", "deadline": "", "note": "", "jd": "", "subset": "",
+                 "order": 0, "status": status, "applied": "", "batch": "", "note": "", "jd": "", "subset": "",
                  "places": [], "sent": [], "schedule": [], "co_app": None, "created": _now(), "updated": _now()}
-            self._app_fields(a, {"channel": "site", **fields})
+            # every role starts with its apply event, its deadline still unknown
+            self._app_fields(a, {"channel": "site", "deadline": "", **fields})
             mine = [x for x in data["applications"] if x["company"] == c["id"]]
             order = fields.get("order")
             a["order"] = max((x.get("order") or 0 for x in mine), default=0) + 1
@@ -640,6 +686,12 @@ class Hunt:
             e["title"] = _text(fields["title"], 60)
         if "at" in fields:
             e["at"] = _date(fields["at"])
+        if e.get("kind") == "apply":
+            # the deadline: a date, no date yet, or none at all (it closes when the role is filled)
+            if "rolling" in fields:
+                e["rolling"] = bool(fields["rolling"])
+            if e["at"]:
+                e["rolling"] = False
         if "minutes" in fields:
             e["minutes"] = _minutes(fields["minutes"])
         if "where" in fields:
@@ -648,7 +700,7 @@ class Hunt:
             e["note"] = _long(fields["note"], 1000)
         if not e.get("title"):
             raise ValueError(t("Say what it is first (一面, 笔试…)"))
-        if not e.get("at"):
+        if not e.get("at") and e.get("kind") != "apply":
             raise ValueError(t("Give it a date"))
 
     def _booked(self, ref: str, fn: Callable[[dict], Any]) -> dict:
@@ -667,8 +719,11 @@ class Hunt:
     def add_booked(self, ref: str, fields: dict) -> dict:
         """Something booked for this application: a test, 一面, 二面… with its date (and time)."""
         def add(a: dict) -> dict:
-            n = max((int(e["id"][1:]) for e in a["schedule"] if str(e.get("id", ""))[1:].isdigit()), default=0) + 1
-            e = {"id": f"E{n}", "title": "", "at": "", "minutes": 0, "where": "", "note": ""}
+            e = {"id": _next_eid(a), "title": "", "at": "", "minutes": 0, "where": "", "note": ""}
+            if fields.get("kind") == "apply":
+                if apply_event(a):
+                    raise ValueError(t("{role} has its deadline already: change that one", role=a["role"]))
+                e.update(kind="apply", title=t("Apply by"), rolling=False)
             self._booked_fields(e, fields)
             a["schedule"].append(e)
             return e

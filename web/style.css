@@ -1221,7 +1221,7 @@ mark.w-add { background: color-mix(in srgb, var(--ok) 30%, transparent); }
 .dbv-chip .i { width: 12px; height: 12px; flex: none; }
 .dbv-pop.menu { padding: 8px; }
 .dbv-pop .row { display: flex; align-items: center; gap: 8px; }
-.dbv-pop select, .dbv-pop .dbv-fin, .dbv-date { height: 28px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel);
+.dbv-pop select, .dbv-pop .dbv-fin, .dbv-date, .dbv-pop .dbv-optinput { height: 28px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel);
   color: var(--text); font: inherit; font-size: 13px; min-width: 0; }
 .dbv-pick { position: relative; min-width: 0; }
 .dbv-pick .select { width: auto; min-width: 120px; height: 28px; }
@@ -1242,6 +1242,11 @@ mark.w-add { background: color-mix(in srgb, var(--ok) 30%, transparent); }
 .dbv-proprow.lifted { background: var(--panel-2); box-shadow: var(--shadow-sm); }
 .dbv-options .lb-opt { gap: 6px; }
 .dbv-datepanel { display: flex; flex-direction: column; gap: 6px; }
+.dbv-free { display: flex; flex-direction: column; gap: 6px; }
+.dbv-free .dbv-optinput { width: 100%; padding: 0 8px; }
+.dbv-free .dbv-optinput:focus { outline: none; border-color: var(--accent); }
+.dbv-free .dbv-options { max-height: 260px; overflow: auto; }
+.dbv-free .dbv-newopt, .dbv-free .dbv-clearopt { color: var(--text-2); }
 .dbv-textpanel { padding: 0; border: 1px solid var(--accent); border-radius: var(--r-sm); background: var(--panel); box-shadow: var(--shadow); }
 .dbv-textbox { display: block; width: 100%; min-height: 36px; padding: 8px 11px; border: 0; background: none; color: var(--text); font: inherit; font-size: 13px;
   line-height: 1.45; resize: none; outline: none; overflow: hidden; }
@@ -1500,6 +1505,14 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .bk-chip { height: 24px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--panel); color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
 .bk-chip:hover { background: var(--hover); color: var(--text); }
 .bk-chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+/* a deadline that is no date: the role closes when it is filled (招满即止) */
+.dl-rolling { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; border: 1px dashed var(--line-strong); border-radius: 999px;
+  background: var(--panel); color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+.dl-rolling:hover { background: var(--hover); color: var(--text); }
+.dl-rolling.on { border-style: solid; border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.dl-rolling .icon { width: 14px; height: 14px; }
+.dbv-in .c-rolling { color: var(--text-2); font-size: 12.5px; }
+.bk-item.is-due .bk-when.muted { color: var(--text-3); }
 .bk-row { gap: 8px; flex-wrap: wrap; }
 .bk-row input, .bk-where, .bk-note { height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--panel); color: var(--text); font: inherit; }
 .bk-title { flex: 1 1 200px; min-width: 140px; }

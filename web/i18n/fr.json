@@ -1813,5 +1813,15 @@
   "… {n} ligne de plus",
   "… {n} lignes de plus"
  ],
- "…and {n} more": "…et {n} de plus"
+ "…and {n} more": "…et {n} de plus",
+ "Apply by": "Date limite de candidature",
+ "Rolling: until filled": "En continu, jusqu’à pourvu",
+ "No date yet": "Pas encore de date",
+ "Batch": "Campagne",
+ "Add a deadline": "Ajouter une date limite",
+ "Find or type a new one": "Chercher ou en saisir un nouveau",
+ "Add “{name}”": "Ajouter « {name} »",
+ "27秋招, 2027 Graduate Program…": "27秋招, 2027 Graduate Program…",
+ "{role} has its deadline already: change that one": "{role} a déjà une date limite : modifiez-la",
+ "Rolling": "En continu"
 }

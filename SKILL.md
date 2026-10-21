@@ -311,8 +311,9 @@ python scripts/hunt.py apply P12                          # the user goes for po
 - **A company fills itself** (docs/JOB_HUNT.md, 2026-10-18): when one is added or asked about, research it and
   send everything with one `fill` (official name, aliases, industry, strength, HQ, size, its careers sites and
   their hiring systems, a logo link, the About), never only the About. Fields the user edited stay theirs.
-  Deadlines belong to roles (`--deadline`), not companies. A posting's link: read it, add or fill the company,
-  add the role with its deadline.
+  Deadlines belong to roles (`--deadline 2026-10-31`, or `--deadline rolling` for 招满即止), not companies; a
+  role's deadline is one of its events. `--batch` is the round in the user's own words (27秋招…). A posting's
+  link: read it, add or fill the company, add the role with its deadline.
 - **Open postings** are scanned, never typed: career-ops' providers (Moka, Feishu/ByteDance, Tencent, Meituan,
   Alibaba, Greenhouse, Lever, Ashby…) read public job APIs; any other site gets a read route Claude records
   once in the browser (`scan-route`), replayed with no Claude. `keywords` are the roles the user looks for.

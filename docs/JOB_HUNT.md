@@ -287,6 +287,34 @@ find out, when it fills a company in, which cities it hires in.
   there too. Beside the map: remote rows by region, places not found, and rows with no place yet. Filters apply;
   sort, group and properties don't show.
 
+## 2026-10-21: the deadline is an event; the batch
+
+The request: a role's deadline was a field of its own, set once and never changed, and many roles have none
+(招满即止: they close when filled). Roles already keep events with times, so the deadline becomes one of them,
+which every new role starts with. A date field that can say "rolling" was asked for too. And a **batch** (27秋招,
+27寒假实习, 27春招) to manage roles together, without being specific to China: abroad the same thing is a 2027
+Graduate Program or a Summer Internship intake.
+
+- **The deadline** is the event of kind `apply` in `schedule`: `{id, kind: "apply", title: "投递截止", at, rolling}`.
+  `at` is when applications close, or empty; `rolling: true` says it closes when filled, with no date. Rolling is
+  a flag beside the date, not a value inside it: everything that reads a date (sorting, the calendar, .ics,
+  "late") stays a date, and only the screens show the two as one field. No start date: it was proposed and turned
+  down (the day a round opens is worth a note at most).
+  - Every new role gets one, its date unknown. It can be deleted ("Add a deadline" brings it back); there is at
+    most one per role. Without a date it is on neither the calendar nor the .ics; with one it keeps the UID the
+    field had, so importing again updates it.
+  - `deadline` stays the word the window and Claude send to set it: a date, `rolling` (or 招满即止 / 滚动招聘),
+    or "" to clear. The old field moves into the event once (`HuntStore.migrate`).
+  - The table's Deadline column reads it: a date (red once past while the role is open), or "滚动招聘 · 招满即止".
+    Its cell has a date box, a "rolling" choice and Clear. On the role's page it is the first row of Events; its edit
+    has the same rolling choice, and a date ends it.
+- **The batch** is `batch` on the application, the user's own words. Nothing is built in, so no country's rounds are
+  forced on another. The column is a select whose options are the batches the user's roles already have: type to
+  find one, or type a new one and Enter. Group by it, or filter by it ("Batch is 27秋招"), to work a round as a
+  whole. On the role's page it is a box offering the same names.
+- **Claude**: `add-role / edit-role --deadline YYYY-MM-DD|rolling --batch 27秋招`, told to reuse the batch names the
+  user has rather than invent a scheme.
+
 ## Why the button said "Open LinkedIn"
 
 The Autofill page is organised around **the selected profile site**: LinkedIn and BOSS直聘 are its tabs,

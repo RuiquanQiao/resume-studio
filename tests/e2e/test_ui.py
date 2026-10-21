@@ -1328,11 +1328,24 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.wait_for_selector(".float", state="detached")
     time.sleep(0.4)
     assert app(a1)["referral"] == "NTA8X2"
-    # a date
+    # the deadline: a date, or none at all (招满即止); it is the role's apply event (docs/JOB_HUNT.md, 2026-10-21)
+    due = lambda a: next(e for e in a["schedule"] if e.get("kind") == "apply")  # noqa: E731
     pg.click(f"{row(a2)} td[data-key=deadline]")
     pg.fill(".float .dbv-date", "2026-11-01")
-    wait_until(lambda: app(a2)["deadline"] == "2026-11-01", msg="deadline saved")
+    wait_until(lambda: due(app(a2))["at"] == "2026-11-01", msg="deadline saved")
     pg.keyboard.press("Escape")
+    pg.click(f"{row(a1)} td[data-key=deadline]")
+    pg.click(".float .dl-rolling")
+    wait_until(lambda: due(app(a1))["rolling"] and not due(app(a1))["at"], msg="rolling saved")
+    pg.wait_for_selector(f"{row(a1)} td[data-key=deadline] .c-rolling:has-text('滚动招聘')")
+    # the batch: the user's own options, a new one typed, an old one picked
+    pg.click(f"{row(a1)} td[data-key=batch]")
+    pg.fill(".float .dbv-optinput", "27秋招")
+    pg.press(".float .dbv-optinput", "Enter")
+    wait_until(lambda: app(a1)["batch"] == "27秋招", msg="batch made")
+    pg.click(f"{row(a2)} td[data-key=batch]")
+    pg.click(".float .lb-opt[data-value='27秋招']")
+    wait_until(lambda: app(a2)["batch"] == "27秋招", msg="batch picked")
     # places: several cities at once, then remote, which must say its region; saved when the panel closes
     server.req("PUT", f"/api/hunt/apps/{a1}", {"places": ["杭州"]})   # another role's, offered as a suggestion below
     pg.click(f"{row(a2)} td[data-key=places]")
@@ -1458,16 +1471,27 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.fill(".bk-new .bk-day", "2030-01-15")
     pg.fill(".bk-new .bk-time", "09:30")
     pg.click("#bk-add")
-    wait_until(lambda: [e["title"] for e in app(a1)["schedule"]] == ["一面", "二面"], msg="booked from the page")
-    assert app(a1)["schedule"][1]["at"] == "2030-01-15 09:30"
+    booked = lambda: [e for e in app(a1)["schedule"] if e.get("kind") != "apply"]  # noqa: E731
+    wait_until(lambda: [e["title"] for e in booked()] == ["一面", "二面"], msg="booked from the page")
+    assert booked()[1]["at"] == "2030-01-15 09:30"
     pg.wait_for_selector(".bk-item:has-text('二面')")
+    # its deadline among them: 招满即止 shown as such, and given a date again from its own edit
+    pg.wait_for_selector(".bk-item.is-due .bk-when:has-text('招满即止')")
+    pg.hover(".bk-item.is-due")
+    pg.click(".bk-item.is-due .btn[aria-label='修改']")
+    pg.wait_for_selector(".bk-edit .dl-rolling.on")
+    pg.fill(".bk-edit .bk-day", "2030-01-10")
+    assert pg.locator(".bk-edit .dl-rolling.on").count() == 0                 # a date ends 招满即止
+    pg.click(".bk-edit .btn.primary")
+    wait_until(lambda: due(app(a1))["at"] == "2030-01-10" and not due(app(a1))["rolling"], msg="deadline dated from the page")
     assert pg.evaluate("() => { const w = document.querySelector('.bk-item').closest('.hunt-wrap'); return w.offsetWidth >= w.parentNode.clientWidth - 2; }")   # the page uses the whole pane
     pg.screenshot(path=str(ART / "hunt-role-events-light.png"))
     pg.click(".hunt-back")
     # the Gantt chart: a bar per role, what is booked on it
     pg.click(".dbv-tab[data-view=v5]")
     pg.wait_for_selector(f".dbv-grow[data-id='{a1}'] .dbv-gbar")
-    assert pg.locator(f".dbv-grow[data-id='{a1}'] .dbv-gitem").count() == 2
+    assert pg.locator(f".dbv-grow[data-id='{a1}'] .dbv-gitem").count() == 3          # 一面, 二面 and its deadline
+    assert pg.locator(f".dbv-grow[data-id='{a1}'] .dbv-gitem.k-deadline").count() == 1
     for scheme in ("light", "dark"):
         pg.emulate_media(color_scheme=scheme)
         pg.screenshot(path=str(ART / f"hunt-gantt-{scheme}.png"))

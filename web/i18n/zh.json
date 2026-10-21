@@ -1705,5 +1705,15 @@
  "“{value}” isn't a latitude and longitude": "「{value}」不是经纬度",
  "“{value}” isn't a number of minutes": "「{value}」不是分钟数",
  "… {n} more line": "… 还有 {n} 行",
- "…and {n} more": "…还有 {n} 个"
+ "…and {n} more": "…还有 {n} 个",
+ "Apply by": "投递截止",
+ "Rolling: until filled": "滚动招聘 · 招满即止",
+ "No date yet": "日期未定",
+ "Batch": "批次",
+ "Add a deadline": "添加投递截止",
+ "Find or type a new one": "搜索，或输入新的",
+ "Add “{name}”": "添加“{name}”",
+ "27秋招, 2027 Graduate Program…": "27秋招、27寒假实习、2027 Graduate Program…",
+ "{role} has its deadline already: change that one": "{role} 已经有投递截止了：改那一个就行",
+ "Rolling": "滚动招聘"
 }

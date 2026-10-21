@@ -7,7 +7,8 @@
 //   relation  chips that open other rows (read-only here)
 //   custom    drawn by the table, read-only: clicking it opens the row
 // {key, label, type, get(row) -> value, render(row)?, options()? [{value, label, cls}], set(row, value)?,
-//  width?, hidden?, group? (can group by it)}
+//  width?, hidden?, group? (can group by it), free? (a select whose options are the user's own: typing makes one),
+//  edit(td, row)? (its own editor over the cell)}
 // Each table has several views (tabs), each with its own layout (table | board | calendar | gantt), columns
 // (order, width, hidden, wrapped), filters, sorts and group. They are saved with the data (.studio/hunt/views.json).
 // A table whose rows have dates (o.dated(row) -> {start, end, cls, items: [{at, label, sub, kind}]}) can also be
@@ -199,14 +200,37 @@ function dbvEdit(td, p, row) {
   if (p.type === "select") {
     const cur = p.get(row);
     const list = h("div", { class: "listbox dbv-pop dbv-options", role: "listbox", "aria-label": p.label });
-    for (const o of p.options() || []) {
+    const opt = (o) => {
       const on = o.value === cur;
-      list.append(h("button", { type: "button", role: "option", class: "lb-opt" + (on ? " on" : ""), "aria-selected": String(on), "data-value": o.value,
+      return h("button", { type: "button", role: "option", class: "lb-opt" + (on ? " on" : ""), "aria-selected": String(on), "data-value": o.value,
         onclick: () => { closeFloat(); if (!on) done(o.value); } },
-        h("span", { class: "lb-check" }, on ? icon("check") : null), dbvChip(o)));
-    }
+      h("span", { class: "lb-check" }, on ? icon("check") : null), dbvChip(o));
+    };
     list.addEventListener("keydown", (e) => menuKeys(e, list, ".lb-opt"));
-    openFloat(td, list, { minWidth: Math.max(180, td.offsetWidth), onClose: dbvAfterClose, focus: list.querySelector(".lb-opt.on") || list.querySelector(".lb-opt") });
+    if (!p.free) {
+      list.append(...(p.options() || []).map(opt));
+      openFloat(td, list, { minWidth: Math.max(180, td.offsetWidth), onClose: dbvAfterClose, focus: list.querySelector(".lb-opt.on") || list.querySelector(".lb-opt") });
+      return;
+    }
+    // the user's own options (p.free): typing finds one, or makes a new one
+    const input = h("input", { type: "text", class: "dbv-optinput", spellcheck: "false", "aria-label": p.label, placeholder: t("Find or type a new one") });
+    const fill = () => {
+      const q = input.value.trim();
+      const shown = (p.options() || []).filter((o) => !q || o.label.toLowerCase().includes(q.toLowerCase()));
+      list.replaceChildren(...shown.map(opt),
+        ...(q && !shown.some((o) => o.value === q) ? [h("button", { type: "button", role: "option", class: "lb-opt dbv-newopt", "data-value": q,
+          onclick: () => { closeFloat(); done(q); } }, h("span", { class: "lb-check" }, icon("plus")), t("Add “{name}”", { name: q }))] : []),
+        ...(cur && !q ? [h("button", { type: "button", role: "option", class: "lb-opt dbv-clearopt", onclick: () => { closeFloat(); done(""); } },
+          h("span", { class: "lb-check" }, icon("x")), t("Clear"))] : []));
+    };
+    input.addEventListener("input", fill);
+    input.addEventListener("keydown", (e) => {
+      // Enter: what was typed, as it is (an option of that name, or a new one)
+      if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); const q = input.value.trim(); closeFloat(); if (q && q !== cur) done(q); }
+      if (e.key === "ArrowDown") { e.preventDefault(); const first = list.querySelector(".lb-opt"); if (first) first.focus(); }
+    });
+    fill();
+    openFloat(td, h("div", { class: "menu dbv-pop dbv-free" }, input, list), { minWidth: Math.max(220, td.offsetWidth), onClose: dbvAfterClose, focus: input });
     return;
   }
   if (p.type === "date") {
