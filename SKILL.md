@@ -324,7 +324,9 @@ python scripts/hunt.py apply P12                          # the user goes for po
   their hiring systems, a logo link, the About), never only the About. Fields the user edited stay theirs.
   When to apply by is an event of the role (every role starts with its 投递 event), never a field and never the
   company's: `--apply-by 2026-10-31` when the posting gives a date; no date means 招满即止. `--batch` is the round
-  in the user's own words (27秋招…). A posting's link: read it, add or fill the company, add the role with its
+  in the user's own words (27秋招…); what each country's rounds mean and when they run is in
+  [references/hiring-calendars.md](references/hiring-calendars.md) (27秋招 runs in 2026: the year is the graduation
+  year; a 2027 Graduate Program starts in 2027). A posting's link: read it, add or fill the company, add the role with its
   apply-by date.
 - **Open postings** are scanned, never typed: career-ops' providers (Moka, Feishu/ByteDance, Tencent, Meituan,
   Alibaba, Greenhouse, Lever, Ashby…) read public job APIs; any other site gets a read route Claude records

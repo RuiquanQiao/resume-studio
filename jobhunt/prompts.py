@@ -4,6 +4,7 @@ from __future__ import annotations
 from resume import prompts as rp
 
 HUNT = rp.SKILL_ROOT / "scripts" / "hunt.py"
+CALENDARS = rp.SKILL_ROOT / "references" / "hiring-calendars.md"   # what batch names mean, country by country
 
 
 def cli(data_path: str) -> str:
@@ -87,7 +88,10 @@ How to work it:
   with its 投递 event. Give it the date the posting says with `--apply-by YYYY-MM-DD` on `add-role` / `edit-role`
   (never with `book`); no date (the posting says none, or 滚动招聘 / 招满即止) means it closes once filled.
 - `--batch` is the hiring round in the user's own words (27秋招, 27寒假实习, 2027 Graduate Program…): reuse the
-  names the user's other roles have (`list` shows them); never make up a scheme of your own.
+  names the user's other roles have (`list` shows them); never make up a scheme of your own. What these rounds
+  mean and when they run, country by country, is in `{CALENDARS}`: read it before you name a batch or reason about
+  timing. The year counts different things: 27秋招 (China) is for people graduating in 2027 and runs in 2026; a 2027
+  Graduate Program (Australia, UK) starts in 2027 and is applied for in 2026.
 - **Recording a site's route** (when `show` or `scan` says a site has none): open the site's job list in Resume
   Studio's browser (the browser commands), signed in if it needs it (the user signs in with the button on the
   company's row; never type a password). Find how the list loads: often the page calls its own JSON API, and the
