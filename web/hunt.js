@@ -770,16 +770,26 @@ function platformsTable() {
 }
 
 // ================================================================ a small form dialog (several fields, nothing saved before OK)
-function formModal({ title, message = "", fields, ok = t("OK") }) {
+// `onOk(values, m)`, when given, saves while the form stays open: m.close(result), m.notice(node) shows something
+// above the buttons (cleared when a field changes), m.retry(extra) runs onOk again with more values
+function formModal({ title, message = "", fields, ok = t("OK"), onOk = null }) {
   return new Promise((resolve) => {
     const root = $("#modal-root");
     const inputs = {};
+    const slot = h("div", { class: "fm-notice-slot" });
+    let busy = false;
     const close = (val) => { root.replaceChildren(); document.removeEventListener("keydown", onKey, true); resolve(val); };
+    const run = async (out) => {
+      if (busy) return;
+      busy = true;
+      try { await onOk(out, { close, notice: (node) => slot.replaceChildren(node), retry: (extra) => run({ ...out, ...extra }) }); }
+      finally { busy = false; }
+    };
     const done = () => {
       const out = Object.fromEntries(Object.entries(inputs).map(([k, el]) => [k, el.value.trim()]));
       const missing = fields.find((f) => f.required && !out[f.key]);
       if (missing) { inputs[missing.key].focus(); return; }
-      close(out);
+      if (onOk) run(out); else close(out);
     };
     const suggests = [];
     const onKey = (e) => {
@@ -816,13 +826,14 @@ function formModal({ title, message = "", fields, ok = t("OK") }) {
       return box;
     };
     const rows = fields.map((f) => {
-      inputs[f.key] = h("input", { id: "fm-" + f.key, value: f.value || "", placeholder: f.placeholder || "", spellcheck: "false", autocomplete: "off" });
+      inputs[f.key] = h("input", { id: "fm-" + f.key, value: f.value || "", placeholder: f.placeholder || "", spellcheck: "false", autocomplete: "off",
+        oninput: () => slot.replaceChildren() });
       return h("div", { class: "field" + (f.list && f.list.length ? " fm-combo" : "") }, h("label", { for: "fm-" + f.key }, f.label, f.hint && h("span", { class: "hint" }, f.hint)), inputs[f.key],
         f.list && f.list.length && suggest(f, inputs[f.key]));
     });
     root.replaceChildren(h("div", { class: "modal-back", onmousedown: (e) => { if (e.target === e.currentTarget) close(null); } },
       h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-label": title },
-        h("h3", null, title), message && h("p", null, message), rows,
+        h("h3", null, title), message && h("p", null, message), rows, slot,
         h("div", { class: "acts" }, h("button", { class: "btn", onclick: () => close(null) }, t("Cancel")),
           h("button", { class: "btn primary", onclick: done }, ok)))));
     setTimeout(() => (inputs[fields.find((f) => !f.value)?.key || fields[0].key]).focus(), 0);
@@ -830,17 +841,35 @@ function formModal({ title, message = "", fields, ok = t("OK") }) {
 }
 
 async function newCompany(name = "") {
-  const f = await formModal({ title: t("Add a company"), ok: t("Add"), fields: [
+  const made = await formModal({ title: t("Add a company"), ok: t("Add"), fields: [
     { key: "name", label: t("Company"), value: name, required: true, placeholder: t("e.g. 星河科技") },
-    { key: "site", label: t("Careers site"), hint: t("optional: Claude finds it"), placeholder: "https://careers.example.com/campus" }] });
-  if (!f) return null;
-  try {
-    const v = await api("POST", "/api/hunt/companies", f);
-    await loadHunt({ quiet: true });
-    openHunt("company", v.company.id);
-    askFill(v.company);
-    return v.company;
-  } catch (e) { toast(e.message); return null; }
+    { key: "site", label: t("Careers site"), hint: t("optional: Claude finds it"), placeholder: "https://careers.example.com/campus" }],
+    onOk: async (f, m) => {
+      try { m.close((await api("POST", "/api/hunt/companies", f)).company); }
+      catch (e) {
+        if (!sameCompany(e, f.name, m, { label: (c) => t("Open {company}", { company: c.name }), pick: (c) => { m.close(null); openHunt("company", c.id); } })) toast(e.message);
+      }
+    } });
+  if (!made) return null;
+  await loadHunt({ quiet: true });
+  openHunt("company", made.id);
+  askFill(made);
+  return made;
+}
+
+// a new company's name that is on the list already (by its name or an alias) or close to one: the form says
+// which, and the user picks it or says it is another company (a region's arm, 麦当劳中国, never asks: store.py)
+function sameCompany(e, name, m, { label, pick }) {
+  if (e.status !== 409 || !e.data) return false;
+  const { same, close } = e.data;
+  const when = (c) => (c.created ? t("added {date}", { date: c.created.slice(0, 10) }) : "");
+  const row = (c) => h("li", null, h("span", { class: "fm-same-name" }, c.name, c.aliases.length ? h("span", { class: "hint" }, " · " + c.aliases.join(", ")) : null),
+    h("span", { class: "hint" }, when(c)), h("button", { class: "btn sm", type: "button", onclick: () => pick(c) }, label(c)));
+  m.notice(h("div", { class: "fm-notice", role: "alert" },
+    h("p", null, same ? t("“{name}” is already on the list:", { name }) : t("“{name}” may be a company you already added:", { name })),
+    h("ul", { class: "fm-same" }, ...(same ? [same] : close).map(row)),
+    !same && h("div", { class: "fm-notice-acts" }, h("button", { class: "btn sm", type: "button", onclick: () => m.retry({ different: true }) }, t("It's another company: add it")))));
+  return true;
 }
 
 // a posting's link: Claude reads it and fills in the company (new or known) and the role (docs/JOB_HUNT.md, 2026-10-18)
@@ -865,18 +894,27 @@ async function addFromLink() {
 async function newApplication(companyId = null) {
   const cs = (H.data && H.data.companies) || [];
   const fixed = companyId ? huntCompany(companyId) : null;
-  const f = await formModal({ title: t("Add an application"), ok: t("Add"), fields: [
+  const v = await formModal({ title: t("Add an application"), ok: t("Add"), fields: [
     ...(fixed ? [] : [{ key: "company", label: t("Company"), required: true, list: cs.map((c) => c.name), placeholder: t("e.g. 星河科技") }]),
     { key: "role", label: t("Role"), required: true, placeholder: t("e.g. 服务端研发工程师") },
-    { key: "url", label: t("Link"), hint: t("optional"), placeholder: "https://…" }] });
-  if (!f) return;
-  try {
-    let cid = fixed ? fixed.id : (cs.find((c) => c.name.toLowerCase() === f.company.toLowerCase()) || {}).id;
-    if (!cid) { const made = (await api("POST", "/api/hunt/companies", { name: f.company })).company; cid = made.id; askFill(made); }
-    const v = await api("POST", `/api/hunt/companies/${encodeURIComponent(cid)}/roles`, { role: f.role, url: f.url });
-    await loadHunt({ quiet: true });
-    if (!companyId) openHunt("app", v.application.id);
-  } catch (e) { toast(e.message); }
+    { key: "url", label: t("Link"), hint: t("optional"), placeholder: "https://…" }],
+    onOk: async (f, m) => {
+      try {
+        let cid = fixed ? fixed.id : f.cid || (cs.find((c) => c.name.toLowerCase() === f.company.toLowerCase()) || {}).id;
+        if (!cid) {
+          try { const made = (await api("POST", "/api/hunt/companies", { name: f.company, different: !!f.different })).company; cid = made.id; askFill(made); }
+          catch (e) {
+            if (e.status === 409 && e.data && e.data.same) cid = e.data.same.id;   // one of its other names: that company
+            else if (sameCompany(e, f.company, m, { label: (c) => t("Use {company}", { company: c.name }), pick: (c) => m.retry({ cid: c.id }) })) return;
+            else throw e;
+          }
+        }
+        m.close(await api("POST", `/api/hunt/companies/${encodeURIComponent(cid)}/roles`, { role: f.role, url: f.url }));
+      } catch (e) { toast(e.message); }
+    } });
+  if (!v) return;
+  await loadHunt({ quiet: true });
+  if (!companyId) openHunt("app", v.application.id);
 }
 
 // ================================================================ a company's page

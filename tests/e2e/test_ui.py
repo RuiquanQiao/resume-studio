@@ -1296,6 +1296,28 @@ def test_a_company_with_several_roles_goes_out_with_a_pinned_version(page, serve
         pg.screenshot(path=str(ART / f"hunt-company-{scheme}.png"), full_page=True)
     pg.emulate_media(color_scheme="light")
 
+    # added again, forgetting it's there: the form stays open and names the one on the list
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.click("#hunt-new-company")
+    pg.fill("#fm-name", "星河科技有限公司")
+    pg.fill("#fm-site", "careers.example.com/social")
+    pg.click(".modal .btn.primary")
+    pg.wait_for_selector(".modal .fm-notice li:has-text('星河科技')")
+    assert pg.input_value("#fm-site") == "careers.example.com/social"         # nothing typed is lost
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.wait_for_timeout(200)                                                # past the buttons' color transition
+        pg.locator(".modal").screenshot(path=str(ART / f"hunt-same-company-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+    pg.fill("#fm-name", "星河 科技")                                          # its very name: no "add it anyway"
+    pg.wait_for_selector(".modal .fm-notice", state="detached")
+    pg.click(".modal .btn.primary")
+    pg.wait_for_selector(".modal .fm-notice li")
+    assert "照样添加" not in pg.inner_text(".modal .fm-notice")
+    pg.click(".modal .fm-notice li .btn")
+    pg.wait_for_selector(".hunt-wrap.is-page .ed-head h1:text('星河科技')")
+    assert len(server.req("GET", "/api/hunt")[1]["companies"]) == 1
+
     # the progress table: both roles, in the company's order, with what went out
     pg.click(".hunt-tab[data-tab=apps]")
     pg.wait_for_selector(".htable tbody tr >> nth=1")

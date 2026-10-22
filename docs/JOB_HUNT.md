@@ -401,6 +401,28 @@ Feishu site scanned "OK" with 0 roles while it had 37 open.
 - **Nothing silent**: a scan that read fine and found nothing says so and where to look; a role already added
   shows a tick and its status, so it never reads like the "+ Want to apply" button next to it.
 
+## 2026-10-22: a company added twice
+
+A company the user forgot they had added came in a second time when its name was written another way: the
+check compared the new name with the names on the list only, never with their aliases (where Claude puts the
+official and English names), and never caught 字节 next to 字节跳动有限公司.
+
+- **The same company** (its name or one of its aliases, any case and spacing) is refused: in the window, in
+  "Add an application" (there the role goes to that company), from Claude (`add-company`), and as a new name
+  for another company. The form stays open with what was typed and names the company, with the date it was
+  added and a button that opens it.
+- **A close name** (one inside the other: 字节 / 字节跳动有限公司, ByteDance / ByteDance Ltd) asks, never refuses:
+  the company it may be, a button to open (or use) it, and "It's another company: add it". Claude adds such a
+  company with `--different` only when it really is another one. That button sits on the left: the notice opens
+  where the Add button was, and a second click must not land on it.
+- **A company's arm in a country is another company**: its own careers site, its own hiring. When what the
+  longer name adds starts or ends with a country or region (McDonald's Australia Pty Ltd, Siemens Deutschland,
+  日本マクドナルド, 麦当劳（中国）有限公司, McDonald's APAC), nothing is asked. The names are every country,
+  territory and region in 29 languages from Unicode CLDR, plus the regions companies are run by (APAC, EMEA,
+  DACH, 大中华区…), built by `scripts/build_regions.py` into `jobhunt/data/regions.txt` and used offline. Short
+  names that are parts of ordinary words (US in campus, タイ in タイヤ) are left out, and a name in the middle
+  of what was added doesn't count.
+
 ## Why the button said "Open LinkedIn"
 
 The Autofill page is organised around **the selected profile site**: LinkedIn and BOSS直聘 are its tabs,

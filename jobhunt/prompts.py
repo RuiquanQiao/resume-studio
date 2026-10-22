@@ -24,7 +24,9 @@ it only through this command (Bash); every call prints what is there now, and th
   goes in (the company's own site with its choice number, a platform, a referral), what was sent, the next thing booked.
 - `{j} show <company>` — a company: details, what is known about it (about), its roles, recent events.
   `{j} show <company>/<role>` (or an id like A3) — one application with its whole timeline.
-- `{j} add-company "<name>" [--site <careers url>] [--alias Xinghe]`
+- `{j} add-company "<name>" [--site <careers url>] [--alias Xinghe]` — refused when the name or an alias is on the
+  list already (use that company), and when it is close to one (字节 / 字节跳动有限公司): `--different` only when it
+  really is another company. A region's arm (麦当劳中国 next to 麦当劳) counts as another company by itself.
   · `edit-company <company> [--name|--site|--subset SUB-002|--note|--account ..]`
 - `{j} fill <company> --stdin` with JSON — what you found out about the company, **every field at once**:
   `{{"name": "<official name>", "aliases": [..], "industry": "..", "strength": "..", "location": "<HQ>",

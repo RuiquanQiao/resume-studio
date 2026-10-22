@@ -11,7 +11,7 @@ import pytest
 
 from conftest import ROOT
 from core.i18n import Prefs, t
-from jobhunt.store import Hunt, state_of
+from jobhunt.store import Hunt, SameCompany, state_of
 
 HUNT_PY = ROOT / "scripts" / "hunt.py"
 FIXTURE = Path(__file__).parent / "fixtures" / "career-ops"
@@ -45,6 +45,50 @@ def test_companies_and_roles_by_name_alias_or_id(hunt):
     hunt.delete_application(a3["id"])
     assert {a["role"]: a["order"] for a in hunt.applications("Xinghe")} == {"服务端研发工程师": 1, "算法工程师": 2}
     assert hunt.add_application("Xinghe", {"role": "测试"})["id"] == "A4"    # ids are never reused
+
+
+def test_a_read_while_a_write_replaces_the_file_never_sees_an_empty_list(hunt):
+    import threading
+    hunt.add_company({"name": "星河科技"})
+    stop = threading.Event()
+
+    def write():
+        while not stop.is_set():
+            hunt.update_company("C1", {"note": "x"}, source="auto")
+    w = threading.Thread(target=write)
+    w.start()
+    try:
+        empty = sum(not hunt.companies() for _ in range(2000))   # on Windows a few of these came back empty
+    finally:
+        stop.set()
+        w.join()
+    assert empty == 0
+
+
+def test_a_company_added_again_is_caught_by_its_name_an_alias_or_a_close_name(hunt):
+    c = hunt.add_company({"name": "字节跳动", "aliases": ["ByteDance"]})
+    for again in ("字节 跳动", "bytedance", "Byte-Dance"):                   # its name or an alias: refused
+        with pytest.raises(SameCompany) as e:
+            hunt.add_company({"name": again, "different": True})       # even when told it's another
+        assert e.value.same["id"] == c["id"]
+    for close in ("字节", "字节跳动有限公司", "ByteDance Ltd"):                # close: asks, unless told it's another
+        with pytest.raises(SameCompany, match="--different") as e:
+            hunt.add_company({"name": close})
+        assert e.value.same is None and [x["id"] for x in e.value.close] == [c["id"]]
+    assert hunt.add_company({"name": "字节跳动有限公司", "different": True})["id"] == "C2"
+    hunt.add_company({"name": "麦当劳", "aliases": ["McDonald's", "マクドナルド"]})
+    for region in ("麦当劳中国", "McDonald's China", "McDonald's Australia Pty Ltd", "McDonald's Deutschland",
+                   "日本マクドナルド", "McDonald's España", "McDonald's APAC"):   # an arm in any country is a company of its own
+        assert hunt.add_company({"name": region})["name"] == region
+    hunt.add_company({"name": "ブリヂストン"})
+    with pytest.raises(SameCompany):
+        hunt.add_company({"name": "ブリヂストンタイヤ"})                    # タイ (Thailand) inside タイヤ is no region
+    with pytest.raises(SameCompany) as e:
+        hunt.add_company({"name": "麦当劳（中国）有限公司"})                   # close to the arm, not to 麦当劳
+    assert [x["name"] for x in e.value.close] == ["麦当劳中国"]
+    hunt.add_company({"name": "美团"})
+    with pytest.raises(ValueError, match="C1"):
+        hunt.update_company("美团", {"name": "ByteDance"})              # renamed to another company's name
 
 
 def test_statuses_take_the_users_words_and_land_in_the_ledger(hunt):

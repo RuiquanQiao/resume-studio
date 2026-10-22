@@ -1651,7 +1651,6 @@
  "{name} doesn't know what you're looking for yet (roles, location, salary), so its scores would follow someone else's targets.": "{name} 还不知道你在找什么（职位、地点、薪资），评分会按别人的目标来打。",
  "{name} has no auto mode": "{name} 不支持自动模式",
  "{name} has no effort levels": "{name} 不支持调推理强度",
- "{name} is already on the list": "{name}已经在列表里了",
  "{name} is busy; wait for it to finish.": "{name} 正忙，请等它完成。",
  "{name} is over 30 MB": "{name} 超过 30 MB",
  "{name} is ready": "{name} 已就绪",
@@ -1776,5 +1775,13 @@
  "In your applications: open it": "已在投递进度里：点开",
  "Change the logo…": "更换 logo…",
  "Add a logo…": "添加 logo…",
- "Remove the logo": "去掉 logo"
+ "Remove the logo": "去掉 logo",
+ "It's another company: add it": "是另一家公司：照样添加",
+ "Open {company}": "打开{company}",
+ "Use {company}": "用{company}",
+ "added {date}": "{date} 添加",
+ "{name} is already on the list: {company} ({id}), added {date}": "{name}已经在列表里了：{company}（{id}），{date} 添加",
+ "“{name}” is already on the list:": "“{name}”已经在列表里了：",
+ "“{name}” may be a company you already added:": "“{name}”可能是你已经添加过的公司：",
+ "“{name}” may be {names}, already on the list. If it's another company, add it with --different": "“{name}”可能是列表里已有的 {names}。如果是另一家公司，加 --different 再添加"
 }

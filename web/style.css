@@ -482,6 +482,12 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .modal input { width: 100%; height: 34px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 0 10px; background: var(--panel); margin-bottom: 14px; }
 .modal input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 .modal .acts { display: flex; justify-content: flex-end; gap: 8px; }
+.fm-notice { margin: -4px 0 14px; padding: 10px 12px; border-radius: var(--r); background: var(--warn-soft); font-size: 12.5px; }
+.fm-notice p { margin: 0 0 6px; color: var(--text); font-weight: 600; }
+.fm-same { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 6px; }
+.fm-same li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.fm-notice-acts { display: flex; }   /* left: where Add was a moment ago, a second click must not land on it */
+.fm-same-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-3) 38%, transparent); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }

@@ -118,3 +118,5 @@ Where the job-hunt side is going (applications, companies and platforms, a track
 
 The world maps use place names and coordinates from [GeoNames](https://www.geonames.org) (CC BY 4.0) and land
 from [Natural Earth](https://www.naturalearthdata.com) (public domain), both kept in the repository and used offline.
+Country and region names, which tell a company's arm in one country from the company itself (McDonald's
+Australia, 日本マクドナルド), come from [Unicode CLDR](https://github.com/unicode-org/cldr-json) (Unicode License), kept the same way.

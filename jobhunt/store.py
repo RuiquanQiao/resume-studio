@@ -204,6 +204,40 @@ def _key(s: str) -> str:
     return re.sub(r"[\s·・\-_/()（）]+", "", str(s or "")).casefold()
 
 
+# a company's arm in one country or region is a company of its own, with its own careers site: 麦当劳中国,
+# McDonald's Australia, Siemens Deutschland, 日本マクドナルド. The names, in many languages: scripts/build_regions.py
+REGIONS_FILE = Path(__file__).resolve().parent / "data" / "regions.txt"
+_regions: tuple[str, ...] | None = None
+
+
+def _region_names() -> tuple[str, ...]:
+    global _regions
+    if _regions is None:
+        try:
+            _regions = tuple(REGIONS_FILE.read_text(encoding="utf-8").split())
+        except OSError:
+            _regions = ()
+    return _regions
+
+
+def _close(a: str, b: str) -> bool:
+    """Two name keys that may be one company: one inside the other (字节 / 字节跳动有限公司), unless what the
+    longer one adds starts or ends with a country or region (麦当劳中国有限公司, McDonald's Australia Pty Ltd,
+    日本マクドナルド next to 麦当劳, McDonald's, マクドナルド); in its middle, a name is a word's part (タイヤ)."""
+    short, long = sorted((a, b), key=len)
+    if not short or short == long or short not in long or len(short) < (2 if re.search(r"[^\x00-\x7f]", short) else 3):
+        return False
+    rest = long.replace(short, "", 1)
+    return not any(rest.startswith(r) or rest.endswith(r) for r in _region_names())
+
+
+class SameCompany(ValueError):
+    """A company being added that is on the list already (`same`), or may be (`close`)."""
+    def __init__(self, message: str, same: dict | None = None, close: list[dict] | None = None):
+        super().__init__(message)
+        self.same, self.close = same, close or []
+
+
 def state_of(word: Any) -> str:
     """A status id from what someone wrote ("一面" → interview); raises with the list when unknown."""
     w = _text(word, 40).casefold()
@@ -245,10 +279,25 @@ class Hunt:
     def _file(self, name: str) -> Path:
         return self.dir / name
 
+    def _load(self, name: str) -> str:
+        """A file's text, "" when there is none. Windows: while _write replaces it, opening it fails for a
+        moment; reading that as "no file" showed an empty list (a role's page read in the background, 2026-10-22)."""
+        path = self._file(name)
+        for attempt in range(40):
+            try:
+                return path.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                return ""
+            except PermissionError:
+                if attempt == 39:
+                    raise
+                time.sleep(0.025)
+        return ""
+
     def _read(self, name: str, key: str) -> dict:
         try:
-            data = json.loads(self._file(name).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            data = json.loads(self._load(name) or "{}")
+        except ValueError:
             data = {}
         data = data if isinstance(data, dict) else {}
         data.setdefault("next", 1)
@@ -301,10 +350,7 @@ class Hunt:
 
     def events(self, app: str | None = None) -> list[dict]:
         """Oldest first, by when they happened."""
-        try:
-            lines = self._file("events.tsv").read_text(encoding="utf-8").splitlines()
-        except OSError:
-            return []
+        lines = self._load("events.tsv").splitlines()
         out = []
         for line in lines[1:]:
             cells = line.split("\t")
@@ -402,12 +448,33 @@ class Hunt:
                 "sources": [_text(s, 500) for s in (v.get("sources") or []) if _text(s, 500)][:20],
                 "read_at": _text(v.get("read_at"), 30) or time.strftime("%Y-%m-%d")}
 
+    def look_alike(self, name: str, *, but: str = "") -> tuple[dict | None, list[dict]]:
+        """The company `name` already is (its name or one of its aliases, any case and spacing), or else the
+        ones it may be (see _close); `but` leaves one company out."""
+        k = _key(name)
+        close = []
+        for c in self.companies() if k else []:
+            if c["id"] == but:
+                continue
+            keys = [x for x in (_key(n) for n in [c["name"], *(c.get("aliases") or [])]) if x]
+            if k in keys:
+                return c, []
+            if any(_close(k, x) for x in keys):
+                close.append(c)
+        return None, close
+
     def add_company(self, fields: dict) -> dict:
+        """`different` adds it even when its name is close to a company's on the list (never the same as one)."""
         with self.lock:
             data = self._companies()
             name = _text(fields.get("name"), 80)
-            if name and any(_key(c["name"]) == _key(name) for c in data["companies"]):
-                raise ValueError(t("{name} is already on the list", name=name))
+            same, close = self.look_alike(name)
+            if same:
+                raise SameCompany(t("{name} is already on the list: {company} ({id}), added {date}", name=name,
+                                    company=same["name"], id=same["id"], date=(same.get("created") or "")[:10]), same=same)
+            if close and not fields.get("different"):
+                raise SameCompany(t("“{name}” may be {names}, already on the list. If it's another company, add it with --different",
+                                    name=name, names=", ".join(f"{c['name']} ({c['id']})" for c in close)), close=close)
             c = {"id": f"C{data['next']}", "name": "", "aliases": [], "site": "", "sites": [], "industry": "", "strength": "",
                  "location": "", "places": [], "size": "", "logo": "", "sources": {}, "kept": [], "note": "", "account": "",
                  "subset": "", "about": None, "created": _now(), "updated": _now()}
@@ -425,8 +492,10 @@ class Hunt:
             data = self._companies()
             c = next(x for x in data["companies"] if x["id"] == cid)
             name = _text(fields.get("name"), 80) if "name" in fields else ""
-            if name and any(_key(x["name"]) == _key(name) and x["id"] != cid for x in data["companies"]):
-                raise ValueError(t("{name} is already on the list", name=name))
+            same = self.look_alike(name, but=cid)[0] if name else None
+            if same:
+                raise ValueError(t("{name} is already on the list: {company} ({id}), added {date}", name=name,
+                                   company=same["name"], id=same["id"], date=(same.get("created") or "")[:10]))
             before = {k: json.dumps(c.get(k), ensure_ascii=False) for k in FILLABLE}
             self._company_fields(c, fields)
             if source == "window":
@@ -842,7 +911,7 @@ class Hunt:
                 try:
                     c = self.company(name)
                 except KeyError:
-                    c = self.add_company({"name": name, "site": s.get("site") or "", "note": s.get("note") or "",
+                    c = self.add_company({"name": name, "site": s.get("site") or "", "note": s.get("note") or "", "different": True,
                                           "subset": s.get("subset") or ""})
                 for r in s.get("roles") or []:
                     sent = [x for x in s.get("sent") or [] if r.get("key") in (x.get("roles") or [])]

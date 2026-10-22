@@ -1651,7 +1651,6 @@
  "{name} doesn't know what you're looking for yet (roles, location, salary), so its scores would follow someone else's targets.": "{name} はまだあなたの希望（職種・勤務地・給与）を知らないため、スコアが他人の基準になってしまいます。",
  "{name} has no auto mode": "{name} は自動モードに対応していません",
  "{name} has no effort levels": "{name} は推論の強さを調整できません",
- "{name} is already on the list": "{name}はすでに一覧にあります",
  "{name} is busy; wait for it to finish.": "{name} は作業中です。終わるまでお待ちください。",
  "{name} is over 30 MB": "{name} が 30 MB を超えています",
  "{name} is ready": "{name} の準備ができました",
@@ -1776,5 +1775,13 @@
  "In your applications: open it": "応募済みリストにあります：開く",
  "Change the logo…": "ロゴを変更…",
  "Add a logo…": "ロゴを追加…",
- "Remove the logo": "ロゴを外す"
+ "Remove the logo": "ロゴを外す",
+ "It's another company: add it": "別の会社です：追加する",
+ "Open {company}": "{company}を開く",
+ "Use {company}": "{company}を使う",
+ "added {date}": "{date} に追加",
+ "{name} is already on the list: {company} ({id}), added {date}": "{name}はすでに一覧にあります：{company}（{id}）、{date} に追加",
+ "“{name}” is already on the list:": "「{name}」はすでに一覧にあります：",
+ "“{name}” may be a company you already added:": "「{name}」はすでに追加した会社かもしれません：",
+ "“{name}” may be {names}, already on the list. If it's another company, add it with --different": "「{name}」は一覧にある {names} かもしれません。別の会社なら --different を付けて追加してください"
 }

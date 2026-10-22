@@ -23,7 +23,7 @@ from .geo import Geo
 from .logos import fetch_logo
 from .postings import Postings
 from .scan import Scanner
-from .store import LOGO_TYPES, STATE_IDS, Hunt
+from .store import LOGO_TYPES, STATE_IDS, Hunt, SameCompany
 from .views import Views
 
 TRACKERS = ["studio", "career-ops"]
@@ -371,7 +371,13 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         b = body(req)
         if b.get("subset"):
             subset_to_send(studio, str(b["subset"]))
-        c = guard(lambda: hunt.add_company(b))
+        def add() -> dict:
+            try:
+                return hunt.add_company(b)
+            except SameCompany as e:   # the window asks which: the one on the list, or a new one
+                brief = lambda x: {"id": x["id"], "name": x["name"], "aliases": x.get("aliases") or [], "created": x.get("created") or ""}
+                raise HttpError(409, str(e), {"same": e.same and brief(e.same), "close": [brief(x) for x in e.close]})
+        c = guard(add)
         want_logos(c["id"])
         return company_view(c["id"])
 

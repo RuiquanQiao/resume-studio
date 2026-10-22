@@ -222,6 +222,8 @@ def main() -> int:
         p = sub.add_parser(name); p.add_argument("ref" if name == "edit-company" else "name")
         if name == "edit-company":
             p.add_argument("--name")
+        else:
+            p.add_argument("--different", action="store_true", help="its name is close to one on the list, but it is another company")
         for opt in ("site", "industry", "strength", "location", "size", "account", "subset", "note"):
             p.add_argument("--" + opt)
         p.add_argument("--alias", action="append", help="another name it goes by (repeat for more)")
@@ -294,7 +296,7 @@ def main() -> int:
     if c in ("add-company", "edit-company"):
         a = pick("site", "industry", "strength", "location", "size", "account", "subset", "note")
         if c == "add-company":
-            a["name"] = args.name
+            a.update(name=args.name, different=args.different)
         else:
             a.update(ref=args.ref, **pick("name"))
         if args.alias:

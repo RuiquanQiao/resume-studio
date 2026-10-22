@@ -1651,7 +1651,6 @@
  "{name} doesn't know what you're looking for yet (roles, location, salary), so its scores would follow someone else's targets.": "{name}는 아직 원하는 조건(직무, 지역, 급여)을 몰라서, 점수가 다른 사람의 기준을 따르게 됩니다.",
  "{name} has no auto mode": "{name}은(는) 자동 모드를 지원하지 않습니다",
  "{name} has no effort levels": "{name}은(는) 추론 강도를 조정할 수 없습니다",
- "{name} is already on the list": "{name}은(는) 이미 목록에 있어요",
  "{name} is busy; wait for it to finish.": "{name}가 작업 중입니다. 끝날 때까지 기다려 주세요.",
  "{name} is over 30 MB": "{name}이(가) 30MB를 넘습니다",
  "{name} is ready": "{name} 준비 완료",
@@ -1776,5 +1775,13 @@
  "In your applications: open it": "지원 목록에 있음: 열기",
  "Change the logo…": "로고 바꾸기…",
  "Add a logo…": "로고 추가…",
- "Remove the logo": "로고 없애기"
+ "Remove the logo": "로고 없애기",
+ "It's another company: add it": "다른 회사입니다: 추가",
+ "Open {company}": "{company} 열기",
+ "Use {company}": "{company} 사용",
+ "added {date}": "{date} 추가",
+ "{name} is already on the list: {company} ({id}), added {date}": "{name}은(는) 이미 목록에 있습니다: {company} ({id}), {date} 추가",
+ "“{name}” is already on the list:": "“{name}”은(는) 이미 목록에 있습니다:",
+ "“{name}” may be a company you already added:": "“{name}”은(는) 이미 추가한 회사일 수 있습니다:",
+ "“{name}” may be {names}, already on the list. If it's another company, add it with --different": "“{name}”은(는) 목록에 있는 {names}일 수 있습니다. 다른 회사라면 --different를 붙여 추가하세요"
 }

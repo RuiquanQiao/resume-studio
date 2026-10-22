@@ -93,8 +93,8 @@ class Postings:
 
     def scans(self) -> dict:
         try:
-            d = json.loads(self.hunt._file("scans.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            d = json.loads(self.hunt._load("scans.json") or "{}")
+        except ValueError:
             d = {}
         d = d if isinstance(d, dict) else {}
         d.setdefault("companies", {})

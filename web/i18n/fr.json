@@ -1669,7 +1669,6 @@
  "{name} doesn't know what you're looking for yet (roles, location, salary), so its scores would follow someone else's targets.": "{name} ne sait pas encore ce que vous cherchez (postes, lieu, salaire) : ses notes suivraient les objectifs de quelqu'un d'autre.",
  "{name} has no auto mode": "{name} n'a pas de mode automatique",
  "{name} has no effort levels": "{name} n'a pas de niveaux d'effort",
- "{name} is already on the list": "{name} est déjà dans la liste",
  "{name} is busy; wait for it to finish.": "{name} est occupé ; attendez qu'il ait fini.",
  "{name} is over 30 MB": "{name} dépasse 30 Mo",
  "{name} is ready": "{name} est prêt",
@@ -1896,5 +1895,13 @@
  "In your applications: open it": "Dans vos candidatures : l'ouvrir",
  "Change the logo…": "Changer le logo…",
  "Add a logo…": "Ajouter un logo…",
- "Remove the logo": "Retirer le logo"
+ "Remove the logo": "Retirer le logo",
+ "It's another company: add it": "C'est une autre entreprise : l'ajouter",
+ "Open {company}": "Ouvrir {company}",
+ "Use {company}": "Prendre {company}",
+ "added {date}": "ajoutée le {date}",
+ "{name} is already on the list: {company} ({id}), added {date}": "{name} est déjà dans la liste : {company} ({id}), ajoutée le {date}",
+ "“{name}” is already on the list:": "« {name} » est déjà dans la liste :",
+ "“{name}” may be a company you already added:": "« {name} » est peut-être une entreprise déjà ajoutée :",
+ "“{name}” may be {names}, already on the list. If it's another company, add it with --different": "« {name} » est peut-être {names}, déjà dans la liste. Si c'est une autre entreprise, ajoutez-la avec --different"
 }
