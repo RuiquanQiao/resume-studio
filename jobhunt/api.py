@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 from core.i18n import t
 from core.server import App, FileResponse, HttpError, Request
+from core.watcher import SignatureWatcher
 from jobs.base import JobTool, ToolError
 from jobs.signups import Signups
 from resume import model
@@ -96,7 +97,12 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         return str((sub or {}).get("label") or sid or "")
 
     def logo_url(c: dict) -> str:
-        return f"/api/hunt/logos/{c['id']}?v={c.get('updated', '')}" if c.get("logo") else ""
+        """Versioned by the picture itself, so a logo file changed from outside the app shows up too."""
+        try:
+            st = (hunt.dir / "logos" / c["logo"]).stat() if c.get("logo") else None
+        except OSError:
+            st = None
+        return f"/api/hunt/logos/{c['id']}?v={st.st_mtime_ns}-{st.st_size}" if st else ""
 
     # ---- logos: a company with a site gets its logo from it, in the background, with no Claude ----
     tried: set[tuple[str, tuple[str, ...]]] = set()   # (company, its sites) already looked at this run
@@ -137,6 +143,14 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         if os.environ.get("STUDIO_LOGOS") != "off" else None
     hunt.want_logos = want_logos
     want_logos()   # the companies that have a site and no logo yet
+
+    def logo_files() -> list[tuple[str, int, int]]:
+        d = hunt.dir / "logos"
+        return sorted((p.name, p.stat().st_mtime_ns, p.stat().st_size) for p in d.iterdir()) if d.is_dir() else []
+
+    # a picture changed from outside the app (Claude, a file manager): the window shows it without a restart
+    hunt.logo_watcher = SignatureWatcher(logo_files, hunt._changed)
+    hunt.logo_watcher.start()
 
     def fill(ref: str, fields: dict) -> dict:
         """Claude's research on a company, every field at once, the logo downloaded into the data folder."""

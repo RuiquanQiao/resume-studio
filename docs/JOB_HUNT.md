@@ -164,6 +164,12 @@ All three were built on 2026-10-18. Choices made on the way:
   their icon is the vendor's. The logo's source is recorded, and Claude's `logo_url` or the user's own logo
   still replaces it. **A company without a logo shows no logo**, never an invented letter: the table keeps an
   empty slot so the names line up.
+- *Fixed (2026-10-22):* **a logo changed from outside shows without a restart.** The panel's Claude drew an SVG
+  "logo" and then wrote an official PNG next to it with its own script, around `hunt.py`: the record still named
+  the SVG, and the picture's address was versioned by the record's `updated`, so the window kept its cached copy
+  until it was reopened, and then showed the drawn one. Now the address is versioned by the picture file itself,
+  the logos folder is watched (a change there refreshes the window), and both prompts say a logo is a real
+  picture sent as `logo_url`, never drawn and never written into `.studio` directly.
 
 ## 2026-10-19: tables that work like a Notion database
 

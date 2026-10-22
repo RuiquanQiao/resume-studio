@@ -274,6 +274,7 @@ class Hunt:
         # set by jobhunt/api.py: finding a logo on a company's own sites (jobhunt/logos.py), and asking for it
         self.find_logo: Callable[[list[str]], tuple[bytes, str, str] | None] | None = None
         self.want_logos: Callable[..., None] = lambda *cids: None
+        self.logo_watcher: Any = None   # set by jobhunt/api.py: the logos folder, for pictures changed from outside
 
     # ---- the files ----------------------------------------------------------------
     def _file(self, name: str) -> Path:

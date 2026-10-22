@@ -110,6 +110,23 @@ def test_the_user_changes_or_removes_a_logo(live, tmp_path):
     assert hunt.company("C1")["logo"] == ""
 
 
+def test_a_logo_changed_from_outside_shows_without_a_restart(live):
+    hunt = live.inst.hunt
+    live.req("POST", "/api/hunt/companies", {"name": "星河科技"})
+    hunt.save_logo("C1", b"GIF89a", "image/gif")
+    before = live.req("GET", "/api/hunt")[1]["companies"][0]["logo_url"]
+    told = []
+    hunt.on_change = lambda: told.append(1)
+    (hunt.dir / "logos" / "C1.gif").write_bytes(b"GIF89a-a-new-picture")   # a script writes over it, around the app
+    for _ in range(80):
+        if told:
+            break
+        time.sleep(0.05)
+    assert told                                                              # the window is told to reload
+    after = live.req("GET", "/api/hunt")[1]["companies"][0]["logo_url"]
+    assert after != before                                                   # and asks for the picture anew
+
+
 def test_a_company_with_a_site_gets_its_logo_by_itself(live, data_file):
     hunt = live.inst.hunt
     looked = []

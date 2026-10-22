@@ -61,6 +61,9 @@ class Instance:
             self.jobs_watcher.stop()
         if self.plan_watcher:
             self.plan_watcher.stop()
+        hunt = getattr(self, "hunt", None)   # set once the job hunt is registered
+        if hunt and hunt.logo_watcher:
+            hunt.logo_watcher.stop()
 
     def shutdown(self) -> None:
         """At exit."""

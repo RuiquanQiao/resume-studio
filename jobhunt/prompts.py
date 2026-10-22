@@ -81,7 +81,10 @@ How to work it:
   sites** (find them yourself: campus, intern and social hiring, and which system each runs on), a **logo**
   (`logo_url`: a direct link to a picture of it, from its press kit or a reputable page; once a company has a
   site, Resume Studio takes the icon off the company's own site by itself, so send one when `show` still says
-  no logo, the site runs on a hiring system like Moka or Feishu, or the icon isn't the company's), and
+  no logo, the site runs on a hiring system like Moka or Feishu, or the icon isn't the company's; a wrong logo is
+  replaced the same way, with a new `logo_url` in `fill`). A logo is always the company's real picture, found on
+  the web: never draw or make one up, and never write files into the data folder (`.studio`) yourself, because the
+  window only shows what came in through this command. If you can't find a real one, say so and leave it), and
   the About (what it does, how it is doing, prospects, culture, pay, how it hires graduates). Prefer recent,
   primary sources (its own pages and reports, reputable news), give a source for every field and point, and
   never invent figures: leave out what you couldn't find and say so. Never stop at the About: the fields are
