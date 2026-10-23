@@ -16,8 +16,20 @@ from jobhunt.scan import Scanner, validate_route
 from jobhunt.store import LOGO_TYPES, Hunt
 from test_hunt import cli, live  # noqa: F401
 
-PNG = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000"
-                    "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082")
+def png(side: int) -> bytes:
+    """A real png, side × side, solid blue."""
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+    rows = b"".join(b"\x00" + b"\x20\x40\xc0" * side for _ in range(side))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", side, side, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+
+
+PNG = png(64)
+TINY = png(16)   # a 16×16 favicon: a blur in the tables
 
 
 @pytest.fixture
@@ -89,6 +101,13 @@ def test_a_logo_is_found_on_the_companys_own_site():
     # a site that redirects to a hiring system gives no logo either
     assert logos.from_sites(["https://jobs.example.com"], page=lambda u: ("https://acme.jobs.feishu.cn/", page),
                             download=download, types=LOGO_TYPES) is None
+    # a 16x16 icon is passed over for the next one; a blank one too, as the window sees it
+    pics["https://careers.example.com/campus/icon.svg"] = (TINY, "image/png")
+    got = logos.from_sites(["https://careers.example.com/campus"], page=lambda u: pages[u], download=download, types=LOGO_TYPES)
+    assert got[2] == "https://careers.example.com/favicon.ico"
+    assert logos.verdict({"width": 64, "height": 64, "visible": 0.0}) and logos.verdict({"error": True})
+    assert logos.verdict({"width": 16, "height": 16, "visible": 0.5}, TINY, "image/png")
+    assert not logos.verdict({"width": 0, "height": 0, "visible": 0.3}, b"<svg/>", "image/svg+xml")
 
 
 def test_the_user_changes_or_removes_a_logo(live, tmp_path):
@@ -131,7 +150,7 @@ def test_a_company_with_a_site_gets_its_logo_by_itself(live, data_file):
     hunt = live.inst.hunt
     looked = []
 
-    def finder(sites):
+    def finder(sites, check):
         looked.append(sites)
         return (PNG, "image/png", "https://careers.xinghe.example/icon.png") if "xinghe" in sites[0] else None
 
@@ -140,7 +159,7 @@ def test_a_company_with_a_site_gets_its_logo_by_itself(live, data_file):
     live.req("POST", "/api/hunt/companies", {"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
     for _ in range(100):
         c = hunt.company("星河科技")
-        if c.get("logo"):
+        if c.get("logo") and (c.get("sources") or {}).get("logo"):   # the picture, then where it came from
             break
         time.sleep(0.05)
     assert c["logo"] == "C2.png" and hunt.logo_path("C2").read_bytes() == PNG

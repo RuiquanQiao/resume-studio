@@ -170,6 +170,25 @@ All three were built on 2026-10-18. Choices made on the way:
   until it was reopened, and then showed the drawn one. Now the address is versioned by the picture file itself,
   the logos folder is watched (a change there refreshes the window), and both prompts say a logo is a real
   picture sent as `logo_url`, never drawn and never written into `.studio` directly.
+- *Fixed (2026-10-23):* **a logo is looked at before it is kept.** New companies often came in with a blank
+  logo. Two causes: the panel's prompt told Claude it could skip the logo once a company had a careers site
+  (the site's icon would come by itself), and nothing ever looked at a picture before keeping it. A careers
+  site's icon is often blank, 16×16, or the hiring system's own under the company's domain (ByteDance's system
+  on `campus.dewu.com`). Now:
+  - every `fill` sends a `logo_url` (main site, press kit, Wikimedia Commons' direct upload link, else a web
+    search), and the prompt says never to leave a company without one;
+  - before a picture is kept, the window draws it at 128 px (`checkLogo` in `web/hunt.js`, any format: png,
+    ico, svg, jpg) and reports how much of it shows on a white page; `logos.verdict` refuses a blank one (under
+    1.5 % shows) or a raster under 32 px, and the logo the company had stays. The background icon finder passes
+    such icons over for the next candidate. With no window open, only the size a png or ico states is checked;
+  - once a logo is saved, `fill` writes the window's drawing to `.cache/logo-look/<id>.png`; Claude looks at it
+    and deletes it (older ones go after an hour). `hunt.py logo <company>` gives the same look at a logo already
+    there.
+- *Fixed (2026-10-23):* **a change shows while the user types.** The Applying workspace skipped every repaint
+  while the cursor was in any of its boxes and never caught up, so a change from Claude waited for a switch of
+  views. Now every change repaints at once (`repaintKeeping` in `web/ui.js`): the box being typed in comes back
+  in the new page with its text, caret and focus. The rebuilt page's own box is kept (its buttons read it), and
+  the typed text is copied into it. Only while an IME is mid-word does the repaint wait for the finished word.
 
 ## 2026-10-19: tables that work like a Notion database
 

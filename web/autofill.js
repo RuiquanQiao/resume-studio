@@ -69,11 +69,9 @@ async function loadFillSite(id = F.site, { quiet = false } = {}) {
     F.view[id] = v;
   } catch (e) { if (!quiet) toast(e.message); return; }
   if (id !== F.site) return;   // the user went on to another site meanwhile
-  if (W.ws === "fill") { if (fillTyping()) paintFillFoot(); else paintFill(); renderWsTools(); }
+  if (W.ws === "fill") { paintFill(); renderWsTools(); }
 }
 
-// the user is typing in the copy: repainting would take the caret away
-const fillTyping = () => !!(document.activeElement && document.activeElement.closest(".fillspace textarea, .fillspace input"));
 
 // one edit to the local copy (autofill/service.py `edit`); edits go one after another, in order
 function editCopy(op, { repaint = true } = {}) {
@@ -83,7 +81,7 @@ function editCopy(op, { repaint = true } = {}) {
       const v = await api("PUT", `/api/autofill/${encodeURIComponent(site)}/local`, op);
       F.view[site] = v;
       if (site !== F.site || W.ws !== "fill") return v;
-      if (repaint && !fillTyping()) paintFill(); else { paintFillFoot(); paintFillTabs(); }
+      if (repaint) paintFill(); else { paintFillFoot(); paintFillTabs(); }
       return v;
     } catch (e) { toast(e.message); return null; }
   };

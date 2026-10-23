@@ -1903,5 +1903,10 @@
  "{name} is already on the list: {company} ({id}), added {date}": "{name} ist schon in der Liste: {company} ({id}), hinzugefügt am {date}",
  "“{name}” is already on the list:": "„{name}“ ist schon in der Liste:",
  "“{name}” may be a company you already added:": "„{name}“ ist vielleicht eine Firma, die du schon hinzugefügt hast:",
- "“{name}” may be {names}, already on the list. If it's another company, add it with --different": "„{name}“ ist vielleicht {names}, schon in der Liste. Ist es eine andere Firma, füge sie mit --different hinzu"
+ "“{name}” may be {names}, already on the list. If it's another company, add it with --different": "„{name}“ ist vielleicht {names}, schon in der Liste. Ist es eine andere Firma, füge sie mit --different hinzu",
+ "Not saved, {why}. Find another picture of its logo.": "Nicht gespeichert: {why}. Such ein anderes Bild seines Logos.",
+ "it doesn't open as a picture": "es lässt sich nicht als Bild öffnen",
+ "it has no logo": "es hat noch kein Logo",
+ "it is blank: nothing on it shows on a white page": "es ist leer: auf weißem Grund ist nichts zu sehen",
+ "it is only {w}×{h} pixels, a blur at the size the tables show": "es hat nur {w}×{h} Pixel und ist in der Tabelle verschwommen"
 }

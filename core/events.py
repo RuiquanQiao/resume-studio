@@ -22,6 +22,11 @@ class EventBus:
         with self._lock:
             self._subs.discard(q)
 
+    def listeners(self) -> int:
+        """How many tabs (the window among them) are listening now."""
+        with self._lock:
+            return len(self._subs)
+
     def publish(self, event: str, data: Any) -> None:
         payload = json.dumps(data, ensure_ascii=False)
         with self._lock:

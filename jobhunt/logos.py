@@ -4,6 +4,7 @@ system (Moka, Feishu, Greenhouse…) are skipped: their icon is the vendor's, no
 from __future__ import annotations
 
 import re
+import struct
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -87,8 +88,46 @@ def _page(url: str) -> tuple[str, str]:
         return r.geturl(), r.read(600_000).decode("utf-8", "ignore")
 
 
-def from_sites(sites: list[str], *, page=_page, download=fetch_logo, types: dict | None = None) -> tuple[bytes, str, str] | None:
-    """The first logo found on a company's own sites: (data, content type, where it came from), or None."""
+# ---- is it a logo one can see? (user report, 2026-10-23: logos that came in blank) ----
+# The window draws the picture (any format: png, ico, svg, jpg) and counts what shows on its white page;
+# `verdict` reads those numbers. With no window open, only the size a png or ico states is known.
+MIN_SIDE = 32   # a 16×16 favicon, shown at 26-34 px, is a blur
+
+
+def raster_size(data: bytes, ctype: str) -> tuple[int, int] | None:
+    """The pixel size a png states, or the largest picture in an ico; None when it can't be read off the header."""
+    ctype = ctype.split(";")[0].strip().lower()
+    if data[:8] == b"\x89PNG\r\n\x1a\n" and len(data) >= 24:
+        return struct.unpack(">II", data[16:24])
+    if ctype in ("image/x-icon", "image/vnd.microsoft.icon") or data[:4] == b"\x00\x00\x01\x00":
+        n = struct.unpack("<H", data[4:6])[0] if len(data) >= 6 else 0
+        sizes = [((data[6 + 16 * i] or 256), (data[7 + 16 * i] or 256)) for i in range(n) if len(data) >= 22 + 16 * i]
+        return max(sizes) if sizes else None
+    return None
+
+
+def verdict(stats: dict | None, data: bytes = b"", ctype: str = "") -> str:
+    """Why this picture is no logo to show ("" when it is fine). `stats` comes from the window's drawing of it:
+    {width, height, visible} where visible is the share of a 128 px drawing that shows on white, 0..1."""
+    if stats:
+        if stats.get("error"):
+            return t("it doesn't open as a picture")
+        if float(stats.get("visible") or 0) < 0.015:
+            return t("it is blank: nothing on it shows on a white page")
+        w, h = int(stats.get("width") or 0), int(stats.get("height") or 0)
+        if w and h and not ctype.startswith("image/svg") and min(w, h) < MIN_SIDE:
+            return t("it is only {w}×{h} pixels, a blur at the size the tables show", w=w, h=h)
+        return ""
+    size = raster_size(data, ctype)
+    if size and min(size) < MIN_SIDE:
+        return t("it is only {w}×{h} pixels, a blur at the size the tables show", w=size[0], h=size[1])
+    return ""
+
+
+def from_sites(sites: list[str], *, page=_page, download=fetch_logo, types: dict | None = None,
+               check=None) -> tuple[bytes, str, str] | None:
+    """The first logo found on a company's own sites: (data, content type, where it came from), or None.
+    `check(data, ctype)` says why a picture won't do ("" = fine): blank and tiny icons are passed over."""
     for site in sites:
         if not site or is_vendor(site):
             continue
@@ -104,6 +143,6 @@ def from_sites(sites: list[str], *, page=_page, download=fetch_logo, types: dict
             except ValueError:
                 continue
             ctype = ctype.split(";")[0].strip().lower()
-            if data and (types is None or ctype in types):
+            if data and (types is None or ctype in types) and not (check or (lambda d, c: verdict(None, d, c)))(data, ctype):
                 return data, ctype, u
     return None

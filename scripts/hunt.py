@@ -22,6 +22,7 @@
     python scripts/hunt.py pin "滨江" 30.21 120.21 | pin "滨江" --unpin   # put a place the map can't find (or got wrong)
     python scripts/hunt.py about 星河科技 --stdin <<'JSON'  {"summary": "...", "points": [{"topic": "...", "text": "...",
                                                        "sources": ["https://..."]}], "read_at": "2026-10-16"}  JSON
+    python scripts/hunt.py logo 星河科技                      # look at its logo as the window shows it (a png to view)
     python scripts/hunt.py sent 星河科技                      # the sign-up on its site went out (every role not sent yet)
     python scripts/hunt.py sent 星河科技/服务端 [--subset SUB-002]
     python scripts/hunt.py scan [星河科技 ...]                # read the companies' sites for open postings now
@@ -70,6 +71,10 @@ FILL_HELP = """Claude's research on a company, every field at once, as JSON on s
 
 Every key is optional; send what you found. Fields the user edited in the window are theirs and are left as
 they are (the reply says which). site kinds: campus, intern, social, other."""
+
+
+LOOK = ("look at the logo as the window shows it (on white): {path}\n"
+        "  if it is blank, someone else's icon, cut off or a blur, send another logo_url with `fill`. Delete that png once you've looked.")
 
 
 def server_url(data: Path) -> str:
@@ -257,6 +262,8 @@ def main() -> int:
     p = sub.add_parser("pin"); p.add_argument("area"); p.add_argument("lat", nargs="?", type=float); p.add_argument("lon", nargs="?", type=float)
     p.add_argument("--unpin", action="store_true", help="back to where the city list puts it")
     p = sub.add_parser("jd"); p.add_argument("ref"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
+    p = sub.add_parser("logo", description="Look at a company's logo as the window shows it: a png drawing of it, and what is wrong with it.")
+    p.add_argument("ref")
     p = sub.add_parser("about"); p.add_argument("ref"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("fill", description=FILL_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("ref"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
@@ -348,12 +355,12 @@ def main() -> int:
         print(f"written: {r['path']} (opening it imports it into the user's calendar app)")
         return 0
     elif c == "jd":
-        raw = sys.stdin.buffer.read().decode("utf-8") if args.stdin else Path(args.file).read_text(encoding="utf-8") if args.file else ""
+        raw = sys.stdin.buffer.read().decode("utf-8-sig") if args.stdin else Path(args.file).read_text(encoding="utf-8-sig") if args.file else ""
         if not raw.strip():
             sys.exit("error: give the JD's text with --stdin or --file")
         r = call(url, "edit-role", {"ref": args.ref, "jd": raw})
     elif c in ("about", "fill"):
-        raw = sys.stdin.buffer.read().decode("utf-8") if args.stdin else Path(args.file).read_text(encoding="utf-8") if args.file else ""
+        raw = sys.stdin.buffer.read().decode("utf-8-sig") if args.stdin else Path(args.file).read_text(encoding="utf-8-sig") if args.file else ""
         try:
             got = json.loads(raw)
         except ValueError as e:
@@ -365,12 +372,26 @@ def main() -> int:
             print("logo not saved: " + r["logo_error"])
         print("saved:")
         show_company(r["company"])
+        if r.get("logo_look"):
+            print(LOOK.format(path=r["logo_look"]))
+        return 0
+    elif c == "logo":
+        r = call(url, "logo", {"ref": args.ref})
+        if not r["logo"]:
+            print(f"{r['company']}: no logo yet. Find its real logo on the web and send it as logo_url with `fill`.")
+            return 0
+        if r.get("problem"):
+            print(f"{r['company']}: its logo won't do: {r['problem']}. Find another picture and send it as logo_url with `fill`.")
+        elif not r.get("checked"):
+            print(f"{r['company']}: not checked (the window isn't open). The file: {r['file']}")
+        if r.get("look"):
+            print(LOOK.format(path=r["look"]))
         return 0
     elif c in ("scan", "scan-route", "postings"):
         if c == "scan":
             r = call(url, "scan", {"companies": args.companies})
         else:
-            raw = sys.stdin.buffer.read().decode("utf-8") if args.stdin else Path(args.file).read_text(encoding="utf-8") if args.file else ""
+            raw = sys.stdin.buffer.read().decode("utf-8-sig") if args.stdin else Path(args.file).read_text(encoding="utf-8-sig") if args.file else ""
             try:
                 got = json.loads(raw)
             except ValueError as e:

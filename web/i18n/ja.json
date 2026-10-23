@@ -1783,5 +1783,10 @@
  "{name} is already on the list: {company} ({id}), added {date}": "{name}はすでに一覧にあります：{company}（{id}）、{date} に追加",
  "“{name}” is already on the list:": "「{name}」はすでに一覧にあります：",
  "“{name}” may be a company you already added:": "「{name}」はすでに追加した会社かもしれません：",
- "“{name}” may be {names}, already on the list. If it's another company, add it with --different": "「{name}」は一覧にある {names} かもしれません。別の会社なら --different を付けて追加してください"
+ "“{name}” may be {names}, already on the list. If it's another company, add it with --different": "「{name}」は一覧にある {names} かもしれません。別の会社なら --different を付けて追加してください",
+ "Not saved, {why}. Find another picture of its logo.": "保存しませんでした：{why}。別のロゴ画像を探してください。",
+ "it doesn't open as a picture": "画像として開けません",
+ "it has no logo": "ロゴがまだありません",
+ "it is blank: nothing on it shows on a white page": "空白です：白い背景では何も見えません",
+ "it is only {w}×{h} pixels, a blur at the size the tables show": "{w}×{h} ピクセルしかなく、表の大きさではぼやけます"
 }

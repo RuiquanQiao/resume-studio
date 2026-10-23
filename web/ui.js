@@ -63,6 +63,50 @@ function h(tag, attrs, ...kids) {
   return el;
 }
 
+// A change shows at once, also while the user types: the part of the page is rebuilt, and the field being
+// typed in comes back with its text, caret and focus, so typing carries on as in any app. Only while an IME
+// (pinyin, kana) is mid-word does the rebuild wait for the finished word, which a rebuild would break off.
+let imeComposing = false, imeLater = null;
+document.addEventListener("compositionstart", () => { imeComposing = true; }, true);
+document.addEventListener("compositionend", () => {
+  imeComposing = false;
+  const later = imeLater; imeLater = null;
+  if (later) setTimeout(later, 0);   // after the field's own input event
+}, true);
+
+function fieldKey(el, root) {
+  const parts = [];
+  for (let n = el; n && n !== root; n = n.parentElement) {
+    parts.push([n.tagName, n.id, n.dataset.id, n.dataset.key, n.dataset.edit, n.dataset.page, n.getAttribute("name"),
+      n.getAttribute("aria-label"), n.getAttribute("placeholder")].map((x) => x || "").join("|"));
+    if (n.id) break;
+  }
+  return parts.join(">");
+}
+
+function repaintKeeping(root, paint) {
+  const a = document.activeElement;
+  const typing = root && a && a !== root && root.contains(a) && a.matches("input, textarea, select") ? a : null;
+  if (typing && imeComposing) { imeLater = () => repaintKeeping(root, paint); return; }
+  if (!typing) { paint(); return; }
+  const key = fieldKey(typing, root);
+  const same = (r) => [...r.querySelectorAll(typing.tagName)].filter((x) => fieldKey(x, root) === key);
+  const nth = Math.max(0, same(root).indexOf(typing));
+  const value = typing.value;
+  let sel = null;
+  try { sel = [typing.selectionStart, typing.selectionEnd, typing.selectionDirection]; } catch (e) { /* no caret */ }
+  paint();
+  if (document.activeElement && document.activeElement !== document.body && root.contains(document.activeElement)) return;   // a nested repaint did it
+  const fresh = same(root);
+  const spot = fresh[nth] || fresh[0];
+  if (!spot) return;   // the field is gone from the new page
+  // the new page's own field (its buttons read it), with what was typed in it
+  if (spot.value !== value) spot.value = value;
+  if (spot.tagName === "TEXTAREA" && typeof autosizeFull === "function") autosizeFull(spot);
+  spot.focus({ preventScroll: true });
+  if (sel && sel[0] != null) try { spot.setSelectionRange(...sel); } catch (e) { /* no caret */ }
+}
+
 const ICONS = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',

@@ -62,6 +62,13 @@ class TextResponse:
         self.content_type = content_type
 
 
+class BytesResponse:
+    """Bytes held in memory, such as a picture not saved anywhere yet."""
+    def __init__(self, data: bytes, content_type: str = "application/octet-stream"):
+        self.data = data
+        self.content_type = content_type
+
+
 Handler = Callable[[Request], Any]
 
 
@@ -171,9 +178,9 @@ class App:
                         return
                     if isinstance(result, FileResponse):
                         self._send_file(result)
-                    elif isinstance(result, TextResponse):
+                    elif isinstance(result, (TextResponse, BytesResponse)):
                         self.send_response(200)
-                        self.send_header("Content-Type", result.content_type + "; charset=utf-8")
+                        self.send_header("Content-Type", result.content_type + ("; charset=utf-8" if isinstance(result, TextResponse) else ""))
                         self.send_header("Content-Length", str(len(result.data)))
                         self.send_header("Cache-Control", "no-store")
                         self.end_headers()

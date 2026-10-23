@@ -78,17 +78,26 @@ How to work it:
   yet", research it with web search and send everything with one `fill`: its official name (it becomes an alias;
   the user's name for it stays), aliases, industry, **strength** (listed: market cap with exchange, ticker and
   date; not listed: valuation, latest round or headcount, with the date), headquarters, size, **its careers
-  sites** (find them yourself: campus, intern and social hiring, and which system each runs on), a **logo**
-  (`logo_url`: a direct link to a picture of it, from its press kit or a reputable page; once a company has a
-  site, Resume Studio takes the icon off the company's own site by itself, so send one when `show` still says
-  no logo, the site runs on a hiring system like Moka or Feishu, or the icon isn't the company's; a wrong logo is
-  replaced the same way, with a new `logo_url` in `fill`). A logo is always the company's real picture, found on
-  the web: never draw or make one up, and never write files into the data folder (`.studio`) yourself, because the
-  window only shows what came in through this command. If you can't find a real one, say so and leave it), and
+  sites** (find them yourself: campus, intern and social hiring, and which system each runs on), its **logo**
+  (always: `logo_url`, a direct link to a picture of it), and
   the About (what it does, how it is doing, prospects, culture, pay, how it hires graduates). Prefer recent,
   primary sources (its own pages and reports, reputable news), give a source for every field and point, and
   never invent figures: leave out what you couldn't find and say so. Never stop at the About: the fields are
   what the tables show. Fields the user edited are theirs; `fill` leaves them and says which.
+- **Every company gets its logo, and you look at it.** Send `logo_url` in every `fill`, also when the company has
+  a careers site (the icon a careers site carries is often blank, tiny or the hiring system's own, as on Moka,
+  Feishu or ByteDance's system under the company's domain). Where to look, in order: its main website (not the
+  careers site), its press kit or brand page, Wikipedia / Wikimedia Commons (the file's direct
+  upload.wikimedia.org link, never the `File:` page), then a web search for "<company> logo". Pick the version
+  that reads on a white page, square or wide, at least 64 px. `fill` checks the picture as the window draws it and
+  refuses one that is blank or a blur ("logo not saved: …"): then find another, don't stop there. Once it is saved,
+  `fill` prints a png of how the window shows it: **look at it with your own eyes** (read the image) before you
+  call the company done. If it is blank, someone else's icon, cut off or unreadable, send another `logo_url`.
+  Delete that png after looking (the line printed says where it is). `{j} logo <company>` gives the same look at a
+  logo already there. A logo is always the company's real picture from the web: never draw or make one up, and
+  never write files into the data folder (`.studio`) yourself, because the window only shows what came in
+  through `fill`. Never leave a company without a logo: if every source fails, tell the user which sources you
+  tried and that its logo is still missing.
 - When to apply by belongs to a role, never to the company, and is an event, not a field: every role starts
   with its 投递 event. Give it the date the posting says with `--apply-by YYYY-MM-DD` on `add-role` / `edit-role`
   (never with `book`); no date (the posting says none, or 滚动招聘 / 招满即止) means it closes once filled.

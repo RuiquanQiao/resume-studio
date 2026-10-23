@@ -1783,5 +1783,10 @@
  "{name} is already on the list: {company} ({id}), added {date}": "{name}已经在列表里了：{company}（{id}），{date} 添加",
  "“{name}” is already on the list:": "“{name}”已经在列表里了：",
  "“{name}” may be a company you already added:": "“{name}”可能是你已经添加过的公司：",
- "“{name}” may be {names}, already on the list. If it's another company, add it with --different": "“{name}”可能是列表里已有的 {names}。如果是另一家公司，加 --different 再添加"
+ "“{name}” may be {names}, already on the list. If it's another company, add it with --different": "“{name}”可能是列表里已有的 {names}。如果是另一家公司，加 --different 再添加",
+ "Not saved, {why}. Find another picture of its logo.": "没有保存：{why}。请另找一张它的 logo。",
+ "it doesn't open as a picture": "它打不开，不是图片",
+ "it has no logo": "它还没有 logo",
+ "it is blank: nothing on it shows on a white page": "它是空白的：放在白底上什么都看不见",
+ "it is only {w}×{h} pixels, a blur at the size the tables show": "它只有 {w}×{h} 像素，在表格里显示会糊成一片"
 }

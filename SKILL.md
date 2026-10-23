@@ -322,8 +322,12 @@ python scripts/hunt.py apply P12                          # the user goes for po
 - **A company fills itself** (docs/JOB_HUNT.md, 2026-10-18): when one is added or asked about, research it and
   send everything with one `fill` (official name, aliases, industry, strength, HQ, size, its careers sites and
   their hiring systems, a logo link, the About), never only the About. Fields the user edited stay theirs.
-  A logo is the company's real picture, sent as `logo_url` (a wrong one is replaced the same way): never draw
-  one, and never write into `.studio/hunt/logos/` yourself.
+  Every `fill` sends a `logo_url`, also when the company has a careers site (a careers site's icon is often blank,
+  tiny or the hiring system's): its main site, its press kit, Wikimedia Commons (the direct upload link), else a
+  web search. `fill` refuses a blank or blurry picture; once one is saved it prints a png of how the window shows
+  it: look at it yourself, send another if it is wrong, and delete the png after. `hunt.py logo <company>` looks
+  at one already there. A logo is the company's real picture: never draw one, never write into
+  `.studio/hunt/logos/` yourself, and never leave a company without one: if every source fails, say which you tried.
   When to apply by is an event of the role (every role starts with its 投递 event), never a field and never the
   company's: `--apply-by 2026-10-31` when the posting gives a date; no date means 招满即止. `--batch` is the round
   in the user's own words (27秋招…); what each country's rounds mean and when they run is in

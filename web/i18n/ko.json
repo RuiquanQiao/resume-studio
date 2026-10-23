@@ -1783,5 +1783,10 @@
  "{name} is already on the list: {company} ({id}), added {date}": "{name}은(는) 이미 목록에 있습니다: {company} ({id}), {date} 추가",
  "“{name}” is already on the list:": "“{name}”은(는) 이미 목록에 있습니다:",
  "“{name}” may be a company you already added:": "“{name}”은(는) 이미 추가한 회사일 수 있습니다:",
- "“{name}” may be {names}, already on the list. If it's another company, add it with --different": "“{name}”은(는) 목록에 있는 {names}일 수 있습니다. 다른 회사라면 --different를 붙여 추가하세요"
+ "“{name}” may be {names}, already on the list. If it's another company, add it with --different": "“{name}”은(는) 목록에 있는 {names}일 수 있습니다. 다른 회사라면 --different를 붙여 추가하세요",
+ "Not saved, {why}. Find another picture of its logo.": "저장하지 않았습니다: {why}. 다른 로고 이미지를 찾아 주세요.",
+ "it doesn't open as a picture": "이미지로 열리지 않습니다",
+ "it has no logo": "아직 로고가 없습니다",
+ "it is blank: nothing on it shows on a white page": "비어 있습니다: 흰 바탕에서는 아무것도 보이지 않습니다",
+ "it is only {w}×{h} pixels, a blur at the size the tables show": "{w}×{h} 픽셀밖에 안 되어 표에서는 흐릿하게 보입니다"
 }

@@ -1369,6 +1369,108 @@ def test_a_company_with_several_roles_goes_out_with_a_pinned_version(page, serve
     assert value_of(pg, "#subset-select") == "RES-TECH-EN"
 
 
+def test_a_search_box_takes_chinese_typed_through_an_ime(page_all, server):
+    """A user report, 2026-10-23: pinyin in the Companies search broke off after each key, because every keystroke
+    rebuilt the box. While the IME composes, the box stays the same element, also through a repaint from Claude's edits."""
+    pg = page_all
+    made = [server.req("POST", "/api/hunt/companies", {"name": n})[1]["company"]["id"] for n in ("星河 IME", "腾讯 IME")]
+    pg.keyboard.press("Control+3")
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.wait_for_selector(".dbv-view tbody:has-text('腾讯 IME')")
+    pg.click("#table-search")
+    pg.evaluate("() => { document.querySelector('#table-search').dataset.mark = '1'; }")
+    cdp = pg.context.new_cdp_session(pg)
+    cdp.send("Input.imeSetComposition", {"text": "xing", "selectionStart": 4, "selectionEnd": 4})
+    cdp.send("Input.imeSetComposition", {"text": "xinghe", "selectionStart": 6, "selectionEnd": 6})
+    server.req("PUT", f"/api/hunt/companies/{made[1]}", {"note": "repaint while composing"})   # the "hunt" event repaints
+    time.sleep(0.6)
+    assert pg.evaluate("() => document.querySelector('#table-search').dataset.mark") == "1"  # not rebuilt mid-word
+    cdp.send("Input.insertText", {"text": "星河"})
+    pg.wait_for_function("() => document.querySelector('#table-search').value === '星河'")
+    pg.wait_for_selector(".dbv-view tbody:not(:has-text('腾讯 IME'))")             # the finished word filters
+    assert pg.evaluate("() => [document.activeElement.id, document.activeElement.selectionStart]") == ["table-search", 2]   # the cursor stays in the box
+    pg.fill("#table-search", "")
+    for cid in made:
+        server.req("DELETE", f"/api/hunt/companies/{cid}")
+
+
+def test_a_change_shows_while_the_user_types(page_all, server):
+    """A user report, 2026-10-23: a change from Claude waited for a switch of views while the cursor was in a box.
+    Now the table follows at once, and the box keeps what is typed and the cursor."""
+    pg = page_all
+    cid = server.req("POST", "/api/hunt/companies", {"name": "打字测试 Co"})[1]["company"]["id"]
+    pg.keyboard.press("Control+3")
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.click("#table-search")
+    pg.keyboard.type("打字测试")
+    pg.keyboard.press("ArrowLeft")
+    server.req("PUT", f"/api/hunt/companies/{cid}", {"industry": "测试行业 XYZ"})
+    pg.wait_for_selector(".dbv-view tbody:has-text('测试行业 XYZ')")
+    assert pg.evaluate("() => [document.activeElement.id, document.activeElement.value, document.activeElement.selectionStart]") \
+        == ["table-search", "打字测试", 3]
+    pg.keyboard.type("!")
+    assert pg.input_value("#table-search") == "打字测!试"
+    pg.fill("#table-search", "")
+    server.req("DELETE", f"/api/hunt/companies/{cid}")
+
+
+def picture(side: int, rgba: tuple[int, int, int, int]) -> bytes:
+    """A real png, side × side, all one colour (alpha 0 = blank)."""
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+    rows = b"".join(b"\x00" + bytes(rgba) * side for _ in range(side))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", side, side, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+
+
+def test_a_logo_is_looked_at_before_it_is_kept(page_all, server):
+    """A user report, 2026-10-23: logos came in blank. The window draws each picture before it is kept: a blank
+    or tiny one is refused with the reason, a good one is kept and drawn as a png for Claude to look at."""
+    import http.server
+    import threading
+    pics = {"/blank.png": picture(64, (0, 0, 0, 0)), "/white.png": picture(64, (255, 255, 255, 255)),
+            "/tiny.png": picture(16, (30, 60, 200, 255)), "/good.png": picture(96, (30, 60, 200, 255))}
+
+    class Pics(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.end_headers()
+            self.wfile.write(pics[self.path])
+
+        def log_message(self, *a):
+            pass
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Pics)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    pg = page_all
+    try:
+        cid = server.req("POST", "/api/hunt/companies", {"name": "Logo 测试"})[1]["company"]["id"]
+        fill = lambda name: server.req("POST", "/api/hunt/do", {"cmd": "fill", "args": {"ref": cid, "fields": {"logo_url": f"{base}/{name}"}}})[1]
+        for name in ("blank.png", "white.png", "tiny.png"):
+            r = fill(name)
+            assert r["logo_error"] and not r["company"]["company"]["logo"] and not r["logo_look"], (name, r)
+        assert "16" in fill("tiny.png")["logo_error"]
+        r = fill("good.png")
+        assert not r["logo_error"] and r["company"]["company"]["logo"] == f"{cid}.png"
+        look = Path(r["logo_look"])
+        assert look.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n" and look.parent.name == "logo-look"
+        look.unlink()
+        # a wrong picture sent after a good one leaves the good one
+        assert fill("blank.png")["logo_error"]
+        assert server.req("GET", f"/api/hunt/companies/{cid}")[1]["company"]["logo"] == f"{cid}.png"
+        # `hunt.py logo`: the same look at the logo already there
+        r = server.req("POST", "/api/hunt/do", {"cmd": "logo", "args": {"ref": cid}})[1]
+        assert r["checked"] and not r["problem"] and Path(r["look"]).is_file()
+        Path(r["look"]).unlink()
+        server.req("DELETE", f"/api/hunt/companies/{cid}")
+    finally:
+        httpd.shutdown()
+
+
 def test_the_tables_work_like_a_notion_database(page_all, server):
     """docs/JOB_HUNT.md, 2026-10-19: edit cells in place, move / resize / hide columns, filter, sort, group,
     several views as tabs and a board by status; the views are saved with the data."""
@@ -1454,6 +1556,8 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     wait_until(lambda: [p["area"] for p in app(a2)["places"]] == ["南京", "APAC"], msg="a place removed on the page")
     pg.click("#app-places .bk-chip:has-text('杭州')")
     wait_until(lambda: [p["area"] for p in app(a2)["places"]] == ["南京", "APAC", "杭州"], msg="a place suggested and added")
+    pg.wait_for_timeout(300)
+    pg.wait_for_function("() => !H.loading")                                  # the saved page is back (it repaints, cursor kept)
     pg.locator("#app-places").scroll_into_view_if_needed()
     pg.screenshot(path=str(ART / "hunt-places-page-light.png"))
     pg.click(".hunt-back")

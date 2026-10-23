@@ -82,7 +82,7 @@ async function loadHunt({ quiet = false } = {}) {
     } catch (e) { if (!quiet) toast(e.message); }
     finally { H.loading = null; }
     if (W.ws === "fill" && dbvBusy()) DBV.pending = true;   // an open cell editor or view panel: after it closes
-    else if (W.ws === "fill" && !fillTyping()) paintFill();
+    else if (W.ws === "fill") paintFill();
   })();
   return H.loading;
 }
@@ -99,7 +99,36 @@ async function loadHuntPage({ quiet = false } = {}) {
   }
 }
 
+// the server asks how a logo looks before it keeps it (jobhunt/api.py `inspect`): drawn at 128 px on a transparent
+// canvas, the share of it that shows on a white page; and the drawing on white, as a png for Claude to look at
+async function checkLogo({ token, url }) {
+  let stats;
+  try {
+    const img = new Image();
+    await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = url; });
+    const w = img.naturalWidth, ht = img.naturalHeight, S = 128;
+    const k = w && ht ? Math.min(S / w, S / ht) : 1, dw = w && ht ? w * k : S, dh = w && ht ? ht * k : S;
+    const cv = document.createElement("canvas"); cv.width = cv.height = S;
+    const g = cv.getContext("2d");
+    g.drawImage(img, (S - dw) / 2, (S - dh) / 2, dw, dh);
+    const px = g.getImageData(0, 0, S, S).data;
+    let shows = 0;
+    for (let i = 0; i < px.length; i += 4) {
+      const a = px[i + 3] / 255;   // the pixel over white
+      const r = 255 + (px[i] - 255) * a, gr = 255 + (px[i + 1] - 255) * a, b = 255 + (px[i + 2] - 255) * a;
+      if (Math.min(r, gr, b) < 235) shows++;
+    }
+    const out = document.createElement("canvas"); out.width = out.height = 256;
+    const o = out.getContext("2d");
+    o.fillStyle = "#fff"; o.fillRect(0, 0, 256, 256);
+    o.drawImage(img, (256 - dw * 2) / 2, (256 - dh * 2) / 2, dw * 2, dh * 2);
+    stats = { width: w, height: ht, visible: shows / (S * S), png: out.toDataURL("image/png") };
+  } catch (e) { stats = { error: true }; }
+  api("POST", url, stats).catch(() => {});
+}
+
 function listenHunt(es) {
+  es.addEventListener("logo-check", (m) => checkLogo(JSON.parse(m.data)));
   es.addEventListener("hunt", (m) => {
     const d = JSON.parse(m.data || "{}");
     if (d.versions && typeof refresh === "function") refresh();   // a send kept a version of a subset
@@ -156,12 +185,14 @@ async function openHunt(kind, id) {
 
 // the workspace: a platform's own page is autofill.js's; everything else is here
 function paintFill() {
-  if (H.tab === "platforms" && H.page && H.page.kind === "platform" && (F.sites || []).some((s) => s.id === H.page.id)) {
-    paintPlatform();
-    return;
-  }
-  if (H.page && H.page.kind === "platform") { H.page = null; storeHunt(); }
-  paintHunt();
+  repaintKeeping($("#fillspace"), () => {
+    if (H.tab === "platforms" && H.page && H.page.kind === "platform" && (F.sites || []).some((s) => s.id === H.page.id)) {
+      paintPlatform();
+      return;
+    }
+    if (H.page && H.page.kind === "platform") { H.page = null; storeHunt(); }
+    paintHunt();
+  });
 }
 
 function huntBar() {
@@ -175,7 +206,9 @@ function huntBar() {
 
 function paintHunt() {
   const el = $("#fillspace");
-  if (!el) return;
+  if (el) repaintKeeping(el, () => paintHuntNow(el));
+}
+function paintHuntNow(el) {
   const old = el.querySelector(".hunt-scroll");
   const scroll = old && old.dataset.page === pageKey() ? old.scrollTop : 0;
   let body;
@@ -188,12 +221,17 @@ function paintHunt() {
   sc.scrollTop = scroll;
   for (const ta of el.querySelectorAll("textarea")) autosizeFull(ta);
 }
+
+// a search box filters as you type; with an IME (pinyin, kana), once the word is finished (ui.js repaintKeeping)
+function searchBox(id, value, placeholder, set) {
+  return h("input", { class: "hunt-search", type: "search", id, value, placeholder, spellcheck: "false", "aria-label": placeholder,
+    oninput: (e) => { set(e.target.value); paintHunt(); } });
+}
 const pageKey = () => (H.page ? H.page.kind + ":" + H.page.id : "table:" + H.tab);
 
 // ================================================================ the tables
 function tableTools(...right) {
-  const search = h("input", { class: "hunt-search", type: "search", value: H.q, placeholder: t("Search"), spellcheck: "false", "aria-label": t("Search"),
-    oninput: (e) => { H.q = e.target.value; const pos = e.target.selectionStart; paintHunt(); const s = $(".hunt-search"); if (s) { s.focus(); s.setSelectionRange(pos, pos); } } });
+  const search = searchBox("table-search", H.q, t("Search"), (v) => { H.q = v; });
   return h("div", { class: "hunt-tools" }, ...right, h("span", { class: "spacer" }), search);
 }
 
@@ -660,8 +698,7 @@ function postingsCard(v) {
     p.app ? h("button", { class: "btn sm ghost pr-added", title: t("In your applications: open it"), "aria-label": t("In your applications: open it"), onclick: () => openHunt("app", p.app) },
       icon("check"), hChip(((v.applications || []).find((a) => a.id === p.app) || {}).status || "saved"))
       : !p.closed && h("button", { class: "btn sm", title: t("Add it to your applications"), onclick: () => applyPosting(p) }, icon("plus"), t("Want to apply")));
-  const search = h("input", { class: "hunt-search", type: "search", id: "posting-search", value: H.pq || "", placeholder: t("Search these roles"),
-    oninput: (e) => { H.pq = e.target.value; const pos = e.target.selectionStart; paintHunt(); const el = $("#posting-search"); if (el) { el.focus(); el.setSelectionRange(pos, pos); } } });
+  const search = searchBox("posting-search", H.pq || "", t("Search these roles"), (v) => { H.pq = v; });
   return card(t("Open roles"), open.length ? t("{n} on its sites", { n: open.length }) : "", [
     h("div", { class: "row wrap post-tools" }, status, h("span", { class: "spacer" }),
       sc.needs === "claude" && h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Let Claude learn its site")),

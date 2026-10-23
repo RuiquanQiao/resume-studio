@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from core.i18n import t
-from core.server import App, FileResponse, HttpError, Request
+from core.server import App, BytesResponse, FileResponse, HttpError, Request
 from core.watcher import SignatureWatcher
 from jobs.base import JobTool, ToolError
 from jobs.signups import Signups
@@ -122,7 +122,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             if c.get("logo") or "logo" in (c.get("kept") or []) or not sites or finder is None or (cid, sites) in tried:
                 return
             tried.add((cid, sites))
-        got = finder(list(sites))
+        got = finder(list(sites), lambda data, ctype: logos.verdict(inspect(data, ctype), data, ctype))
         if not got:
             return
         data, ctype, src = got
@@ -139,8 +139,62 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         ids = list(cids) or [c["id"] for c in hunt.companies()]
         threading.Thread(target=lambda: [find_logo(i) for i in ids], name="hunt-logos", daemon=True).start()
 
-    hunt.find_logo = (lambda sites: logos.from_sites(sites, types=LOGO_TYPES)) \
+    hunt.find_logo = (lambda sites, check: logos.from_sites(sites, types=LOGO_TYPES, check=check)) \
         if os.environ.get("STUDIO_LOGOS") != "off" else None
+
+    # ---- a logo is looked at before it is kept (user report, 2026-10-23: logos that came in blank) ----
+    # The window draws the picture and says what shows; the drawing, on white, is also what Claude looks at.
+    checks: dict[str, dict] = {}
+    checks_lock = threading.Lock()
+
+    def inspect(data: bytes, ctype: str, *, timeout: float = 8.0) -> dict | None:
+        """{width, height, visible, png} as the window drew it, or None with no window open (or no answer)."""
+        if not app.bus.listeners():
+            return None
+        token = os.urandom(8).hex()
+        job = {"data": data, "type": ctype.split(";")[0].strip(), "done": threading.Event(), "stats": None}
+        with checks_lock:
+            checks[token] = job
+        try:
+            app.bus.publish("logo-check", {"token": token, "url": f"/api/hunt/logo-check/{token}"})
+            job["done"].wait(timeout)
+            return job["stats"]
+        finally:
+            with checks_lock:
+                checks.pop(token, None)
+
+    @app.route("GET", "/api/hunt/logo-check/{token}")
+    def logo_check_picture(req: Request):
+        job = checks.get(req.params["token"])
+        if not job:
+            raise HttpError(404, "no such check")
+        return BytesResponse(job["data"], job["type"])
+
+    @app.route("POST", "/api/hunt/logo-check/{token}")
+    def logo_check_result(req: Request):
+        job = checks.get(req.params["token"])
+        if job and not job["done"].is_set():   # the first window to answer
+            job["stats"] = body(req)
+            job["done"].set()
+        return {"ok": True}
+
+    look_dir = hunt.dir.parent.parent / ".cache" / "logo-look"
+
+    def write_look(cid: str, stats: dict | None) -> str:
+        """The window's drawing of a company's logo, as a png for Claude to look at (and delete after)."""
+        png = (stats or {}).get("png") or ""
+        if not png.startswith("data:image/png;base64,"):
+            return ""
+        look_dir.mkdir(parents=True, exist_ok=True)
+        for old in look_dir.glob("*.png"):   # left behind by an earlier look: an hour is long enough
+            try:
+                if time.time() - old.stat().st_mtime > 3600:
+                    old.unlink()
+            except OSError:
+                pass
+        p = look_dir / f"{cid}.png"
+        p.write_bytes(base64.b64decode(png.split(",", 1)[1]))
+        return str(p)
     hunt.want_logos = want_logos
     want_logos()   # the companies that have a site and no logo yet
 
@@ -156,18 +210,23 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         """Claude's research on a company, every field at once, the logo downloaded into the data folder."""
         fields = fields if isinstance(fields, dict) else {}
         c, kept = hunt.fill(ref, fields)
-        logo_error = ""
+        logo_error = look = ""
         if fields.get("logo_url"):
             if "logo" in (c.get("kept") or []):
                 kept = sorted({*kept, "logo"})
             else:
                 try:
                     data, ctype = fetch_logo(str(fields["logo_url"]))
+                    stats = inspect(data, ctype)
+                    why = logos.verdict(stats, data, ctype)
+                    if why:   # not kept: the logo it had (if any) stays
+                        raise ValueError(t("Not saved, {why}. Find another picture of its logo.", why=why))
                     hunt.save_logo(c["id"], data, ctype)
+                    look = write_look(c["id"], stats)
                 except ValueError as e:
                     logo_error = str(e)
         want_logos(c["id"])   # no logo from Claude (or it failed): the site's own icon
-        return {"company": company_view(c["id"]), "kept": kept, "logo_error": logo_error, "text": "filled"}
+        return {"company": company_view(c["id"]), "kept": kept, "logo_error": logo_error, "logo_look": look, "text": "filled"}
 
     def company_view(ref: str) -> dict:
         c = hunt.company(ref)
@@ -365,6 +424,22 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             raise HttpError(400, t("That isn't a picture Resume Studio can show ({type})", type=ctype or "?"))
         guard(lambda: hunt.save_logo(req.params["cid"], data, ctype, source="window"))
         return guard(lambda: company_view(req.params["cid"]))
+
+    def look_at(ref: str) -> dict:
+        """Claude looks at a company's logo as the window shows it: a png drawing of it, and what is wrong with it."""
+        c = hunt.company(ref)
+        path = hunt.logo_path(c["id"])
+        if path is None:
+            return {"company": c["id"], "logo": False, "look": "", "checked": False, "problem": t("it has no logo")}
+        ctype = next((k for k, v in LOGO_TYPES.items() if v == path.suffix[1:]), "")
+        data = path.read_bytes()
+        stats = inspect(data, ctype)
+        return {"company": c["id"], "logo": True, "file": str(path), "look": write_look(c["id"], stats),
+                "checked": stats is not None, "problem": logos.verdict(stats, data, ctype)}
+
+    @app.route("POST", "/api/hunt/logos/{cid}/look")
+    def look_logo(req: Request):
+        return guard(lambda: look_at(req.params["cid"]))
 
     @app.route("DELETE", "/api/hunt/logos/{cid}")
     def delete_logo(req: Request):
@@ -572,6 +647,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 return {"company": company_view(x["id"]), "text": "about"}
             if cmd == "fill":
                 return fill(str(a.get("ref") or ""), a.get("fields") or {})
+            if cmd == "logo":
+                return {**look_at(str(a.get("ref") or "")), "text": "looked"}
             if cmd == "scan":
                 refs = a.get("companies") or []
                 return {"scanned": scanner.scan_many(scan_ids({"companies": refs})), "text": "scanned"}
