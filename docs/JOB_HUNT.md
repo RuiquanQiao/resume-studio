@@ -179,11 +179,15 @@ All three were built on 2026-10-18. Choices made on the way:
     search), and the prompt says never to leave a company without one;
   - before a picture is kept, the window draws it at 128 px (`checkLogo` in `web/hunt.js`, any format: png,
     ico, svg, jpg) and reports how much of it shows on a white page; `logos.verdict` refuses a blank one (under
-    1.5 % shows) or a raster under 32 px, and the logo the company had stays. The background icon finder passes
+    1.5 % shows), a plain block of one colour with no mark (F1 Solutions' site icon is a red square), or a raster
+    under 32 px, and the logo the company had stays. The background icon finder passes
     such icons over for the next candidate. With no window open, only the size a png or ico states is checked;
   - once a logo is saved, `fill` writes the window's drawing to `.cache/logo-look/<id>.png`; Claude looks at it
     and deletes it (older ones go after an hour). `hunt.py logo <company>` gives the same look at a logo already
-    there.
+    there;
+  - a company's square mark (its site or app icon) is preferred to its wordmark: the tables show the logo in a
+    26 px square, where a wide wordmark (Trip.com Group, Optiver, Metro Finance) shrank to a faint line. A
+    wordmark is kept only where the company has no square mark (Infosys, F1 Solutions, xFusion).
 - *Fixed (2026-10-23):* **a change shows while the user types.** The Applying workspace skipped every repaint
   while the cursor was in any of its boxes and never caught up, so a change from Claude waited for a switch of
   views. Now every change repaints at once (`repaintKeeping` in `web/ui.js`): the box being typed in comes back

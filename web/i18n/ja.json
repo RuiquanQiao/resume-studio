@@ -1788,5 +1788,6 @@
  "it doesn't open as a picture": "画像として開けません",
  "it has no logo": "ロゴがまだありません",
  "it is blank: nothing on it shows on a white page": "空白です：白い背景では何も見えません",
- "it is only {w}×{h} pixels, a blur at the size the tables show": "{w}×{h} ピクセルしかなく、表の大きさではぼやけます"
+ "it is only {w}×{h} pixels, a blur at the size the tables show": "{w}×{h} ピクセルしかなく、表の大きさではぼやけます",
+ "it is a plain block of one colour, with no mark on it": "単色のブロックで、マークがありません"
 }

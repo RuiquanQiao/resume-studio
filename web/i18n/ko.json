@@ -1788,5 +1788,6 @@
  "it doesn't open as a picture": "이미지로 열리지 않습니다",
  "it has no logo": "아직 로고가 없습니다",
  "it is blank: nothing on it shows on a white page": "비어 있습니다: 흰 바탕에서는 아무것도 보이지 않습니다",
- "it is only {w}×{h} pixels, a blur at the size the tables show": "{w}×{h} 픽셀밖에 안 되어 표에서는 흐릿하게 보입니다"
+ "it is only {w}×{h} pixels, a blur at the size the tables show": "{w}×{h} 픽셀밖에 안 되어 표에서는 흐릿하게 보입니다",
+ "it is a plain block of one colour, with no mark on it": "한 가지 색의 블록일 뿐, 마크가 없습니다"
 }

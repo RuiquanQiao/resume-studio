@@ -324,7 +324,8 @@ python scripts/hunt.py apply P12                          # the user goes for po
   their hiring systems, a logo link, the About), never only the About. Fields the user edited stay theirs.
   Every `fill` sends a `logo_url`, also when the company has a careers site (a careers site's icon is often blank,
   tiny or the hiring system's): its main site, its press kit, Wikimedia Commons (the direct upload link), else a
-  web search. `fill` refuses a blank or blurry picture; once one is saved it prints a png of how the window shows
+  web search; its square mark (site or app icon) when it has one, since the tables show a small square. `fill`
+  refuses a blank, plain-colour or blurry picture; once one is saved it prints a png of how the window shows
   it: look at it yourself, send another if it is wrong, and delete the png after. `hunt.py logo <company>` looks
   at one already there. A logo is the company's real picture: never draw one, never write into
   `.studio/hunt/logos/` yourself, and never leave a company without one: if every source fails, say which you tried.

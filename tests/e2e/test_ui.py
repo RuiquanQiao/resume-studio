@@ -1414,14 +1414,15 @@ def test_a_change_shows_while_the_user_types(page_all, server):
     server.req("DELETE", f"/api/hunt/companies/{cid}")
 
 
-def picture(side: int, rgba: tuple[int, int, int, int]) -> bytes:
-    """A real png, side × side, all one colour (alpha 0 = blank)."""
+def picture(side: int, rgba: tuple[int, int, int, int], mark: tuple[int, int, int, int] | None = None) -> bytes:
+    """A real png, side × side, all one colour (alpha 0 = blank), with a `mark` colour over its left half."""
     import struct
     import zlib
 
     def chunk(kind: bytes, body: bytes) -> bytes:
         return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
-    rows = b"".join(b"\x00" + bytes(rgba) * side for _ in range(side))
+    half = side // 2 if mark else 0
+    rows = b"".join(b"\x00" + bytes(mark or rgba) * half + bytes(rgba) * (side - half) for _ in range(side))
     return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", side, side, 8, 6, 0, 0, 0))
             + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
 
@@ -1432,7 +1433,8 @@ def test_a_logo_is_looked_at_before_it_is_kept(page_all, server):
     import http.server
     import threading
     pics = {"/blank.png": picture(64, (0, 0, 0, 0)), "/white.png": picture(64, (255, 255, 255, 255)),
-            "/tiny.png": picture(16, (30, 60, 200, 255)), "/good.png": picture(96, (30, 60, 200, 255))}
+            "/tiny.png": picture(16, (30, 60, 200, 255), (240, 140, 0, 255)), "/block.png": picture(96, (220, 0, 60, 255)),
+            "/good.png": picture(96, (30, 60, 200, 255), (240, 140, 0, 255))}
 
     class Pics(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
@@ -1450,7 +1452,7 @@ def test_a_logo_is_looked_at_before_it_is_kept(page_all, server):
     try:
         cid = server.req("POST", "/api/hunt/companies", {"name": "Logo 测试"})[1]["company"]["id"]
         fill = lambda name: server.req("POST", "/api/hunt/do", {"cmd": "fill", "args": {"ref": cid, "fields": {"logo_url": f"{base}/{name}"}}})[1]
-        for name in ("blank.png", "white.png", "tiny.png"):
+        for name in ("blank.png", "white.png", "tiny.png", "block.png"):   # block: a plain red square, no mark on it
             r = fill(name)
             assert r["logo_error"] and not r["company"]["company"]["logo"] and not r["logo_look"], (name, r)
         assert "16" in fill("tiny.png")["logo_error"]

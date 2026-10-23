@@ -1788,5 +1788,6 @@
  "it doesn't open as a picture": "它打不开，不是图片",
  "it has no logo": "它还没有 logo",
  "it is blank: nothing on it shows on a white page": "它是空白的：放在白底上什么都看不见",
- "it is only {w}×{h} pixels, a blur at the size the tables show": "它只有 {w}×{h} 像素，在表格里显示会糊成一片"
+ "it is only {w}×{h} pixels, a blur at the size the tables show": "它只有 {w}×{h} 像素，在表格里显示会糊成一片",
+ "it is a plain block of one colour, with no mark on it": "它只是一块纯色，上面没有任何标志"
 }

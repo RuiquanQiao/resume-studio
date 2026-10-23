@@ -88,8 +88,10 @@ How to work it:
   a careers site (the icon a careers site carries is often blank, tiny or the hiring system's own, as on Moka,
   Feishu or ByteDance's system under the company's domain). Where to look, in order: its main website (not the
   careers site), its press kit or brand page, Wikipedia / Wikimedia Commons (the file's direct
-  upload.wikimedia.org link, never the `File:` page), then a web search for "<company> logo". Pick the version
-  that reads on a white page, square or wide, at least 64 px. `fill` checks the picture as the window draws it and
+  upload.wikimedia.org link, never the `File:` page), then a web search for "<company> logo". Pick its square
+  mark (the icon on its site or its app icon, without a seasonal or "极速版" badge) when it has one: the tables show
+  the logo in a small square, where a wide wordmark shrinks to an unreadable line. A wordmark only when it has no
+  square mark. It must read on a white page; 64 px or more where there is one (its site's icon may be 32-48 px). `fill` checks the picture as the window draws it and
   refuses one that is blank or a blur ("logo not saved: …"): then find another, don't stop there. Once it is saved,
   `fill` prints a png of how the window shows it: **look at it with your own eyes** (read the image) before you
   call the company done. If it is blank, someone else's icon, cut off or unreadable, send another `logo_url`.

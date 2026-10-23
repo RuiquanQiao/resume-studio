@@ -108,12 +108,15 @@ def raster_size(data: bytes, ctype: str) -> tuple[int, int] | None:
 
 def verdict(stats: dict | None, data: bytes = b"", ctype: str = "") -> str:
     """Why this picture is no logo to show ("" when it is fine). `stats` comes from the window's drawing of it:
-    {width, height, visible} where visible is the share of a 128 px drawing that shows on white, 0..1."""
+    {width, height, visible, plain}: visible is the share of a 128 px drawing that shows on white (0..1),
+    plain says nearly all of it is one colour (a block with no mark)."""
     if stats:
         if stats.get("error"):
             return t("it doesn't open as a picture")
         if float(stats.get("visible") or 0) < 0.015:
             return t("it is blank: nothing on it shows on a white page")
+        if stats.get("plain"):
+            return t("it is a plain block of one colour, with no mark on it")
         w, h = int(stats.get("width") or 0), int(stats.get("height") or 0)
         if w and h and not ctype.startswith("image/svg") and min(w, h) < MIN_SIDE:
             return t("it is only {w}×{h} pixels, a blur at the size the tables show", w=w, h=h)

@@ -1908,5 +1908,6 @@
  "it doesn't open as a picture": "no se abre como imagen",
  "it has no logo": "aún no tiene logo",
  "it is blank: nothing on it shows on a white page": "está en blanco: sobre fondo blanco no se ve nada",
- "it is only {w}×{h} pixels, a blur at the size the tables show": "solo tiene {w}×{h} píxeles y se ve borrosa en las tablas"
+ "it is only {w}×{h} pixels, a blur at the size the tables show": "solo tiene {w}×{h} píxeles y se ve borrosa en las tablas",
+ "it is a plain block of one colour, with no mark on it": "es un bloque de un solo color, sin ninguna marca"
 }

@@ -112,17 +112,21 @@ async function checkLogo({ token, url }) {
     const g = cv.getContext("2d");
     g.drawImage(img, (S - dw) / 2, (S - dh) / 2, dw, dh);
     const px = g.getImageData(0, 0, S, S).data;
-    let shows = 0;
+    let shows = 0, top = 0;
+    const tones = new Map();   // colours, roughly, of what shows: one colour all over is a block with no mark
     for (let i = 0; i < px.length; i += 4) {
       const a = px[i + 3] / 255;   // the pixel over white
       const r = 255 + (px[i] - 255) * a, gr = 255 + (px[i + 1] - 255) * a, b = 255 + (px[i + 2] - 255) * a;
-      if (Math.min(r, gr, b) < 235) shows++;
+      if (Math.min(r, gr, b) >= 235) continue;
+      shows++;
+      const k = (r >> 4) * 256 + (gr >> 4) * 16 + (b >> 4), n = (tones.get(k) || 0) + 1;
+      tones.set(k, n); if (n > top) top = n;
     }
     const out = document.createElement("canvas"); out.width = out.height = 256;
     const o = out.getContext("2d");
     o.fillStyle = "#fff"; o.fillRect(0, 0, 256, 256);
     o.drawImage(img, (256 - dw * 2) / 2, (256 - dh * 2) / 2, dw * 2, dh * 2);
-    stats = { width: w, height: ht, visible: shows / (S * S), png: out.toDataURL("image/png") };
+    stats = { width: w, height: ht, visible: shows / (S * S), plain: shows > 0.9 * S * S && top > 0.97 * shows, png: out.toDataURL("image/png") };
   } catch (e) { stats = { error: true }; }
   api("POST", url, stats).catch(() => {});
 }
