@@ -387,6 +387,17 @@ def test_a_posting_is_read_in_a_tab_of_its_own(live, data_file, fake_site):
     assert live.req("GET", "/api/browser")[1]["url"].endswith("/linkedin/profile.html")
 
 
+def test_a_browser_left_with_blank_tabs_closes_and_one_in_use_stays(live, fake_site):
+    """What a scan does when it is done with the browser it started (jobhunt/scan.py close_browser)."""
+    b = live.inst.browser
+    b.stop()
+    assert b.ensure() is True and b.ensure() is False          # the first call started it; the second found it running
+    b.read_page(fake_site + "/jobs/posting.html", "async (h) => 1")   # a scan's own tab, closed again after reading
+    assert b.close_if_idle() and b.status()["state"] == "off"
+    b.open(fake_site + "/linkedin/profile.html")                 # someone works in it: it is theirs now
+    assert not b.close_if_idle() and b.status()["state"] == "running"
+
+
 def test_browser_command_drives_a_real_page(live, data_file, fake_site):
     """scripts/browser.py → the window → CDP → a headless Edge with its own profile."""
     r = cli(data_file, "open", fake_site + "/linkedin/profile.html")

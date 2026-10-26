@@ -1805,5 +1805,7 @@
  "Closing date not known": "締切日不明",
  "Claude is replying": "Claude が返信中",
  "Claude is waiting for you": "Claude があなたの対応を待っています",
- "A new reply you haven't seen": "未読の新しい返信"
+ "A new reply you haven't seen": "未読の新しい返信",
+ "Scan finished: {what}": "スキャン完了：{what}",
+ "{n} company couldn't be read": "{n} 社を読み取れませんでした"
 }

@@ -340,7 +340,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         sc = posts.scans()
         return {**tb, "platforms": platforms(), "tracker": tracker(), "career_ops": tool.installed(),
                 "scan": {"keywords": sc["keywords"], "daily": sc["daily"], "last_all": sc["last_all"],
-                         "running": dict(scanner.running), "providers": scanner.providers_ready()},
+                         "running": dict(scanner.running), "providers": scanner.providers_ready(),
+                         "last_run": scanner.last_run},
                 "changes": posts.changes(), "geo": located()}
 
     # ---- open postings: scanning the companies' sites ----

@@ -78,6 +78,7 @@ async function loadHunt({ quiet = false } = {}) {
         H.data = data; H.viewsStale = false;
         if (H.page && H.page.kind !== "platform") await loadHuntPage({ quiet: true });
       } while (H.again);
+      scanDone();
       if (!H.autoScan) { H.autoScan = true; api("POST", "/api/hunt/scan", { auto: true }).catch(() => {}); }
     } catch (e) { if (!quiet) toast(e.message); }
     finally { H.loading = null; }
@@ -633,6 +634,18 @@ function openChip(c) {
   if (!ps.open) return null;
   return h("button", { class: "role-chip open-chip", title: t("{n} open on its sites", { n: ps.open }), onclick: () => openHunt("company", c.id) },
     icon("briefcase"), h("span", { class: "rc-name" }, t("{n} open", { n: ps.matching })), news > 0 && h("span", { class: "rc-new" }, t("{n} new", { n: news })));
+}
+
+// a scan started from the window or by Claude has ended (the browser it opened is closed by then): say what it found;
+// the daily scan on opening says nothing, its news is in "Today"
+function scanDone() {
+  const run = scanInfo().last_run || {};
+  const seen = H.lastRun;
+  H.lastRun = run.at || 0;
+  if (seen === undefined || !run.at || run.at === seen || run.auto) return;
+  const parts = [t("{n} new", { n: run.new }), t("{n} closed", { n: run.closed })];
+  if (run.failed) parts.push(t("{n} company couldn't be read", { n: run.failed }, "{n} companies couldn't be read"));
+  toast(t("Scan finished: {what}", { what: parts.join(" · ") }), { ms: 6000 });
 }
 
 async function scanCompanies(ids = null) {

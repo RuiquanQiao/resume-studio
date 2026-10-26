@@ -1297,6 +1297,46 @@ def test_evaluate_starts_a_career_ops_chat(connected, page_all, server, fake_cla
 
 
 # ---------------------------------------------------------------- Applying (the job-hunt tracker)
+def test_a_scan_started_in_the_window_says_when_it_is_done(page, server, monkeypatch):
+    """Scan all: the button spins while it runs; at the end a message says what it found, and the browser the
+    scan started is closed again (jobhunt/scan.py close_browser)."""
+    pg = page
+    hunt = server.inst.hunt
+    hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
+    jobs = "https://careers.xinghe.example/campus/jobs"
+    hunt.scanner.postings.set_scan_state("C1", route={"pages": [{"url": jobs, "script": "async () => ({postings: []})"}]})
+
+    class Browser:
+        closed = 0
+
+        def ensure(self):
+            return True
+
+        def read_page(self, url, script, timeout=60.0):
+            time.sleep(0.5)   # long enough to see the button spin
+            return {"postings": [{"title": "服务端研发工程师", "url": jobs + "/1"}, {"title": "算法工程师", "url": jobs + "/2"}]}
+
+        def close_if_idle(self):
+            Browser.closed += 1
+            return True
+
+        def status(self):
+            return {"state": "off"}
+    monkeypatch.setattr(hunt.scanner, "browser", Browser())
+    pg.keyboard.press("Control+3")
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.click("#hunt-scan-all")
+    pg.wait_for_selector("#hunt-scan-all[disabled] .spin")             # a spinner one can see
+    pg.screenshot(path=str(ART / "hunt-scan-running.png"), clip=pg.locator("#hunt-scan-all").bounding_box())
+    pg.wait_for_selector("#toast.show:has-text('扫描完成')")
+    assert "2 个新" in pg.inner_text("#toast") and "0 个已关闭" in pg.inner_text("#toast")
+    assert Browser.closed == 1 and not pg.is_disabled("#hunt-scan-all")
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"hunt-scan-done-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+
+
 def test_a_company_with_several_roles_goes_out_with_a_pinned_version(page, server):
     pg = page
     pg.keyboard.press("Control+3")

@@ -1805,5 +1805,7 @@
  "Closing date not known": "截止日期未知",
  "Claude is replying": "Claude 正在回复",
  "Claude is waiting for you": "Claude 在等你处理",
- "A new reply you haven't seen": "有新回复，你还没看"
+ "A new reply you haven't seen": "有新回复，你还没看",
+ "Scan finished: {what}": "扫描完成：{what}",
+ "{n} company couldn't be read": "{n} 家公司没读到"
 }

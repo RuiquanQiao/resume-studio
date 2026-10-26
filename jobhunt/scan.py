@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import shutil
 import threading
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -65,6 +66,9 @@ class Scanner:
         self.running: dict[str, str] = {}      # company id -> what is reading it now
         self.lock = threading.Lock()
         self._providers: dict[str, str | None] = {}   # url -> career-ops provider id (or None), per run of the app
+        self._opened = False                   # a scan started the browser: the last scan to finish closes it
+        self._batches = 0                      # scan_many runs going on now
+        self.last_run: dict = {}               # the last scan_many: {at, auto, companies, new, closed, failed}
 
     # ---- which sites, read how ----
     @staticmethod
@@ -118,15 +122,17 @@ class Scanner:
 
     # ---- one company ----
     def run_route(self, route: dict) -> list[dict]:
+        """Each page in a tab of its own, off the screen (core/browser.py read_page): a scan never takes the tab
+        the user or Claude is working in."""
         found: list[dict] = []
         try:
-            self.browser.ensure()
+            if self.browser.ensure():
+                self._opened = True
         except BrowserError as e:
             raise RouteFailed(str(e))
         for p in route.get("pages") or []:
             try:
-                self.browser.open(p["url"])
-                out = self.browser.run_script(p["script"], timeout=120)
+                out = self.browser.read_page(p["url"], p["script"], timeout=120)
             except BrowserError as e:
                 raise RouteFailed(t("the page {url} didn't read: {error}", url=p["url"], error=str(e)))
             if isinstance(out, dict) and out.get("signed_out"):
@@ -209,16 +215,39 @@ class Scanner:
         """`auto` (the daily scan when the window opens) never opens the browser by itself: sites read by a route
         wait for a scan the user starts, unless the browser is open already."""
         out = []
-        routes = not auto or self.browser_open()
-        for cid in ids:
-            try:
-                out.append(self.scan(cid, allow_route=routes))
-            except Exception as e:  # noqa: BLE001  one company's trouble never stops the rest
-                out.append({"company": cid, "error": str(e)})
-        if not auto or out:
-            self.postings.mark_all_scanned()
+        with self.lock:
+            self._batches += 1
+        try:
+            routes = not auto or self.browser_open()
+            for cid in ids:
+                try:
+                    out.append(self.scan(cid, allow_route=routes))
+                except Exception as e:  # noqa: BLE001  one company's trouble never stops the rest
+                    out.append({"company": cid, "error": str(e)})
+            if not auto or out:
+                self.postings.mark_all_scanned()
+            self.last_run = {"at": time.time(), "auto": auto, "companies": len(out),
+                             "new": sum(int(r.get("new") or 0) for r in out),
+                             "closed": sum(int(r.get("closed") or 0) for r in out),
+                             "failed": sum(1 for r in out if r.get("error"))}
+        finally:
+            with self.lock:
+                self._batches -= 1
+            self.close_browser()
         self.publish()
         return out
+
+    def close_browser(self) -> None:
+        """The browser a scan opened is closed once no scan is running, unless a page is open in it (the user or
+        Claude went on in it): then it is theirs. One that was open before the scan is never closed."""
+        with self.lock:
+            if not self._opened or self.running or self._batches:
+                return
+            self._opened = False
+        try:
+            self.browser.close_if_idle()
+        except Exception:  # noqa: BLE001  closing is a courtesy; the scan's results stand
+            pass
 
     def start(self, ids: list[str], *, auto: bool = False) -> None:
         threading.Thread(target=self.scan_many, args=(ids,), kwargs={"auto": auto}, daemon=True, name="hunt-scan").start()

@@ -283,11 +283,12 @@ class ManagedBrowser:
         self.state, self.conn = "off", None
         self.pages, self.sessions, self.contexts, self.current = {}, {}, {}, None
 
-    def ensure(self) -> None:
-        """Running and connected, starting it (or reattaching to the one left open) when needed."""
+    def ensure(self) -> bool:
+        """Running and connected, starting it (or reattaching to the one left open) when needed.
+        True when this call started the browser (a caller that did may close it again when it is done)."""
         with self.lock:
             if self.conn is not None and not self.conn.closed:
-                return
+                return False
             if self.state == "signin":
                 raise BrowserError("The browser is open for signing in, without Resume Studio's control. "
                                    "When the sign-in is done, switch back in the window (or close that browser window).")
@@ -302,11 +303,13 @@ class ManagedBrowser:
             port_file = profile / "DevToolsActivePort"
             self.state, self.error = "starting", ""
             self._changed()
+            started = False
             try:
                 port = self._live_port(port_file)
                 if port is None:
                     port_file.unlink(missing_ok=True)
                     self._launch(exe, profile)
+                    started = True
                     port = self._wait_port(port_file)
                 self._connect(port)
             except (BrowserError, CdpError, OSError) as e:
@@ -315,6 +318,7 @@ class ManagedBrowser:
                 raise BrowserError(str(e)) from e
             self.state = "running"
             self._changed()
+            return started
 
     def _live_port(self, port_file: Path) -> int | None:
         try:
@@ -525,6 +529,22 @@ class ManagedBrowser:
                 self.proc = None
             self._lost()
             self._changed()
+
+    def close_if_idle(self) -> bool:
+        """Close the browser when no web page is open in it (only blank tabs, or the browser's own pages such as
+        Edge's sync prompt): a scan that started it closes it when it is done, but never while the user or Claude
+        has a page open there. True when it closed."""
+        with self.lock:
+            if self.state != "running" or self.conn is None or self.conn.closed:
+                return False
+            try:
+                targets = self.conn.send("Target.getTargets", timeout=5).get("targetInfos", [])
+            except CdpError:
+                return False
+            if any(x.get("type") == "page" and x.get("url", "").startswith(("http://", "https://", "file:")) for x in targets):
+                return False
+            self.stop()
+            return True
 
     # ---- the page being worked on ---------------------------------------------
     def _session(self) -> str:

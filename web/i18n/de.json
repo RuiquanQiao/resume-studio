@@ -1925,5 +1925,10 @@
  "Closing date not known": "Bewerbungsschluss unbekannt",
  "Claude is replying": "Claude antwortet",
  "Claude is waiting for you": "Claude wartet auf dich",
- "A new reply you haven't seen": "Neue Antwort, noch nicht gelesen"
+ "A new reply you haven't seen": "Neue Antwort, noch nicht gelesen",
+ "Scan finished: {what}": "Scan fertig: {what}",
+ "{n} company couldn't be read": [
+  "{n} Firma konnte nicht gelesen werden",
+  "{n} Firmen konnten nicht gelesen werden"
+ ]
 }

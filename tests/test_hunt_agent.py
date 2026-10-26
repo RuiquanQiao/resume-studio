@@ -273,11 +273,18 @@ def test_postings_are_matched_across_scans(hunt):
 
 
 class FakeBrowser:
-    def __init__(self, pages: dict):
+    def __init__(self, pages: dict, off: bool = False):
         self.pages, self.at, self.opened = pages, "", []
+        self.off, self.closes = off, 0
 
     def ensure(self):
-        pass
+        started, self.off = self.off, False
+        return started
+
+    def close_if_idle(self):
+        self.closes += 1
+        self.off = True
+        return True
 
     def open(self, url, new_tab=False):
         self.at = url
@@ -319,6 +326,36 @@ def test_a_site_is_scanned_by_its_recorded_route(hunt):
     browser.pages[page] = {"postings": []}
     res = sc.scan("星河科技")
     assert res["route_broken"] and not res["signed_out"] and not ps.all()[0]["closed"]
+
+
+def test_a_scan_closes_the_browser_it_opened_and_only_that(hunt):
+    ps = Postings(hunt)
+    hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
+    page = "https://careers.xinghe.example/campus/jobs"
+    browser = FakeBrowser({page: {"postings": [{"title": "服务端研发工程师", "url": page + "/1"}]}}, off=True)
+    sc = Scanner(hunt, ps, NoTool(), browser, lambda: None)
+    sc.save_route("星河科技", {"pages": [{"url": page, "script": "async (h) => ({postings: []})"}]})
+    # the scan started the browser: it is closed once the scan is done, and it says what it found
+    sc.scan_many(["C1"])
+    assert browser.closes == 1 and browser.opened == [page]
+    assert {k: sc.last_run[k] for k in ("auto", "companies", "new", "closed", "failed")} == \
+        {"auto": False, "companies": 1, "new": 1, "closed": 0, "failed": 0}
+    # it was open before the scan (the user or Claude had it): it stays open
+    browser.off = False
+    sc.scan_many(["C1"])
+    assert browser.closes == 1
+    # two scans at once: the one that opened it doesn't close it under the other; the last to finish does
+    browser.off = True
+    sc._batches += 1                       # another scan_many is still going
+    sc.scan_many(["C1"])
+    assert browser.closes == 1
+    sc._batches -= 1
+    sc.close_browser()
+    assert browser.closes == 2
+    # a site that asks to sign in counts as a company that couldn't be read
+    browser.pages[page] = {"signed_out": True}
+    sc.scan_many(["C1"])
+    assert sc.last_run["failed"] == 1 and browser.closes == 3
 
 
 needs_node = pytest.mark.skipif(not shutil.which("node"), reason="Node.js not installed")

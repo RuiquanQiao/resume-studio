@@ -1805,5 +1805,7 @@
  "Closing date not known": "마감일 모름",
  "Claude is replying": "Claude가 답하는 중",
  "Claude is waiting for you": "Claude가 기다리고 있어요",
- "A new reply you haven't seen": "아직 안 본 새 답변"
+ "A new reply you haven't seen": "아직 안 본 새 답변",
+ "Scan finished: {what}": "스캔 완료: {what}",
+ "{n} company couldn't be read": "{n}개 회사를 읽지 못했습니다"
 }
