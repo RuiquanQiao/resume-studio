@@ -98,6 +98,10 @@ async function loadClaudeInfo(refresh = false) {
     const r = await api("GET", "/api/claude" + (refresh ? "?refresh=1" : ""));
     ui.claude = { ...ui.claude, ...r };
     ui.chat.available = r.available;
+    if (!r.defaults) {                                        // carry over a choice the page used to keep itself
+      const old = localDefaults();
+      if (old) ui.claude.defaults = (await api("PUT", "/api/chat-defaults", old)).defaults;
+    }
   } catch (_) { /* keep what we had */ }
   renderPickers();
 }
@@ -106,7 +110,13 @@ const info = () => (ui.claude && ui.claude.info) || null;
 // what the next message will use: the open chat's choice, or the remembered one for a new chat
 function chatSettings() {
   if (ui.chat.meta) return { model: ui.chat.meta.model_choice || null, effort: ui.chat.meta.effort || null, mode: ui.chat.meta.mode || null };
-  try { return { model: null, effort: null, mode: null, ...JSON.parse(store("chat-defaults") || "{}") }; } catch (_) { return { model: null, effort: null, mode: null }; }
+  return { model: null, effort: null, mode: null, ...((ui.claude && ui.claude.defaults) || localDefaults() || {}) };
+}
+function localDefaults() { try { return JSON.parse(store("chat-defaults") || "null"); } catch (_) { return null; } }
+// new chats start with the last choice, like Claude Code; the app's prefs keep it, so a new port or restart doesn't lose it
+async function saveDefaults(next) {
+  ui.claude = { ...ui.claude, defaults: next };
+  try { ui.claude.defaults = (await api("PUT", "/api/chat-defaults", next)).defaults; store("chat-defaults", null); } catch (_) { /* kept for this session */ }
 }
 function allModels() { const i = info(); return i ? [...i.models, ...i.more_models] : []; }
 function modelEntry(value) { return allModels().find((m) => m.value === value) || null; }
@@ -131,11 +141,11 @@ function effectiveMode() {
 
 async function setChatSetting(field, value) {
   const next = { ...chatSettings(), [field]: value };
-  store("chat-defaults", JSON.stringify(next));             // new chats start with the last choice, like Claude Code
   if (field === "model" && value) {                           // an effort the new model can't do falls back to auto
     const m = modelEntry(value);
-    if (m && next.effort && !m.efforts.includes(next.effort)) { next.effort = null; store("chat-defaults", JSON.stringify(next)); if (ui.chat.id) await setChatSetting("effort", null); }
+    if (m && next.effort && !m.efforts.includes(next.effort)) { next.effort = null; if (ui.chat.id) await setChatSetting("effort", null); }
   }
+  await saveDefaults({ model: next.model, effort: next.effort, mode: next.mode });
   if (ui.chat.id) {
     try {
       ui.chat.meta = await api("PUT", "/api/chats/" + ui.chat.id, { [field]: value });

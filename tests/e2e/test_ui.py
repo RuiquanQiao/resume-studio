@@ -899,6 +899,11 @@ def test_model_effort_and_mode_chips(page, server, fake_claude):
     assert (meta["model_choice"], meta["mode"]) == ("claude-opus-4-1", "default")
     page.click("#chat-new")                                                     # a new chat starts with the last choice
     page.wait_for_selector("#chat-model-btn .lbl:text('Opus 4.1')")
+    page.evaluate("localStorage.clear()")                                       # a restart on another port has no page storage
+    page.reload()
+    page.wait_for_function("() => ui.claude && ui.claude.info")
+    page.click("#chat-new")
+    page.wait_for_selector("#chat-model-btn .lbl:text('Opus 4.1')")             # the app's prefs still have it
 
 
 def test_permission_card_in_the_chat(page, server, fake_claude):

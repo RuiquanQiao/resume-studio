@@ -16,7 +16,8 @@ from .evidence import EvidenceTracker
 from .service import Conflict, Studio
 
 
-def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTracker, info: ClaudeInfo) -> None:
+def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTracker, info: ClaudeInfo,
+             prefs=None) -> None:
     render_lock = threading.Lock()
     studio.extra_state = lambda: {"claude": {"available": chats.available(), "running": chats.running()}}
 
@@ -207,7 +208,19 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
             info.refresh()
         elif info.data is None and not info.loading:
             info.refresh_async(lambda: app.bus.publish("claude.info", {}))
-        return {**info.get(), "available": chats.available(), "limits": chats.limits, "modes": MODES}
+        return {**info.get(), "available": chats.available(), "limits": chats.limits, "modes": MODES,
+                "defaults": (prefs.load().get("chat_defaults") if prefs else None)}
+
+    @app.route("PUT", "/api/chat-defaults")
+    def set_chat_defaults(req: Request):
+        """What a new chat starts with: the last model / effort / mode picked in this app. Kept in the
+        app's own prefs (not the page's storage, which a new port would lose) and never in Claude Code's
+        settings: null for a field means "follow Claude Code"."""
+        f = chat_fields({k: v for k, v in body(req).items() if k in ("model", "effort", "mode")})
+        saved = {"model": f.get("model_choice"), "effort": f.get("effort"), "mode": f.get("mode")}
+        if prefs:
+            prefs.save(chat_defaults=saved)
+        return {"defaults": saved}
 
     @app.route("GET", "/api/chats")
     def list_chats(req: Request):

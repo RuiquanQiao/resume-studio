@@ -128,7 +128,7 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
     # what the user's Claude Code offers (models, effort, commands): cached, refreshed at every start
     info = ClaudeInfo(claude_command, studio.data_dir, studio.store.state_dir / "claude-info.json")
     info.refresh_async(lambda: app.bus.publish("claude.info", {}))
-    api.register(app, studio, chats, tracker, info)
+    api.register(app, studio, chats, tracker, info, prefs=inst.prefs)
     identity = {"app": "resume-studio", "data": str(studio.store.path)}
     inst.studio, inst.chats, inst.identity, inst.info = studio, chats, identity, info
     window = inst.window
