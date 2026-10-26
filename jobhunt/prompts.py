@@ -100,9 +100,10 @@ How to work it:
   never write files into the data folder (`.studio`) yourself, because the window only shows what came in
   through `fill`. Never leave a company without a logo: if every source fails, tell the user which sources you
   tried and that its logo is still missing.
-- When to apply by belongs to a role, never to the company, and is an event, not a field: every role starts
-  with its 投递 event. Give it the date the posting says with `--apply-by YYYY-MM-DD` on `add-role` / `edit-role`
-  (never with `book`); no date (the posting says none, or 滚动招聘 / 招满即止) means it closes once filled.
+- When to apply by belongs to a role, never to the company, and is an event, not a field. Set it only from what
+  the posting says: `--apply-by YYYY-MM-DD` on `add-role` / `edit-role` (never with `book`) for the date it gives,
+  `--apply-by rolling` only when it says 滚动招聘 / 招满即止 / open until filled. A posting that names no closing
+  date gets no apply event: never guess a date or call it 招满即止.
 - `--batch` is the hiring round in the user's own words (27秋招, 27寒假实习, 2027 Graduate Program…): reuse the
   names the user's other roles have (`list` shows them); never make up a scheme of your own. What these rounds
   mean and when they run, country by country, is in `{CALENDARS}`: read it before you name a batch or reason about

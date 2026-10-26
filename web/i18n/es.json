@@ -1636,7 +1636,6 @@
  "version {n} of your plan": "versión {n} de tu plan",
  "via {platform}": "vía {platform}",
  "v{n} · changed": "v{n} · cambiado",
- "waiting for you": "esperándote",
  "window {size}": "ventana {size}",
  "write a file": "escribir un archivo",
  "xelatex failed, see main.log": "xelatex falló, consulta main.log",
@@ -1782,7 +1781,6 @@
   "{n} commits nuevos:"
  ],
  "{n} of {total} requirements": "{n} de {total} requisitos",
- "{n} on its sites": "{n} en sus sitios",
  "{n} open": "{n} abiertos",
  "{n} open on its sites": "{n} abiertos en sus sitios",
  "{n} page": [
@@ -1909,5 +1907,23 @@
  "it has no logo": "aún no tiene logo",
  "it is blank: nothing on it shows on a white page": "está en blanco: sobre fondo blanco no se ve nada",
  "it is only {w}×{h} pixels, a blur at the size the tables show": "solo tiene {w}×{h} píxeles y se ve borrosa en las tablas",
- "it is a plain block of one colour, with no mark on it": "es un bloque de un solo color, sin ninguna marca"
+ "it is a plain block of one colour, with no mark on it": "es un bloque de un solo color, sin ninguna marca",
+ "Add a careers site below first": "Primero añade abajo un sitio de empleo",
+ "First add the roles you apply for on its site, under Roles.": "Primero añade arriba, en Puestos, los puestos a los que te postulas en su sitio.",
+ "First pick the subset this site gets, above.": "Primero elige arriba el subconjunto que recibe este sitio.",
+ "Freeze this column": "Fijar esta columna",
+ "Freeze up to this column": "Fijar hasta esta columna",
+ "Unfreeze columns": "Dejar de fijar columnas",
+ "Hide this column": "Ocultar esta columna",
+ "Show this column": "Mostrar esta columna",
+ "Written test": "Examen escrito",
+ "1st interview": "1.ª entrevista",
+ "2nd interview": "2.ª entrevista",
+ "3rd interview": "3.ª entrevista",
+ "HR interview": "Entrevista con RR. HH.",
+ "Final interview": "Entrevista final",
+ "Closing date not known": "Fecha de cierre desconocida",
+ "Claude is replying": "Claude está respondiendo",
+ "Claude is waiting for you": "Claude te está esperando",
+ "A new reply you haven't seen": "Respuesta nueva sin leer"
 }

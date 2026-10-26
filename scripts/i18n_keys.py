@@ -25,10 +25,10 @@ _JS_CALL = re.compile(r"\bt\(\s*" + _JS_STR + r"(?:\s*,\s*\{[^{}]*\}\s*,\s*" + _
 # tables whose values are translated where they are used
 _JS_TABLES = {
     "app.js": ["NOTE_TIPS", "AI_LABELS", "FONT_GROUPS", "CHANGE_NAMES"],
-    "chat.js": ["BUILTIN_DESC"],
+    "chat.js": ["BUILTIN_DESC", "CHAT_STATES"],
     "jobs.js": ["STATE_NAMES", "DECISIONS", "IMPORTANCE", "VALUE_NAMES", "CHECK_NAMES", "STEP_NAMES", "MODE_NAMES", "WEB_STEPS"],
     "autofill.js": ["OPS", "APPLIED", "SECTION_NAMES", "FIELD_NAMES", "ADD_ONE"],
-    "hunt.js": ["HUNT_TABS", "HSTATES", "HCHANNELS", "SITE_KINDS", "BATCH_NAMES", "PLACE_KINDS"],
+    "hunt.js": ["HUNT_TABS", "HSTATES", "HCHANNELS", "SITE_KINDS", "BATCH_NAMES", "PLACE_KINDS", "BOOKED_KINDS"],
     "dbview.js": ["FILTER_OPS", "LAYOUT_NAMES", "LAYOUT_AS"],
 }
 _JS_GROUPS = {"jobs.js": ["MODE_GROUPS"]}   # [["Group title", [...]], ...]

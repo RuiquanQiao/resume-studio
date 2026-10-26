@@ -20,6 +20,7 @@
 const DBV = {
   tables: null,        // GET /api/hunt/views: {table: {active, views: [...]}}
   timers: {},          // table -> pending save
+  scrollX: {},         // "table:view" -> how far its table is scrolled sideways, kept over repaints
   pending: false,      // a repaint waits for an editor to close
   drag: null,          // {table, key} while a column heading is dragged
   saved: 0,            // when this window last saved: the "views" event that follows is its own echo
@@ -462,7 +463,7 @@ function dbvPropsPanel(anchor, o, view, repaint) {
         }),
         icon(TYPE_ICONS[c.prop.type]), h("span", { class: "mi-label" }, c.prop.label), h("span", { class: "spacer" }),
         h("button", { type: "button", class: "btn icon sm ghost", disabled: title, "aria-pressed": String(!c.hidden),
-          title: c.hidden ? t("Show") : t("Hide"), "aria-label": (c.hidden ? t("Show") : t("Hide")) + " " + c.prop.label,
+          title: c.hidden ? t("Show this column") : t("Hide this column"), "aria-label": (c.hidden ? t("Show this column") : t("Hide this column")) + " " + c.prop.label,
           onclick: () => { c.hidden = !c.hidden; dbvSetColumns(view, cols); dbvSave(o.table, null); DBV.pending = true; paint(); } },
         icon(c.hidden ? "eyeOff" : "eye"))));
     });
@@ -490,7 +491,13 @@ function dbvHeadMenu(th, o, view, col, repaint) {
       onClick: () => { view.group = view.group === p.key ? "" : p.key; view.folded = []; dbvSave(o.table, repaint); } },
     "sep",
     { label: col.wrap ? t("Don't wrap text") : t("Wrap text"), icon: "wrap", onClick: () => setCol((c) => { c.wrap = !c.wrap; }) },
-    p.type !== "title" && { label: t("Hide"), icon: "eyeOff", onClick: () => setCol((c) => { c.hidden = true; }) },
+    // frozen columns stay on screen while the table runs sideways; this column and those before it
+    (() => {
+      const at = dbvColumns(view, o.props).filter((c) => !c.hidden).findIndex((c) => c.key === p.key) + 1;
+      return dbvFrozen(view) === at ? { label: t("Unfreeze columns"), icon: "columns", onClick: () => { view.freeze = 0; dbvSave(o.table, repaint); } }
+        : { label: at === 1 ? t("Freeze this column") : t("Freeze up to this column"), icon: "columns", onClick: () => { view.freeze = at; dbvSave(o.table, repaint); } };
+    })(),
+    p.type !== "title" && { label: t("Hide this column"), icon: "eyeOff", onClick: () => setCol((c) => { c.hidden = true; }) },
   ], { minWidth: 200 });
 }
 
@@ -533,6 +540,9 @@ function dbvFit(cols, width, avail) {
   return out;
 }
 
+// how many columns from the left stay put while the table scrolls sideways: the title alone until the user picks
+const dbvFrozen = (view) => (Number.isInteger(view.freeze) ? view.freeze : 1);
+
 function dbvTableEl(o, view, cols, rows, repaint) {
   const shown = cols.filter((c) => !c.hidden);
   const width = (c) => c.width || c.prop.width || DEF_WIDTH[c.prop.type];
@@ -543,7 +553,10 @@ function dbvTableEl(o, view, cols, rows, repaint) {
   const fit = sized || pane <= 0 ? null : dbvFit(shown, width, pane);
   if (pane > 0) dbvLastPane = pane;
   const px = (c) => (fit ? fit.get(c.key) : width(c));
-  const colgroup = h("colgroup", null, shown.map((c) => h("col", { "data-key": c.key, style: `width:${px(c)}px` })), sized && h("col", { class: "dbv-padcol" }));
+  const colgroup = () => h("colgroup", null, shown.map((c) => h("col", { "data-key": c.key, style: `width:${px(c)}px` })), sized && h("col", { class: "dbv-padcol" }));
+  // the heading row and the rows are two tables with the same columns: the heading row's box sticks to the top of the
+  // page while it scrolls, the rows' box runs sideways, and the two (and the bar at the window's foot) move together
+  let tables = [];
   const ths = shown.map((c) => {
     const th = h("th", { class: "dbv-th t-" + c.prop.type, "data-key": c.key, draggable: c.prop.type !== "title" ? "true" : null, scope: "col" },
       h("button", { type: "button", class: "dbv-thbtn", onclick: (e) => dbvHeadMenu(e.currentTarget.closest("th"), o, view, c, repaint) },
@@ -587,18 +600,18 @@ function dbvTableEl(o, view, cols, rows, repaint) {
       if (e.button !== 0) return;
       e.preventDefault(); e.stopPropagation();
       DBV.resizing = true;
-      const colEl = colgroup.querySelector(`col[data-key="${CSS.escape(c.key)}"]`);
-      const table = th.closest("table");
+      const colEls = tables.map((x) => x.querySelector(`col[data-key="${CSS.escape(c.key)}"]`));
       const start = e.clientX, w0 = th.offsetWidth;
       // the widths as they are on screen become the view's own, in pixels
-      const now = Object.fromEntries([...table.querySelectorAll("thead th.dbv-th")].map((x) => [x.dataset.key, x.offsetWidth]));
+      const now = Object.fromEntries([...th.closest("table").querySelectorAll("thead th.dbv-th")].map((x) => [x.dataset.key, x.offsetWidth]));
+      const t0 = th.closest("table").offsetWidth;
+      const setWidth = (w) => { for (const x of tables) { x.style.width = w + "px"; x.style.minWidth = "0"; } if (spacer) spacer.style.width = w + "px"; };
       if (!sized) {
-        for (const x of colgroup.querySelectorAll("col[data-key]")) x.style.width = now[x.dataset.key] + "px";
-        table.style.width = table.offsetWidth + "px"; table.style.minWidth = "0";
+        for (const x of tables.flatMap((tb) => [...tb.querySelectorAll("col[data-key]")])) x.style.width = now[x.dataset.key] + "px";
+        setWidth(t0);
       }
-      const t0 = table.offsetWidth;
       document.body.classList.add("col-resizing");
-      const move = (ev) => { const w = Math.max(60, Math.min(900, w0 + ev.clientX - start)); colEl.style.width = w + "px"; table.style.width = (t0 + w - w0) + "px"; };
+      const move = (ev) => { const w = Math.max(60, Math.min(900, w0 + ev.clientX - start)); for (const x of colEls) x.style.width = w + "px"; setWidth(t0 + w - w0); };
       const end = (ev) => {
         window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", end);
         document.body.classList.remove("col-resizing");
@@ -616,11 +629,19 @@ function dbvTableEl(o, view, cols, rows, repaint) {
     return th;
   });
   const total = shown.reduce((s, c) => s + px(c), 0) + (sized ? 44 : 0);
+  // frozen columns: each sticks at the width of those before it (the heading row sticks to the top, see style.css)
+  const nFrz = Math.min(dbvFrozen(view), shown.length);
+  const lefts = shown.slice(0, nFrz).map((c, i) => shown.slice(0, i).reduce((s, x) => s + px(x), 0));
+  const frz = (cell, i) => {
+    if (i < nFrz) { cell.classList.add("frz"); cell.style.left = lefts[i] + "px"; if (i === nFrz - 1) cell.classList.add("frz-last"); }
+    return cell;
+  };
+  ths.forEach(frz);
   const scrolls = !fit || total > pane;   // sized by the user, or more columns than room: it runs sideways on purpose
   const ctx = { open: o.open };
   const tr = (row) => h("tr", { tabindex: "0", "data-id": o.rowId(row),
     onkeydown: (e) => { if (e.key === "Enter" && e.target === e.currentTarget) o.open(row); } },
-    shown.map((c) => dbvCell(c.prop, row, c, ctx)), sized && h("td", { class: "dbv-pad" }));
+    shown.map((c, i) => frz(dbvCell(c.prop, row, c, ctx), i)), sized && h("td", { class: "dbv-pad" }));
   let bodies;
   const gp = o.props.find((p) => p.key === view.group);
   if (gp) {
@@ -634,10 +655,28 @@ function dbvTableEl(o, view, cols, rows, repaint) {
       folded.has(g.value) ? null : g.rows.map(tr)));
   } else bodies = [h("tbody", null, rows.map(tr))];
   const pad = (tag) => sized && h(tag, { class: "dbv-pad" });
-  return h("div", { class: "htable-wrap dbv-wrap", "data-scrolls": scrolls ? "" : null },
-    h("table", { class: "htable dbv" + (sized ? " sized" : ""), style: `width:${total}px` },
-      colgroup,
-      h("thead", null, h("tr", null, ths, pad("th"))), bodies));
+  const table = (...kids) => h("table", { class: "htable dbv" + (sized ? " sized" : ""), style: `width:${total}px` }, colgroup(), ...kids);
+  tables = [table(h("thead", null, h("tr", null, ths, pad("th")))), table(...bodies)];
+  const wide = scrolls ? "" : null;
+  const head = h("div", { class: "dbv-head", "data-scrolls": wide }, tables[0]);
+  const body = h("div", { class: "dbv-body", "data-scrolls": wide }, tables[1]);
+  // the sideways scrollbar: kept at the foot of the window while the table runs past it, so it is always in reach
+  const spacer = h("div", { class: "dbv-hspace", style: `width:${total}px` });
+  const bar = h("div", { class: "dbv-hbar", "aria-hidden": "true", "data-scrolls": wide }, spacer);
+  const boxes = [head, body, bar], key = o.table + ":" + view.id;
+  for (const b of boxes) b.addEventListener("scroll", () => {
+    const x = b.scrollLeft;
+    DBV.scrollX[key] = x;
+    for (const o2 of boxes) if (o2 !== b && o2.scrollLeft !== x) o2.scrollLeft = x;
+  }, { passive: true });
+  return h("div", { class: "htable-wrap dbv-wrap", "data-scrolls": wide, "data-x": key }, head, body, bar);
+}
+// after a repaint the table is where it was sideways (hunt.js calls this once the new view is on the page)
+function dbvKeepX(root) {
+  for (const w of root.querySelectorAll(".dbv-wrap[data-x]")) {
+    const x = DBV.scrollX[w.dataset.x] || 0;
+    for (const b of w.querySelectorAll(":scope > .dbv-head, :scope > .dbv-body, :scope > .dbv-hbar")) b.scrollLeft = x;
+  }
 }
 
 // ---------------------------------------------------------------- the board layout

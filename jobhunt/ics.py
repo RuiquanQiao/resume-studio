@@ -9,6 +9,7 @@ import datetime as dt
 import time
 
 from core.i18n import t
+from jobhunt.store import event_title
 
 
 def _esc(s: str) -> str:
@@ -58,13 +59,13 @@ def calendar(apps: list[dict], companies: dict[str, str]) -> str:
         who = " · ".join(x for x in (companies.get(a.get("company") or "", ""), a.get("role") or "") if x)
         url = a.get("url") or ""
         for e in a.get("schedule") or []:
-            if not e.get("at"):   # no date: it closes once filled (招满即止)
+            if not e.get("at"):   # no date: it closes once filled (招满即止), or isn't known
                 continue
             desc = "\n".join(x for x in (e.get("note") or "", url) if x)
             if e.get("kind") == "apply":   # applying: the UID it had when it was a field, so importing again updates it
-                event(f"{a['id']}-deadline", f"{e['title']} · {who}", _when(e["at"], 0), "", desc, url)
+                event(f"{a['id']}-deadline", f"{event_title(e)} · {who}", _when(e["at"], 0), "", desc, url)
                 continue
-            event(f"{a['id']}-{e['id']}", f"{e['title']} · {who}", _when(e["at"], int(e.get("minutes") or 0)),
+            event(f"{a['id']}-{e['id']}", f"{event_title(e)} · {who}", _when(e["at"], int(e.get("minutes") or 0)),
                   e.get("where") or "", desc, url)
     lines.append("END:VCALENDAR")
     return "\r\n".join(_fold(x) for x in lines) + "\r\n"

@@ -223,6 +223,7 @@ function paintHuntNow(el) {
   const sc = h("div", { class: "hunt-scroll", "data-page": pageKey() }, h("div", { class: "hunt-wrap" + (H.page ? " is-page" : "") }, body));
   el.replaceChildren(huntBar(), sc);
   sc.scrollTop = scroll;
+  dbvKeepX(sc);
   for (const ta of el.querySelectorAll("textarea")) autosizeFull(ta);
 }
 
@@ -301,7 +302,7 @@ function appProps() {
     { key: "last", label: t("Latest"), type: "custom", width: 220, get: (a) => (a.last ? a.last.at : ""),
       render: (a) => a.last ? h("span", { class: "c-last" }, h("span", { class: "c-when" }, huntWhen(a.last.at)), h("span", { class: "c-what" }, lastText(a.last))) : "" },
     // one cell for one thing to do: what and when together, sorted by when (an apply with no date, 招满即止, last)
-    { key: "events", label: t("Next step"), type: "custom", width: 220, get: (a) => { const e = nextSteps(a)[0]; return e ? `${e.at || "~"} ${e.title}` : ""; },
+    { key: "events", label: t("Next step"), type: "custom", width: 220, get: (a) => { const e = nextSteps(a)[0]; return e ? `${e.at || "~"} ${evTitle(e)}` : ""; },
       render: (a) => bookedCell(a), edit: (td, a) => openEvents(a) },
     { key: "note", label: t("Notes"), type: "text", width: 220, hidden: true, get: (a) => a.note || "", set: (a, v) => cellApp(a, { note: v }) },
     { key: "jd", label: t("JD"), type: "text", width: 260, hidden: true, get: (a) => a.jd || "", set: (a, v) => cellApp(a, { jd: v }) },
@@ -404,14 +405,19 @@ function placesEditor(list, change) {
 }
 
 // ---- what is booked for a role: tests, 一面, 二面… (docs/JOB_HUNT.md, 2026-10-21) ----
-// the usual ones, offered as chips; the user's own titles join them
-const BOOKED_TITLES = ["笔试", "测评", "一面", "二面", "三面", "HR 面", "终面"];
+// the usual ones are built in (jobhunt/store.py BOOKED_KINDS): saved with no title, they read in the interface's
+// language; offered as chips, with the user's own titles after them
+const BOOKED_KINDS = { apply: "Apply by", test: "Written test", assessment: "Assessment", round1: "1st interview",
+  round2: "2nd interview", round3: "3rd interview", hr: "HR interview", final: "Final interview" };
+const CHIP_KINDS = ["test", "assessment", "round1", "round2", "round3", "hr", "final"];
+const evTitle = (e) => e.title || (BOOKED_KINDS[e.kind] ? t(BOOKED_KINDS[e.kind]) : "");
 const nowAt = () => { const d = new Date(); return `${dbvYmd(d)} ${dbvPad(d.getHours())}:${dbvPad(d.getMinutes())}`; };
 const bookedPast = (e) => !!e.at && (e.at.length > 10 ? e.at : e.at + " 23:59") < nowAt();
-// when a role is applied for is its apply event (docs/JOB_HUNT.md, 2026-10-21): a date, or none (招满即止)
+// when a role is applied for by is its apply event (docs/JOB_HUNT.md, 2026-10-26): the date the posting gives, or
+// 招满即止 when it says so; a role whose closing date isn't known has none
 const applyEvent = (a) => (a.schedule || []).find((e) => e.kind === "apply") || null;
 const rollingText = () => t("Rolling: until filled");
-const bookedWhenOf = (e) => (e.at ? bookedWhen(e.at) : rollingText());
+const bookedWhenOf = (e) => (e.at ? bookedWhen(e.at) : e.rolling ? rollingText() : t("Closing date not known"));
 // what is still ahead for a role, soonest first: its apply event until it is applied to (even when late), then
 // every round to come; an apply with no date (招满即止) comes last
 function nextSteps(a) {
@@ -442,8 +448,8 @@ function bookedCell(a) {
   if (!e) return "";
   const n = e.kind === "apply" && e.at ? daysTo(e.at) : null;   // how long is left to apply
   const left = n === null ? null : n < 0 ? t("{n} day late", { n: -n }, "{n} days late") : n === 0 ? t("Today") : t("{n} day left", { n }, "{n} days left");
-  return h("span", { class: "c-booked" + (n !== null && n < 0 ? " late" : "") }, h("b", null, e.title), " ",
-    h("span", { class: "c-when" }, e.at ? bookedWhen(e.at) : rollingText()),
+  return h("span", { class: "c-booked" + (n !== null && n < 0 ? " late" : "") }, h("b", null, evTitle(e)), " ",
+    h("span", { class: "c-when" }, bookedWhenOf(e)),
     left && h("span", { class: "c-left" }, " · " + left),
     steps.length > 1 && h("span", { class: "c-more" }, t("+{n} more", { n: steps.length - 1 })));
 }
@@ -454,7 +460,7 @@ function appDated(a) {
   let end = huntOpen(a) ? today() : ((a.last && a.last.at) || a.updated || "").slice(0, 10) || start;
   if (start && end < start) end = start;
   const items = (a.schedule || []).filter((e) => e.at)
-    .map((e) => ({ at: e.at, label: e.title, sub: co, kind: e.kind === "apply" ? "deadline" : bookedPast(e) ? "past" : "event" }));
+    .map((e) => ({ at: e.at, label: evTitle(e), sub: co, kind: e.kind === "apply" ? "deadline" : bookedPast(e) ? "past" : "event" }));
   return { start, end, cls: "s-" + a.status, items };
 }
 
@@ -484,20 +490,20 @@ async function bookedCall(method, path, body) {
 }
 
 // what comes next for a role in interviews (一面, then 二面…) or in tests (笔试): ready in the Add row, never booked by itself
-const ROUNDS = ["一面", "二面", "三面", "终面"];
+const ROUNDS = ["round1", "round2", "round3", "final"];
 function nextRound(a) {
-  const had = new Set((a.schedule || []).map((e) => e.title));
-  if (a.status === "interview") return ROUNDS.find((x) => !had.has(x)) || "";
-  if (a.status === "assessment") return ["笔试", "测评"].find((x) => !had.has(x)) || "";
-  return "";
+  const had = new Set((a.schedule || []).map((e) => e.kind));
+  const k = a.status === "interview" ? ROUNDS.find((x) => !had.has(x)) : a.status === "assessment" ? ["test", "assessment"].find((x) => !had.has(x)) : null;
+  return k ? t(BOOKED_KINDS[k]) : "";
 }
 
 // the card on a role's page: what is booked, each with its own edit, and an Add row like the timeline's
 function bookedCard(a) {
   const base = `/api/hunt/apps/${encodeURIComponent(a.id)}/schedule`;
   const list = a.schedule || [];
-  const used = [...new Set(((H.data && H.data.applications) || []).flatMap((x) => (x.schedule || []).filter((e) => e.kind !== "apply").map((e) => e.title)))];
-  const titles = [...BOOKED_TITLES, ...used.filter((x) => !BOOKED_TITLES.includes(x))];
+  const builtin = CHIP_KINDS.map((k) => t(BOOKED_KINDS[k]));
+  const used = [...new Set(((H.data && H.data.applications) || []).flatMap((x) => (x.schedule || []).filter((e) => !e.kind && e.title).map((e) => e.title)))];
+  const titles = [...builtin, ...used.filter((x) => !builtin.includes(x))];
   const chips = (input) => h("div", { class: "bk-chips", role: "group", "aria-label": t("Common ones") }, titles.map((x) =>
     h("button", { type: "button", class: "bk-chip" + (input.value === x ? " on" : ""), onclick: (e) => {
       input.value = x;
@@ -505,13 +511,17 @@ function bookedCard(a) {
       input.focus();
     } }, x)));
   const form = (e) => {
-    const title = h("input", { type: "text", class: "bk-title", value: e ? e.title : nextRound(a), placeholder: t("What: 一面, 笔试…"), spellcheck: "false", "aria-label": t("What") });
-    const day = h("input", { type: "date", class: "bk-day", value: e ? e.at.slice(0, 10) : today(), "aria-label": t("Date") });
+    const title = h("input", { type: "text", class: "bk-title", value: e ? evTitle(e) : nextRound(a), placeholder: t("What: 一面, 笔试…"), spellcheck: "false", "aria-label": t("What") });
+    // no date until one is picked: a date filled in for the user reads like a date someone said
+    const day = h("input", { type: "date", class: "bk-day", value: e ? e.at.slice(0, 10) : "", "aria-label": t("Date") });
     const time = h("input", { type: "time", class: "bk-time", value: e && e.at.length > 10 ? e.at.slice(11, 16) : "", "aria-label": t("Time") });
-    const due = !!e && e.kind === "apply";   // applying: a date, or none at all (招满即止)
-    const roll = due && h("button", { type: "button", class: "dl-rolling", title: rollingText(), onclick: () => { day.value = ""; time.value = ""; } },
+    const due = !!e && e.kind === "apply";   // applying: the date the posting gives, or 招满即止 when it says so
+    let rolling = due && !!e.rolling;
+    const roll = due && h("button", { type: "button", class: "dl-rolling" + (rolling ? " on" : ""), "aria-pressed": String(rolling), title: rollingText(),
+      onclick: (ev) => { rolling = !rolling; ev.currentTarget.classList.toggle("on", rolling); ev.currentTarget.setAttribute("aria-pressed", String(rolling)); if (rolling) { day.value = ""; time.value = ""; } } },
       t("No date (until filled)"));
-    const fields = () => ({ title: title.value.trim(), at: day.value ? day.value + (time.value ? " " + time.value : "") : "" });
+    if (due) day.addEventListener("change", () => { if (day.value && rolling) roll.click(); });   // a date it closes on: not 招满即止
+    const fields = () => ({ title: title.value.trim(), at: day.value ? day.value + (time.value ? " " + time.value : "") : "", ...(due ? { rolling } : {}) });
     title.addEventListener("input", () => { const box = title.parentNode && title.parentNode.parentNode.querySelector(".bk-chips"); if (box) for (const c of box.children) c.classList.toggle("on", c.textContent === title.value); });
     if (!e) {   // a new one: what, when, Add
       const add = () => {
@@ -543,32 +553,36 @@ function bookedCard(a) {
         h("button", { class: "btn sm primary", onclick: save }, t("Save"))));
   };
   const row = (e) => h("div", { class: "bk-item" + (bookedPast(e) ? " past" : "") + (e.kind === "apply" ? " is-due" : ""), "data-id": e.id },
-    h("span", { class: "bk-when" + (e.at ? "" : " muted") }, bookedWhenOf(e)),
-    h("span", { class: "bk-what" }, h("b", null, e.title),
+    h("span", { class: "bk-what" }, h("span", { class: "bk-line" }, h("b", null, evTitle(e)), h("span", { class: "bk-when" + (e.at ? "" : " muted") }, bookedWhenOf(e))),
       (e.minutes || e.where) && h("span", { class: "muted" }, [e.minutes ? t("{n} min", { n: e.minutes }) : "", e.where].filter(Boolean).join(" · ")),
       e.note && h("span", { class: "bk-notes" }, e.note)),
     h("span", { class: "bk-acts" },
       e.at && h("button", { class: "btn icon sm ghost", title: t("Add to my calendar"), "aria-label": t("Add to my calendar"), onclick: () => exportIcs({ app: a.id, event: e.id }) }, icon("calendar")),
       h("button", { class: "btn icon sm ghost", title: t("Edit"), "aria-label": t("Edit"), onclick: () => { H.editing = e.id; paintHunt(); } }, icon("pen")),
       h("button", { class: "btn icon sm ghost", title: t("Delete"), "aria-label": t("Delete"), onclick: async () => {
-        if (await modal({ title: t("Delete “{what}”?", { what: e.title }), message: bookedWhenOf(e), ok: t("Delete"), danger: true }))
+        if (await modal({ title: t("Delete “{what}”?", { what: evTitle(e) }), message: bookedWhenOf(e), ok: t("Delete"), danger: true }))
           bookedCall("DELETE", `${base}/${encodeURIComponent(e.id)}`);
       } }, icon("trash"))));
   return card(t("Events"), list.length ? t("{n} booked", { n: list.length }) : t("interviews, tests: anything with a date"), [
     list.length > 0 && h("div", { class: "bk-list" }, list.map((e) => (H.editing === e.id ? form(e) : row(e)))),
     form(null),
     (!applyEvent(a) || list.some((e) => e.at)) && h("div", { class: "row" },
-      !applyEvent(a) && h("button", { class: "btn sm ghost", id: "bk-add-due", onclick: () => bookedCall("POST", base, { kind: "apply" }) }, icon("plus"), t("Add “{name}”", { name: t("Apply by") })),
+      // made by the user, it opens for its date (or 招满即止) right away
+      !applyEvent(a) && h("button", { class: "btn sm ghost", id: "bk-add-due", onclick: async () => {
+        if (!(await bookedCall("POST", base, { kind: "apply" }))) return;
+        const due = applyEvent(H.view.application);
+        if (due) { H.editing = due.id; paintHunt(); }
+      } }, icon("plus"), t("Add “{name}”", { name: t("Apply by") })),
       h("span", { class: "spacer" }),
       list.some((e) => e.at) && h("button", { class: "btn sm ghost", onclick: () => exportIcs({ app: a.id }) }, icon("calendar"), t("Add all to my calendar"))),
-  ]);
+  ], { fold: "app-events" });
 }
 
 function appsTable() {
   const d = H.data;
   const names = Object.fromEntries(d.companies.map((c) => [c.id, c.name]));
   const all = [...d.applications].sort((a, b) => (names[a.company] || "").localeCompare(names[b.company] || "") || (a.order || 0) - (b.order || 0));
-  const shown = all.filter((a) => matches(names[a.company], a.role, a.note, a.jd, a.batch, ...(a.schedule || []).map((e) => e.title), ...(a.places || []).map(placeText)));
+  const shown = all.filter((a) => matches(names[a.company], a.role, a.note, a.jd, a.batch, ...(a.schedule || []).map(evTitle), ...(a.places || []).map(placeText)));
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Your applications")),
       h("p", null, t("Every role you apply for, wherever it goes in. Tell Claude on the left what happened (“Xinghe 一面过了”), or change it here."))),
@@ -696,31 +710,35 @@ function postingsCard(v) {
       h("a", { class: "pr-title", href: p.url || null, "data-ext": p.url ? "" : null }, p.title),
       fresh.has(p.id) && h("span", { class: "chip new-chip" }, t("new")),
       p.changed && p.changed.deadline && h("span", { class: "chip", title: p.changed.deadline.join(" → ") }, t("deadline changed")),
-      h("span", { class: "pr-meta" }, [p.location, p.category, p.batch && t(BATCH_NAMES[p.batch] || p.batch)].filter(Boolean).join(" · "),
-        p.deadline && h("span", { class: "c-due" + (p.deadline < today() ? " late" : "") }, t("closes {date}", { date: p.deadline })))),
+      // one line, one separator: the deadline is a part like the others, only coloured when it has passed
+      h("span", { class: "pr-meta" }, [p.location, p.category, p.batch && t(BATCH_NAMES[p.batch] || p.batch),
+        p.deadline && h("span", { class: "c-due" + (p.deadline < today() ? " late" : "") }, t("closes {date}", { date: p.deadline }))]
+        .filter(Boolean).flatMap((x, i) => (i ? [" · ", x] : [x])))),
     // added already: a tick and where it stands, so it never reads like the "+ Want to apply" next to it
     p.app ? h("button", { class: "btn sm ghost pr-added", title: t("In your applications: open it"), "aria-label": t("In your applications: open it"), onclick: () => openHunt("app", p.app) },
       icon("check"), hChip(((v.applications || []).find((a) => a.id === p.app) || {}).status || "saved"))
       : !p.closed && h("button", { class: "btn sm", title: t("Add it to your applications"), onclick: () => applyPosting(p) }, icon("plus"), t("Want to apply")));
   const search = searchBox("posting-search", H.pq || "", t("Search these roles"), (v) => { H.pq = v; });
-  return card(t("Open roles"), open.length ? t("{n} on its sites", { n: open.length }) : "", [
-    h("div", { class: "row wrap post-tools" }, status, h("span", { class: "spacer" }),
-      sc.needs === "claude" && h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Let Claude learn its site")),
-      !sc.ok && sc.at && sc.how === "route" && h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Ask Claude to record it again")),
-      h("button", { class: "btn sm", id: "company-scan", disabled: !!busy, onclick: () => scanCompanies([c.id]) }, icon("refresh"), t("Scan"))),
+  // the head carries the count, when it was read and Scan: all still at hand with the list folded away
+  const acts = [status,
+    sc.needs === "claude" && h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Let Claude learn its site")),
+    !sc.ok && sc.at && sc.how === "route" && h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Ask Claude to record it again")),
+    h("button", { class: "btn sm", id: "company-scan", disabled: !!busy || sc.needs === "sites", title: sc.needs === "sites" ? t("Add a careers site below first") : null,
+      onclick: () => scanCompanies([c.id]) }, icon("refresh"), t("Scan"))];
+  return card(t("Open roles"), "", [
     !sc.ok && sc.error && h("div", { class: "note-bar warn" }, icon("alert"), h("span", { class: "nb-text" }, sc.error),
       sc.signed_out && c.site && h("button", { class: "btn sm", onclick: () => signInMode(c.site) }, icon("user"), t("Sign in to {site}", { site: c.name }))),
     sc.needs === "sites" && h("p", { class: "muted card-p" }, t("No careers site known yet: ask Claude to fill the company in, or type one below.")),
     // read fine and found nothing: say so, or an empty card looks like a scan that never ran
     sc.ok && !busy && !open.length && h("p", { class: "muted card-p", id: "company-no-postings" },
       t("Its sites list no open roles right now. If you know they hire, check the addresses under Its careers sites.")),
-    open.length > 0 && h("div", { class: "row wrap" }, search, hidden > 0 && h("button", { class: "btn sm ghost", onclick: () => { H.pall = !H.pall; paintHunt(); } },
+    open.length > 0 && h("div", { class: "row wrap post-tools" }, search, hidden > 0 && h("button", { class: "btn sm ghost", onclick: () => { H.pall = !H.pall; paintHunt(); } },
       showAll ? t("Only the roles you look for") : t("Show all ({n} more)", { n: hidden }))),
     shown.length ? h("div", { class: "post-list" }, shown.slice(0, limit).map(row),
       shown.length > limit && h("button", { class: "btn sm ghost", onclick: () => { H.plimit = limit + 200; paintHunt(); } }, t("Show {n} more", { n: Math.min(200, shown.length - limit) })))
       : open.length > 0 && h("p", { class: "muted card-p" }, t("Nothing here matches. Change the roles you look for on the Companies tab, or show all.")),
-    closed.length > 0 && h("details", { class: "post-closed" }, h("summary", null, t("{n} closed", { n: closed.length })), h("div", { class: "post-list" }, closed.slice(0, 200).map(row))),
-  ]);
+    closed.length > 0 && h("details", { class: "post-closed" }, h("summary", null, icon("down"), t("{n} closed", { n: closed.length })), h("div", { class: "post-list" }, closed.slice(0, 200).map(row))),
+  ], { fold: "company-postings", count: open.length || null, actions: acts });
 }
 
 const BATCH_NAMES = { campus: "Campus", intern: "Internship", social: "Experienced", other: "Other" };
@@ -969,11 +987,11 @@ async function editCompany(id, fields, { repaint = true } = {}) {
 }
 
 // a text field on a page: saved when it changes, without repainting (the caret stays)
-function hfield(label, value, save, { placeholder = "", hint = "", multiline = false, type = "text", id = null } = {}) {
+function hfield(label, value, save, { placeholder = "", hint = "", multiline = false, type = "text", id = null, link = false } = {}) {
   const attrs = { value: value || "", placeholder, spellcheck: "false", id,
     onchange: (e) => { const v = e.target.value.trim(); if (v !== (value || "")) { value = v; save(v); } } };
   const input = multiline ? h("textarea", { ...attrs, rows: 2 }, value || "") : h("input", { ...attrs, type });
-  return h("div", { class: "field" }, h("label", null, label, hint && h("span", { class: "hint" }, hint)), input);
+  return h("div", { class: "field" }, h("label", null, label, hint && h("span", { class: "hint" }, hint)), link ? linkOpen(input) : input);
 }
 
 function backTo(tab) {
@@ -1026,7 +1044,7 @@ function companyPage(v) {
   const ab = c.about;
   return [
     backTo("companies"),
-    h("div", { class: "ed-head" }, companyLogo(c, "lg"), h("h1", null, c.name), h("span", { class: "id" }, c.id), h("span", { class: "spacer" }),
+    h("div", { class: "ed-head" }, companyLogo(c, "lg"), h("h1", null, c.name), h("span", { class: "id" }, c.id), h("span", { class: "ed-acts" },
       h("button", { class: "btn sm", id: "company-fill", disabled: !ui.chat.available, onclick: () => askFill(c) }, icon("sparkle"),
         filledSome(c) ? t("Ask Claude to fill it in again") : t("Ask Claude to fill it in")),
       c.site && h("button", { class: "btn sm", title: c.site, onclick: () => openInBrowser(c.site) }, icon("external"), t("Open its site")),
@@ -1037,15 +1055,15 @@ function companyPage(v) {
         c.logo && { label: t("Remove the logo"), icon: "x", onClick: () => removeLogo(c) },
         (c.kept || []).length > 0 && { label: t("Let Claude fill the fields you edited too"), icon: "sparkle", onClick: () => editCompany(c.id, { kept: [] }) },
         "sep",
-        { label: t("Delete this company"), icon: "trash", danger: true, onClick: () => deleteCompany(c, apps.length) }], { align: "end" }) }, icon("more"))),
+        { label: t("Delete this company"), icon: "trash", danger: true, onClick: () => deleteCompany(c, apps.length) }], { align: "end" }) }, icon("more")))),
     card(t("Roles"), siteApps.length ? t("on its own site, in your order of preference") : t("the roles you apply for here"), [
       roles.length ? h("div", { class: "su-roles" }, roles) : h("p", { class: "muted card-p" }, t("No roles yet: add the ones you apply for below.")),
       add,
-    ]),
+    ], { fold: "company-roles" }),
     postingsCard(v),
     card(t("Its careers site"), t("one profile there, filled from a subset"), [
       h("div", { class: "field" }, h("label", null, t("Its careers sites"), h("span", { class: "hint" }, keptHint(c, "sites") || t("scanned for open roles"))), sitesEditor(c)),
-      h("div", { class: "grid2" }, hfield(t("Where you sign up"), c.site, save("site"), { placeholder: "https://careers.example.com/campus", hint: keptHint(c, "site") }),
+      h("div", { class: "grid2" }, hfield(t("Where you sign up"), c.site, save("site"), { placeholder: "https://careers.example.com/campus", hint: keptHint(c, "site"), link: true }),
         hfield(t("Account"), c.account, save("account"), { placeholder: t("e.g. the phone or email you signed up with"), hint: t("never a password") })),
       h("div", { class: "field" }, h("label", null, t("Filled from"), h("span", { class: "hint" }, t("the subset this site gets"))), h("div", { class: "su-subset" }, pick.el,
         st && h("span", { class: "chip" + (st.latest && !st.same_as ? " vd-changed" : "") }, !st.latest ? t("No versions yet") : st.same_as ? `v${st.same_as}` : t("v{n} · changed", { n: st.latest })),
@@ -1054,14 +1072,16 @@ function companyPage(v) {
       h("p", { class: "card-p muted" }, t("When you submit the sign-up on the site, mark it here: the subset is kept as a version (if it changed) and pinned on every role there that hasn't gone out yet.")),
       h("div", { class: "row" }, h("button", { class: "btn primary", id: "company-send", disabled: !(c.subset && c.subset_exists && unsent.length), onclick: () => sendCompany(c, unsent) },
         icon("check"), unsent.length ? t("Mark as sent ({n})", { n: unsent.length }) : t("Mark as sent")),
-        siteApps.length > 0 && !unsent.length && h("span", { class: "muted" }, t("Every role here has gone out."))),
-    ]),
+        siteApps.length > 0 && !unsent.length ? h("span", { class: "muted" }, t("Every role here has gone out."))
+          : !siteApps.length ? h("span", { class: "muted" }, t("First add the roles you apply for on its site, under Roles."))
+          : !(c.subset && c.subset_exists) && h("span", { class: "muted" }, t("First pick the subset this site gets, above."))),
+    ], { fold: "company-site" }),
     card(t("About {company}", { company: c.name }), ab && ab.read_at ? t("read {date}", { date: ab.read_at }) : t("not looked into yet"), [
       ab && ab.summary ? h("p", { class: "about-summary" }, ab.summary) : h("p", { class: "muted card-p" }, t("Claude can find out what it does, how it is doing, its prospects and how it hires graduates, with a source for every point.")),
       ab && (ab.points || []).length > 0 && h("div", { class: "about-points" }, ab.points.map((p) => h("div", { class: "about-point" },
         p.topic && h("b", null, p.topic), h("span", null, p.text),
         (p.sources || []).length > 0 && h("span", { class: "about-src" }, p.sources.map((s, k) => h("a", { href: s, "data-ext": "", title: s }, `[${k + 1}]`)))))),
-    ]),
+    ], { fold: "company-about" }),
     card(t("Company details"), t("filled by Claude, each with its source; what you edit stays yours"), [
       h("div", { class: "grid2" }, hfield(t("Name"), c.name, save("name")), hfield(t("Also called"), (c.aliases || []).join(", "), save("aliases"), { placeholder: "Xinghe, Nebula", hint: keptHint(c, "aliases") || t("Claude knows it by these too") })),
       h("div", { class: "grid2" }, hfield(t("Industry"), c.industry, save("industry"), { hint: keptHint(c, "industry") }),
@@ -1071,8 +1091,8 @@ function companyPage(v) {
       h("div", { class: "field", id: "company-places" }, h("label", null, t("Hires in"), h("span", { class: "hint" }, keptHint(c, "places") || t("the cities it hires in: they put it on the map"))),
         placesEditor(c.places, (v) => { c.places = v; save("places")(v); })),
       hfield(t("Notes"), c.note, save("note"), { multiline: true, placeholder: t("e.g. which batch (提前批 / 正式批), what you heard") }),
-    ]),
-    card(t("What happened"), v.events.length ? t("{n} event", { n: v.events.length }, "{n} events") : "", [timeline(v.events, apps)]),
+    ], { fold: "company-details" }),
+    card(t("What happened"), v.events.length ? t("{n} event", { n: v.events.length }, "{n} events") : "", [timeline(v.events, apps)], { fold: "company-history" }),
   ];
 }
 
@@ -1207,19 +1227,19 @@ function appPage(v) {
   return [
     h("div", { class: "row" }, backTo("apps"), h("button", { class: "btn sm ghost", onclick: () => openHunt("company", c.id) }, icon("globe"), c.name)),
     h("div", { class: "ed-head" }, h("h1", null, h("span", { class: "co" }, c.name, " / "), h("span", { class: "r" }, a.role)),
-      h("span", { class: "spacer" }), status.el,
+      h("span", { class: "ed-acts" }, status.el,
       h("button", { class: "btn icon ghost", title: t("More"), "aria-label": t("More"), onclick: (e) => openMenu(e.currentTarget, [
         a.url && { label: t("Open the role's page"), icon: "external", onClick: () => openInBrowser(a.url) },
         a.co_app && { label: t("Its evaluation in {name}", { name: jobsTool().name }), icon: "bolt", onClick: () => openPosting(String(a.co_app)) },
-        { label: t("Delete this application"), icon: "trash", danger: true, onClick: () => deleteApp(a) }], { align: "end" }) }, icon("more"))),
+        { label: t("Delete this application"), icon: "trash", danger: true, onClick: () => deleteApp(a) }], { align: "end" }) }, icon("more")))),
     bookedCard(a),
     card(t("Progress"), a.applied ? t("applied {date}", { date: a.applied }) : t("not applied yet"), [
       h("div", { class: "field" }, h("label", { for: "app-note-new" }, t("Add to the timeline")), note,
         h("div", { class: "row" }, when, h("span", { class: "spacer" }), h("button", { class: "btn sm primary", id: "app-note-add", onclick: () => addAppNote(a, note.value, when.value) }, icon("plus"), t("Add")))),
       timeline(v.events, [a]),
-    ]),
+    ], { fold: "app-progress" }),
     card(t("The role"), "", [
-      h("div", { class: "grid2" }, hfield(t("Role"), a.role, save("role")), hfield(t("Link"), a.url, save("url"), { placeholder: "https://…" })),
+      h("div", { class: "grid2" }, hfield(t("Role"), a.role, save("role")), hfield(t("Link"), a.url, save("url"), { placeholder: "https://…", link: true })),
       h("div", { class: "field", id: "app-places" }, h("label", null, t("Location")), placesEditor(a.places, (v) => { a.places = v; save("places")(v); })),
       h("div", { class: "grid2" }, h("div", { class: "field" }, h("label", { for: "app-batch" }, t("Batch")),
         h("input", { id: "app-batch", list: "app-batches", value: a.batch || "", placeholder: t("27秋招, 2027 Graduate Program…"), spellcheck: "false",
@@ -1229,7 +1249,7 @@ function appPage(v) {
       h("div", { class: "field" }, h("label", null, t("How it goes in")), h("div", { class: "row wrap" }, channel, plat && plat.el,
         a.channel === "site" && h("span", { class: "muted" }, t("choice {n} on {company}'s site", { n: a.order, company: c.name })))),
       hfield(t("Notes"), a.note, save("note"), { multiline: true }),
-    ]),
+    ], { fold: "app-role" }),
     card(t("Job description"), jdSub(a, v.reading), [
       (v.reading || {}).error && h("div", { class: "note-bar warn" }, icon("alert"),
         h("span", { class: "nb-text" }, t("Its page didn't read: {error}", { error: v.reading.error })),
@@ -1238,7 +1258,7 @@ function appPage(v) {
       h("div", { class: "field" }, h("textarea", { id: "app-jd", rows: 6, value: a.jd || "", spellcheck: "false", "aria-label": t("Job description"),
         placeholder: t("Paste the posting's text here: duties, requirements, pluses. Or send Claude its link or a screenshot."),
         onchange: (e) => { const val = e.target.value.trim(); if (val !== (a.jd || "")) { a.jd = val; a.jd_read = ""; editApp(a.id, { jd: val, jd_read: "" }, { repaint: false }); } } }, a.jd || "")),
-    ], { actions: readButton(a, v.reading) }),
+    ], { actions: readButton(a, v.reading), fold: "app-jd" }),
     card(t("Resume sent"), (a.sent || []).length ? t("{n} time", { n: a.sent.length }, "{n} times") : t("not yet"), [
       a.channel !== "site" && h("div", { class: "field" }, h("label", null, t("Goes out with")), h("div", { class: "su-subset" }, pick.el)),
       a.channel === "site" && h("p", { class: "card-p muted" }, t("It goes out with the sign-up on {company}'s site: mark that as sent on the company's page.", { company: c.name })),
@@ -1250,7 +1270,7 @@ function appPage(v) {
       (a.sent || []).length > 0 && h("div", { class: "su-sent" }, [...a.sent].reverse().map((x) => h("div", { class: "su-sent-row" },
         h("span", { class: "su-info" }, h("span", { class: "su-what" }, sentText(x)), h("span", { class: "su-when" }, fmtWhen(x.at))),
         h("button", { class: "btn sm ghost", onclick: () => showSent(x.subset, x.n) }, icon("history"), t("See what went out"))))),
-    ]),
+    ], { fold: "app-sent" }),
   ];
 }
 

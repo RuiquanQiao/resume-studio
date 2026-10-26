@@ -231,6 +231,13 @@ def filled_companies(c):
     posts.settings(keywords="研发, 算法, Agent, Engineer")
 
 
+def long_table(c):
+    """Enough roles that the progress table scrolls inside its frame."""
+    filled_companies(c)
+    for i in range(30):
+        c.server.req("POST", "/api/hunt/companies/C1/roles", {"role": f"岗位 {i:02d} — 一个很长的岗位名字，看它换行"})
+
+
 def failed_scan(c):
     filled_companies(c)
     c.server.inst.hunt.scanner.postings.failed("C1", "the site asks to sign in", how="route", signed_out=True)
@@ -402,12 +409,22 @@ STATES = [
           [".htable .co-logo img", ".htable .role-chip.open-chip", ".scan-news .news-row", ".scan-news .note-bar"], prepare=filled_companies),
     State("applying, a company's open roles", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
           [".post-list .post-row", ".co-sites .co-site-edit .co-site-input", ".post-row .new-chip"], prepare=filled_companies),
+    State("applying, a company's open roles, folded", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title"),
+          click("section.card:has(#company-scan) .card-fold")), ["section.card.folded #company-scan", "section.card.folded .card-n"],
+          prepare=filled_companies),
     State("applying, a company's open roles, one added", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
           [".post-row .pr-added"], prepare=read_failed),
     State("applying, a role whose page didn't read", then(applying("apps"), click(".dbv-view tr[data-id='A4'] .dbv-title"),
           lambda pg, c: (pg.wait_for_selector(".note-bar.warn #app-read, #app-read"), pg.evaluate("() => document.querySelector('#app-read').scrollIntoView({block: 'center'})"))), ["section.card .note-bar.warn", "#app-read"], prepare=read_failed),
     State("applying, a company whose scan failed", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
-          [".post-tools .fs-status.bad", ".note-bar.warn"], prepare=failed_scan),
+          [".card-acts .fs-status.bad", ".note-bar.warn"], prepare=failed_scan),
+    State("applying, a long table scrolled both ways, two columns frozen", then(applying("apps"),
+          js("""() => { const tb = DBV.tables.apps, v = tb.views[0]; v.freeze = 2; paintHunt(); }"""),
+          js("() => { document.querySelector('.hunt-scroll').scrollTop = 400; document.querySelector('.dbv-body').scrollLeft = 300; }")),
+          [".dbv-head .dbv-th.frz-last", ".dbv-body td.frz-last"], prepare=long_table),
+    State("applying, a long companies table scrolled to its end", then(applying("companies"),
+          js("() => { const s = document.querySelector('.hunt-scroll'); s.scrollTop = s.scrollHeight; }")),
+          [".dbv-view[data-table=companies] .dbv-body tbody tr"], prepare=long_table),
     State("applying, progress as a board", then(applying("apps"), click(".dbv-tab[data-view=v3]")), [".dbv-board .dbv-card"], prepare=companies),
     State("applying, progress grouped by status", then(applying("apps"), js("""() => { const tb = DBV.tables.apps, v = tb.views[1];
         tb.active = v.id; v.group = 'status'; v.sorts = [{key: 'role', dir: 'desc'}]; paintHunt(); }""")), [".dbv-group .dbv-fold", ".dbv-tool.on"],

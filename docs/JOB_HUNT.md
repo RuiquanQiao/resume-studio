@@ -452,6 +452,46 @@ official and English names), and never caught 字节 next to 字节跳动有限�
   names that are parts of ordinary words (US in campus, タイ in タイヤ) are left out, and a name in the middle
   of what was added doesn't count.
 
+## 2026-10-26: no closing date made up; built-in events follow the language
+
+Every new role got an apply event with no date, and no date was shown as "滚动招聘 · 招满即止": a whole column
+said the roles close once filled when the posting had only not said when it closes. The empty Add row under it
+also had today's date filled in, which read like a deadline someone had set. And an event's name was saved in
+the language of the day it was made, so the same list said 投递截止 on some roles and "Apply by" on others.
+
+- **A closing date only from what the posting says.** A role gets an apply event when the posting (a scan,
+  Claude reading its page, or the user) gives a date, or says it closes once filled: then `rolling: true`.
+  Not knowing is no event, and the Next step cell stays empty. `apply_by: ""` drops the event. Claude is told
+  never to guess a date or call a role 招满即止 (`jobhunt/prompts.py`).
+- **招满即止 is its own state again**, set by the posting's words (rolling, 招满即止, 滚动招聘…) or by the user's
+  "不设日期（招满即止）" toggle in the event's edit. The 2026-10-21 rule "no date is 招满即止" is gone.
+- **The Add row's date starts empty**: the user picks it.
+- **Built-in events read in the interface's language**: the apply event and the usual rounds (笔试, 测评, 一面,
+  二面, 三面, HR 面, 终面) are saved by `kind` with no title, and shown by name in whichever language the window
+  is in (as Gmail shows Inbox in the user's language while the user's own labels stay as written). A title
+  the user types, or renames one to, is theirs and stays as written. The chips are the built-in names in the
+  interface's language, then the user's own titles.
+- **Once, on old data** (`Hunt._builtin_events`): titles that name a built-in event in any interface language
+  become that kind, and the dateless apply events made for every role are dropped, unless the user put a note,
+  a place or their own name on one.
+
+## 2026-10-26: a long table scrolls with its page; the heading row stays
+
+To keep the heading row on screen, the table had been made a box that scrolls on its own and takes "the height
+the page has left". That only worked where a toolbar alone stands above the table. On the Companies tab the
+Today card took most of the window: the table became a 345px slot (275px, two companies, in a 700px window),
+the page no longer scrolled, and in short windows the frame's foot was cut off and two scrollbars were nested.
+
+- **The page scrolls, as everywhere else**, and the table is as long as its rows.
+- **The heading row is a box of its own** (`.dbv-head`) that sticks to the top of the page while the table
+  passes under it. A sticky box sticks to the nearest box that scrolls, and the rows' box must scroll sideways,
+  so the heading row and the rows are two tables with the same columns (as in AG Grid and Notion's inline tables).
+- **Sideways**: the rows' box scrolls, with frozen columns kept at its left. The heading row and a scrollbar
+  that stays at the foot of the window (`.dbv-hbar`) move with it. Resizing a column resizes both tables.
+- **A repaint keeps the table where it was**, down the page and sideways (`DBV.scrollX`, per view).
+- Checked by `test_a_long_table_scrolls_with_its_page_under_a_heading_row_that_stays` (every tab, a 650px
+  window) and two layout states (scrolled both ways; the Companies tab scrolled to its end).
+
 ## Why the button said "Open LinkedIn"
 
 The Autofill page is organised around **the selected profile site**: LinkedIn and BOSS直聘 are its tabs,

@@ -182,6 +182,19 @@ const ICONS = {
   compass: '<circle cx="12" cy="12" r="9"/><path d="m15.8 8.2-2.4 5.2-5.2 2.4 2.4-5.2z"/>',
   apps: '<circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/>',
 };
+// a field holding a web address: an open button at its end, there whenever the text is an http(s) address,
+// so a link is one click away wherever it is typed (it opens in the everyday browser)
+const isWebUrl = (v) => /^https?:\/\/\S+$/i.test(String(v || "").trim());
+function linkOpen(input) {
+  const btn = h("button", { type: "button", class: "btn icon sm ghost link-open", title: t("Open it in your everyday browser"), "aria-label": t("Open it in your everyday browser"),
+    onclick: () => openInBrowser(input.value.trim()) }, icon("external"));
+  const wrap = h("span", { class: "link-in" }, input, btn);
+  const sync = () => wrap.classList.toggle("has-url", isWebUrl(input.value));
+  input.addEventListener("input", sync);
+  sync();
+  return wrap;
+}
+
 function icon(name) {
   const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   s.setAttribute("viewBox", "0 0 24 24");
@@ -420,19 +433,23 @@ function menuKeys(e, panel, sel) {
 }
 
 // ================================================================ select
-// uiSelect({id, options: [{value, label, hint, desc, group, disabled}], value, onChange,
-//           placeholder, cls, title, label, place, align, menuWidth})
+// uiSelect({id, options: [{value, label, hint, desc, group, disabled, mark}], value, onChange,
+//           placeholder, cls, title, label, place, align, menuWidth, marks})
+// `marks`: the slot left of each option shows its `mark` (a state, as a small sign) instead of a tick; the chosen
+// one is still coloured, and the trigger shows the chosen one's mark before its label.
 // The trigger is a <button>: `el.dataset.value` mirrors the value for tests and CSS.
 function uiSelect(o) {
   let opts = o.options || [], val = o.value ?? null, open = false;
   const lab = h("span", { class: "sel-label" });
+  const slot = o.marks ? h("span", { class: "sel-mark" }) : null;
   const btn = h("button", { type: "button", class: "select " + (o.cls || ""), id: o.id, "aria-haspopup": "listbox",
-    "aria-expanded": "false", "aria-label": o.label, title: o.title }, lab, icon("chev"));
+    "aria-expanded": "false", "aria-label": o.label, title: o.title }, slot, lab, icon("chev"));
   const same = (a, b) => (a ?? null) === (b ?? null);
   const paint = () => {
     const cur = opts.find((x) => same(x.value, val));
     lab.textContent = cur ? (cur.short || cur.label) : (o.placeholder || t("Choose…"));
     lab.classList.toggle("ph", !cur);
+    if (slot) slot.replaceChildren(cur && cur.mark ? cur.mark() : "");
     btn.dataset.value = val ?? "";
   };
   const choose = (v) => {
@@ -443,20 +460,29 @@ function uiSelect(o) {
     paint();
     if (o.onChange) o.onChange(v);
   };
-  const show = () => {
-    const list = h("div", { class: "listbox", role: "listbox", "aria-label": o.label || "" });
+  let shown = null;   // the open list, filled again when the options change under it (a chat's state, say)
+  const fill = (list) => {
+    const focused = document.activeElement && list.contains(document.activeElement) ? document.activeElement.dataset.value : null;
+    list.querySelectorAll(".lb-group, .lb-opt").forEach((x) => x.remove());
     let group = undefined, active = null;
     for (const x of opts) {
       if (x.group !== group) { group = x.group; if (group) list.append(h("div", { class: "lb-group" }, group)); }
       const sel = same(x.value, val);
       const item = h("button", { type: "button", role: "option", class: "lb-opt" + (sel ? " on" : ""), "aria-selected": String(sel),
         "data-value": x.value ?? "", disabled: x.disabled, title: x.tip, onclick: () => choose(x.value) },
-        h("span", { class: "lb-check" }, sel ? icon("check") : null),
+        h("span", { class: "lb-check" }, o.marks ? (x.mark ? x.mark() : null) : sel ? icon("check") : null),
         h("span", { class: "lb-main" }, h("span", { class: "lb-label" }, x.label), x.desc && h("span", { class: "lb-desc" }, x.desc)),
         x.hint && h("span", { class: "lb-hint" }, x.hint));
       if (sel) active = item;
       list.append(item);
+      if (focused != null && String(x.value ?? "") === focused) item.focus({ preventScroll: true });
     }
+    return active;
+  };
+  const show = () => {
+    const list = h("div", { class: "listbox", role: "listbox", "aria-label": o.label || "" });
+    const active = fill(list);
+    shown = list;
     let typed = "", typedAt = 0;
     list.addEventListener("keydown", (e) => {
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
@@ -470,7 +496,7 @@ function uiSelect(o) {
     });
     open = true;
     openFloat(btn, list, { place: o.place, align: o.align, minWidth: o.menuWidth || "anchor",
-      onClose: () => { open = false; }, focus: active || list.querySelector(".lb-opt:not(:disabled)") });
+      onClose: () => { open = false; shown = null; }, focus: active || list.querySelector(".lb-opt:not(:disabled)") });
   };
   btn.addEventListener("click", () => (open ? closeFloat() : show()));
   btn.addEventListener("keydown", (e) => {
@@ -481,7 +507,7 @@ function uiSelect(o) {
     el: btn,
     get value() { return val; },
     set value(v) { val = v; paint(); },
-    setOptions(next, v) { opts = next; if (v !== undefined) val = v; paint(); },
+    setOptions(next, v) { opts = next; if (v !== undefined) val = v; paint(); if (open && shown) fill(shown); },
     set disabled(d) { btn.disabled = !!d; },
   };
   btn._select = api;

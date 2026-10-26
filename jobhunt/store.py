@@ -40,9 +40,14 @@ are edited and deleted freely: a rescheduled interview moves. Booking one moves 
 ledger says so, and the user can set it back.
 
 When to apply by is one of them, not a field of the role (docs/JOB_HUNT.md, 2026-10-21): the one of kind
-"apply", which every new role starts with. Its `at` is the date applications close, or empty: no date
-said means it closes when the role is filled (滚动招聘, 招满即止). The `apply_by` field the window and Claude
-send ("2026-10-31", "rolling", "") sets it. The table shows it as the role's next step until it is applied to.
+"apply". A role has one only when something real says when it closes (docs/JOB_HUNT.md, 2026-10-26): `at`
+is the date the posting gives, or `rolling: true` when the posting (or the user) says it closes once filled
+(滚动招聘, 招满即止). Not knowing is no event at all, never a guess. The `apply_by` field the window and Claude
+send ("2026-10-31", "rolling", or "" to drop it) sets it. The table shows it as the role's next step until it
+is applied to.
+
+The usual rounds (笔试, 测评, 一面 … 终面) and the apply event are built in: `kind` names them and `title` stays
+"" so they read in the interface's language (`event_title`); a title the user types is theirs, kept as written.
 
 An application's `batch` is the user's own name for the hiring round it belongs to: 27秋招, 2027 Graduate
 Program, Summer Internship 2027… Free text: what rounds there are differs by country, so none is built in.
@@ -88,8 +93,16 @@ CHANNELS = ["site", "platform", "referral", "other"]
 # how far a role has come, for what booking a round moves it to (forward only)
 STAGES = ["saved", "applied", "assessment", "interview"]
 _TEST = re.compile(r"笔试|测评|机试|测试|性格|\boa\b|assessment|\btests?\b|exam|hackerrank|codility", re.IGNORECASE)
-# what people write for "no date": the role closes when it is filled (an apply event with no date)
+# what people write for a role that closes when it is filled (the apply event's `rolling`)
 ROLLING = {"rolling", "滚动", "滚动招聘", "招满即止", "招满为止", "until filled", "open until filled"}
+# the events built in: their names follow the interface's language (title ""), and what booking one says about the role
+BOOKED_KINDS = {"apply": "Apply by", "test": "Written test", "assessment": "Assessment", "round1": "1st interview",
+                "round2": "2nd interview", "round3": "3rd interview", "hr": "HR interview", "final": "Final interview"}
+KIND_STAGES = {"test": "assessment", "assessment": "assessment", "round1": "interview", "round2": "interview",
+               "round3": "interview", "hr": "interview", "final": "interview"}
+# names the built-in rounds had as typed titles before they were built in (the chips were Chinese only)
+_OLD_NAMES = {"笔试": "test", "测评": "assessment", "一面": "round1", "二面": "round2", "三面": "round3",
+              "hr 面": "hr", "hr面": "hr", "终面": "final", "投递截止": "apply"}
 PLACE_KINDS = ["onsite", "hybrid", "remote"]
 # what people (and Claude) write before the area: "remote: APAC", "远程：中国大陆", "hybrid 悉尼"
 PLACE_WORDS = {"remote": "remote", "远程": "remote", "wfh": "remote", "居家": "remote",
@@ -101,6 +114,7 @@ SITE_KINDS = ["campus", "intern", "social", "other"]
 LOGO_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif",
               "image/svg+xml": "svg", "image/x-icon": "ico", "image/vnd.microsoft.icon": "ico"}
 EVENT_KINDS = ["created", "status", "note", "sent"]
+MIGRATIONS = ["builtin-events"]   # done once on an old applications.json (`Hunt.migrate`); a new one starts with them done
 COLUMNS = ["at", "app", "kind", "from", "to", "source", "note"]
 
 
@@ -136,15 +150,35 @@ def _minutes(v: Any) -> int:
     return max(0, min(n, 24 * 60))
 
 
-def _apply_by(v: Any) -> str:
-    """When to apply by, from what someone wrote: "2026-10-31", or no date: "", "rolling", "招满即止"."""
+def _apply_by(v: Any) -> tuple[str, bool]:
+    """When to apply by, from what someone wrote, as (date, rolling): "2026-10-31" is a date; "rolling" or
+    "招满即止" closes once filled; "" is nothing known."""
     s = _text(v, 40)
-    return "" if s.casefold() in ROLLING else _date(s)
+    return ("", True) if s.casefold() in ROLLING else (_date(s), False)
 
 
-def booked_stage(title: Any) -> str | None:
+def event_title(e: dict) -> str:
+    """What a booked thing is called: the user's own title, or a built-in one's name in the interface's language."""
+    return e.get("title") or (t(BOOKED_KINDS[e["kind"]]) if e.get("kind") in BOOKED_KINDS else "")
+
+
+def _builtin_kind(title: str) -> str | None:
+    """The built-in event a title names, in any interface language (what one made from a chip was saved as)."""
+    from core.i18n import UI_LANGS
+    key = _key(title)
+    if not key:
+        return None
+    for kind, name in BOOKED_KINDS.items():
+        if any(_key(t(name, ui=lang)) == key for lang in UI_LANGS):
+            return kind
+    return _OLD_NAMES.get(_text(title, 20).casefold())
+
+
+def booked_stage(title: Any, kind: str | None = None) -> str | None:
     """What a booked thing says about the role: an interview (一面, HR 面, interview), a test (笔试, 测评, OA),
-    or nothing (a title it can't tell)."""
+    or nothing (a title it can't tell). A built-in kind says it outright."""
+    if kind in KIND_STAGES:
+        return KIND_STAGES[kind]
     s = _text(title, 60)
     if "面" in s or "interview" in s.casefold():
         return "interview"
@@ -161,12 +195,17 @@ def _next_eid(a: dict) -> str:
 
 
 def _set_apply_by(a: dict, v: Any) -> None:
-    """The role's apply event gets this date, or none (招满即止); it is made when the role has none."""
+    """The role's apply event gets this date, or says it closes once filled; nothing known ("") drops it."""
+    at, rolling = _apply_by(v)
     e = apply_event(a)
+    if not at and not rolling:
+        if e:
+            a["schedule"].remove(e)
+        return
     if not e:
-        e = {"id": _next_eid(a), "kind": "apply", "title": t("Apply by"), "at": "", "minutes": 0, "where": "", "note": ""}
+        e = {"id": _next_eid(a), "kind": "apply", "title": "", "at": "", "minutes": 0, "where": "", "note": ""}
         a.setdefault("schedule", []).append(e)
-    e["at"] = _apply_by(v)
+    e["at"], e["rolling"] = at, rolling
     a["schedule"].sort(key=lambda x: x["at"])
 
 
@@ -296,11 +335,14 @@ class Hunt:
         return ""
 
     def _read(self, name: str, key: str) -> dict:
+        raw = self._load(name)
         try:
-            data = json.loads(self._load(name) or "{}")
+            data = json.loads(raw or "{}")
         except ValueError:
             data = {}
         data = data if isinstance(data, dict) else {}
+        if name == "applications.json" and not raw:
+            data["migrated"] = list(MIGRATIONS)   # a new file has nothing from before to carry over
         data.setdefault("next", 1)
         data[key] = [x for x in data.get(key) or [] if isinstance(x, dict) and x.get("id")]
         return data
@@ -579,20 +621,43 @@ class Hunt:
         self._changed()
         return me
 
+    @staticmethod
+    def _builtin_events(apps: dict) -> bool:
+        """Once (2026-10-26): built-in events are named by kind (they read in the interface's language), and an apply
+        event with no date stops meaning 招满即止, so the ones made for every new role, never touched, go."""
+        done = apps.setdefault("migrated", [])
+        if "builtin-events" in done or not apps["applications"]:
+            return False
+        for a in apps["applications"]:
+            keep = []
+            for e in a.get("schedule") or []:
+                kind = _builtin_kind(e.get("title") or "")
+                if e.get("kind") == "apply":
+                    if kind == "apply":
+                        e["title"] = ""
+                    e["rolling"] = False
+                    if not e.get("at") and not e.get("title") and not e.get("note") and not e.get("where") and not e.get("minutes"):
+                        continue   # made for every role and never set: not known, which is no event
+                elif kind and kind != "apply" and not e.get("kind"):
+                    e["kind"], e["title"] = kind, ""
+                keep.append(e)
+            if "schedule" in a:
+                a["schedule"] = keep
+        done.append("builtin-events")
+        return True
+
     def migrate(self) -> None:
         """Deadlines belong to roles (2026-10-18): a company's deadline moves to its roles that have none.
         A role's next step and its date (until 2026-10-21) become something booked when they had a date,
         else a line in its notes. A role's deadline field (until 2026-10-21) becomes its apply event, which
-        has no "rolling" flag any more: no date is 招满即止."""
+        has no "rolling" flag any more: no date is 招满即止. Then 2026-10-26: see `_builtin_events`."""
         with self.lock:
             cs = self._companies()
             moving = {c["id"]: c.pop("deadline") for c in cs["companies"] if "deadline" in c}
             apps = self._apps()
             old = [a for a in apps["applications"] if "next" in a or "due" in a]
             fields = [a for a in apps["applications"] if "deadline" in a]
-            flags = [e for a in apps["applications"] for e in a.get("schedule") or [] if "rolling" in e]
-            for e in flags:
-                del e["rolling"]
+            flags = self._builtin_events(apps)
             if not moving and not old and not fields and not flags:
                 return
             for a in apps["applications"]:
@@ -690,8 +755,8 @@ class Hunt:
             a = {"id": f"A{data['next']}", "company": c["id"], "role": "", "url": "", "referral": "", "channel": "site", "platform": "",
                  "order": 0, "status": status, "applied": "", "batch": "", "note": "", "jd": "", "subset": "",
                  "places": [], "sent": [], "schedule": [], "co_app": None, "created": _now(), "updated": _now()}
-            # every role starts with its apply event: no date unless one was read (no date is 招满即止)
-            self._app_fields(a, {"channel": "site", "apply_by": "", **fields})
+            # an apply event only when a closing date (or 招满即止) was given: not knowing is no event
+            self._app_fields(a, {"channel": "site", **fields})
             mine = [x for x in data["applications"] if x["company"] == c["id"]]
             order = fields.get("order")
             a["order"] = max((x.get("order") or 0 for x in mine), default=0) + 1
@@ -785,16 +850,26 @@ class Hunt:
     @staticmethod
     def _booked_fields(e: dict, fields: dict) -> None:
         if "title" in fields:
-            e["title"] = _text(fields["title"], 60)
-        if "at" in fields:   # applying may have no date (招满即止); everything else booked has one
-            e["at"] = _apply_by(fields["at"]) if e.get("kind") == "apply" else _date(fields["at"])
+            title = _text(fields["title"], 60)
+            # a built-in one keeps no title while it carries its own name (in whichever language it was shown)
+            e["title"] = "" if e.get("kind") in BOOKED_KINDS and _builtin_kind(title) == e["kind"] else title
+        if "at" in fields:   # applying may have no date (招满即止, or not known yet); everything else booked has one
+            if e.get("kind") == "apply":
+                e["at"], rolling = _apply_by(fields["at"])
+                e["rolling"] = rolling
+            else:
+                e["at"] = _date(fields["at"])
+        if "rolling" in fields and e.get("kind") == "apply":
+            e["rolling"] = bool(fields["rolling"])
+            if e["rolling"]:
+                e["at"] = ""
         if "minutes" in fields:
             e["minutes"] = _minutes(fields["minutes"])
         if "where" in fields:
             e["where"] = _text(fields["where"], 300)
         if "note" in fields:
             e["note"] = _long(fields["note"], 1000)
-        if not e.get("title"):
+        if not event_title(e):
             raise ValueError(t("Say what it is first (一面, 笔试…)"))
         if not e.get("at") and e.get("kind") != "apply":
             raise ValueError(t("Give it a date"))
@@ -814,19 +889,22 @@ class Hunt:
 
     def _advance(self, ref: str, e: dict, source: str) -> None:
         """A round was booked: the status moves forward to it (never back, never off an outcome)."""
-        to = booked_stage(e.get("title")) if e.get("kind") != "apply" else None
+        to = booked_stage(e.get("title"), e.get("kind")) if e.get("kind") != "apply" else None
         a = self.application(ref)
         if to and a["status"] in STAGES and STAGES.index(to) > STAGES.index(a["status"]):
-            self.set_status(a["id"], to, note=t("{what} booked", what=e["title"]), source=source)
+            self.set_status(a["id"], to, note=t("{what} booked", what=event_title(e)), source=source)
 
     def add_booked(self, ref: str, fields: dict, *, source: str = "window") -> dict:
         """Something booked for this application: a test, 一面, 二面… with its date (and time)."""
         def add(a: dict) -> dict:
             e = {"id": _next_eid(a), "title": "", "at": "", "minutes": 0, "where": "", "note": ""}
-            if fields.get("kind") == "apply":
+            kind = fields.get("kind") or _builtin_kind(fields.get("title") or "")   # a built-in one's name, typed or sent
+            if kind == "apply":
                 if apply_event(a):
                     raise ValueError(t("{role} has its “{what}” already: change that one", role=a["role"], what=t("Apply by")))
-                e.update(kind="apply", title=t("Apply by"))
+                e.update(kind="apply", rolling=False)
+            elif kind in BOOKED_KINDS:
+                e["kind"] = kind
             self._booked_fields(e, fields)
             a["schedule"].append(e)
             return e
@@ -855,7 +933,8 @@ class Hunt:
     def _booked_one(a: dict, eid: str) -> dict:
         r = str(eid or "").strip()
         hit = next((e for e in a["schedule"] if e["id"] == r), None) \
-            or next((e for e in a["schedule"] if _key(e["title"]) == _key(r)), None)
+            or next((e for e in a["schedule"] if _key(event_title(e)) == _key(r)), None) \
+            or next((e for e in a["schedule"] if e.get("kind") and e.get("kind") == _builtin_kind(r)), None)
         if not hit:
             raise KeyError(t("{role} has nothing booked called “{ref}”", role=a["role"], ref=r))
         return hit

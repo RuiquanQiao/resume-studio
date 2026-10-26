@@ -333,6 +333,7 @@ async function loadChats() {
 function paintChatDot(running) {
   if (running) ui.chat.busy = running;   // every chat replying now, as the server last said
   paintChatToggle();
+  if (ui.w.chat) renderChatSelect();   // each chat's own sign in the list
 }
 
 // the latest call wins: an older one answering late must not bring its chat back. A refresh of the
@@ -359,6 +360,7 @@ async function openChat(id, { quiet = false, refresh = false } = {}) {
   if (seq !== openSeq) return;
   opening = null;
   if (ui.chat.id !== id) askEls.clear();
+  setUnread(id, false);   // opened: its reply is seen
   ui.chat.id = id;
   ui.chat.meta = r.chat;
   ui.chat.messages = r.messages;
@@ -433,13 +435,40 @@ function chatForWorkspace() {
   if (!ui.chat.messages.length && !ui.chat.running) renderChat();   // the empty chat's suggestions follow the workspace
 }
 
+// what a chat is doing, as a sign left of its title (as Claude Code's session list does): Claude replying, Claude
+// waiting for the user (a permission, a question, a plan), or a reply that ended while the user was in another chat
+function chatState(id) {
+  if (ui.chat.waiting.has(id)) return "waiting";
+  if ((ui.chat.busy || []).includes(id) || (id === ui.chat.id && ui.chat.running)) return "running";
+  return chatUnread().has(id) ? "unread" : "";
+}
+const CHAT_STATES = { running: "Claude is replying", waiting: "Claude is waiting for you", unread: "A new reply you haven't seen" };
+function chatMark(state) {
+  if (!state) return null;
+  return h("span", { class: "chat-mark " + state, title: t(CHAT_STATES[state]), "aria-label": t(CHAT_STATES[state]) });
+}
+// replies that ended in a chat the user wasn't in, kept per viewer until that chat is opened
+function chatUnread() {
+  if (!ui.chat.unread) { try { ui.chat.unread = new Set(JSON.parse(store("chat-unread") || "[]")); } catch (_) { ui.chat.unread = new Set(); } }
+  return ui.chat.unread;
+}
+function setUnread(id, on) {
+  const u = chatUnread();
+  if (on === u.has(id)) return;
+  if (on) u.add(id); else u.delete(id);
+  store("chat-unread", u.size ? JSON.stringify([...u]) : null);
+}
+
 function renderChatSelect() {
   const sel = ui.w.chat;
   const list = visibleChats();
   sel.disabled = !list.length;
   const mixed = list.some(inToolFolder) && list.some((c) => !inToolFolder(c));
-  const opt = (c) => ({ value: c.id, label: c.title || t("New chat"), group: mixed ? (inToolFolder(c) ? t("In {name}'s folder", { name: chatPlace(c) }) : "Resume Studio") : undefined,
-    hint: ui.chat.waiting.has(c.id) ? t("waiting for you") : relTime(c.updated) });
+  const opt = (c) => {
+    const state = chatState(c.id);
+    return { value: c.id, label: c.title || t("New chat"), group: mixed ? (inToolFolder(c) ? t("In {name}'s folder", { name: chatPlace(c) }) : "Resume Studio") : undefined,
+      hint: relTime(c.updated), mark: state ? () => chatMark(state) : null, tip: state ? t(CHAT_STATES[state]) : undefined };
+  };
   sel.setOptions([...list.filter((c) => !inToolFolder(c)), ...list.filter(inToolFolder)].map(opt), ui.chat.id);
 }
 const chatPlace = (c) => (jobsReady() && c.workspace === (J.data.status.tool || {}).id ? jobsTool().name : c.workspace);
@@ -1117,6 +1146,7 @@ async function onChatEvent(type, ev) {
     }
     return;
   }
+  if (type === "chat.done" && ev.chat !== ui.chat.id) setUnread(ev.chat, true);   // ended while the user was elsewhere
   if (type === "chat.done") paintChatDot((ui.chat.busy || []).filter((id) => id !== ev.chat));
   if (ev.chat !== ui.chat.id) {
     if (type === "chat.done") {
@@ -1175,7 +1205,7 @@ function listenChat(es) {
 
 // ---------------------------------------------------------------- wiring
 function wireChat() {
-  ui.w.chat = uiSelect({ id: "chat-select", cls: "grow", label: t("Chats"), placeholder: t("No chats yet"), menuWidth: 300, onChange: (id) => openChat(id) });
+  ui.w.chat = uiSelect({ id: "chat-select", cls: "grow", label: t("Chats"), placeholder: t("No chats yet"), menuWidth: 300, marks: true, onChange: (id) => openChat(id) });
   $("#chat-select-slot").replaceWith(ui.w.chat.el);
   $("#chat-new").append(icon("plus"));
   $("#chat-rename").append(icon("pen"));

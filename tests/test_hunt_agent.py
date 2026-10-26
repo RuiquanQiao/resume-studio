@@ -215,7 +215,9 @@ def test_claude_fills_a_company_from_its_command(live, data_file, monkeypatch):
     code, out = cli(data_file, "add-role", "星河科技", "服务端研发工程师", "--apply-by", "2026-10-31", "--url", "https://careers.xinghe.example/job/1")
     assert "apply by 2026-10-31" in out
     code, out = cli(data_file, "edit-role", "星河科技/服务端研发", "--apply-by", "", "--batch", "27秋招")
-    assert code == 0 and "apply by until filled (招满即止)" in out and "batch 27秋招" in out
+    assert code == 0 and "apply by" not in out and "batch 27秋招" in out             # "" drops it: nothing known
+    code, out = cli(data_file, "edit-role", "星河科技/服务端研发", "--apply-by", "rolling")
+    assert code == 0 and "apply by until filled (招满即止)" in out
 
 
 # ---------------------------------------------------------------- open postings

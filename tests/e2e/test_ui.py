@@ -910,8 +910,10 @@ def test_permission_card_in_the_chat(page, server, fake_claude):
     assert "Claude 想要写入文件" in card.inner_text() and "notes.md" in card.inner_text()
     assert "+ hello" in card.locator(".ask-diff").inner_text()
     page.wait_for_selector("#chat-toggle .tab-dot.wait")                        # the Claude button says Claude is waiting for you
+    page.wait_for_selector("#chat-select .sel-mark .chat-mark.waiting")         # and so does the chat's own sign
     card.locator("button:has-text('允许，并切到「自动接受编辑」')").click()
     page.wait_for_selector(".ask.ask-perm.done.allowed")
+    page.wait_for_selector("#chat-select .chat-mark.waiting", state="detached")
     page.wait_for_selector(".msg-ai .md:has-text('已写入。')", timeout=10000)
     page.wait_for_selector("#chat-mode-btn[data-mode=acceptEdits]")            # "always" switched the mode
     assert page.locator("#chat-dot.wait").count() == 0
@@ -925,6 +927,36 @@ def test_permission_card_in_the_chat(page, server, fake_claude):
     card.locator("input.ask-input").press("Enter")
     page.wait_for_selector(".ask.ask-perm.done.denied")
     page.wait_for_selector(".msg-ai .md:has-text('好的，不写了。')", timeout=10000)
+
+
+def test_each_chat_shows_what_it_is_doing_in_the_list(page, server, fake_claude):
+    """As in Claude Code's session list: a sign left of each title, replying / waiting for you / a reply not seen."""
+    open_chat_tab(page)
+    page.fill("#chat-input", "SLOW 慢慢来")
+    page.keyboard.press("Enter")
+    page.wait_for_selector("#chat-select .sel-mark .chat-mark.running")
+    first = server.req("GET", "/api/chats")[1]["chats"][0]["id"]
+    page.click("#chat-new")                                                     # the user goes to another chat
+    page.fill("#chat-input", "你好")
+    page.keyboard.press("Enter")
+    wait_until(lambda: len(server.req("GET", "/api/chats")[1]["chats"]) == 2, msg="second chat")
+    page.click("#chat-select")
+    page.wait_for_selector(f".float .lb-opt[data-value='{first}'] .chat-mark.running")
+    assert page.locator(f".float .lb-opt[data-value='{first}'] .lb-hint").inner_text().strip()   # its time stays on the right
+    page.keyboard.press("Escape")
+    server.req("POST", f"/api/chats/{first}/cancel")                           # its reply ends while the user is elsewhere
+    page.click("#chat-select")
+    page.wait_for_selector(f".float .lb-opt[data-value='{first}'] .chat-mark.unread")
+    for scheme in ("light", "dark"):
+        page.emulate_media(color_scheme=scheme)
+        page.screenshot(path=str(ART / f"chat-states-{scheme}.png"))
+    page.emulate_media(color_scheme="light")
+    page.click(f".float .lb-opt[data-value='{first}']")                       # opened: seen
+    page.wait_for_function(f"() => document.querySelector('#chat-select').dataset.value === '{first}'")
+    page.click("#chat-select")
+    page.wait_for_selector(f".float .lb-opt[data-value='{first}']")
+    assert page.locator(f".float .lb-opt[data-value='{first}'] .chat-mark").count() == 0
+    page.keyboard.press("Escape")
 
 
 def test_signed_out_claude_explains_how_to_sign_in(page, server, fake_claude):
@@ -1510,20 +1542,22 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     time.sleep(0.4)
     assert app(a1)["referral"] == "NTA8X2"
     # the next step: what and when in one cell, no deadline column (docs/JOB_HUNT.md, 2026-10-21); a role not applied
-    # to yet shows its 投递 event: no date said is 招满即止
+    # to yet shows its 投递 event, only when the posting gave a date or said 招满即止: nothing known is nothing shown (2026-10-26)
     due = lambda a: next(e for e in a["schedule"] if e.get("kind") == "apply")  # noqa: E731
     assert pg.locator(".dbv-view th[data-key=deadline]").count() == 0
-    pg.wait_for_selector(f"{row(a2)} td[data-key=events]:has-text('投递截止'):has-text('招满即止')")
+    assert pg.inner_text(f"{row(a2)} td[data-key=events]").strip() == ""      # no date known: none made up
     assert pg.inner_text(f"{row(a1)} td[data-key=events]").strip() == ""      # interviewing, nothing booked: applying is done
     server.req("PUT", f"/api/hunt/apps/{a2}", {"apply_by": "2030-11-01"})
-    pg.wait_for_selector(f"{row(a2)} td[data-key=events] .c-left:has-text('还有')")
+    pg.wait_for_selector(f"{row(a2)} td[data-key=events]:has-text('投递截止') .c-left:has-text('还有')")
     server.req("PUT", f"/api/hunt/apps/{a2}", {"apply_by": "2020-11-01"})
     pg.wait_for_selector(f"{row(a2)} td[data-key=events] .c-booked.late .c-left:has-text('已过')")
-    server.req("PUT", f"/api/hunt/apps/{a2}", {"apply_by": ""})
+    server.req("PUT", f"/api/hunt/apps/{a2}", {"apply_by": "rolling"})
     pg.wait_for_selector(f"{row(a2)} td[data-key=events]:has-text('招满即止')")
     pg.click(f"{row(a2)} td[data-key=events]")                                # opens the role, at its events
     pg.wait_for_selector(".bk-item.is-due")
     pg.click(".hunt-back")
+    server.req("PUT", f"/api/hunt/apps/{a2}", {"apply_by": ""})
+    pg.wait_for_function(f"() => document.querySelector(`{row(a2)} td[data-key=events]`).innerText.trim() === ''")
     pg.wait_for_selector(f"{row(a1)} td[data-key=batch]")
     # the batch: the user's own options, a new one typed, an old one picked
     pg.click(f"{row(a1)} td[data-key=batch]")
@@ -1588,7 +1622,7 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
         return next(c for c in views()["apps"]["views"][0]["columns"] if c["key"] == key)
     wait_until(lambda: abs(saved_col("status")["width"] - (before + 80)) <= 2 and saved_col("last")["hidden"], msg="width and hidden saved")
     assert saved_col("role")["width"]                                           # the others keep the widths they had on screen
-    assert pg.locator(".dbv-wrap[data-scrolls] table.sized").count() == 1
+    assert pg.locator(".dbv-body[data-scrolls] table.sized").count() == 1
 
     # another view: everything; a filter typed in; grouped by status
     pg.click(".dbv-tab[data-view=v2]")
@@ -1651,7 +1685,8 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
         pg.screenshot(path=str(ART / f"hunt-calendar-{scheme}.png"))
     pg.emulate_media(color_scheme="light")
     pg.click(".dbv-calbar .btn[aria-label='下个月']")
-    pg.wait_for_selector(f".dbv-calday[data-day='{day}']", state="detached")
+    # today may still show, greyed, among the next month's leading days (the last week of a month): not as a day of it
+    pg.wait_for_selector(f".dbv-calday[data-day='{day}']:not(.out)", state="detached")
     pg.click(".dbv-calbar .btn:has-text('今天')")
     pg.click(f".dbv-calday[data-day='{day}'] .dbv-item.k-event")
     pg.wait_for_selector(".bk-item:has-text('一面')")
@@ -1661,13 +1696,14 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.fill(".bk-new .bk-time", "09:30")
     pg.click("#bk-add")
     booked = lambda: [e for e in app(a1)["schedule"] if e.get("kind") != "apply"]  # noqa: E731
-    wait_until(lambda: [e["title"] for e in booked()] == ["一面", "二面"], msg="booked from the page")
+    # the usual rounds are built in (no title of their own: they read in the interface's language)
+    wait_until(lambda: [(e.get("kind"), e["title"]) for e in booked()] == [("round1", ""), ("round2", "")], msg="booked from the page")
     assert booked()[1]["at"] == "2030-01-15 09:30"
     pg.wait_for_selector(".bk-item:has-text('二面')")
-    # its 投递 among them: no date is 招满即止; given a date from its own edit, and cleared again
-    pg.wait_for_selector(".bk-item.is-due .bk-when:has-text('招满即止')")
-    pg.hover(".bk-item.is-due")
-    pg.click(".bk-item.is-due .btn[aria-label='修改']")
+    assert pg.input_value(".bk-new .bk-day") == ""                            # no date filled in for the user
+    # its 投递, added by hand: it opens for its date; then 招满即止 from its own edit (the date goes)
+    assert pg.locator(".bk-item.is-due").count() == 0
+    pg.click("#bk-add-due")
     pg.fill(".bk-edit .bk-day", "2030-01-10")
     pg.click(".bk-edit .btn.primary")
     wait_until(lambda: due(app(a1))["at"] == "2030-01-10", msg="apply-by dated from the page")
@@ -1676,7 +1712,8 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.click(".bk-edit .dl-rolling")
     assert pg.input_value(".bk-edit .bk-day") == ""
     pg.click(".bk-edit .btn.primary")
-    wait_until(lambda: due(app(a1))["at"] == "", msg="no date again: 招满即止")
+    wait_until(lambda: (due(app(a1))["at"], due(app(a1))["rolling"]) == ("", True), msg="招满即止, said by the user")
+    pg.wait_for_selector(".bk-item.is-due .bk-when:has-text('招满即止')")
     server.req("PUT", f"/api/hunt/apps/{a1}", {"apply_by": "2030-01-10"})
     # in interviews, the next round waits in the Add row; booking one moves the status forward, with Undo
     pg.wait_for_function("() => document.querySelector('.bk-new .bk-title').value === '三面'")
@@ -1761,6 +1798,58 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     wait_until(lambda: server.req("GET", f"/api/hunt/companies/{c1}")[1]["company"]["industry"] == "电商", msg="industry saved")
     assert "industry" in server.req("GET", f"/api/hunt/companies/{c1}")[1]["company"]["kept"]
     pg.screenshot(path=str(ART / "hunt-companies-light.png"))
+
+
+def test_a_long_table_scrolls_with_its_page_under_a_heading_row_that_stays(page_all, server):
+    """The heading row stays at the top of the window while the page scrolls; the table is never a slot of its
+    own with a second scrollbar. Frozen columns stay at the left while it runs sideways, and its sideways
+    scrollbar stays at the foot of the window. Every tab, short windows too."""
+    pg = page_all
+    cid = server.req("POST", "/api/hunt/companies", {"name": "星河科技"})[1]["company"]["id"]
+    for i in range(30):
+        server.req("POST", f"/api/hunt/companies/{cid}/roles", {"role": f"岗位 {i:02d} — 一个很长的岗位名字，看它换行"})
+    for name in ("腾讯", "Atlassian"):
+        server.req("POST", "/api/hunt/companies", {"name": name})
+    pg.set_viewport_size({"width": 1000, "height": 650})
+    pg.keyboard.press("Control+3")
+    pg.wait_for_function("() => document.querySelectorAll('.dbv-view[data-table=apps] tbody tr').length === 30")
+    pg.evaluate("() => { DBV.tables.apps.views[0].freeze = 2; paintHunt(); }")
+    geom = """() => { const r = (s) => document.querySelector(s)?.getBoundingClientRect();
+        const b = document.querySelector('.dbv-body'), sc = document.querySelector('.hunt-scroll');
+        return {sc: r('.hunt-scroll'), head: r('.dbv-head'), wrap: r('.dbv-wrap'), hbar: r('.dbv-hbar'), body: r('.dbv-body'),
+                frz: r('.dbv-body tbody tr:nth-child(20) td.frz-last'), last: r('.dbv-body tbody tr:last-child'),
+                st: sc.scrollTop, sh: sc.scrollHeight, ch: sc.clientHeight, bodyTall: b.scrollHeight - b.clientHeight,
+                x: [...document.querySelectorAll('.dbv-head, .dbv-body, .dbv-hbar')].map((e) => e.scrollLeft)}; }"""
+    g = pg.evaluate(geom)
+    assert g["sh"] > g["ch"] + 600 and g["bodyTall"] == 0          # the page scrolls; the table has no scrollbar of its own
+    assert g["sc"]["top"] < g["hbar"]["top"] < g["hbar"]["bottom"] <= g["sc"]["bottom"] + 1   # sideways bar in reach at the foot
+
+    # down the page: the heading row stays at the top of it
+    pg.mouse.move(600, 500)
+    pg.mouse.wheel(0, 900)
+    pg.wait_for_function("() => document.querySelector('.hunt-scroll').scrollTop >= 600")
+    g = pg.evaluate(geom)
+    assert abs(g["head"]["top"] - g["sc"]["top"]) <= 1
+    # sideways over the rows: the heading row and the bar follow, the frozen columns stay
+    left0 = g["frz"]["left"]
+    pg.mouse.wheel(300, 0)
+    pg.wait_for_function("() => { const x = [...document.querySelectorAll('.dbv-head, .dbv-body, .dbv-hbar')].map((e) => e.scrollLeft); return x[1] > 0 && x.every((v) => v === x[1]); }")
+    g = pg.evaluate(geom)
+    assert abs(g["frz"]["left"] - left0) <= 1 and abs(g["head"]["top"] - g["sc"]["top"]) <= 1
+    # a repaint (an edit, a reload of the data) leaves it where it was, both ways
+    pg.evaluate("() => paintHunt()")
+    g2 = pg.evaluate(geom)
+    assert g2["st"] == g["st"] and g2["x"] == g["x"]
+
+    # the companies tab: something stands above the table; the page still scrolls to the last row and the frame's end
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.wait_for_selector(".dbv-view[data-table=companies] tbody tr")
+    pg.mouse.move(600, 200)
+    pg.mouse.wheel(0, 5000)
+    pg.wait_for_function("() => { const s = document.querySelector('.hunt-scroll'); return s.scrollTop > 0 && s.scrollTop + s.clientHeight >= s.scrollHeight - 1; }")
+    g = pg.evaluate(geom)
+    assert g["bodyTall"] == 0 and g["wrap"]["bottom"] <= g["sc"]["bottom"] - 10   # the frame's end is on screen, with room below
+    pg.set_viewport_size({"width": 1440, "height": 900})
 
 
 def test_a_cv_edited_in_career_ops_is_never_overwritten(connected, page_all, server):

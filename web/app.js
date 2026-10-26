@@ -904,14 +904,27 @@ function langSwitch() {
     } }, langShort(l))));
 }
 
-function card(title, sub, body, { cls = "", actions = null } = {}) {
-  return h("section", { class: "card " + cls },
-    h("div", { class: "card-h" }, h("h3", null, title), sub && h("span", { class: "sub" }, sub), h("span", { class: "spacer" }), actions),
+// `fold`: a key; the card folds from its title, and stays folded (every card with that key) until opened again.
+// `count`: a number shown beside the title, the way the tabs show theirs.
+function card(title, sub, body, { cls = "", actions = null, fold = "", count = null } = {}) {
+  const folded = !!fold && store("fold:" + fold) === "1";
+  const head = [h("h3", null, title), count != null && h("span", { class: "card-n" }, String(count)), sub && h("span", { class: "sub" }, sub)];
+  const sec = h("section", { class: "card " + cls + (folded ? " folded" : "") },
+    h("div", { class: "card-h" },
+      fold ? h("button", { class: "card-fold", "aria-expanded": String(!folded), title: folded ? t("Show") : t("Hide"),
+        onclick: (e) => {
+          const now = sec.classList.toggle("folded");
+          e.currentTarget.setAttribute("aria-expanded", String(!now));
+          e.currentTarget.title = now ? t("Show") : t("Hide");
+          store("fold:" + fold, now ? "1" : null);
+        } }, icon("down"), head) : head,
+      h("span", { class: "spacer" }), actions && h("span", { class: "card-acts" }, actions)),
     h("div", { class: "card-b" }, body));
+  return sec;
 }
 
 // a text field bound to obj[key]; i18n fields store per-language values
-function tfield(label, obj, key, { i18n = false, multiline = false, placeholder = "", rows = 2, hint = "" } = {}) {
+function tfield(label, obj, key, { i18n = false, multiline = false, placeholder = "", rows = 2, hint = "", link = false } = {}) {
   const val = i18n ? getT(obj[key], ui.editLang) : (obj[key] ?? "");
   const onInput = (ev) => { obj[key] = i18n ? setT(obj[key], ui.editLang, ev.target.value) : ev.target.value; touch(); };
   const attrs = { placeholder, oninput: onInput, "data-key": key, spellcheck: "false" };
@@ -920,7 +933,7 @@ function tfield(label, obj, key, { i18n = false, multiline = false, placeholder 
   const tag = i18n && langs().length > 1
     ? h("span", { class: "lang-tag" + (neutral ? " neutral" : ""), title: neutral ? t("Every language shares this text for now; once edited, each language keeps its own") : "" }, neutral ? t("Shared") : langShort(ui.editLang))
     : null;
-  return h("div", { class: "field" }, h("label", null, label, tag, hint && h("span", { class: "hint" }, hint)), input);
+  return h("div", { class: "field" }, h("label", null, label, tag, hint && h("span", { class: "hint" }, hint)), link ? linkOpen(input) : input);
 }
 
 function entryForm(e = ui.draft, { out = false } = {}) {
@@ -956,7 +969,7 @@ function entryForm(e = ui.draft, { out = false } = {}) {
       h("div", { class: "grid2" }, tfield(t("Subtitle"), e, "subtitle", { i18n: true, placeholder: t("Position / degree / role") }), tfield(t("Location"), e, "location", { i18n: true })),
       h("div", { class: "grid3" }, tfield(t("Start"), e, "start", { placeholder: "2025-07" }), tfield(t("End"), e, "end", { placeholder: t("2026-02 or present") }),
         tfield(t("Custom date"), e, "date", { i18n: true, hint: t("optional, overrides start and end") })),
-      tfield(t("Link"), e, "link", { placeholder: "https://…" }));
+      tfield(t("Link"), e, "link", { placeholder: "https://…", link: true }));
   }
   basics.push(h("div", { class: "field" }, h("label", null, isList ? t("Items") : t("Tech / keywords"), h("span", { class: "hint" }, t("comma-separated"))),
     h("input", { value: e.tech.map((t) => display(t)).join(", "), spellcheck: "false", "data-key": "tech",
@@ -1385,7 +1398,7 @@ function profileForm(p = ui.draft) {
         }).then(buildEditorKeepDraft) }),
       h("input", { class: "c-label", value: c.label ?? "", placeholder: "email", spellcheck: "false", oninput: (ev) => { c.label = ev.target.value; touch(); } }),
       h("input", { class: "c-value", value: getT(c.value, ui.editLang), placeholder: t("Text shown"), spellcheck: "false", oninput: (ev) => { c.value = editT(c.value, ev.target.value); touch(); } }),
-      h("input", { class: "c-url", value: getT(c.url, ui.editLang), placeholder: t("Link (optional) mailto: / https://"), spellcheck: "false", oninput: (ev) => { c.url = editT(c.url, ev.target.value); touch(); } }),
+      linkOpen(h("input", { class: "c-url", value: getT(c.url, ui.editLang), placeholder: t("Link (optional) mailto: / https://"), spellcheck: "false", oninput: (ev) => { c.url = editT(c.url, ev.target.value); touch(); } })),
       h("button", { class: "btn icon sm ghost danger c-del", title: t("Delete"), onclick: () => { p.contacts.splice(i, 1); touch(); buildEditorKeepDraft(); } }, icon("x"))));
   });
   rows.append(h("button", { class: "btn sm", onclick: () => { p.contacts.push({ label: "", value: "", url: "" }); touch(); buildEditorKeepDraft(); } }, icon("plus"), t("Add contact")));

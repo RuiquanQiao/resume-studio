@@ -31,9 +31,10 @@
     python scripts/hunt.py apply P12                        # the user goes for posting P12: it becomes an application
     python scripts/hunt.py keywords "算法, AI, Agent, 后端"  # the roles the user looks for (others are folded away)
 
-When to apply by is an event of the role, not a field: every role starts with its 投递 event, and --apply-by
-sets its date; with no date ("" or "rolling") it closes once filled (招满即止). --batch is the user's own name
-for the hiring round.
+When to apply by is an event of the role, not a field, and only what the posting says: --apply-by 2026-10-31
+gives the date it closes, --apply-by rolling says it closes once filled (招满即止, only when the posting says so),
+and --apply-by "" drops it. No date known is no event: never guess one. --batch is the user's own name for the
+hiring round.
 
 Statuses: saved (want to apply), applied, assessment (测评/笔试), interview (rounds are booked: `book`), offer, hired,
 rejected, withdrawn; Chinese words work too (一面 → interview, 笔试 → assessment, 挂 → rejected).
@@ -53,6 +54,17 @@ from pathlib import Path
 from _bootstrap import resolve_data
 
 CHANNELS = {"site": "its own site", "platform": "via {platform}", "referral": "referral", "other": "other"}
+# built-in events keep no title (they read in the window's language): their names here
+EVENT_NAMES = {"apply": "Apply by", "test": "Written test (笔试)", "assessment": "Assessment (测评)", "round1": "1st interview (一面)",
+               "round2": "2nd interview (二面)", "round3": "3rd interview (三面)", "hr": "HR interview (HR 面)", "final": "Final interview (终面)"}
+
+
+def event_name(e: dict) -> str:
+    return e.get("title") or EVENT_NAMES.get(e.get("kind") or "", "")
+
+
+def apply_when(e: dict) -> str:
+    return e["at"] or ("until filled (招满即止)" if e.get("rolling") else "no date known")
 FILL_HELP = """Claude's research on a company, every field at once, as JSON on stdin:
 
   {"name": "Xinghe Technology Ltd.",                      # its official name (kept as an alias; the user's name stays)
@@ -121,10 +133,10 @@ def app_line(a: dict, company: str = "") -> str:
         parts.append(f"batch {a['batch']}")
     due = next((e for e in a.get("schedule") or [] if e.get("kind") == "apply"), None)
     if due and a.get("status") == "saved":
-        parts.append(f"apply by {due['at'] or 'until filled (招满即止)'}")
+        parts.append(f"apply by {apply_when(due)}")
     soon = [e for e in a.get("schedule") or [] if e["at"] and e.get("kind") != "apply" and e["at"][:10] >= time.strftime("%Y-%m-%d")]
     if soon:
-        parts.append(f"next: {soon[0]['title']} {soon[0]['at']}")
+        parts.append(f"next: {event_name(soon[0])} {soon[0]['at']}")
     if a.get("referral"):
         parts.append(f"referral code {a['referral']}")
     if a.get("url"):
@@ -208,8 +220,8 @@ def show_app(v: dict) -> None:
         print(f"  sent {s['at'][:16].replace('T', ' ')}: {s['subset']} v{s['n']}")
     print("  booked:" if a.get("schedule") else "  booked: nothing")
     for e in a.get("schedule") or []:
-        when = e["at"] or "until filled (招满即止)"
-        print(f"    {e['id']:<4} {when}  {e['title']}" + (" [when to apply by]" if e.get("kind") == "apply" else "")
+        when = apply_when(e) if e.get("kind") == "apply" else e["at"]
+        print(f"    {e['id']:<4} {when}  {event_name(e)}" + (" [when to apply by]" if e.get("kind") == "apply" else "")
               + (f" ({e['minutes']} min)" if e.get("minutes") else "")
               + (f" @ {e['where']}" if e.get("where") else "") + (f": {e['note']}" if e.get("note") else ""))
     print("  events:" if v["events"] else "  events: none")
@@ -316,7 +328,7 @@ def main() -> int:
         return 0
     if c in ("add-role", "edit-role"):
         a = pick("url", "referral", "channel", "platform", "order", "note", "subset", "status", "batch")
-        if args.apply_by is not None:   # "" clears it: 招满即止
+        if args.apply_by is not None:   # a date, "rolling" (招满即止), or "" to drop it: not known
             a["apply_by"] = args.apply_by
         if args.place or getattr(args, "no_places", False):
             a["places"] = args.place or []

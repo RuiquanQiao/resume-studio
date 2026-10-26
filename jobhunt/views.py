@@ -60,7 +60,9 @@ def clean_view(v: Any, n: int) -> dict:
     return {"id": _s(v.get("id"), 20) or f"v{n}", "name": _s(v.get("name"), 40) or t("Table"),
             "layout": v.get("layout") if v.get("layout") in LAYOUTS else "table",
             "columns": cols[:40], "filters": filters[:20], "sorts": sorts,
-            "group": _key(v.get("group")), "folded": [_s(x, 80) for x in (v.get("folded") or [])][:50]}
+            "group": _key(v.get("group")), "folded": [_s(x, 80) for x in (v.get("folded") or [])][:50],
+            # columns kept on screen from the left while the table scrolls sideways (the title alone by default)
+            "freeze": v["freeze"] if isinstance(v.get("freeze"), int) and not isinstance(v.get("freeze"), bool) and 0 <= v["freeze"] <= 40 else 1}
 
 
 def clean_table(v: Any) -> dict:

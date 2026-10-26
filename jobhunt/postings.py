@@ -228,8 +228,9 @@ class Postings:
             places = []
         note = " · ".join(x for x in ("" if places else loc, p.get("category")) if x)
         try:
-            a = self.hunt.add_application(p["company"], {"role": p["title"], "url": p.get("url") or "", "apply_by": p.get("deadline") or "",
-                                                         "note": note, "places": places}, source=source)
+            # its closing date only when the site gives one: none given is none known, not 招满即止
+            a = self.hunt.add_application(p["company"], {"role": p["title"], "url": p.get("url") or "", "note": note, "places": places,
+                                                         **({"apply_by": p["deadline"]} if p.get("deadline") else {})}, source=source)
         except ValueError:   # the same role is on the list already: link to it
             a = next(x for x in self.hunt.applications(p["company"]) if _key(x["role"]) == _key(p["title"]))
         with self.hunt.lock:

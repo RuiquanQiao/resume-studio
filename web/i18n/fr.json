@@ -1636,7 +1636,6 @@
  "version {n} of your plan": "version {n} de votre plan",
  "via {platform}": "via {platform}",
  "v{n} · changed": "v{n} · modifié",
- "waiting for you": "vous attend",
  "window {size}": "fenêtre {size}",
  "write a file": "écrire un fichier",
  "xelatex failed, see main.log": "échec de xelatex, voir main.log",
@@ -1782,7 +1781,6 @@
   "{n} nouveaux commits :"
  ],
  "{n} of {total} requirements": "{n} exigences sur {total}",
- "{n} on its sites": "{n} sur ses sites",
  "{n} open": "{n} ouverts",
  "{n} open on its sites": "{n} ouverts sur ses sites",
  "{n} page": [
@@ -1909,5 +1907,23 @@
  "it has no logo": "elle n'a pas encore de logo",
  "it is blank: nothing on it shows on a white page": "elle est vide : rien n'apparaît sur fond blanc",
  "it is only {w}×{h} pixels, a blur at the size the tables show": "elle ne fait que {w}×{h} pixels, floue à la taille des tableaux",
- "it is a plain block of one colour, with no mark on it": "c'est un simple aplat d'une couleur, sans aucun signe"
+ "it is a plain block of one colour, with no mark on it": "c'est un simple aplat d'une couleur, sans aucun signe",
+ "Add a careers site below first": "Ajoutez d’abord un site carrières ci-dessous",
+ "First add the roles you apply for on its site, under Roles.": "Ajoutez d’abord ci-dessus, dans Postes, les postes auxquels vous postulez sur son site.",
+ "First pick the subset this site gets, above.": "Choisissez d’abord ci-dessus le sous-ensemble que reçoit ce site.",
+ "Freeze this column": "Figer cette colonne",
+ "Freeze up to this column": "Figer jusqu’à cette colonne",
+ "Unfreeze columns": "Libérer les colonnes",
+ "Hide this column": "Masquer cette colonne",
+ "Show this column": "Afficher cette colonne",
+ "Written test": "Épreuve écrite",
+ "1st interview": "1er entretien",
+ "2nd interview": "2e entretien",
+ "3rd interview": "3e entretien",
+ "HR interview": "Entretien RH",
+ "Final interview": "Entretien final",
+ "Closing date not known": "Date limite inconnue",
+ "Claude is replying": "Claude répond",
+ "Claude is waiting for you": "Claude vous attend",
+ "A new reply you haven't seen": "Nouvelle réponse non lue"
 }

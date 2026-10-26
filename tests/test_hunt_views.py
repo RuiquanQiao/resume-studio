@@ -18,6 +18,13 @@ def test_the_deadline_column_from_before_becomes_the_next_step():
     assert [f["key"] for f in v["filters"]] == ["status"] and v["sorts"] == [{"key": "events", "dir": "asc"}]
 
 
+def test_frozen_columns_are_a_count_from_the_left_and_the_title_by_default():
+    assert clean_view({}, 1)["freeze"] == 1                                    # the title stays while the table scrolls sideways
+    assert clean_view({"freeze": 0}, 1)["freeze"] == 0 and clean_view({"freeze": 3}, 1)["freeze"] == 3
+    for bad in (-1, 99, "2", True, 1.5):
+        assert clean_view({"freeze": bad}, 1)["freeze"] == 1
+
+
 def test_views_are_cleaned_and_kept_with_the_data(tmp_path):
     vs = Views(tmp_path / "hunt")
     assert vs.all() == {}                                                      # nothing saved: the window's defaults
