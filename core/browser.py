@@ -29,6 +29,7 @@ from .cdp import CdpError, Connection, version_info
 
 SNAPSHOT_JS = (Path(__file__).with_name("snapshot.js")).read_text(encoding="utf-8")
 WORLD = "resume-studio"
+CLOSE_WARNING = 15.0   # seconds the window offers to keep a browser open before it closes itself
 
 
 class BrowserError(Exception):
@@ -238,7 +239,7 @@ MODIFIERS = {"alt": 1, "ctrl": 2, "control": 2, "meta": 4, "cmd": 4, "shift": 8}
 
 class ManagedBrowser:
     def __init__(self, profile_root: Path, log: Path, *, prefer: str | None = None, headless: bool = False,
-                 pace: float = 1.0):
+                 pace: float = 1.0, idle_close: float = 60.0):
         self.profile_root = Path(profile_root).resolve()   # the browser ignores a relative --user-data-dir
         self.log = Path(log)
         self.prefer = prefer or os.environ.get("RESUME_STUDIO_BROWSER") or None
@@ -257,6 +258,14 @@ class ManagedBrowser:
         self.sessions: dict[str, str] = {}    # targetId -> sessionId
         self.contexts: dict[str, int] = {}    # sessionId -> isolated world's execution context
         self.on_change: Callable[[], None] | None = None
+        # who the browser is for: "work" when a scan, a check or Claude started it (it closes itself once that is
+        # done), "user" when the user opened it or was shown it (it stays until they close it)
+        self.owner = ""
+        self.holds = 0                        # work using it now (a scan's route, a check for updates)
+        self.busy: Callable[[], bool] | None = None   # other work that may use it at any moment (a chat replying)
+        self.last_used = 0.0
+        self.idle_close = idle_close          # seconds after the work is done
+        self.closing = False                  # within CLOSE_WARNING of closing itself
 
     # ---- lifecycle -----------------------------------------------------------
     def profile_dir(self, kind: str) -> Path:
@@ -270,7 +279,8 @@ class ManagedBrowser:
             self._lost()
         return {"state": self.state, "error": self.error, "browser": NAMES.get(self.kind or (found or ("", ""))[0], ""),
                 "found": bool(found), "url": page.get("url", ""), "title": page.get("title", ""),
-                "tabs": sum(1 for p in self.pages.values() if p.get("type") == "page"), "signin_url": self.signin_url}
+                "tabs": sum(1 for p in self.pages.values() if p.get("type") == "page"), "signin_url": self.signin_url,
+                "owner": self.owner, "closing": self.closing}
 
     def _changed(self) -> None:
         if self.on_change:
@@ -280,7 +290,7 @@ class ManagedBrowser:
                 pass
 
     def _lost(self) -> None:
-        self.state, self.conn = "off", None
+        self.state, self.conn, self.owner, self.closing = "off", None, "", False
         self.pages, self.sessions, self.contexts, self.current = {}, {}, {}, None
 
     def ensure(self) -> bool:
@@ -317,6 +327,10 @@ class ManagedBrowser:
                 self._changed()
                 raise BrowserError(str(e)) from e
             self.state = "running"
+            # one left open by an earlier run of the app was not started for this work: it is the user's
+            self.owner, self.last_used = ("work" if started else "user"), time.time()
+            if started:
+                threading.Thread(target=self._close_when_done, args=(self.conn,), daemon=True, name="browser-idle").start()
             self._changed()
             return started
 
@@ -530,25 +544,77 @@ class ManagedBrowser:
             self._lost()
             self._changed()
 
-    def close_if_idle(self) -> bool:
-        """Close the browser when no web page is open in it (only blank tabs, or the browser's own pages such as
-        Edge's sync prompt): a scan that started it closes it when it is done, but never while the user or Claude
-        has a page open there. True when it closed."""
+    # ---- closing itself when the work is done ----------------------------------
+    def claim(self) -> None:
+        """The user opened the browser, kept it open, or Claude showed it to them: it stays until they close it."""
         with self.lock:
-            if self.state != "running" or self.conn is None or self.conn.closed:
+            if self.state == "running":
+                self.owner = "user"
+            self._set_closing(False)
+
+    class _Hold:
+        def __init__(self, b: "ManagedBrowser"):
+            self.b = b
+
+        def __enter__(self):
+            with self.b.lock:
+                self.b.holds += 1
+            return self.b
+
+        def __exit__(self, *exc):
+            with self.b.lock:
+                self.b.holds -= 1
+                self.b.last_used = time.time()
+            return False
+
+    def hold(self) -> "ManagedBrowser._Hold":
+        """`with browser.hold():` around work that uses the browser between commands (a scan, a check)."""
+        return self._Hold(self)
+
+    def in_use(self) -> bool:
+        if self.holds:
+            return True
+        try:
+            return bool(self.busy and self.busy())
+        except Exception:  # noqa: BLE001
+            return True
+
+    def close_if_idle(self, after: float | None = None) -> bool:
+        """Close a browser that work started once nothing uses it and `idle_close` seconds have passed since it last
+        did; never one the user opened or was shown. For the last `CLOSE_WARNING` seconds the status says
+        `closing`, so the window can offer to keep it open. The sign-ins stay in the profile. True when it closed."""
+        with self.lock:
+            if self.state != "running" or self.conn is None or self.conn.closed or self.owner != "work":
                 return False
-            try:
-                targets = self.conn.send("Target.getTargets", timeout=5).get("targetInfos", [])
-            except CdpError:
+            if self.in_use():
+                self.last_used = time.time()
+                self._set_closing(False)
                 return False
-            if any(x.get("type") == "page" and x.get("url", "").startswith(("http://", "https://", "file:")) for x in targets):
+            wait = self.idle_close if after is None else after
+            idle = time.time() - self.last_used
+            if idle < wait:
+                self._set_closing(idle >= wait - min(CLOSE_WARNING, wait / 2))
                 return False
             self.stop()
             return True
 
+    def _set_closing(self, on: bool) -> None:
+        if self.closing != on:
+            self.closing = on
+            self._changed()
+
+    def _close_when_done(self, conn: Connection) -> None:
+        while self.conn is conn and not conn.closed and self.owner == "work":
+            time.sleep(min(2.0, max(0.2, self.idle_close / 8)))
+            try:
+                if self.close_if_idle():
+                    return
+            except Exception:  # noqa: BLE001  closing is a courtesy; never break the browser over it
+                pass
     # ---- the page being worked on ---------------------------------------------
     def _session(self) -> str:
         self.ensure()
+        self.last_used = time.time()
         assert self.conn is not None
         if self.current is None or self.current not in self.pages:
             pages = list(self.pages)

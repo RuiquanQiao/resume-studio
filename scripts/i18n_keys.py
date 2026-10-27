@@ -81,9 +81,10 @@ def _html_keys(path: Path) -> dict[str, str | None]:
 
 
 def _data_keys() -> dict[str, str | None]:
-    """Descriptions that live in data: fonts, templates, Claude Code's model list."""
+    """Descriptions that live in data: fonts, templates, Claude Code's model list, the regions hiring speaks of."""
     sys.path.insert(0, str(ROOT))
     from core import claude_info
+    from jobhunt.geo import REGIONS
     from resume.render import fonts
     from resume.render.latex import TEMPLATE_DIR, _read_meta
     out: dict[str, str | None] = {}
@@ -97,6 +98,8 @@ def _data_keys() -> dict[str, str | None]:
         out[m["desc"]] = None
         if m.get("tag"):
             out[m["tag"]] = None
+    for name, _ in REGIONS.values():
+        out[name] = None
     out["Claude Code default"] = None
     out["~2× usage vs Sonnet"] = None
     return out

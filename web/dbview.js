@@ -814,8 +814,9 @@ function dbvGanttEl(o, rows) {
 }
 
 // ---------------------------------------------------------------- places: the world map
-// o.located(row) -> [{area, kind, lat?, lon?}]: kind onsite | hybrid | remote | hq; no lat when it isn't on the map
-// (remote, or a place the city list doesn't know). o.pin(area, lat, lon) saves where the user put one.
+// o.located(row) -> [{area, pin, kind, lat?, lon?}]: kind onsite | hybrid | remote | hq; no lat when it isn't on the
+// map (remote, or a place the city list doesn't know). area is its name as shown; o.pin(pin, lat, lon) saves where
+// the user put one, under its `pin` (a picked place's id, or a written one's words).
 // The land (web/geo/land.txt, Natural Earth) is one SVG path in 1/20 degrees, Miller projection, y down.
 const dbvProject = (lon, lat) => [lon, -1.25 * (180 / Math.PI) * Math.log(Math.tan(Math.PI / 4 + 0.4 * (Math.max(-85, Math.min(85, lat)) * Math.PI / 180)))];
 const dbvUnproject = (x, y) => [x, (2.5 * (Math.atan(Math.exp((-y / 1.25) * Math.PI / 180)) - Math.PI / 4)) * 180 / Math.PI];
@@ -832,10 +833,12 @@ function dbvLand(repaint) {
 function dbvMapEl(o, rows, repaint) {
   // every place on the map: one per spot, with the rows there; the rest by area, beside it
   const spots = new Map(), off = { remote: new Map(), unknown: new Map() }, none = [];
+  const pinKey = new Map();   // a place's name as shown -> what pinning it is saved under (p.pin: its id, or its words)
   for (const row of rows) {
     const places = o.located(row) || [];
     if (!places.length) none.push(row);
     for (const p of places) {
+      if (!pinKey.has(p.area)) pinKey.set(p.area, p.pin || p.area);
       if (p.lat == null) {
         const m = off[p.kind === "remote" ? "remote" : "unknown"];
         if (!m.has(p.area)) m.set(p.area, new Set());
@@ -909,7 +912,7 @@ function dbvMapEl(o, rows, repaint) {
             draw();
             return;
           }
-          dbvSpotMenu(o, e.currentTarget, gr.items[0].s, repaint);
+          dbvSpotMenu(o, e.currentTarget, gr.items[0].s, repaint, pinKey);
         } },
       h("span", { class: "dbv-pindot" }, rowsHere.size), h("span", { class: "dbv-pinlabel" }, label));
       return b;
@@ -947,9 +950,9 @@ function dbvMapEl(o, rows, repaint) {
     if (!d || d.moved || !DBV.pinning) return;
     const r = stage.getBoundingClientRect();
     const [lon, lat] = dbvUnproject(...fromPx(e.clientX - r.left, e.clientY - r.top));
-    const area = DBV.pinning;
+    const { pin } = DBV.pinning;
     DBV.pinning = null;
-    o.pin(area, Math.round(lat * 1e4) / 1e4, Math.round(lon * 1e4) / 1e4);
+    o.pin(pin, Math.round(lat * 1e4) / 1e4, Math.round(lon * 1e4) / 1e4);
   });
   stage.addEventListener("dblclick", (e) => {
     if (e.target.closest(".dbv-pin")) return;
@@ -967,7 +970,7 @@ function dbvMapEl(o, rows, repaint) {
     h("span", { class: "dbv-offname" }, kind === "remote" ? t("Remote · {area}", { area }) : area),
     h("span", { class: "n" }, set.size),
     kind === "unknown" && h("button", { type: "button", class: "btn sm ghost dbv-place", title: t("Click the map where “{area}” is", { area }),
-      onclick: () => { DBV.pinning = area; repaint(); } }, icon("pin"), t("Place it")),
+      onclick: () => { DBV.pinning = { area, pin: pinKey.get(area) || area }; repaint(); } }, icon("pin"), t("Place it")),
     h("div", { class: "dbv-offrows" }, [...set].map((r) => dbvRowButton(o, r))));
   const side = h("div", { class: "dbv-mapside" },
     off.remote.size > 0 && h("div", { class: "dbv-offgroup" }, h("b", null, t("Remote")), [...off.remote].map(([a, s]) => offRow(a, s, "remote"))),
@@ -984,7 +987,7 @@ function dbvMapEl(o, rows, repaint) {
         h("button", { type: "button", class: "btn icon sm", title: t("Zoom in"), "aria-label": t("Zoom in"), onclick: () => zoom(1 / 1.6) }, icon("plus")),
         h("button", { type: "button", class: "btn icon sm", title: t("Zoom out"), "aria-label": t("Zoom out"), onclick: () => zoom(1.6) }, icon("minus")),
         h("button", { type: "button", class: "btn sm", onclick: () => { Object.assign(v, fit()); draw(); } }, t("Show every place"))),
-      DBV.pinning && h("div", { class: "dbv-pinbar" }, icon("pin"), t("Click the map where “{area}” is", { area: DBV.pinning }),
+      DBV.pinning && h("div", { class: "dbv-pinbar" }, icon("pin"), t("Click the map where “{area}” is", { area: DBV.pinning.area }),
         h("button", { type: "button", class: "btn sm ghost", onclick: () => { DBV.pinning = null; repaint(); } }, t("Cancel"))),
       !list.length && !DBV.pinning && h("div", { class: "dbv-mapempty" }, t("Nothing to show on the map yet: give the roles their places.")),
       h("span", { class: "dbv-mapcredit" }, "GeoNames · Natural Earth")),
@@ -1006,12 +1009,12 @@ function dbvRowButton(o, row) {
 }
 
 // what is at one spot: its rows, and moving it if the map put it in the wrong place
-function dbvSpotMenu(o, anchor, s, repaint) {
+function dbvSpotMenu(o, anchor, s, repaint, pinKey) {
   const rows = [...s.rows];
   const panel = h("div", { class: "menu dbv-pop dbv-spot" },
     h("div", { class: "dbv-spothead" }, [...s.areas].map((a) => h("span", { class: "dbv-spotarea" }, h("b", null, a),
       h("button", { type: "button", class: "btn icon sm ghost", title: t("In the wrong place? Put “{area}” where it is", { area: a }),
-        "aria-label": t("In the wrong place? Put “{area}” where it is", { area: a }), onclick: () => { closeFloat(); DBV.pinning = a; repaint(); } }, icon("pin"))))),
+        "aria-label": t("In the wrong place? Put “{area}” where it is", { area: a }), onclick: () => { closeFloat(); DBV.pinning = { area: a, pin: pinKey.get(a) || a }; repaint(); } }, icon("pin"))))),
     h("div", { class: "dbv-spotrows" }, rows.map(([r, kind]) => {
       const b = dbvRowButton(o, r);
       if (kind === "hq") b.append(h("span", { class: "chip" }, t("Headquarters")));

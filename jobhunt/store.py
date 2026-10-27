@@ -3,11 +3,11 @@
 Plain files next to the data file, in our own schema, so switching trackers loses nothing:
 
     .studio/hunt/companies.json     {"next": 3, "companies": [{id: "C1", name, aliases, site, sites, industry,
-                                     strength, location, places, size, logo, sources, kept, note, account,
-                                     subset, about, created, updated}]}
+                                     strength, hq: {area, id} | null, places, size, logo, sources, kept, note,
+                                     account, subset, about, created, updated}]}
     .studio/hunt/applications.json  {"next": 5, "applications": [{id: "A1", company: "C1", role, url, channel,
                                      platform, order, status, applied, batch, note, subset,
-                                     places: [{kind: "onsite"|"hybrid"|"remote", area}],
+                                     places: [{kind: "onsite"|"hybrid"|"remote", area, id?}],
                                      sent: [{at, subset, n}], schedule: [{id, kind?, title, at, minutes,
                                      where, note}],
                                      co_app, created, updated}]}
@@ -31,6 +31,9 @@ An application's `places` say where the role is (docs/JOB_HUNT.md, 2026-10-21): 
 role is often open in several cities. A company's `places` are where it hires, the same way (Claude finds them
 when it fills the company in). Both are drawn on a world map (jobhunt/geo.py). Each is on site, hybrid or remote; `area` is the city, or for
 remote the region it is open to (APAC, 中国大陆…), which must be said: "不限" when it is anywhere.
+Since 2026-10-27 a place is picked from a list (jobhunt/geo.py) and kept by its `id`, its `area` then being its
+English name: the window shows it in the interface's language. One the list doesn't know has no id and is kept
+as written. A company's headquarters (`hq`) is one such city.
 
 An application's `schedule` holds what is booked for it (docs/JOB_HUNT.md, 2026-10-21): a test, 一面, 二面,
 HR 面…, each with its date and time. The window shows them on a calendar and a Gantt chart, and
@@ -63,6 +66,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from core.i18n import t
+
+from . import geo
 
 # id, label (English; the window translates it), career-ops' state id (for copying rows there)
 STATES = [
@@ -109,12 +114,12 @@ PLACE_WORDS = {"remote": "remote", "远程": "remote", "wfh": "remote", "居家"
                "hybrid": "hybrid", "混合": "hybrid", "混合办公": "hybrid",
                "onsite": "onsite", "on-site": "onsite", "office": "onsite", "现场": "onsite", "坐班": "onsite"}
 # what Claude fills on a company (the name stays the user's: an official name goes into the aliases)
-FILLABLE = ["aliases", "industry", "strength", "location", "places", "size", "site", "sites", "logo", "about"]
+FILLABLE = ["aliases", "industry", "strength", "hq", "places", "size", "site", "sites", "logo", "about"]
 SITE_KINDS = ["campus", "intern", "social", "other"]
 LOGO_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif",
               "image/svg+xml": "svg", "image/x-icon": "ico", "image/vnd.microsoft.icon": "ico"}
 EVENT_KINDS = ["created", "status", "note", "sent"]
-MIGRATIONS = ["builtin-events"]   # done once on an old applications.json (`Hunt.migrate`); a new one starts with them done
+MIGRATIONS = ["builtin-events", "place-ids", "place-ids-2"]   # done once on an old applications.json (`Hunt.migrate`); a new one starts with them done
 COLUMNS = ["at", "app", "kind", "from", "to", "source", "note"]
 
 
@@ -210,9 +215,13 @@ def _set_apply_by(a: dict, v: Any) -> None:
 
 
 def _place(v: Any) -> dict:
-    """{kind, area} from a dict or from what someone wrote: "南京", "remote: APAC", "远程（中国大陆）"."""
+    """{kind, area, id} from a dict or from what someone wrote: "南京", "remote: APAC", "远程（中国大陆）".
+    A place picked from the list (or found in it by what was written) keeps its id, and its English name as the
+    area; one the list doesn't know has no id and stays as written (jobhunt/geo.py)."""
+    pid = None
     if isinstance(v, dict):
         kind, area = _text(v.get("kind"), 20).casefold() or "onsite", _text(v.get("area"), 80)
+        pid = v.get("id") if geo.known(v.get("id")) else None
     else:
         s, kind, area = _text(v, 100), "onsite", _text(v, 80)
         m = re.match(r"^\s*(" + "|".join(sorted(map(re.escape, PLACE_WORDS), key=len, reverse=True)) + r")(?![a-z])\s*[:：·,，\-(（]?\s*(.*?)[)）]?\s*$",
@@ -221,18 +230,44 @@ def _place(v: Any) -> dict:
             kind, area = PLACE_WORDS[m.group(1).casefold()], _text(m.group(2), 80)
     if kind not in PLACE_KINDS:
         raise ValueError(t("Unknown kind of place “{value}”: use one of {kinds}", value=kind, kinds=", ".join(PLACE_KINDS)))
-    if not area:
+    if not area and not pid:
         raise ValueError(t("Say which region a remote role is open to (不限 if anywhere)") if kind == "remote" else t("Say which city"))
-    return {"kind": kind, "area": area}
+    pid = pid or geo.resolve(kind, area)
+    return {"kind": kind, "area": geo.english(pid), "id": pid} if pid else {"kind": kind, "area": area}
+
+
+def _same_place(a: dict, b: dict) -> bool:
+    return a["kind"] == b["kind"] and (a["id"] == b["id"] if a.get("id") and b.get("id") else _key(a["area"]) == _key(b["area"]))
 
 
 def _places(v: Any) -> list[dict]:
     out: list[dict] = []
     for x in v if isinstance(v, list) else [v] if v else []:
         p = _place(x)
-        if not any(o["kind"] == p["kind"] and _key(o["area"]) == _key(p["area"]) for o in out):
+        if not any(_same_place(o, p) for o in out):
             out.append(p)
     return out[:40]
+
+
+def _found_places(ps: Any) -> list[dict]:
+    """Places written before, looked up in the list (one it can't read is left out, and twice is once)."""
+    out: list[dict] = []
+    for p in ps or []:
+        try:
+            q = _place(p)
+        except ValueError:
+            continue
+        if not any(_same_place(o, q) for o in out):
+            out.append(q)
+    return out
+
+
+def _hq(v: Any) -> dict | None:
+    """A company's headquarters: one city, like a place ("上海", or one picked from the list); none for ""."""
+    if not v:
+        return None
+    p = _place(v if isinstance(v, dict) else {"kind": "onsite", "area": v})
+    return {"area": p["area"], **({"id": p["id"]} if p.get("id") else {})}
 
 
 def _now() -> str:
@@ -314,6 +349,7 @@ class Hunt:
         self.find_logo: Callable[[list[str]], tuple[bytes, str, str] | None] | None = None
         self.want_logos: Callable[..., None] = lambda *cids: None
         self.logo_watcher: Any = None   # set by jobhunt/api.py: the logos folder, for pictures changed from outside
+        geo.use(self.dir)   # the places found on OpenStreetMap for this data folder join the list
 
     # ---- the files ----------------------------------------------------------------
     def _file(self, name: str) -> Path:
@@ -428,11 +464,21 @@ class Hunt:
         raise KeyError(t("No company “{ref}”", ref=r))
 
     @staticmethod
+    def _renamed(fields: dict) -> dict:
+        """The headquarters were `location`, free text, until 2026-10-27: sent by that name, they still arrive."""
+        out = {("hq" if k == "location" else k): v for k, v in fields.items() if not (k == "location" and "hq" in fields)}
+        if isinstance(out.get("sources"), dict) and "location" in out["sources"]:
+            out["sources"] = {("hq" if k == "location" else k): v for k, v in out["sources"].items()}
+        return out
+
+    @staticmethod
     def _company_fields(c: dict, fields: dict) -> None:
-        for k, limit in (("name", 80), ("site", 500), ("industry", 80), ("strength", 160), ("location", 80), ("size", 60),
+        for k, limit in (("name", 80), ("site", 500), ("industry", 80), ("strength", 160), ("size", 60),
                          ("account", 120), ("subset", 80)):
             if k in fields:
                 c[k] = _text(fields[k], limit)
+        if "hq" in fields:
+            c["hq"] = _hq(fields["hq"])
         if "note" in fields:
             c["note"] = _long(fields["note"], 4000)
         if "sites" in fields:
@@ -508,6 +554,7 @@ class Hunt:
 
     def add_company(self, fields: dict) -> dict:
         """`different` adds it even when its name is close to a company's on the list (never the same as one)."""
+        fields = self._renamed(fields)
         with self.lock:
             data = self._companies()
             name = _text(fields.get("name"), 80)
@@ -519,7 +566,7 @@ class Hunt:
                 raise SameCompany(t("“{name}” may be {names}, already on the list. If it's another company, add it with --different",
                                     name=name, names=", ".join(f"{c['name']} ({c['id']})" for c in close)), close=close)
             c = {"id": f"C{data['next']}", "name": "", "aliases": [], "site": "", "sites": [], "industry": "", "strength": "",
-                 "location": "", "places": [], "size": "", "logo": "", "sources": {}, "kept": [], "note": "", "account": "",
+                 "hq": None, "places": [], "size": "", "logo": "", "sources": {}, "kept": [], "note": "", "account": "",
                  "subset": "", "about": None, "created": _now(), "updated": _now()}
             self._company_fields(c, fields)
             data["next"] += 1
@@ -530,6 +577,7 @@ class Hunt:
 
     def update_company(self, ref: str, fields: dict, *, source: str = "window") -> dict:
         """An edit. Made in the window, the fields it changes become the user's (`kept`): Claude's fills skip them."""
+        fields = self._renamed(fields)
         with self.lock:
             cid = self.company(ref)["id"]
             data = self._companies()
@@ -554,6 +602,7 @@ class Hunt:
     def fill(self, ref: str, fields: dict) -> tuple[dict, list[str]]:
         """Claude's research, every field at once. Fields the user edited stay theirs; an official name that
         differs from the user's goes into the aliases. Returns the company and the fields it left alone."""
+        fields = self._renamed(fields)
         with self.lock:
             c = self.company(ref)
             kept = set(c.get("kept") or [])
@@ -646,11 +695,105 @@ class Hunt:
         done.append("builtin-events")
         return True
 
+    def _place_ids(self, apps: dict, cs: dict) -> bool:
+        """Once (2026-10-27): places are picked from a list and kept by id, so they read in the interface's language.
+        The ones written before are looked up in it (what it doesn't know stays as written), and a company's
+        `location`, free text, becomes its headquarters city (`hq`). The files as they were are kept beside them."""
+        done = apps.setdefault("migrated", [])
+        if "place-ids" in done:
+            return False
+        for name in ("applications.json", "companies.json"):
+            before = self._file(name)
+            if before.exists():
+                before.with_name(name.replace(".json", ".before-place-ids.json")).write_bytes(before.read_bytes())
+
+        for a in apps["applications"]:
+            if a.get("places"):
+                a["places"] = _found_places(a["places"])
+        for c in cs["companies"]:
+            c["places"] = _found_places(c.get("places"))
+            if "location" in c:
+                c["hq"] = _hq(_text(c.pop("location"), 80))
+            if "location" in (c.get("sources") or {}):
+                c["sources"]["hq"] = c["sources"].pop("location")
+            if "location" in (c.get("kept") or []):
+                c["kept"] = sorted({"hq" if k == "location" else k for k in c["kept"]})
+        done.append("place-ids")
+        return True
+
+    def _place_ids_again(self, apps: dict, cs: dict) -> bool:
+        """Once more (2026-10-27): the first look-up read 湖南长沙 as 湖南, a city in Japan, and 印度 班加罗尔(卡纳塔克邦)
+        as Khanna. The places as they were written, kept by `_place_ids`, are looked up again, on every role and
+        company not changed since then (what the user picked after it stays)."""
+        done = apps.setdefault("migrated", [])
+        if "place-ids-2" in done:
+            return False
+        done.append("place-ids-2")
+        kept = {n: self._file(n.replace(".json", ".before-place-ids.json")) for n in ("applications.json", "companies.json")}
+        try:
+            since = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(kept["companies.json"].stat().st_mtime))
+            old_apps = {a["id"]: a for a in json.loads(kept["applications.json"].read_text(encoding="utf-8"))["applications"]}
+            old_cs = {c["id"]: c for c in json.loads(kept["companies.json"].read_text(encoding="utf-8"))["companies"]}
+        except (OSError, ValueError, KeyError, TypeError):
+            return True
+        for a in apps["applications"]:
+            o = old_apps.get(a["id"])
+            if o and o.get("places") and str(a.get("updated") or "") <= since:
+                a["places"] = _found_places(o["places"])
+        for c in cs["companies"]:
+            o = old_cs.get(c["id"])
+            if not o or str(c.get("updated") or "") > since:
+                continue
+            if o.get("places"):
+                c["places"] = _found_places(o["places"])
+            if o.get("location") and "hq" not in (c.get("kept") or []):
+                c["hq"] = _hq(_text(o["location"], 80))
+        return True
+
+    def link_places(self, look_up: Callable[[str], str | None]) -> int:
+        """The cities written as text (the list didn't know them) that `look_up` finds now (OpenStreetMap,
+        jobhunt/geo.py) become places like the others: read in the interface's language, on the map. Returns how
+        many changed. The lookups run outside the lock: each one may take a second."""
+        def unknown(ps: Any) -> list[str]:
+            return [p["area"] for p in ps or [] if isinstance(p, dict) and not p.get("id") and p.get("kind") != "remote" and p.get("area")]
+
+        areas = {a for x in self._apps()["applications"] + self._companies()["companies"] for a in unknown(x.get("places"))}
+        areas |= {c["hq"]["area"] for c in self._companies()["companies"] if isinstance(c.get("hq"), dict) and not c["hq"].get("id")}
+        found = {a: pid for a in sorted(areas) if (pid := look_up(a))}
+        if not found:
+            return 0
+        n = 0
+
+        def link(p: dict) -> dict:
+            nonlocal n
+            pid = found.get(p.get("area") or "") if not p.get("id") and p.get("kind") != "remote" else None
+            if not pid:
+                return p
+            n += 1
+            return {**p, "area": geo.english(pid), "id": pid}
+
+        with self.lock:
+            apps, cs = self._apps(), self._companies()
+            for x in apps["applications"] + cs["companies"]:
+                if x.get("places"):
+                    x["places"] = [link(p) if isinstance(p, dict) else p for p in x["places"]]
+            for c in cs["companies"]:
+                if isinstance(c.get("hq"), dict) and not c["hq"].get("id") and c["hq"].get("area") in found:
+                    c["hq"] = {"area": geo.english(found[c["hq"]["area"]]), "id": found[c["hq"]["area"]]}
+                    n += 1
+            if n:
+                self._write("applications.json", apps)
+                self._write("companies.json", cs)
+        if n:
+            self._changed()
+        return n
+
     def migrate(self) -> None:
         """Deadlines belong to roles (2026-10-18): a company's deadline moves to its roles that have none.
         A role's next step and its date (until 2026-10-21) become something booked when they had a date,
         else a line in its notes. A role's deadline field (until 2026-10-21) becomes its apply event, which
-        has no "rolling" flag any more: no date is 招满即止. Then 2026-10-26: see `_builtin_events`."""
+        has no "rolling" flag any more: no date is 招满即止. Then 2026-10-26: see `_builtin_events`, and
+        2026-10-27: `_place_ids` and `_place_ids_again`."""
         with self.lock:
             cs = self._companies()
             moving = {c["id"]: c.pop("deadline") for c in cs["companies"] if "deadline" in c}
@@ -658,7 +801,9 @@ class Hunt:
             old = [a for a in apps["applications"] if "next" in a or "due" in a]
             fields = [a for a in apps["applications"] if "deadline" in a]
             flags = self._builtin_events(apps)
-            if not moving and not old and not fields and not flags:
+            places = self._place_ids(apps, cs) if apps["applications"] or cs["companies"] else False
+            places = (self._place_ids_again(apps, cs) if apps["applications"] or cs["companies"] else False) or places
+            if not moving and not old and not fields and not flags and not places:
                 return
             for a in apps["applications"]:
                 if moving.get(a["company"]) and not a.get("deadline"):
@@ -675,7 +820,7 @@ class Hunt:
                 elif nxt or due:
                     a["note"] = ((a.get("note") or "") + "\n" + " ".join(x for x in (nxt, due) if x)).strip()
             self._write("applications.json", apps)
-            if moving:
+            if moving or places:
                 self._write("companies.json", cs)
 
     def delete_company(self, ref: str) -> None:

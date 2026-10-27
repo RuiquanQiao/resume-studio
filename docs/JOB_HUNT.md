@@ -183,7 +183,8 @@ All three were built on 2026-10-18. Choices made on the way:
     under 32 px, and the logo the company had stays. The background icon finder passes
     such icons over for the next candidate. With no window open, only the size a png or ico states is checked;
   - once a logo is saved, `fill` writes the window's drawing to `.cache/logo-look/<id>.png`; Claude looks at it
-    and deletes it (older ones go after an hour). `hunt.py logo <company>` gives the same look at a logo already
+    and leaves it: the app deletes the ones older than an hour (2026-10-27: Claude deleting it asked the user to
+    approve a delete for every company, since deletes always ask). `hunt.py logo <company>` gives the same look at a logo already
     there;
   - a company's square mark (its site or app icon) is preferred to its wordmark: the tables show the logo in a
     26 px square, where a wide wordmark (Trip.com Group, Optiver, Metro Finance) shrank to a faint line. A
@@ -491,6 +492,40 @@ the page no longer scrolled, and in short windows the frame's foot was cut off a
 - **A repaint keeps the table where it was**, down the page and sideways (`DBV.scrollX`, per view).
 - Checked by `test_a_long_table_scrolls_with_its_page_under_a_heading_row_that_stays` (every tab, a 650px
   window) and two layout states (scrolled both ways; the Companies tab scrolled to its end).
+
+## 2026-10-27: places are picked from a list; research is in the language of where the user goes
+
+A place was the text someone typed, so one table said 悉尼 on one row and Sydney on the next, whichever language
+the window (or the chat) was in at the time. Company research had the same flaw: Claude wrote it in whatever
+language the examples it was shown were in, so an Australian firm could be described in Chinese while the chat
+answered in English.
+
+- **A place is picked from a list and kept by its id** (`jobhunt/geo.py`), as LinkedIn's and Workday's location
+  boxes do: a city by its GeoNames id (every place of 15,000 people or more, with its name in every interface
+  language), a country or region by its CLDR code, and hiring's own regions (不限, APAC, 中国大陆…). It reads in
+  the window's language everywhere. Typing suggests places (the bigger first, told apart by state and country);
+  text written before is looked up once (`Hunt._place_ids`, the files kept as `*.before-place-ids.json`).
+  A company's `location`, free text, became its headquarters city, `hq`.
+- **Text is matched carefully.** A city after its province is the city (湖南长沙 is 长沙, not 湖南, a town in
+  Japan; `Hunt._place_ids_again` redid the lookups the first pass got wrong, on rows not changed since), and a
+  name in brackets counts ("美国加州卡尔弗城(Culver City)"). Any other ending is not trusted.
+- **What the list doesn't have is looked up on OpenStreetMap**, in the background after every change: the
+  name alone goes to Nominatim, one request a second at most and each name once (its usage policy; never while
+  typing). A hit must carry the name that was asked for: Nominatim once offered Brisbane, USA, for 纳拉布里
+  (Narrabri). Found places (雄安 is 雄安新区, Xiong'an New Area) are kept in `.studio/hunt/places.json` with their names
+  in every language and their state, and from then on behave like the list's own: suggested, on the map, read
+  in the window's language. What isn't found stays as written, marked, and can be pinned.
+- **Company research is written in the language of where the user goes for the company**, never the window's
+  (the user switches it) or the chat's (`jobhunt/writing.py`): the country of the roles they apply for there,
+  else of its headquarters, when their resume is written in one of its official languages (CLDR, most spoken
+  first); else English. So a German company's office in Sydney is in English, a German one in Germany is in
+  German only for a user with a German resume, and simplified and traditional Chinese stand in for each other.
+  `show` names the language and why; `fill` answers when what was sent is in another one, and Claude sends it
+  again. Research written before (or for another place) shows a bar on the company and over the table, with a
+  button that asks Claude to write it again: nothing is rewritten without the user asking.
+- **Claude leaves the logo preview png alone.** It was told to delete it after looking, and a delete usually needs
+  the user's approval in Claude Code, so each company research stopped to ask. The
+  app clears the ones older than an hour itself.
 
 ## Why the button said "Open LinkedIn"
 

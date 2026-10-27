@@ -382,20 +382,51 @@ def test_a_posting_is_read_in_a_tab_of_its_own(live, data_file, fake_site):
     got = read_posting(b, fake_site + "/jobs/posting.html")
     assert got["jd"].startswith("岗位职责") and "任职要求" in got["jd"] and got["jd"].rstrip().endswith("项目经验者优先。")
     assert "立即投递" not in got["jd"] and "首页" not in got["jd"] and "工作地点" not in got["jd"]
-    assert [p["area"] for p in got["places"]] == ["杭州", "上海"] and got["deadline"] == "2026-11-30"
+    assert [p["area"] for p in got["places"]] == ["Hangzhou", "Shanghai"] and got["deadline"] == "2026-11-30"
     assert not any("/jobs/posting.html" in x["url"] for x in b.tabs()) and b.here()["url"].endswith("/linkedin/profile.html")
     assert live.req("GET", "/api/browser")[1]["url"].endswith("/linkedin/profile.html")
 
 
-def test_a_browser_left_with_blank_tabs_closes_and_one_in_use_stays(live, fake_site):
-    """What a scan does when it is done with the browser it started (jobhunt/scan.py close_browser)."""
+def test_a_browser_work_started_closes_itself_when_the_work_is_done(live, fake_site):
+    """A browser a scan, a check or Claude started closes once nothing uses it; one the user opened stays."""
     b = live.inst.browser
-    b.stop()
-    assert b.ensure() is True and b.ensure() is False          # the first call started it; the second found it running
-    b.read_page(fake_site + "/jobs/posting.html", "async (h) => 1")   # a scan's own tab, closed again after reading
-    assert b.close_if_idle() and b.status()["state"] == "off"
-    b.open(fake_site + "/linkedin/profile.html")                 # someone works in it: it is theirs now
-    assert not b.close_if_idle() and b.status()["state"] == "running"
+    busy = {"on": False}
+    b.busy = lambda: busy["on"]
+    try:
+        b.stop()
+        assert b.ensure() is True and b.ensure() is False          # the first call started it; the second found it running
+        assert b.status()["owner"] == "work"
+        with b.hold():                                             # a scan reading: never closed under it
+            b.read_page(fake_site + "/jobs/posting.html", "async (h) => 1")
+            assert not b.close_if_idle(after=0)
+        assert b.close_if_idle(after=0) and b.status()["state"] == "off"
+        # Claude opened a page during a reply: it stays while a chat replies, and closes after (the page was Claude's)
+        b.open(fake_site + "/linkedin/profile.html")
+        busy["on"] = True
+        assert not b.close_if_idle(after=0) and b.status()["state"] == "running"
+        busy["on"] = False
+        assert not b.close_if_idle(after=30) and not b.status()["closing"]   # the wait counts from the end of the reply
+        b.last_used -= 20                                          # the last seconds: the window may keep it open
+        assert not b.close_if_idle(after=30) and b.status()["closing"]
+        assert live.req("POST", "/api/browser/keep", {})[1]["owner"] == "user"
+        assert not b.close_if_idle(after=0) and not b.status()["closing"] and b.status()["state"] == "running"
+        b.stop()
+        b.open(fake_site + "/linkedin/profile.html")
+        assert b.close_if_idle(after=0) and b.status()["state"] == "off"
+        # the user opened it (or Claude showed it to them): it stays until they close it
+        live.req("POST", "/api/browser/start", {})
+        assert b.status()["owner"] == "user" and not b.close_if_idle(after=0) and b.status()["state"] == "running"
+        # and it closes by itself, with no one calling: the watcher started with it
+        b.stop()
+        b.idle_close = 0.4
+        b.ensure()
+        deadline = time.time() + 15
+        while b.status()["state"] != "off" and time.time() < deadline:
+            time.sleep(0.2)
+        assert b.status()["state"] == "off"
+    finally:
+        b.idle_close = 60
+        b.busy = lambda: bool(live.inst.chats.running())
 
 
 def test_browser_command_drives_a_real_page(live, data_file, fake_site):

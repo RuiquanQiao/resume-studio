@@ -69,16 +69,20 @@ FILL_HELP = """Claude's research on a company, every field at once, as JSON on s
 
   {"name": "Xinghe Technology Ltd.",                      # its official name (kept as an alias; the user's name stays)
    "aliases": ["星河科技", "Xinghe", "Nebula"],
-   "industry": "电商 / 互联网",
-   "strength": "市值约 1,600 亿美元 (NASDAQ: XHT, 2026-10-17)",   # listed: market cap, exchange, ticker, date;
-                                                     # not listed: valuation, latest round or headcount, with the date
-   "location": "上海 (注册地都柏林)",
-   "places": ["上海", "北京", "深圳", "remote: 中国大陆"],    # every city it hires in (see `add-role --help` for the forms)
-   "size": "约 2.3 万人 (2025 年报)",
+   "industry": "E-commerce / internet",              # industry, strength, size and about: in the language `show`
+                                                     # names ("write … in"), whatever language the chat is in
+   "strength": "Market cap about US$160 bn (NASDAQ: XHT, 2026-10-17)",   # listed: market cap, exchange, ticker,
+                                                     # date; not listed: valuation, latest round or headcount, with the date
+   "hq": "Shanghai",                                 # the city of its headquarters: a city's name, nothing more
+   "places": ["Shanghai", "北京", "深圳", "remote: 中国大陆"],    # every city it hires in (`add-role --help` has the forms)
+                                                     # cities and regions are looked up in the list of places, by a
+                                                     # name in any language; one it doesn't know is looked up on
+                                                     # OpenStreetMap, else kept as written
+   "size": "About 23,000 people (2025 annual report)",
    "sites": [{"url": "https://careers.xinghe.example/campus", "kind": "campus", "system": "own site"},
              {"url": "https://careers.xinghe.example/intern", "kind": "intern", "system": "own site"}],
    "logo_url": "https://.../logo.png",                # downloaded once into the data folder
-   "sources": {"strength": "https://...", "industry": "https://...", "location": "https://...", "size": "https://..."},
+   "sources": {"strength": "https://...", "industry": "https://...", "hq": "https://...", "size": "https://..."},
    "about": {"summary": "...", "points": [{"topic": "...", "text": "...", "sources": ["https://..."]}], "read_at": "2026-10-18"}}
 
 Every key is optional; send what you found. Fields the user edited in the window are theirs and are left as
@@ -86,7 +90,8 @@ they are (the reply says which). site kinds: campus, intern, social, other."""
 
 
 LOOK = ("look at the logo as the window shows it (on white): {path}\n"
-        "  if it is blank, someone else's icon, cut off or a blur, send another logo_url with `fill`. Delete that png once you've looked.")
+        "  if it is blank, someone else's icon, cut off or a blur, send another logo_url with `fill`. Leave the png: "
+        "Resume Studio clears these itself.")
 
 
 def server_url(data: Path) -> str:
@@ -115,7 +120,10 @@ def call(url: str, cmd: str, args: dict) -> dict:
 
 
 def place_text(p: dict) -> str:
-    return {"remote": f"remote: {p['area']}", "hybrid": f"{p['area']} (hybrid)"}.get(p["kind"], p["area"])
+    """A place as the tracker keeps it: one from the list of places by its English name, one it doesn't know as
+    written, marked so (it reads the same in every interface language, and only a pin puts it on the map)."""
+    area = p["area"] + ("" if p.get("id") else " [not in the list of places]")
+    return {"remote": f"remote: {area}", "hybrid": f"{area} (hybrid)"}.get(p.get("kind") or "onsite", area)
 
 
 def app_line(a: dict, company: str = "") -> str:
@@ -153,20 +161,31 @@ def event_line(e: dict) -> str:
 def show_company(v: dict) -> None:
     c = v["company"]
     print(f"{c['id']} {c['name']}" + (f" (also: {', '.join(c['aliases'])})" if c.get("aliases") else ""))
+    r = c.get("research") or {}
+    if r.get("lang"):
+        place = r.get("place_name") or ""
+        why = {"applying": f"the user applies in {place}", "hq": f"its headquarters is in {place}",
+               "fallback": f"{place} speaks none of the resume's languages",
+               "unknown": "where it is isn't known yet: once you know its headquarters, the language there if the "
+                          "resume has it, else this"}.get(r.get("why") or "", "")
+        print(f"  write industry, strength, size and about in: {r.get('lang_name') or r['lang']} ({r['lang']}; {why})"
+              + (f"\n  what is there now is in {r.get('rewrite_name') or r['rewrite']}: write it again in "
+                 f"{r.get('lang_name') or r['lang']} (same facts and sources) and send it with `fill`" if r.get("rewrite") else ""))
     src = c.get("sources") or {}
     kept = set(c.get("kept") or [])
     if c.get("places"):
         print("  hires in: " + "; ".join(place_text(x) for x in c["places"]) + ("  [" + src["places"] + "]" if src.get("places") else "")
               + ("  (the user's: fill leaves it)" if "places" in kept else ""))
-    for k, label in (("industry", "industry"), ("strength", "strength"), ("location", "headquarters"), ("size", "size"),
+    for k, label in (("industry", "industry"), ("strength", "strength"), ("hq", "headquarters"), ("size", "size"),
                      ("site", "careers site"), ("account", "account"), ("subset", "filled from")):
         if c.get(k):
-            print(f"  {label}: {c[k]}" + (f" ({c.get('subset_label')})" if k == "subset" and c.get("subset_label") else "")
+            value = place_text(c[k]) if k == "hq" else c[k]
+            print(f"  {label}: {value}" + (f" ({c.get('subset_label')})" if k == "subset" and c.get("subset_label") else "")
                   + (f"  [{src[k]}]" if src.get(k) else "") + ("  (the user's: fill leaves it)" if k in kept else ""))
     for x in c.get("sites") or []:
         print(f"  site ({x['kind']}{', ' + x['system'] if x.get('system') else ''}): {x['url']}")
     print("  logo: " + ("saved" if c.get("logo") else "none yet") + ("  (the user's)" if "logo" in kept else ""))
-    missing = [k for k in ("industry", "strength", "location", "site", "logo") if not c.get(k)]
+    missing = [k for k in ("industry", "strength", "hq", "site", "logo") if not c.get(k)]
     if missing:
         print("  not filled yet: " + ", ".join(missing) + " (research it and send them with `fill`)")
     if c.get("note"):
@@ -241,8 +260,9 @@ def main() -> int:
             p.add_argument("--name")
         else:
             p.add_argument("--different", action="store_true", help="its name is close to one on the list, but it is another company")
-        for opt in ("site", "industry", "strength", "location", "size", "account", "subset", "note"):
-            p.add_argument("--" + opt)
+        for opt in ("site", "industry", "strength", "hq", "size", "account", "subset", "note"):
+            p.add_argument("--" + opt, *(["--location"] if opt == "hq" else []),
+                           **({"help": "the city of its headquarters"} if opt == "hq" else {}))
         p.add_argument("--alias", action="append", help="another name it goes by (repeat for more)")
         p.add_argument("--place", action="append", help='a city it hires in, or "remote: <region>" (repeat; the whole list)')
     for name in ("add-role", "edit-role"):
@@ -313,7 +333,7 @@ def main() -> int:
         show_company(r["company"]) if "company" in r else show_app(r["app"])
         return 0
     if c in ("add-company", "edit-company"):
-        a = pick("site", "industry", "strength", "location", "size", "account", "subset", "note")
+        a = pick("site", "industry", "strength", "hq", "size", "account", "subset", "note")
         if c == "add-company":
             a.update(name=args.name, different=args.different)
         else:
@@ -351,9 +371,12 @@ def main() -> int:
         r = call(url, c, {"ref": args.ref, "event": args.event})
     elif c == "where":
         r = call(url, c, {})
+        for pid, w in sorted((r.get("places") or {}).items(), key=lambda x: x[1]["name"]):
+            print(f"  {w['name']} ({pid}{', ' + w['detail'] if w.get('detail') else ''})"
+                  + (f": {w['lat']}, {w['lon']}" + (" (pinned)" if w.get("pinned") else "") if w.get("lat") is not None else ""))
         for area, w in sorted(r["geo"].items()):
-            print(f"  {area}: " + (f"{w['lat']}, {w['lon']} ({'pinned' if w.get('pinned') else w['name'] + ', ' + w['country']})" if w
-                                   else "not found: pin it (hunt.py pin)"))
+            print(f"  {area} [not in the list of places]: " + (f"{w['lat']}, {w['lon']} ({'pinned' if w.get('pinned') else w['name'] + ', ' + w['country']})" if w
+                                   else "not on the map: pin it (hunt.py pin)"))
         return 0
     elif c == "pin":
         if not args.unpin and (args.lat is None or args.lon is None):
@@ -382,6 +405,8 @@ def main() -> int:
             print("left as the user set them: " + ", ".join(r["kept"]))
         if r.get("logo_error"):
             print("logo not saved: " + r["logo_error"])
+        if r.get("lang_error"):
+            print("language: " + r["lang_error"])
         print("saved:")
         show_company(r["company"])
         if r.get("logo_look"):

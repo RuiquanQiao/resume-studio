@@ -322,10 +322,17 @@ const APP_VIEWS = () => [
 // ---- where a role is: cities, hybrid, remote with the region it is open to (docs/JOB_HUNT.md, 2026-10-21) ----
 const PLACE_KINDS = { onsite: "On site", hybrid: "Hybrid", remote: "Remote" };
 const PLACE_ICONS = { onsite: "pin", hybrid: "home", remote: "globe" };
-const placeText = (p) => p.kind === "remote" ? t("Remote · {area}", { area: p.area }) : p.kind === "hybrid" ? t("{area} · hybrid", { area: p.area }) : p.area;
-const placeKey = (p) => p.kind + "|" + p.area.replace(/\s+/g, "").toLowerCase();
+// a place picked from the list (jobhunt/geo.py) is kept by its id and shown by its name in the interface's language
+// (the server sends them: H.data.places); one the list doesn't know is shown as written
+const PLACE_SEEN = {};
+const placeInfo = (p) => (p && p.id && (((H.data && H.data.places) || {})[p.id] || PLACE_SEEN[p.id])) || null;
+const placeName = (p) => (placeInfo(p) || {}).name || (p && p.area) || "";
+const placeText = (p) => { const area = placeName(p); return p.kind === "remote" ? t("Remote · {area}", { area }) : p.kind === "hybrid" ? t("{area} · hybrid", { area }) : area; };
+const placeKey = (p) => (p.kind || "onsite") + "|" + (p.id || p.area.replace(/\s+/g, "").toLowerCase());
 function placeChip(p, remove) {
-  return h("span", { class: "pl-chip k-" + p.kind, title: t(PLACE_KINDS[p.kind]) }, icon(PLACE_ICONS[p.kind]), h("span", null, placeText(p)),
+  const info = placeInfo(p);
+  const tip = [t(PLACE_KINDS[p.kind || "onsite"]), info ? info.detail : t("Not in the list of places: kept as written")].filter(Boolean).join(" · ");
+  return h("span", { class: "pl-chip k-" + (p.kind || "onsite") + (p.id ? "" : " pl-free"), title: tip }, icon(PLACE_ICONS[p.kind || "onsite"]), h("span", null, placeText(p)),
     remove && h("button", { type: "button", class: "pl-x", title: t("Remove"), "aria-label": t("Remove {what}", { what: placeText(p) }), onclick: remove }, icon("x")));
 }
 
@@ -342,64 +349,120 @@ function placesProp(key, label, save, extra = {}) {
 }
 
 // for the world maps: where each place is (the server looked them up: H.data.geo)
-const placeAt = (area) => ((H.data && H.data.geo) || {})[area] || null;
+// a picked place is where the list puts it (or where the user pinned it, by its id); a written one, where the
+// server found or the user pinned its words. `pin` is what pinning it again is saved under.
+const placeAt = (p) => p.id ? placeInfo(p) : ((H.data && H.data.geo) || {})[p.area] || null;
 const located = (places, kind = null) => (places || []).map((p) => {
-  const at = p.kind === "remote" ? null : placeAt(p.area);
-  return { area: p.area, kind: kind || p.kind, lat: at ? at.lat : null, lon: at ? at.lon : null };
+  const at = p.kind === "remote" ? null : placeAt(p);
+  return { area: placeName(p), pin: p.id || p.area, kind: kind || p.kind, lat: at && at.lat != null ? at.lat : null, lon: at && at.lon != null ? at.lon : null };
 });
 const appLocated = (a) => located(a.places);
 function companyLocated(c) {
   const out = located(c.places);
-  const hq = c.location && placeAt(c.location);
+  const [hq] = c.hq ? located([c.hq], "hq") : [];
   // its headquarters, when it isn't one of the places it hires in already
-  if (hq && !out.some((p) => p.lat === hq.lat && p.lon === hq.lon)) out.push({ area: c.location, kind: "hq", lat: hq.lat, lon: hq.lon });
+  if (hq && hq.lat != null && !out.some((p) => p.lat === hq.lat && p.lon === hq.lon)) out.push(hq);
   return out;
 }
 async function pinPlace(area, lat, lon) {
   try {
     await api("PUT", "/api/hunt/geo", { area, lat, lon });
-    toast(t("“{area}” is on the map now", { area }));
+    toast(t("“{area}” is on the map now", { area: placeName({ id: area, area }) }));
   } catch (e) { toast(e.message); }
   await loadHunt({ quiet: true });
 }
 
-// on a role's page and over a table's cell; change() gets the whole new list each time
-function placesEditor(list, change) {
+// on a role's page and over a table's cell; change() gets the whole new list each time. Typing finds places in
+// the list (jobhunt/geo.py), in the interface's language: picking one keeps it by its id, so it reads the same in
+// every table and follows the window's language. What the list doesn't have is added as written (the last option)
+// and looked up on OpenStreetMap by the server a moment later: found, it becomes a place like the others.
+// `single`: one city, picked to replace the one there (a company's headquarters).
+function placesEditor(list, change, { single = false } = {}) {
   let cur = [...(list || [])];
   let kind = "onsite";
-  const wrap = h("div", { class: "pl-ed" });
+  const wrap = h("div", { class: "pl-ed" + (single ? " single" : "") });
   const set = (next) => {
     const seen = new Set();
     cur = next.filter((p) => !seen.has(placeKey(p)) && seen.add(placeKey(p)));
+    if (single) cur = cur.slice(-1);
     change(cur);
     paint();
     wrap.querySelector(".pl-input").focus();
   };
   const paint = () => {
-    const input = h("input", { type: "text", class: "pl-input", spellcheck: "false", "aria-label": kind === "remote" ? t("Region") : t("City"),
+    const input = h("input", { type: "text", class: "pl-input", spellcheck: "false", autocomplete: "off", role: "combobox", "aria-expanded": "false",
+      "aria-autocomplete": "list", "aria-label": kind === "remote" ? t("Region") : t("City"),
       placeholder: kind === "remote" ? t("Open to which region? 中国大陆, APAC, 不限…") : t("City: 南京, 上海…") });
-    const add = () => {
+    const sugg = h("div", { class: "pl-sugg", role: "listbox", hidden: true });
+    let found = [], active = 0, asked = 0, timer = 0;
+    const pick = (o) => { PLACE_SEEN[o.id] = o; set([...cur, { kind, area: o.name, id: o.id }]); };
+    // as written: several at once (南京、上海), each still found in the list by the server when it can be
+    const asWritten = () => {
       const v = input.value.trim();
       if (!v) { toast(kind === "remote" ? t("Say which region a remote role is open to (不限 if anywhere)") : t("Say which city")); input.focus(); return; }
-      // several cities at once: 南京、上海
-      const areas = kind === "remote" ? [v] : v.split(/\s*[,，、;；/]\s*/).filter(Boolean);
+      const areas = kind === "remote" || single ? [v] : v.split(/\s*[,，、;；/]\s*/).filter(Boolean);
       set([...cur, ...areas.map((area) => ({ kind, area }))]);
     };
-    input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); add(); } });
-    // what the user's other roles say, one click away (cities for on site and hybrid, regions for remote)
+    const show = () => {
+      const q = input.value.trim();
+      const opts = [...found.map((o, i) => h("button", { type: "button", role: "option", tabindex: "-1", class: "lb-opt pl-opt" + (i === active ? " on" : ""),
+        "aria-selected": String(i === active), onmousedown: (e) => e.preventDefault(), onclick: () => pick(o) },
+        h("span", { class: "pl-oname" }, o.name), o.detail && h("span", { class: "pl-odetail" }, o.detail))),
+        ...(q ? [h("button", { type: "button", role: "option", tabindex: "-1", class: "lb-opt pl-opt pl-asis" + (active === found.length ? " on" : ""),
+          "aria-selected": String(active === found.length), onmousedown: (e) => e.preventDefault(), onclick: asWritten },
+          icon("plus"), kind === "remote" ? h("span", null, t("Keep “{name}” as written", { name: q }))
+            // a city the list doesn't have: the server looks it up on OpenStreetMap (its names in every language)
+            : h("span", { class: "pl-asis-text" }, h("span", { class: "pl-oname" }, t("Add “{name}”", { name: q })),
+              h("span", { class: "pl-odetail" }, t("Not in the list: looked up on OpenStreetMap"))))] : [])];
+      sugg.replaceChildren(...opts);
+      sugg.hidden = !opts.length;
+      input.setAttribute("aria-expanded", String(!sugg.hidden));
+    };
+    const ask = async () => {
+      timer = 0;
+      const q = input.value.trim(), n = ++asked;
+      if (!q) { found = []; active = 0; show(); return; }
+      try {
+        const r = await api("GET", `/api/hunt/places?q=${encodeURIComponent(q)}&kind=${kind}`);
+        if (n !== asked) return;   // a later keystroke asked again
+        const mine = new Set(cur.map(placeKey));
+        found = (r.places || []).filter((o) => !mine.has(placeKey({ kind, id: o.id })));
+      } catch (e) { found = []; }
+      active = 0;
+      show();
+    };
+    input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(ask, 120); });
+    input.addEventListener("keydown", (e) => {
+      const n = sugg.hidden ? 0 : sugg.children.length;
+      if (e.key === "ArrowDown" && n) { e.preventDefault(); active = (active + 1) % n; show(); }
+      else if (e.key === "ArrowUp" && n) { e.preventDefault(); active = (active - 1 + n) % n; show(); }
+      else if (e.key === "Escape" && n) { e.preventDefault(); e.stopPropagation(); sugg.hidden = true; input.setAttribute("aria-expanded", "false"); }
+      else if (e.key === "Enter" && !e.isComposing) {
+        e.preventDefault();
+        if (timer && input.value.trim() && !n) { clearTimeout(timer); ask().then(() => { if (found.length) pick(found[0]); else asWritten(); }); return; }
+        if (n && found[active]) pick(found[active]); else asWritten();
+      }
+    });
+    input.addEventListener("blur", () => setTimeout(() => { if (!wrap.contains(document.activeElement)) { sugg.hidden = true; input.setAttribute("aria-expanded", "false"); } }, 120));
+    // what the user's other roles and companies say, one click away (cities for on site and hybrid, regions for remote)
     const same = (k) => (kind === "remote") === (k === "remote");
-    const mine = new Set(cur.filter((p) => p.kind === kind).map((p) => placeKey(p)));
-    const used = [...new Set(((H.data && H.data.applications) || []).flatMap((x) => (x.places || []).filter((p) => same(p.kind)).map((p) => p.area)))]
-      .filter((area) => !mine.has(placeKey({ kind, area })));
+    const mine = new Set(cur.filter((p) => p.kind === kind || single).map((p) => placeKey({ ...p, kind })));
+    const rows = [...((H.data && H.data.applications) || []), ...((H.data && H.data.companies) || [])];
+    const usedMap = new Map();
+    for (const p of rows.flatMap((x) => (x.places || []).filter((q) => same(q.kind)))) {
+      const k = placeKey({ ...p, kind });
+      if (!mine.has(k) && !usedMap.has(k)) usedMap.set(k, p);
+    }
+    const used = [...usedMap.values()].slice(0, 14);
     wrap.replaceChildren(
       h("div", { class: "pl-list" }, cur.length ? cur.map((p, i) => placeChip(p, () => set(cur.filter((_, j) => j !== i))))
         : h("span", { class: "muted" }, t("Not said yet"))),
       h("div", { class: "pl-add" },
-        uiSeg(Object.entries(PLACE_KINDS).map(([value, label]) => ({ value, label: t(label) })), kind, (k) => { kind = k; paint(); wrap.querySelector(".pl-input").focus(); },
+        !single && uiSeg(Object.entries(PLACE_KINDS).map(([value, label]) => ({ value, label: t(label) })), kind, (k) => { kind = k; paint(); wrap.querySelector(".pl-input").focus(); },
           { cls: "sm", label: t("Kind of place") }),
-        input, h("button", { type: "button", class: "btn sm", onclick: add }, icon("plus"), t("Add"))),
-      ...(used.length ? [h("div", { class: "bk-chips", role: "group", "aria-label": t("Common ones") }, used.map((area) =>
-        h("button", { type: "button", class: "bk-chip", onclick: () => set([...cur, { kind, area }]) }, area)))] : []));
+        h("div", { class: "pl-combo" }, input, sugg)),
+      ...(used.length ? [h("div", { class: "bk-chips", role: "group", "aria-label": t("Common ones") }, used.map((p) =>
+        h("button", { type: "button", class: "bk-chip", onclick: () => set([...cur, { kind, area: p.area, ...(p.id ? { id: p.id } : {}) }]) }, placeName(p))))] : []));
   };
   paint();
   return wrap;
@@ -788,7 +851,14 @@ function companyProps() {
       render: (c) => h("div", { class: "role-chips" }, (c.apps || []).map(roleChip), openChip(c),
         !(c.apps || []).length && !openChip(c) && h("span", { class: "c-muted" }, scanning(c.id) ? t("Scanning…") : t("none yet"))) },
     placesProp("places", t("Hires in"), (c, v) => cellCompany(c, { places: v })),
-    text("location", t("Headquarters"), 130, { hidden: true, group: true }),
+    { key: "hq", label: t("Headquarters"), type: "custom", width: 130, hidden: true, group: true, get: (c) => (c.hq ? placeName(c.hq) : ""),
+      render: (c) => c.hq ? placeChip(c.hq) : "",
+      edit: (td, c) => {
+        let next;
+        const ed = placesEditor(c.hq ? [c.hq] : [], (v) => { next = v; }, { single: true });
+        openFloat(td, h("div", { class: "menu dbv-pop pl-pop" }, ed), { minWidth: Math.max(td.offsetWidth, 360), focus: ed.querySelector(".pl-input"),
+          onClose: () => { if (next) cellCompany(c, { hq: next[0] || "" }); dbvAfterClose(); } });
+      } },
     text("size", t("Size"), 120, { hidden: true }),
     text("site", t("Careers site"), 220, { hidden: true }),
     text("note", t("Notes"), 220, { hidden: true }),
@@ -797,13 +867,14 @@ function companyProps() {
 
 function companiesTable() {
   const d = H.data;
-  const shown = d.companies.filter((c) => matches(c.name, (c.aliases || []).join(" "), c.industry, c.strength, c.note, c.location, ...(c.places || []).map(placeText)));
+  const shown = d.companies.filter((c) => matches(c.name, (c.aliases || []).join(" "), c.industry, c.strength, c.note, c.hq ? placeName(c.hq) : "", ...(c.places || []).map(placeText)));
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Companies")),
       h("p", null, t("What each company is and how it is doing, your notes, and its own careers site: one profile there, several roles in your order of preference."))),
     tableTools(h("button", { class: "btn sm primary", id: "hunt-new-company", onclick: () => newCompany() }, icon("plus"), t("Add a company")), linkButton(),
       d.companies.length > 0 && scanAllButton()),
     d.companies.length > 0 && scanNews(),
+    languagesBar(d.companies),
     dbView({ table: "companies", props: companyProps(), rows: shown, rowId: (c) => c.id, open: (c) => openHunt("company", c.id),
       defaults: [{ id: "v1", name: t("All companies") }, { id: "v2", name: t("Map"), layout: "map" }], repaint: paintHunt,
       located: companyLocated, pin: pinPlace, sub: (c) => c.industry || "",
@@ -1090,6 +1161,7 @@ function companyPage(v) {
           : !(c.subset && c.subset_exists) && h("span", { class: "muted" }, t("First pick the subset this site gets, above."))),
     ], { fold: "company-site" }),
     card(t("About {company}", { company: c.name }), ab && ab.read_at ? t("read {date}", { date: ab.read_at }) : t("not looked into yet"), [
+      languageBar(c),
       ab && ab.summary ? h("p", { class: "about-summary" }, ab.summary) : h("p", { class: "muted card-p" }, t("Claude can find out what it does, how it is doing, its prospects and how it hires graduates, with a source for every point.")),
       ab && (ab.points || []).length > 0 && h("div", { class: "about-points" }, ab.points.map((p) => h("div", { class: "about-point" },
         p.topic && h("b", null, p.topic), h("span", null, p.text),
@@ -1099,7 +1171,8 @@ function companyPage(v) {
       h("div", { class: "grid2" }, hfield(t("Name"), c.name, save("name")), hfield(t("Also called"), (c.aliases || []).join(", "), save("aliases"), { placeholder: "Xinghe, Nebula", hint: keptHint(c, "aliases") || t("Claude knows it by these too") })),
       h("div", { class: "grid2" }, hfield(t("Industry"), c.industry, save("industry"), { hint: keptHint(c, "industry") }),
         hfield(t("Strength"), c.strength, save("strength"), { placeholder: t("e.g. market cap, or the latest valuation"), hint: keptHint(c, "strength") })),
-      h("div", { class: "grid2" }, hfield(t("Headquarters"), c.location, save("location"), { hint: keptHint(c, "location") }),
+      h("div", { class: "grid2" }, h("div", { class: "field", id: "company-hq" }, h("label", null, t("Headquarters"), keptHint(c, "hq") && h("span", { class: "hint" }, keptHint(c, "hq"))),
+        placesEditor(c.hq ? [c.hq] : [], (v) => { c.hq = v[0] || null; save("hq")(v[0] || ""); }, { single: true })),
         hfield(t("Size"), c.size, save("size"), { hint: keptHint(c, "size") })),
       h("div", { class: "field", id: "company-places" }, h("label", null, t("Hires in"), h("span", { class: "hint" }, keptHint(c, "places") || t("the cities it hires in: they put it on the map"))),
         placesEditor(c.places, (v) => { c.places = v; save("places")(v); })),
@@ -1163,6 +1236,38 @@ async function removeLogo(c) {
     paintHunt();
     loadHunt({ quiet: true });
   } catch (e) { toast(e.message); }
+}
+
+// what Claude writes about a company (industry, strength, size, the About) is in the language of where the user
+// goes for it, among their resume's languages: not the window's, which they switch (jobhunt/writing.py, 2026-10-27)
+function researchWhy(r) {
+  const place = r.place ? placeName({ id: r.place, area: r.place_name }) : "";
+  return r.why === "applying" ? t("you apply in {place}", { place }) : r.why === "hq" ? t("its headquarters is in {place}", { place })
+    : r.why === "fallback" ? t("{place} speaks none of your resume's languages", { place }) : "";
+}
+const wrongLanguage = (c) => !!(c.research && c.research.rewrite);
+function askRewrite(cs) {
+  if (!ui.chat.available || !cs.length) return;
+  sendChat(cs.length === 1
+    ? t("Write what is known about {company} again in {lang}: its industry, strength, size and the About, with the same facts and sources.", { company: cs[0].name, lang: cs[0].research.lang_name })
+    : t("Write what is known about these companies again, each in the language it is described in: their industry, strength, size and the About, with the same facts and sources. {names}", { names: cs.map((c) => c.name).join(", ") }));
+}
+// on a company's page: what is there is in another language than the company is described in
+function languageBar(c) {
+  const r = c.research;
+  if (!wrongLanguage(c)) return null;
+  return h("div", { class: "note-bar", id: "company-language" }, icon("translate"),
+    h("span", { class: "nb-text" }, t("This is in {now}. {company} is described in {lang}: {why}.", { now: r.rewrite_name, company: c.name, lang: r.lang_name, why: researchWhy(r) })),
+    h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => askRewrite([c]) }, icon("sparkle"), t("Ask Claude to write it in {lang}", { lang: r.lang_name })));
+}
+// over the companies table: every company described in another language, rewritten at once
+function languagesBar(cs) {
+  const wrong = cs.filter(wrongLanguage);
+  if (!wrong.length) return null;
+  return h("div", { class: "note-bar", id: "hunt-languages" }, icon("translate"),
+    h("span", { class: "nb-text", title: t("A company is described in the language of where you apply to it, else of its headquarters, when your resume is written in that language; else in English.") },
+      t("Described in another language than theirs: {names}.", { names: wrong.map((c) => c.name).join(", ") })),
+    h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => askRewrite(wrong) }, icon("sparkle"), t("Ask Claude to rewrite them")));
 }
 
 // Claude researches the company and fills every field (docs/JOB_HUNT.md, 2026-10-18)

@@ -28,6 +28,8 @@ for _k in ("TMP", "TEMP", "TMPDIR"):
 os.environ["RESUME_STUDIO_LANG"] = "zh-CN"
 # companies' logos come from their sites over the network; tests that want it hand in a finder
 os.environ["STUDIO_LOGOS"] = "off"
+# places the list doesn't know are looked up on OpenStreetMap; tests that want it hand in what it answers
+os.environ["STUDIO_PLACES"] = "off"
 
 
 @pytest.fixture

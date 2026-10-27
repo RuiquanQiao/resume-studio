@@ -1303,8 +1303,8 @@ def test_evaluate_starts_a_career_ops_chat(connected, page_all, server, fake_cla
 
 # ---------------------------------------------------------------- Applying (the job-hunt tracker)
 def test_a_scan_started_in_the_window_says_when_it_is_done(page, server, monkeypatch):
-    """Scan all: the button spins while it runs; at the end a message says what it found, and the browser the
-    scan started is closed again (jobhunt/scan.py close_browser)."""
+    """Scan all: the button spins while it runs; at the end a message says what it found, and the scan held the
+    browser while it read and let go after (core/browser.py closes a browser nothing holds)."""
     pg = page
     hunt = server.inst.hunt
     hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
@@ -1312,7 +1312,19 @@ def test_a_scan_started_in_the_window_says_when_it_is_done(page, server, monkeyp
     hunt.scanner.postings.set_scan_state("C1", route={"pages": [{"url": jobs, "script": "async () => ({postings: []})"}]})
 
     class Browser:
-        closed = 0
+        holds = released = 0
+
+        def hold(self):
+            b = self
+
+            class H:
+                def __enter__(self):
+                    b.holds += 1
+
+                def __exit__(self, *exc):
+                    b.holds -= 1
+                    Browser.released += 1
+            return H()
 
         def ensure(self):
             return True
@@ -1320,10 +1332,6 @@ def test_a_scan_started_in_the_window_says_when_it_is_done(page, server, monkeyp
         def read_page(self, url, script, timeout=60.0):
             time.sleep(0.5)   # long enough to see the button spin
             return {"postings": [{"title": "服务端研发工程师", "url": jobs + "/1"}, {"title": "算法工程师", "url": jobs + "/2"}]}
-
-        def close_if_idle(self):
-            Browser.closed += 1
-            return True
 
         def status(self):
             return {"state": "off"}
@@ -1335,11 +1343,25 @@ def test_a_scan_started_in_the_window_says_when_it_is_done(page, server, monkeyp
     pg.screenshot(path=str(ART / "hunt-scan-running.png"), clip=pg.locator("#hunt-scan-all").bounding_box())
     pg.wait_for_selector("#toast.show:has-text('扫描完成')")
     assert "2 个新" in pg.inner_text("#toast") and "0 个已关闭" in pg.inner_text("#toast")
-    assert Browser.closed == 1 and not pg.is_disabled("#hunt-scan-all")
+    assert Browser.released >= 1 and hunt.scanner.browser.holds == 0 and not pg.is_disabled("#hunt-scan-all")
     for scheme in ("light", "dark"):
         pg.emulate_media(color_scheme=scheme)
         pg.screenshot(path=str(ART / f"hunt-scan-done-{scheme}.png"))
     pg.emulate_media(color_scheme="light")
+
+
+def test_a_browser_about_to_close_itself_can_be_kept_open(page, server):
+    """A browser work started says so a few seconds before it closes itself; Keep it open makes it the user's."""
+    b = server.inst.browser
+    page.wait_for_function("() => typeof F !== 'undefined' && F.browser")
+    b.closing = True
+    b._changed()
+    page.wait_for_selector("#toast.show:has-text('几秒后关闭')")
+    page.wait_for_timeout(300)                                          # the toast's slide-in
+    page.screenshot(path=str(ART / "browser-closing-toast.png"))
+    page.click("#toast button:has-text('保持打开')")
+    wait_until(lambda: not b.closing, msg="kept")
+    page.wait_for_selector("#toast.show", state="hidden")
 
 
 def test_a_company_with_several_roles_goes_out_with_a_pinned_version(page, server):
@@ -1612,31 +1634,54 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.click(f"{row(a2)} td[data-key=batch]")
     pg.click(".float .lb-opt[data-value='27秋招']")
     wait_until(lambda: app(a2)["batch"] == "27秋招", msg="batch picked")
-    # places: several cities at once, then remote, which must say its region; saved when the panel closes
+    # places (docs/JOB_HUNT.md, 2026-10-27): picked from a list as you type, in the window's language; several
+    # written at once are each found in it; remote must say its region; saved when the panel closes
     server.req("PUT", f"/api/hunt/apps/{a1}", {"places": ["杭州"]})   # another role's, offered as a suggestion below
     pg.click(f"{row(a2)} td[data-key=places]")
     pg.fill(".float .pl-input", "南京、上海")
     pg.press(".float .pl-input", "Enter")
+    pg.wait_for_selector(".float .pl-list .pl-chip:has-text('上海')")
+    pg.fill(".float .pl-input", "syd")
+    pg.wait_for_selector(".float .pl-opt.on:has-text('悉尼'):has-text('澳大利亚')")    # the bigger Sydney first, told apart
+    assert "加拿大" in pg.locator(".float .pl-opt").nth(1).inner_text()
+    pg.screenshot(path=str(ART / "hunt-places-suggest-light.png"))
+    pg.press(".float .pl-input", "ArrowDown")
+    pg.press(".float .pl-input", "ArrowUp")
+    pg.press(".float .pl-input", "Enter")
+    pg.wait_for_selector(".float .pl-list .pl-chip:has-text('悉尼')")
     pg.click(".float .pl-add .seg button[data-value=remote]")
     pg.press(".float .pl-input", "Enter")                       # no region: not added
     pg.wait_for_selector(".toast:has-text('不限')")
-    assert pg.locator(".float .pl-list .pl-chip").count() == 2
+    assert pg.locator(".float .pl-list .pl-chip").count() == 3
     pg.fill(".float .pl-input", "APAC")
+    pg.wait_for_selector(".float .pl-opt.on:has-text('亚太地区（APAC）')")
     pg.press(".float .pl-input", "Enter")
-    pg.wait_for_selector(".float .pl-chip.k-remote:has-text('APAC')")
+    pg.wait_for_selector(".float .pl-chip.k-remote:has-text('亚太地区（APAC）')")
     pg.screenshot(path=str(ART / "hunt-places-cell-light.png"))
     pg.keyboard.press("Escape")
-    wait_until(lambda: app(a2)["places"] == [{"kind": "onsite", "area": "南京"}, {"kind": "onsite", "area": "上海"},
-                                             {"kind": "remote", "area": "APAC"}], msg="places saved")
-    pg.wait_for_selector(f"{row(a2)} td[data-key=places] .pl-chip.k-remote:has-text('远程 · APAC')")
+    wait_until(lambda: app(a2)["places"] == [{"kind": "onsite", "area": "Nanjing", "id": "g1799962"},
+                                             {"kind": "onsite", "area": "Shanghai", "id": "g1796236"},
+                                             {"kind": "onsite", "area": "Sydney", "id": "g2147714"},
+                                             {"kind": "remote", "area": "Asia Pacific (APAC)", "id": "r:apac"}], msg="places saved")
+    pg.wait_for_selector(f"{row(a2)} td[data-key=places] .pl-chip.k-remote:has-text('远程 · 亚太地区（APAC）')")
     # the title opens the row's page; other cells don't
     pg.click(f"{row(a2)} .dbv-title")
     pg.wait_for_selector("#app-status")
     # the same places on the role's page: one removed, one suggested from another role
     pg.click("#app-places .pl-chip:has-text('上海') .pl-x")
-    wait_until(lambda: [p["area"] for p in app(a2)["places"]] == ["南京", "APAC"], msg="a place removed on the page")
+    wait_until(lambda: [p["area"] for p in app(a2)["places"]] == ["Nanjing", "Sydney", "Asia Pacific (APAC)"], msg="a place removed on the page")
+    pg.click("#app-places .pl-chip:has-text('悉尼') .pl-x")
+    wait_until(lambda: [p["area"] for p in app(a2)["places"]] == ["Nanjing", "Asia Pacific (APAC)"], msg="another removed")
     pg.click("#app-places .bk-chip:has-text('杭州')")
-    wait_until(lambda: [p["area"] for p in app(a2)["places"]] == ["南京", "APAC", "杭州"], msg="a place suggested and added")
+    wait_until(lambda: [p["area"] for p in app(a2)["places"]] == ["Nanjing", "Asia Pacific (APAC)", "Hangzhou"], msg="a place suggested and added")
+    # what the list doesn't have is added as written, when the user says so (and looked up on OpenStreetMap,
+    # which is off in the tests)
+    pg.wait_for_timeout(300)
+    pg.wait_for_function("() => !H.loading")
+    pg.fill("#app-places .pl-input", "滨江园区")
+    pg.click("#app-places .pl-asis:has-text('滨江园区')")
+    wait_until(lambda: app(a2)["places"][-1] == {"kind": "onsite", "area": "滨江园区"}, msg="a place kept as written")
+    pg.wait_for_selector("#app-places .pl-chip.pl-free:has-text('滨江园区')")
     pg.wait_for_timeout(300)
     pg.wait_for_function("() => !H.loading")                                  # the saved page is back (it repaints, cursor kept)
     pg.locator("#app-places").scroll_into_view_if_needed()
@@ -1792,7 +1837,7 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.wait_for_selector(".dbv-map .dbv-land[d]")
     pg.wait_for_selector(".dbv-pin")
     assert pg.locator("#dbv-apps-group").count() == 0 and pg.locator("#dbv-apps-sort").count() == 0
-    pg.wait_for_selector(".dbv-offrow[data-area='APAC']:has-text('远程 · APAC')")
+    pg.wait_for_selector(".dbv-offrow:has-text('远程 · 亚太地区（APAC）')")
     for scheme in ("light", "dark"):
         pg.emulate_media(color_scheme=scheme)
         pg.screenshot(path=str(ART / f"hunt-map-{scheme}.png"))
@@ -1816,7 +1861,7 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.click(".hunt-back")
     pg.wait_for_selector(".dbv-map")
     # the companies' map: where they hire, and the headquarters
-    server.req("PUT", f"/api/hunt/companies/{c1}", {"places": ["上海", "北京", "remote: 中国大陆"], "location": "深圳"})
+    server.req("PUT", f"/api/hunt/companies/{c1}", {"places": ["上海", "北京", "remote: 中国大陆"], "hq": "深圳"})
     pg.click(".hunt-tab[data-tab=companies]")
     pg.click(".dbv-tab[data-view=v2]")
     pg.wait_for_selector(".dbv-pin.hq[data-area='深圳']")

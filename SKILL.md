@@ -322,11 +322,13 @@ python scripts/hunt.py apply P12                          # the user goes for po
 - **A company fills itself** (docs/JOB_HUNT.md, 2026-10-18): when one is added or asked about, research it and
   send everything with one `fill` (official name, aliases, industry, strength, HQ, size, its careers sites and
   their hiring systems, a logo link, the About), never only the About. Fields the user edited stay theirs.
+  Industry, strength, size and the About are written in the language `show` names (where the user applies, else
+  the headquarters' country, among the resume's languages; else English), never the chat's or the window's.
   Every `fill` sends a `logo_url`, also when the company has a careers site (a careers site's icon is often blank,
   tiny or the hiring system's): its main site, its press kit, Wikimedia Commons (the direct upload link), else a
   web search; its square mark (site or app icon) when it has one, since the tables show a small square. `fill`
   refuses a blank, plain-colour or blurry picture; once one is saved it prints a png of how the window shows
-  it: look at it yourself, send another if it is wrong, and delete the png after. `hunt.py logo <company>` looks
+  it: look at it yourself and send another if it is wrong (leave the png: the app clears it). `hunt.py logo <company>` looks
   at one already there. A logo is the company's real picture: never draw one, never write into
   `.studio/hunt/logos/` yourself, and never leave a company without one: if every source fails, say which you tried.
   When to apply by is an event of the role (every role starts with its 投递 event), never a field and never the
@@ -387,6 +389,9 @@ Edge) with a profile of its own in `<skill>/.local/browser/` and drives it over 
   "send the code" silently never arrives). Then `browser.py sign-in <url>` reopens the same browser
   profile without remote control for the user to sign in; browser commands are refused until they press
   "switch back" in the window. Never try to hide that the browser is driven.
+- A browser started for work (a scan, a check, your commands) closes itself a minute after the work is
+  done (no reply running, no scan or check). One the user opened stays open, and so does one you show
+  them with `front`: use `front` when the user should look at or finish something there.
 - **The browser command** (standard library only; the window must be open):
 
 ```bash

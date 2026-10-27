@@ -379,19 +379,51 @@ def test_a_role_is_in_several_places_and_remote_says_where(live, data_file):
     cli(data_file, "add-company", "星河科技")
     code, out = cli(data_file, "add-role", "星河科技", "服务端", "--place", "南京", "--place", "上海", "--place", "远程（中国大陆）",
                     "--place", "hybrid: 悉尼", "--place", "南京")
-    assert code == 0 and "in 南京; 上海; remote: 中国大陆; 悉尼 (hybrid)" in out
+    # found in the list of places by any name: kept by id, under its English name (the window shows it in its language)
+    assert code == 0 and "in Nanjing; Shanghai; remote: Mainland China; Sydney (hybrid)" in out
     a = live.req("GET", "/api/hunt/apps/A1")[1]["application"]
-    assert a["places"] == [{"kind": "onsite", "area": "南京"}, {"kind": "onsite", "area": "上海"},
-                           {"kind": "remote", "area": "中国大陆"}, {"kind": "hybrid", "area": "悉尼"}]
+    assert a["places"] == [{"kind": "onsite", "area": "Nanjing", "id": "g1799962"}, {"kind": "onsite", "area": "Shanghai", "id": "g1796236"},
+                           {"kind": "remote", "area": "Mainland China", "id": "r:mainland-china"},
+                           {"kind": "hybrid", "area": "Sydney", "id": "g2147714"}]
     # remote must say the region it is open to
     status, r = live.req("PUT", "/api/hunt/apps/A1", {"places": [{"kind": "remote", "area": ""}]})
     assert status == 400 and r["error"]
     assert cli(data_file, "edit-role", "A1", "--place", "remote")[0] != 0
     v = live.req("PUT", "/api/hunt/apps/A1", {"places": [{"kind": "remote", "area": "不限"}]})[1]["application"]
-    assert v["places"] == [{"kind": "remote", "area": "不限"}]
+    assert v["places"] == [{"kind": "remote", "area": "Anywhere", "id": "r:any"}]
     assert live.req("GET", "/api/hunt/apps/A1")[1]["application"]["places"] == v["places"]
     assert cli(data_file, "edit-role", "A1", "--no-places")[0] == 0
     assert live.req("GET", "/api/hunt/apps/A1")[1]["application"]["places"] == []
+
+
+def test_places_are_picked_from_a_list_and_read_in_the_interfaces_language(live, data_file):
+    from jobhunt import geo
+    # typing finds them: the bigger first, told apart by state and country; regions first for a remote role
+    found = live.req("GET", "/api/hunt/places?q=syd&kind=onsite")[1]["places"]   # in the window's language
+    assert found[0]["id"] == "g2147714" and found[0]["name"] == geo.name("g2147714") and geo.name("t:AU") in found[0]["detail"]
+    assert found[1]["id"] == "g6354908" and geo.name("t:CA") in found[1]["detail"]
+    assert live.req("GET", "/api/hunt/places?q=%E4%B8%AD%E5%9B%BD%E5%A4%A7%E9%99%86&kind=remote")[1]["places"][0]["id"] == "r:mainland-china"
+    assert live.req("GET", "/api/hunt/places?q=&kind=onsite")[1]["places"] == []
+    # one name, every language: what makes a table read in one language
+    assert [geo.name("g2147714", x) for x in ("en", "zh", "ja", "ko")] == ["Sydney", "悉尼", "シドニー", "시드니"]
+    assert geo.name("g1835848", "zh") == "首尔" and geo.name("g1808926", "ja") == "杭州"     # no 特别市, no 市
+    assert geo.name("t:US", "zh") == "美国" and geo.name("t:HK", "zh") == "香港" and geo.name("t:US", "en") == "United States"
+    assert geo.name("r:mainland-china", "zh") == "中国大陆" and geo.name("r:any", "de") == "Überall"
+    # picked in the window by id; an id the list doesn't have is the text as written
+    cli(data_file, "add-company", "星河科技")
+    cli(data_file, "add-role", "星河科技", "服务端")
+    a = live.req("PUT", "/api/hunt/apps/A1", {"places": [{"kind": "onsite", "id": "g2147714", "area": "悉尼"},
+                                                          {"kind": "onsite", "id": "g0", "area": "滨江园区"}]})[1]["application"]
+    assert a["places"] == [{"kind": "onsite", "area": "Sydney", "id": "g2147714"}, {"kind": "onsite", "area": "滨江园区"}]
+    tab = live.req("GET", "/api/hunt")[1]
+    assert tab["places"]["g2147714"]["name"] == geo.name("g2147714") and tab["places"]["g2147714"]["lat"] == -33.868
+    assert tab["geo"] == {"滨江园区": None}                                      # only the written ones are looked up by text
+    # a company's headquarters are one city, the same way (sent as `location` before 2026-10-27, still understood)
+    c = live.req("PUT", "/api/hunt/companies/C1", {"hq": {"kind": "onsite", "id": "g1796236", "area": "上海"}})[1]["company"]
+    assert c["hq"] == {"area": "Shanghai", "id": "g1796236"} and "hq" in c["kept"]
+    code, out = cli(data_file, "edit-company", "星河科技", "--location", "北京（海淀区）")
+    assert code == 0 and "headquarters: Beijing" in out
+    assert live.req("PUT", "/api/hunt/companies/C1", {"hq": ""})[1]["company"]["hq"] is None
 
 
 def test_places_are_found_on_the_map_by_any_name():
@@ -406,27 +438,145 @@ def test_places_are_found_on_the_map_by_any_name():
     assert find("湾区") is None and find("") is None
 
 
+def test_a_city_after_its_province_or_with_its_name_in_brackets_is_found():
+    from jobhunt.geo import find
+    assert find("湖南长沙")["name"] == "Changsha"                 # not 湖南, a city in Japan
+    assert find("浙江杭州")["name"] == "Hangzhou" and find("广东 广州市")["name"] == "Guangzhou"
+    assert find("印度 班加罗尔(卡纳塔克邦)")["name"] == "Bengaluru"
+    assert find("美国加州卡尔弗城(Culver City);东南亚业务重心在新加坡")["name"] == "Culver City"
+    assert find("纳拉布里") is None                               # not 布里, in Brazil: any end would be a guess
+
+
+# what Nominatim answers (cut down): 雄安, and the guess it once made for 纳拉布里 (Narrabri)
+XIONGAN = [{"osm_type": "relation", "osm_id": 7157395, "category": "boundary", "type": "administrative", "place_rank": 10,
+            "lat": "39.0480479", "lon": "115.9075331", "name": "Xiong'an New Area",
+            "namedetails": {"name": "雄安新区", "name:en": "Xiong'an New Area", "name:ko": "슝안신구", "name:zh": "雄安新区"},
+            "address": {"country_code": "cn", "state": "Hebei"}}]
+BRISBANE_US = [{"osm_type": "relation", "osm_id": 2834528, "category": "boundary", "place_rank": 16, "lat": "37.68",
+                "lon": "-122.4", "name": "Brisbane", "namedetails": {"name": "Brisbane", "name:zh": "布里斯班"},
+                "address": {"country_code": "us"}}]
+
+
+def test_a_city_the_list_doesnt_know_is_looked_up_on_openstreetmap_once(hunt, monkeypatch):
+    from jobhunt import geo
+    asked: list[str] = []
+    monkeypatch.setattr(geo, "_fetch", lambda q: asked.append(q) or {"雄安": XIONGAN, "纳拉布里": BRISBANE_US}.get(q, []))
+    monkeypatch.setenv("STUDIO_PLACES", "on")
+    hunt.add_company({"name": "拼多多"})
+    hunt.update_company("C1", {"places": ["上海", "雄安", "纳拉布里"], "hq": "雄安"})
+    assert [p.get("id") for p in hunt.company("C1")["places"]] == ["g1796236", None, None]   # written as it was, first
+    assert hunt.link_places(geo.look_up) == 2                       # then found: 雄安, where it hires and its HQ
+    c = hunt.company("C1")
+    assert c["places"][1] == {"kind": "onsite", "area": "Xiong'an New Area", "id": "o:R7157395"}
+    assert c["hq"] == {"area": "Xiong'an New Area", "id": "o:R7157395"}
+    assert c["places"][2] == {"kind": "onsite", "area": "纳拉布里"}     # Brisbane, USA isn't 纳拉布里: left as written
+    # a place like the others: its name in every language, its state, suggested while typing
+    assert [geo.name("o:R7157395", x) for x in ("en", "zh", "ja", "ko")] == ["Xiong'an New Area", "雄安新区", "雄安新区", "슝안신구"]
+    assert geo.label("o:R7157395", "zh")["detail"] == "河北, 中国" and geo.find("雄安")["id"] == "o:R7157395"
+    assert geo.search("xiong'an", lang="en")[0]["id"] == "o:R7157395"
+    # each name is asked once, and kept with the data
+    assert sorted(asked) == ["纳拉布里", "雄安"]
+    assert hunt.link_places(geo.look_up) == 0 and len(asked) == 2
+    saved = json.loads((hunt.dir / "places.json").read_text(encoding="utf-8"))
+    assert saved["places"]["o:R7157395"]["names"]["zh"] == "雄安新区" and saved["asked"]["纳拉布里"][1] == ""
+    # nothing goes out while it is off (the tests' default)
+    monkeypatch.setenv("STUDIO_PLACES", "off")
+    assert geo.look_up("嘉兴南湖") is None and len(asked) == 2
+
+
+def test_places_read_wrong_by_the_first_lookup_are_looked_up_again(tmp_path):
+    """2026-10-27: the first migration read 湖南长沙 as Konan (Japan); roles and companies not changed since are
+    looked up again from the files it kept."""
+    d = tmp_path / ".studio" / "hunt"
+    d.mkdir(parents=True)
+    old_c = {"companies": [{"id": "C1", "name": "茶颜悦色", "location": "湖南长沙", "places": ["长沙"], "updated": "2026-10-20T10:00:00"},
+                           {"id": "C2", "name": "零跑", "location": "浙江杭州", "updated": "2026-10-20T10:00:00"}]}
+    old_a = {"applications": [{"id": "A1", "company": "C1", "role": "店长", "places": ["广东 广州市"], "updated": "2026-10-20T10:00:00"}]}
+    (d / "companies.before-place-ids.json").write_text(json.dumps(old_c, ensure_ascii=False), encoding="utf-8")
+    (d / "applications.before-place-ids.json").write_text(json.dumps(old_a, ensure_ascii=False), encoding="utf-8")
+    now_c = {"companies": [{"id": "C1", "name": "茶颜悦色", "hq": {"area": "Konan", "id": "g11612571"},
+                            "places": [{"kind": "onsite", "area": "Changsha", "id": "g1815577"}], "updated": "2026-10-20T10:00:00"},
+                           {"id": "C2", "name": "零跑", "hq": {"area": "Shenzhen", "id": "g1795565"}, "kept": ["hq"],
+                            "updated": "2099-01-01T00:00:00"}]}   # changed by the user since: theirs
+    now_a = {"migrated": ["builtin-events", "place-ids"], "applications": [
+        {"id": "A1", "company": "C1", "role": "店长", "places": [{"kind": "onsite", "area": "广东 广州市"}], "updated": "2026-10-20T10:00:00"}]}
+    (d / "companies.json").write_text(json.dumps(now_c, ensure_ascii=False), encoding="utf-8")
+    (d / "applications.json").write_text(json.dumps(now_a, ensure_ascii=False), encoding="utf-8")
+    h = Hunt(tmp_path / ".studio")
+    h.migrate()
+    assert h.company("C1")["hq"] == {"area": "Changsha", "id": "g1815577"}
+    assert h.company("C2")["hq"] == {"area": "Shenzhen", "id": "g1795565"}
+    assert h.application("A1")["places"] == [{"kind": "onsite", "area": "Guangzhou", "id": "g1809858"}]
+    assert "place-ids-2" in json.loads((d / "applications.json").read_text(encoding="utf-8"))["migrated"]
+
+
+def test_a_company_is_described_in_the_language_of_where_the_user_goes_for_it():
+    from jobhunt.writing import needs_rewrite, research_language, written_in
+    sydney, shanghai, taipei, berlin = ({"id": x} for x in ("g2147714", "g1796236", "g1668341", "g2950159"))
+    mine = ["en", "zh"]                                             # the resume's languages
+    rsm, pdd = {"hq": {"area": "Sydney", **sydney}}, {"hq": {"area": "Shanghai", **shanghai}}
+    assert research_language(rsm, [], mine) == {"lang": "en", "why": "hq", "place": "g2147714"}
+    assert research_language(pdd, [], mine)["lang"] == "zh"
+    # where the user applies comes first: a Chinese company's office in Sydney reads in English
+    assert research_language(pdd, [{"places": [{"kind": "onsite", "area": "Sydney", **sydney}]}], mine) == \
+        {"lang": "en", "why": "applying", "place": "g2147714"}
+    # a German company: in German only when the resume is in German too, else English
+    assert research_language({"hq": {"area": "Berlin", **berlin}}, [], mine) == {"lang": "en", "why": "fallback", "place": "g2950159"}
+    assert research_language({"hq": {"area": "Berlin", **berlin}}, [], ["zh", "de"])["lang"] == "de"
+    assert research_language({"hq": {"area": "Taipei", **taipei}}, [], mine)["lang"] == "zh"   # either Chinese will do
+    # where it is isn't known yet: what is there stays as it is
+    r = research_language({}, [], mine)
+    assert r["why"] == "unknown" and needs_rewrite({"industry": "会计 / 审计"}, r) == ""
+    # RSM Australia, described in Chinese before 2026-10-27, is to be written again
+    old = {**rsm, "industry": "会计 / 审计", "about": {"summary": "RSM Australia 是澳大利亚排名前列的会计师事务所"}}
+    assert needs_rewrite(old, research_language(rsm, [], mine)) == "zh"
+    assert written_in("Accounting, audit and tax advisory for mid-sized firms in Australia", "en") == "en"
+    assert written_in("Wirtschaftsprüfung und Steuerberatung für den Mittelstand in der Region", "en") == "de"
+    assert written_in("シドニーに本社を置く会計事務所", "en") == "ja"
+
+
+def test_fill_says_which_language_the_research_is_written_in(live, data_file):
+    cli(data_file, "add-company", "RSM Australia")
+    code, out = cli(data_file, "fill", "RSM Australia", "--stdin", stdin=json.dumps(
+        {"hq": "Sydney", "industry": "会计 / 审计 / 税务", "about": {"summary": "RSM Australia 是澳大利亚排名前列的会计师事务所"}}))
+    assert code == 0 and "language: what you wrote is in 简体中文, but this company's research is written in English (en)" in out
+    assert "write industry, strength, size and about in: English (en; its headquarters is in Sydney)" in out
+    assert "what is there now is in 简体中文: write it again in English" in out
+    c = live.req("GET", "/api/hunt")[1]["companies"][0]
+    assert c["research"]["lang"] == "en" and c["research"]["rewrite"] == "zh"
+    code, out = cli(data_file, "fill", "RSM Australia", "--stdin", stdin=json.dumps(
+        {"industry": "Accounting, audit and tax", "about": {"summary": "RSM Australia is one of the largest accounting firms in Australia."}}))
+    assert "language:" not in out and "what is there now" not in out
+    assert live.req("GET", "/api/hunt")[1]["companies"][0]["research"]["rewrite"] == ""
+
+
 def test_companies_hire_in_places_and_the_map_knows_where_they_are(live, data_file):
     cli(data_file, "add-company", "星河科技")
     code, out = cli(data_file, "fill", "星河科技", "--stdin", stdin=json.dumps(
         {"location": "上海", "places": ["上海", "北京", "remote: 中国大陆", "滨江园区"], "sources": {"places": "https://xinghe.example/jobs"}}))
-    assert code == 0 and "hires in: 上海; 北京; remote: 中国大陆; 滨江园区  [https://xinghe.example/jobs]" in out
+    assert code == 0 and ("hires in: Shanghai; Beijing; remote: Mainland China; 滨江园区 [not in the list of places]"
+                          "  [https://xinghe.example/jobs]") in out and "headquarters: Shanghai" in out
     cli(data_file, "add-role", "星河科技", "服务端", "--place", "杭州·余杭区")
-    geo = live.req("GET", "/api/hunt")[1]["geo"]
-    assert geo["上海"]["name"] == "Shanghai" and geo["杭州·余杭区"]["name"] == "Hangzhou"
-    assert geo["滨江园区"] is None and "中国大陆" not in geo        # remote isn't a spot on the map
+    tab = live.req("GET", "/api/hunt")[1]
+    places, geo = tab["places"], tab["geo"]
+    assert places["g1796236"]["lat"] == 31.222 and places["g1808926"]["lat"] == 30.294
+    assert tab["companies"][0]["hq"] == {"area": "Shanghai", "id": "g1796236"}
+    assert geo == {"滨江园区": None} and places["r:mainland-china"]["lat"] is None   # remote isn't a spot on the map
     # one the map can't find is pinned where the user (or Claude) says
     code, out = cli(data_file, "pin", "滨江园区", "30.21", "120.21")
     assert code == 0 and "30.21, 120.21 (pinned)" in out
     assert live.req("GET", "/api/hunt")[1]["geo"]["滨江园区"]["pinned"]
-    assert "滨江园区: 30.21, 120.21 (pinned)" in cli(data_file, "where")[1]
+    assert "滨江园区 [not in the list of places]: 30.21, 120.21 (pinned)" in cli(data_file, "where")[1]
+    # a picked one the map puts wrong is pinned by its id
+    assert live.req("PUT", "/api/hunt/geo", {"area": "g1808926", "lat": 30.42, "lon": 120.3})[0] == 200
+    assert live.req("GET", "/api/hunt")[1]["places"]["g1808926"]["lat"] == 30.42
     assert live.req("PUT", "/api/hunt/geo", {"area": "滨江园区", "lat": None})[0] == 200
     assert live.req("GET", "/api/hunt")[1]["geo"]["滨江园区"] is None
     assert live.req("PUT", "/api/hunt/geo", {"area": "x", "lat": 95, "lon": 0})[0] == 400
     # edited in the window, the places are the user's: a later fill leaves them
     live.req("PUT", "/api/hunt/companies/C1", {"places": ["杭州"]})
     code, out = cli(data_file, "fill", "星河科技", "--stdin", stdin=json.dumps({"places": ["广州"]}))
-    assert "left as the user set them: places" in out and "hires in: 杭州" in out
+    assert "left as the user set them: places" in out and "hires in: Hangzhou" in out
 
 
 def test_booked_from_the_window_and_from_claude_end_in_one_calendar_file(live, data_file):

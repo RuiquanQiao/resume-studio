@@ -51,7 +51,8 @@ def test_claude_fills_every_field_and_leaves_the_users_own(hunt):
         "about": {"summary": "电商平台", "points": [{"topic": "业务", "text": "星河科技与 Nebula", "sources": ["https://example.com/r"]}]}})
     assert kept == ["industry"] and got["industry"] == "电商（我的说法）"          # the user's stays
     assert got["name"] == "星河科技" and got["aliases"] == ["Xinghe Technology Ltd.", "Xinghe", "Nebula"]   # the official name is an alias
-    assert got["strength"].startswith("市值约") and got["location"] == "上海"
+    # the headquarters, sent as `location` (their name before 2026-10-27), are a city from the list of places
+    assert got["strength"].startswith("市值约") and got["hq"] == {"area": "Shanghai", "id": "g1796236"} and "location" not in got
     assert got["site"] == "https://careers.xinghe.example/campus"                # the campus site leads
     assert [s["kind"] for s in got["sites"]] == ["campus", "intern"]
     assert got["sources"] == {"strength": "https://example.com/quote"}            # sources of kept fields and non-links dropped
@@ -190,11 +191,38 @@ def test_a_companys_deadline_moves_to_its_roles(hunt):
     assert due(hunt.application("星河科技/服务端")) == "2026-10-31"
 
 
+def test_places_written_before_are_looked_up_in_the_list_once(hunt):
+    hunt.add_company({"name": "星河科技"})
+    hunt.add_application("星河科技", {"role": "服务端"})
+    cs = json.loads((hunt.dir / "companies.json").read_text(encoding="utf-8"))
+    c = cs["companies"][0]
+    c.pop("hq")
+    c.update(location="北京（海淀区西二旗西街 16 号）", sources={"location": "https://example.com/hq"}, kept=["location"],
+             places=[{"kind": "onsite", "area": "悉尼"}, {"kind": "onsite", "area": "Sydney"}, {"kind": "onsite", "area": "滨江园区"}])
+    (hunt.dir / "companies.json").write_text(json.dumps(cs, ensure_ascii=False), encoding="utf-8")
+    apps = json.loads((hunt.dir / "applications.json").read_text(encoding="utf-8"))
+    apps["applications"][0]["places"] = [{"kind": "remote", "area": "中国大陆"}]
+    apps["migrated"] = ["builtin-events"]
+    (hunt.dir / "applications.json").write_text(json.dumps(apps, ensure_ascii=False), encoding="utf-8")
+    hunt.migrate()
+    c = hunt.company("C1")
+    assert c["hq"] == {"area": "Beijing", "id": "g1816670"} and "location" not in c   # the city; the address goes
+    assert c["sources"] == {"hq": "https://example.com/hq"} and c["kept"] == ["hq"]
+    # 悉尼 and Sydney are one place now; what the list doesn't know stays as written
+    assert c["places"] == [{"kind": "onsite", "area": "Sydney", "id": "g2147714"}, {"kind": "onsite", "area": "滨江园区"}]
+    assert hunt.applications()[0]["places"] == [{"kind": "remote", "area": "Mainland China", "id": "r:mainland-china"}]
+    before = json.loads((hunt.dir / "companies.before-place-ids.json").read_text(encoding="utf-8"))
+    assert before["companies"][0]["location"].startswith("北京（海淀区")          # the files as they were, kept beside them
+    hunt.update_company("C1", {"places": ["杭州"]})
+    hunt.migrate()                                                                  # once only
+    assert hunt.company("C1")["places"] == [{"kind": "onsite", "area": "Hangzhou", "id": "g1808926"}]
+
+
 def test_claude_fills_a_company_from_its_command(live, data_file, monkeypatch):
     monkeypatch.setattr(hunt_api, "fetch_logo", lambda url: (PNG, "image/png"))
     cli(data_file, "add-company", "星河科技")
     code, out = cli(data_file, "show", "星河科技")
-    assert "not filled yet: industry, strength, location, site, logo" in out
+    assert "not filled yet: industry, strength, hq, site, logo" in out
     fields = {"name": "Xinghe Holdings", "industry": "电商", "strength": "市值约 1,600 亿美元", "location": "上海",
               "sites": [{"url": "https://careers.xinghe.example/campus", "kind": "campus", "system": "own site"}],
               "logo_url": "https://example.com/xinghe.png", "sources": {"strength": "https://example.com/q"}}
@@ -255,7 +283,8 @@ def test_postings_are_matched_across_scans(hunt):
                          {"title": "海外研发", "url": "https://careers.tencent.com/jobdesc.html?postId=5", "location": "Remote"}],
              how="tencent", complete=False)
     two = ps.apply(next(p for p in ps.all() if p["title"] == "前端开发")["id"])
-    assert two["places"] == [{"kind": "onsite", "area": "北京"}, {"kind": "onsite", "area": "深圳"}] and "北京" not in two["note"]
+    assert two["places"] == [{"kind": "onsite", "area": "Beijing", "id": "g1816670"}, {"kind": "onsite", "area": "Shenzhen", "id": "g1795565"}]
+    assert "北京" not in two["note"]
     away = ps.apply(next(p for p in ps.all() if p["title"] == "海外研发")["id"])
     assert away["places"] == [] and away["note"] == "Remote"
     for x in (two, away):
@@ -275,16 +304,24 @@ def test_postings_are_matched_across_scans(hunt):
 class FakeBrowser:
     def __init__(self, pages: dict, off: bool = False):
         self.pages, self.at, self.opened = pages, "", []
-        self.off, self.closes = off, 0
+        self.off, self.holds, self.max_holds = off, 0, 0
+        self.held_while_reading = []
 
     def ensure(self):
         started, self.off = self.off, False
         return started
 
-    def close_if_idle(self):
-        self.closes += 1
-        self.off = True
-        return True
+    def hold(self):
+        fake = self
+
+        class Hold:
+            def __enter__(self):
+                fake.holds += 1
+                fake.max_holds = max(fake.max_holds, fake.holds)
+
+            def __exit__(self, *exc):
+                fake.holds -= 1
+        return Hold()
 
     def open(self, url, new_tab=False):
         self.at = url
@@ -296,6 +333,7 @@ class FakeBrowser:
 
     def read_page(self, url, script, timeout=60.0):
         self.opened.append(url)
+        self.held_while_reading.append(self.holds > 0)
         return self.pages[url]
 
 
@@ -328,34 +366,25 @@ def test_a_site_is_scanned_by_its_recorded_route(hunt):
     assert res["route_broken"] and not res["signed_out"] and not ps.all()[0]["closed"]
 
 
-def test_a_scan_closes_the_browser_it_opened_and_only_that(hunt):
+def test_a_scan_holds_the_browser_while_it_reads_and_says_what_it_found(hunt):
+    """The browser closes itself when nothing holds it (core/browser.py close_if_idle): a scan holds it from the first
+    company to the last, so it is never closed between them, and lets go when it is done."""
     ps = Postings(hunt)
     hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
     page = "https://careers.xinghe.example/campus/jobs"
     browser = FakeBrowser({page: {"postings": [{"title": "服务端研发工程师", "url": page + "/1"}]}}, off=True)
     sc = Scanner(hunt, ps, NoTool(), browser, lambda: None)
     sc.save_route("星河科技", {"pages": [{"url": page, "script": "async (h) => ({postings: []})"}]})
-    # the scan started the browser: it is closed once the scan is done, and it says what it found
     sc.scan_many(["C1"])
-    assert browser.closes == 1 and browser.opened == [page]
+    assert browser.opened == [page] and browser.held_while_reading == [True] and browser.holds == 0
     assert {k: sc.last_run[k] for k in ("auto", "companies", "new", "closed", "failed")} == \
         {"auto": False, "companies": 1, "new": 1, "closed": 0, "failed": 0}
-    # it was open before the scan (the user or Claude had it): it stays open
-    browser.off = False
-    sc.scan_many(["C1"])
-    assert browser.closes == 1
-    # two scans at once: the one that opened it doesn't close it under the other; the last to finish does
-    browser.off = True
-    sc._batches += 1                       # another scan_many is still going
-    sc.scan_many(["C1"])
-    assert browser.closes == 1
-    sc._batches -= 1
-    sc.close_browser()
-    assert browser.closes == 2
-    # a site that asks to sign in counts as a company that couldn't be read
+    sc.scan("C1")                                   # one company on its own (Claude saving a route) holds it too
+    assert browser.held_while_reading[-1] is True and browser.holds == 0
+    # a site that asks to sign in counts as a company that couldn't be read, and lets go all the same
     browser.pages[page] = {"signed_out": True}
     sc.scan_many(["C1"])
-    assert sc.last_run["failed"] == 1 and browser.closes == 3
+    assert sc.last_run["failed"] == 1 and browser.holds == 0
 
 
 needs_node = pytest.mark.skipif(not shutil.which("node"), reason="Node.js not installed")
@@ -439,7 +468,7 @@ def test_the_window_and_claude_scan_and_apply(live, data_file, monkeypatch):
         time.sleep(0.05)
         r = live.req("GET", f"/api/hunt/apps/{aid}")[1]
     a = r["application"]
-    assert a["jd"] == "岗位职责\n1、训练模型" and [p["area"] for p in a["places"]] == ["杭州", "上海"] and a["jd_read"]
+    assert a["jd"] == "岗位职责\n1、训练模型" and [p["area"] for p in a["places"]] == ["Hangzhou", "Shanghai"] and a["jd_read"]
     assert a["schedule"][0]["at"] == "2026-10-31" and not r["reading"]
     # reading it again on request replaces the description; a page with none says so
     fake.pages[page + "/2"]["jd"] = "岗位职责\n2、部署模型"
@@ -471,9 +500,10 @@ def test_a_posting_page_says_where_and_until_when():
     assert details("工作地点\n工作地点\n-\n发布日期\n2026-09-29") == {}
     # Workday: an English label, the date in Chinese under its own heading
     d = details("locations\nSydney: 1 Market St\ntime left to apply\n结束日期：2026年10月31日 (申请时间还剩 9 天)")
-    assert d == {"places": [{"kind": "onsite", "area": "Sydney: 1 Market St"}], "deadline": "2026-10-31"}
+    assert d == {"places": [{"kind": "onsite", "area": "Sydney", "id": "g2147714"}], "deadline": "2026-10-31"}   # the city, not its street
     assert details("Location is flexible\nApplications close 31 Oct 2026") == {"deadline": "2026-10-31"}
-    assert details("工作地点：北京、上海")["places"] == [{"kind": "onsite", "area": "北京"}, {"kind": "onsite", "area": "上海"}]
+    assert details("工作地点：北京、上海")["places"] == [{"kind": "onsite", "area": "Beijing", "id": "g1816670"},
+                                                   {"kind": "onsite", "area": "Shanghai", "id": "g1796236"}]
 
 
 def test_claude_is_told_to_fill_scan_and_read_links():

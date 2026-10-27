@@ -17,9 +17,11 @@ from core.watcher import SignatureWatcher
 from jobs.base import JobTool, ToolError
 from jobs.signups import Signups
 from resume import model
+from resume.langs import LANGS as RESUME_LANGS
 from resume.service import Studio
 
-from . import ics, logos, reader
+from . import geo as place_list
+from . import ics, logos, reader, writing
 from .geo import Geo
 from .logos import fetch_logo
 from .postings import Postings
@@ -52,7 +54,24 @@ def keep_version(studio: Studio, subset_id: str, where: str) -> int:
 def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: Callable[[], list[dict]],
              browser: Any = None) -> Hunt:
     hunt = Hunt(studio.store.state_dir)
-    hunt.on_change = lambda: app.bus.publish("hunt", {})
+    # a city written as text (the list doesn't know it) is looked up on OpenStreetMap in the background, after
+    # every change: one at a time, each name once (jobhunt/geo.py); a hit repaints the window by itself
+    to_link = threading.Event()
+
+    def linker() -> None:
+        while True:
+            to_link.wait()
+            to_link.clear()
+            try:
+                hunt.link_places(place_list.look_up)
+            except Exception:  # noqa: BLE001 (the network, a file being written: the next change tries again)
+                pass
+
+    def changed() -> None:
+        app.bus.publish("hunt", {})
+        to_link.set()
+
+    hunt.on_change = changed
     posts = Postings(hunt)
     views = Views(hunt.dir)
     geo = Geo(hunt.dir)
@@ -65,11 +84,35 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         old = Signups(studio.store.state_dir).all()
         if old:
             hunt.import_signups(old)
+    threading.Thread(target=linker, name="hunt-places", daemon=True).start()
+    to_link.set()   # what was written before: once the migrations above are done
+
+    def every_place() -> list[dict]:
+        return ([p for x in hunt.applications() + hunt.companies() for p in x.get("places") or []]
+                + [c["hq"] for c in hunt.companies() if c.get("hq")])
 
     def located() -> dict:
-        """Where every place in the tracker is, for the world maps: {area: {lat, lon, name, country} | None}."""
-        areas = [p["area"] for x in hunt.applications() + hunt.companies() for p in x.get("places") or [] if p["kind"] != "remote"]
-        return geo.lookup(areas + [c["location"] for c in hunt.companies() if c.get("location")])
+        """Where every place written as text (none picked from the list) is, for the world maps:
+        {area: {lat, lon, name, country} | None}."""
+        return geo.lookup([p["area"] for p in every_place() if not p.get("id") and p.get("kind") != "remote"])
+
+    def resume_langs(doc: Any = None) -> list[str]:
+        """The languages the user's resume is written in (its own setting): what company research may be in."""
+        doc = doc if doc is not None else studio.store.load()[0]
+        return [str(x) for x in (doc.get("settings") or {}).get("languages") or ["en"]]
+
+    def research(c: dict, apps: list[dict], langs: list[str]) -> dict:
+        """{lang, why, place, rewrite}: the language this company's research is written in (jobhunt/writing.py),
+        and the one it is in now when that is another."""
+        r = writing.research_language(c, apps, langs)
+        name = lambda code: (RESUME_LANGS.get(code) or {}).get("name") or code   # noqa: E731
+        bad = writing.needs_rewrite(c, r)
+        return {**r, "lang_name": name(r["lang"]), "place_name": place_list.english(r["place"]) if r["place"] else "",
+                "rewrite": bad, "rewrite_name": name(bad) if bad else ""}
+
+    def place_names() -> dict:
+        """Every picked place: {id: {name, detail, lat, lon}}, in the interface's language."""
+        return geo.places(every_place())
 
     def tracker() -> str:
         v = (prefs.load() or {}).get("tracker")
@@ -181,7 +224,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     look_dir = hunt.dir.parent.parent / ".cache" / "logo-look"
 
     def write_look(cid: str, stats: dict | None) -> str:
-        """The window's drawing of a company's logo, as a png for Claude to look at (and delete after)."""
+        """The window's drawing of a company's logo, as a png for Claude to look at. Claude leaves it; the ones
+        older than an hour go here, so Claude never has to delete (a delete asks the user every time)."""
         png = (stats or {}).get("png") or ""
         if not png.startswith("data:image/png;base64,"):
             return ""
@@ -210,6 +254,9 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         """Claude's research on a company, every field at once, the logo downloaded into the data folder."""
         fields = fields if isinstance(fields, dict) else {}
         c, kept = hunt.fill(ref, fields)
+        r = research(c, hunt.applications(c["id"]), resume_langs())
+        lang_error = (f"what you wrote is in {r['rewrite_name']}, but this company's research is written in {r['lang_name']} "
+                      f"({r['lang']}): send industry, strength, size and about again, in {r['lang_name']}") if r["rewrite"] else ""
         logo_error = look = ""
         if fields.get("logo_url"):
             if "logo" in (c.get("kept") or []):
@@ -226,7 +273,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 except ValueError as e:
                     logo_error = str(e)
         want_logos(c["id"])   # no logo from Claude (or it failed): the site's own icon
-        return {"company": company_view(c["id"]), "kept": kept, "logo_error": logo_error, "logo_look": look, "text": "filled"}
+        return {"company": company_view(c["id"]), "kept": kept, "logo_error": logo_error, "logo_look": look,
+                "lang_error": lang_error, "text": "filled"}
 
     def company_view(ref: str) -> dict:
         c = hunt.company(ref)
@@ -235,6 +283,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         evs = [e for e in hunt.events() if e["app"] in {a["id"] for a in apps}]
         st = posts.scan_state(c["id"])
         return {"company": {**c, "logo_url": logo_url(c), "subset_label": subset_label(doc, c.get("subset") or ""),
+                            "research": research(c, apps, resume_langs(doc)),
                             "subset_exists": bool(c.get("subset")) and model.get_item(doc, "subset", c["subset"]) is not None},
                 "applications": apps, "events": evs,
                 "postings": sorted(posts.all(c["id"]), key=lambda p: (bool(p.get("closed")), p.get("category") or "", p["title"])),
@@ -333,8 +382,10 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     def overview(req: Request):
         tb = hunt.table()
         summ = posts.summary()
+        langs = resume_langs()
         for c in tb["companies"]:
             c["logo_url"] = logo_url(c)
+            c["research"] = research(c, [a for a in tb["applications"] if a["company"] == c["id"]], langs)
             c["postings"] = summ.get(c["id"]) or {"open": 0, "matching": 0}
             c["postings"]["needs"] = posts.scan_state(c["id"]).get("needs") or ""
         sc = posts.scans()
@@ -342,7 +393,14 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 "scan": {"keywords": sc["keywords"], "daily": sc["daily"], "last_all": sc["last_all"],
                          "running": dict(scanner.running), "providers": scanner.providers_ready(),
                          "last_run": scanner.last_run},
-                "changes": posts.changes(), "geo": located()}
+                "changes": posts.changes(), "geo": located(), "places": place_names()}
+
+    @app.route("GET", "/api/hunt/places")
+    def find_places(req: Request):
+        """What a typed start finds in the list of places (?q=syd&kind=onsite|hybrid|remote), in the interface's language."""
+        q = (req.query.get("q") or [""])[0]
+        kind = (req.query.get("kind") or ["onsite"])[0]
+        return {"places": place_list.search(q, kind=kind)}
 
     # ---- open postings: scanning the companies' sites ----
     def scan_ids(b: dict) -> list[str]:
@@ -640,7 +698,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 app.bus.publish("hunt", {})
                 return {"where": where, "text": "pinned" if a.get("lat") is not None else "unpinned"}
             if cmd == "where":
-                return {"geo": located(), "text": "where"}
+                return {"geo": located(), "places": place_names(), "text": "where"}
             if cmd == "ics":
                 return {"path": export_ics(str(a.get("ref") or "")), "text": "exported"}
             if cmd == "about":

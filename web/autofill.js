@@ -187,7 +187,13 @@ function listenFill(es) {
     }).catch(() => {});
   });
   es.addEventListener("browser", (m) => {
+    const was = F.browser;
     F.browser = JSON.parse(m.data || "{}");
+    // a browser work started closes itself when the work is done; a few seconds before, the user may keep it
+    if (F.browser.closing && !(was && was.closing)) {
+      toast(t("Resume Studio's browser closes in a few seconds: the work in it is done."),
+        { ms: 14000, action: { label: t("Keep it open"), fn: () => api("POST", "/api/browser/keep", {}).catch((e) => toast(e.message)) } });
+    }
     paintSignin();
     if (W.ws === "fill") { paintFillBrowser(); renderWsTools(); }
   });

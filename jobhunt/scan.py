@@ -20,6 +20,7 @@ Each site is read the cheapest way that works, never by Claude once it has been 
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import shutil
 import threading
@@ -66,8 +67,6 @@ class Scanner:
         self.running: dict[str, str] = {}      # company id -> what is reading it now
         self.lock = threading.Lock()
         self._providers: dict[str, str | None] = {}   # url -> career-ops provider id (or None), per run of the app
-        self._opened = False                   # a scan started the browser: the last scan to finish closes it
-        self._batches = 0                      # scan_many runs going on now
         self.last_run: dict = {}               # the last scan_many: {at, auto, companies, new, closed, failed}
 
     # ---- which sites, read how ----
@@ -120,16 +119,23 @@ class Scanner:
             out.append({**s, "how": prov or ("route" if route else "claude")})
         return out
 
+    def _hold(self):
+        return self.browser.hold() if hasattr(self.browser, "hold") else contextlib.nullcontext()
+
     # ---- one company ----
     def run_route(self, route: dict) -> list[dict]:
         """Each page in a tab of its own, off the screen (core/browser.py read_page): a scan never takes the tab
-        the user or Claude is working in."""
+        the user or Claude is working in. A browser the scan started closes itself once nothing uses it
+        (core/browser.py close_if_idle); one the user opened stays."""
+        with self._hold():
+            try:
+                self.browser.ensure()
+            except BrowserError as e:
+                raise RouteFailed(str(e))
+            return self._read_route(route)
+
+    def _read_route(self, route: dict) -> list[dict]:
         found: list[dict] = []
-        try:
-            if self.browser.ensure():
-                self._opened = True
-        except BrowserError as e:
-            raise RouteFailed(str(e))
         for p in route.get("pages") or []:
             try:
                 out = self.browser.read_page(p["url"], p["script"], timeout=120)
@@ -215,9 +221,7 @@ class Scanner:
         """`auto` (the daily scan when the window opens) never opens the browser by itself: sites read by a route
         wait for a scan the user starts, unless the browser is open already."""
         out = []
-        with self.lock:
-            self._batches += 1
-        try:
+        with self._hold():                  # not closed between one company and the next
             routes = not auto or self.browser_open()
             for cid in ids:
                 try:
@@ -230,24 +234,8 @@ class Scanner:
                              "new": sum(int(r.get("new") or 0) for r in out),
                              "closed": sum(int(r.get("closed") or 0) for r in out),
                              "failed": sum(1 for r in out if r.get("error"))}
-        finally:
-            with self.lock:
-                self._batches -= 1
-            self.close_browser()
         self.publish()
         return out
-
-    def close_browser(self) -> None:
-        """The browser a scan opened is closed once no scan is running, unless a page is open in it (the user or
-        Claude went on in it): then it is theirs. One that was open before the scan is never closed."""
-        with self.lock:
-            if not self._opened or self.running or self._batches:
-                return
-            self._opened = False
-        try:
-            self.browser.close_if_idle()
-        except Exception:  # noqa: BLE001  closing is a courtesy; the scan's results stand
-            pass
 
     def start(self, ids: list[str], *, auto: bool = False) -> None:
         threading.Thread(target=self.scan_many, args=(ids,), kwargs={"auto": auto}, daemon=True, name="hunt-scan").start()

@@ -1663,8 +1663,19 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .pl-ed { display: flex; flex-direction: column; gap: 8px; }
 .pl-list { display: flex; flex-wrap: wrap; gap: 6px; min-height: 22px; align-items: center; }
 .pl-list .pl-chip { height: 26px; font-size: 13px; }
-.pl-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.pl-input { flex: 1 1 200px; min-width: 160px; height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--panel); color: var(--text); font: inherit; }
+.pl-add { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+.pl-chip.pl-free { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
+.pl-combo { flex: 1 1 200px; min-width: 160px; display: flex; flex-direction: column; gap: 4px; }
+.pl-sugg { display: flex; flex-direction: column; max-height: 260px; overflow-y: auto; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel); }
+.pl-sugg[hidden] { display: none; }
+.pl-opt { align-items: baseline; gap: 8px; padding: 6px 8px; }
+.pl-opt.on { background: var(--hover); color: var(--text); }
+.pl-oname { flex: none; }
+.pl-odetail { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 12px; }
+.pl-asis { align-items: center; color: var(--text-2); }
+.pl-asis svg.i { width: 12px; height: 12px; flex: none; }
+.pl-asis-text { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.pl-input { flex: 1 1 auto; width: 100%; min-width: 160px; height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--panel); color: var(--text); font: inherit; }
 .pl-pop { padding: 10px; width: min(460px, calc(100vw - 32px)); }
 /* ---- the world map (web/dbview.js; docs/JOB_HUNT.md, 2026-10-21) ---- */
 .dbv-map { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 10px; min-height: 420px; height: calc(100vh - 270px); }

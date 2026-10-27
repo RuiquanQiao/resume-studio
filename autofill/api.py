@@ -34,6 +34,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         app.bus.publish("autofill", {"site": site_id})
 
     browser.on_change = lambda: app.bus.publish("browser", browser.status())
+    browser.busy = lambda: bool(chats.running())   # Claude may use it at any point of a reply: it waits for the end
 
     def body(req: Request) -> dict:
         data = req.json()
@@ -191,6 +192,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         url = str((st.get("current") or {}).get("url") or "") or site.home
         here = bro(lambda: browser.open(url if site.owns(url) else site.home))
         bro(browser.front)
+        browser.claim()                                    # the user's now: it stays until they close it
         out = site.signed_out(here["url"])
         fill.save(site.id, signed_out=out)
         publish(site.id)
@@ -209,8 +211,9 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
             publish(site.id)
 
         try:
-            bro(browser.ensure)
-            reading, scope = route.run(browser, site, r, base, progress)
+            with browser.hold():
+                bro(browser.ensure)
+                reading, scope = route.run(browser, site, r, base, progress)
             return {"ok": True, **fill.take_reading(site, reading, scope, "route")}
         except route.RouteBroken as e:
             fill.check_failed(site, str(e), e.signed_out)
@@ -375,6 +378,13 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
     def browser_start(req: Request):
         bro(browser.ensure)
         bro(browser.front)
+        browser.claim()
+        return browser.status()
+
+    @app.route("POST", "/api/browser/keep")
+    def browser_keep(req: Request):
+        """The user keeps a browser that was about to close itself: it is theirs now."""
+        browser.claim()
         return browser.status()
 
     @app.route("POST", "/api/browser/stop")
@@ -452,8 +462,9 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
                 return browser.use_tab(int(b.get("index") or 0))
             if cmd == "back":
                 return browser.back()
-            if cmd == "front":
+            if cmd == "front":                             # shown to the user: theirs to close
                 browser.front()
+                browser.claim()
                 return browser.here()
             if cmd == "sign-in":
                 browser.sign_in(str(b.get("url") or ""))
