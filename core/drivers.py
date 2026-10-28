@@ -121,7 +121,8 @@ def runner_kill(turn: Turn) -> None:
     if not turn.proc or turn.proc.poll() is not None:
         return
     if os.name == "nt":   # the command may be a .cmd shim on Windows; end the whole tree
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(turn.proc.pid)], capture_output=True)
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(turn.proc.pid)], capture_output=True,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     else:
         turn.proc.terminate()
 

@@ -130,7 +130,8 @@ def _available() -> frozenset[str]:
     kpse = shutil.which("kpsewhich")
     if kpse:
         try:
-            out = subprocess.run([kpse, *[f["tex"] for f in tex]], capture_output=True, text=True, timeout=20).stdout
+            out = subprocess.run([kpse, *[f["tex"] for f in tex]], capture_output=True, text=True, timeout=20,
+                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout   # no console flash under the window
             found = {Path(line.strip()).name.lower() for line in out.splitlines() if line.strip()}
             names |= {f["name"] for f in tex if f["tex"].lower() in found}
         except (OSError, subprocess.SubprocessError):
