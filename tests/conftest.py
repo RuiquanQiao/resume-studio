@@ -30,6 +30,9 @@ os.environ["RESUME_STUDIO_LANG"] = "zh-CN"
 os.environ["STUDIO_LOGOS"] = "off"
 # places the list doesn't know are looked up on OpenStreetMap; tests that want it hand in what it answers
 os.environ["STUDIO_PLACES"] = "off"
+# the user's own Claude Code settings (a model picked there, say) never reach the fake one's answers
+os.environ["CLAUDE_CONFIG_DIR"] = str(ROOT / ".cache" / "claude-config")
+os.environ.pop("ANTHROPIC_MODEL", None)
 # the other agents (Codex, Qwen Code, Pi, DeepSeek Harness) are never the user's real ones: tests/fake_agents.py
 FAKE_AGENTS = Path(__file__).resolve().parent / "fake_agents.py"
 for _id, _proto in (("codex", "codex"), ("qwen", "acp"), ("pi", "pi"), ("dsh", "acp")):

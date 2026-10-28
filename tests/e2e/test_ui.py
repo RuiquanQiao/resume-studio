@@ -904,6 +904,12 @@ def test_model_effort_and_mode_chips(page, server, fake_claude):
     page.wait_for_function("() => ui.claude && ui.claude.info")
     page.click("#chat-new")
     page.wait_for_selector("#chat-model-btn .lbl:text('Opus 4.1')")             # the app's prefs still have it
+    page.evaluate("pickAgent(agentOf('codex'))")                               # another agent for a while...
+    page.wait_for_function("() => chatAgentId() === 'codex'")
+    page.evaluate("pickAgent(agentOf('claude'))")                              # ...and back: Claude Code's picks are still there
+    page.wait_for_selector("#chat-model-btn .lbl:text('Opus 4.1')")
+    meta = server.req("GET", "/api/chats")[1]["chats"][0]
+    assert (meta["agent"], meta["model_choice"], meta["mode"]) == ("claude", "claude-opus-4-1", "default")
 
 
 def test_permission_card_in_the_chat(page, server, fake_claude):

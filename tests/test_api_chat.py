@@ -142,6 +142,14 @@ def test_claude_info_lists_models_efforts_and_commands(server):
     assert info["account"]["plan"] == "Claude Pro" and r["modes"] == ["default", "acceptEdits", "plan", "auto"]
 
 
+def test_following_claude_code_names_the_model_its_settings_pick(server, tmp_path, monkeypatch):
+    """Claude Code's answer names its built-in default; a model set in its settings is what runs, so the label says that."""
+    (tmp_path / "cfg").mkdir()
+    (tmp_path / "cfg" / "settings.json").write_text(json.dumps({"model": "opus"}), encoding="utf-8")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))
+    assert _info(server)["info"]["default_model"] == {"resolved": "claude-opus-5", "name": "Opus 5"}
+
+
 def test_chat_model_effort_and_mode(server, fake_claude):
     code, chat = server.req("POST", "/api/chats", {"model": "claude-opus-5-5", "effort": "high", "mode": "plan"})
     cid = chat["id"]
@@ -174,15 +182,20 @@ def test_new_chat_defaults_live_in_app_prefs(server, data_file):
     """The last pick survives a restart on another port: the app's prefs keep it, Claude Code's settings don't change."""
     assert server.req("GET", "/api/claude")[1]["defaults"] is None
     code, r = server.req("PUT", "/api/chat-defaults", {"model": "sonnet", "effort": "high", "mode": None})
-    assert code == 200 and r["defaults"] == {"model": "sonnet", "effort": "high", "mode": None, "agent": None}
+    picks = {"model": "sonnet", "effort": "high", "mode": None}
+    assert code == 200 and r["defaults"] == {**picks, "agent": None, "by_agent": {"claude": picks}}
     prefs = json.loads((data_file.parent / "local" / "prefs.json").read_text(encoding="utf-8"))
-    assert prefs["chat_defaults"] == {"model": "sonnet", "effort": "high", "mode": None, "agent": None}
+    assert prefs["chat_defaults"] == {**picks, "agent": None, "by_agent": {"claude": picks}}
     assert server.req("GET", "/api/claude")[1]["defaults"]["model"] == "sonnet"
     assert server.req("PUT", "/api/chat-defaults", {"model": "a&b"})[0] == 400
     assert server.req("PUT", "/api/chat-defaults", {"model": None})[1]["defaults"]["model"] is None   # follow Claude Code again
     # the agent new chats start on is kept the same way, and a later model pick leaves it alone
+    server.req("PUT", "/api/chat-defaults", {"model": "sonnet", "effort": "high", "mode": "auto"})
     assert server.req("PUT", "/api/chat-defaults", {"agent": "codex"})[1]["defaults"]["agent"] == "codex"
-    assert server.req("PUT", "/api/chat-defaults", {"model": None, "effort": None})[1]["defaults"]["agent"] == "codex"
+    d = server.req("PUT", "/api/chat-defaults", {"model": None, "effort": None})[1]["defaults"]
+    assert d["agent"] == "codex"
+    # switching agents doesn't wipe Claude Code's picks: they come back when the user returns to it
+    assert d["by_agent"]["claude"] == {"model": "sonnet", "effort": "high", "mode": "auto"}
     assert server.req("GET", "/api/claude")[1]["agent"] == "codex"
     assert server.req("PUT", "/api/chat-defaults", {"agent": "nope"})[0] == 400
 

@@ -8,6 +8,7 @@ core.agents.AgentInfo caches the answer in `.studio/claude-info.json` so the UI 
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import threading
@@ -116,9 +117,31 @@ def normalize(raw: dict) -> dict:
 
 def fetch(prefix: list[str], cwd: Path, timeout: float) -> dict:
     """What core.agents.AgentInfo asks every agent for: here, Claude Code's `initialize` answer."""
-    data = normalize(probe(prefix, cwd, timeout))
+    raw = probe(prefix, cwd, timeout)
+    data = normalize(raw)
+    picked = configured_model(cwd)
+    if picked:   # the CLI reports its built-in default; a model set in the settings is what actually runs
+        hit = next((m for m in raw.get("models") or [] if m.get("value") == picked), None)
+        resolved = str((hit or {}).get("resolvedModel") or picked)
+        data["default_model"] = {"resolved": resolved, "name": model_name(resolved) or picked}
     data["signed_in"] = True if data["account"].get("email") or data["account"].get("provider") else None
     return data
+
+
+def configured_model(cwd: Path) -> str | None:
+    """The model Claude Code runs when none is passed, in its own order: ANTHROPIC_MODEL, then the
+    project's settings, then the user's."""
+    if os.environ.get("ANTHROPIC_MODEL"):
+        return os.environ["ANTHROPIC_MODEL"]
+    user = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+    for path in (cwd / ".claude" / "settings.local.json", cwd / ".claude" / "settings.json", user / "settings.json"):
+        try:
+            model = json.loads(path.read_text(encoding="utf-8")).get("model")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if isinstance(model, str) and model and model != "default":
+            return model
+    return None
 
 
 def probe(prefix: list[str], cwd: Path, timeout: float) -> dict:

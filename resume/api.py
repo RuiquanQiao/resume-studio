@@ -252,9 +252,12 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         settings: null for a field means "follow the agent's own setting"."""
         b = body(req)
         f = chat_fields({k: v for k, v in b.items() if k in ("model", "effort", "mode", "agent")})
-        kept = ((prefs.load().get("chat_defaults") if prefs else None) or {}).get("agent")
+        old = (prefs.load().get("chat_defaults") if prefs else None) or {}
         saved = {"model": f.get("model_choice"), "effort": f.get("effort"), "mode": f.get("mode"),
-                 "agent": f.get("agent") if "agent" in b else kept}   # a model pick leaves the agent as it was
+                 "agent": f.get("agent") if "agent" in b else old.get("agent")}   # a model pick leaves the agent as it was
+        # each agent keeps its own last picks, so switching to another agent and back restores them
+        saved["by_agent"] = {**(old.get("by_agent") or {}),
+                             saved["agent"] or default_agent(): {k: saved[k] for k in ("model", "effort", "mode")}}
         if prefs:
             prefs.save(chat_defaults=saved)
         return {"defaults": saved}

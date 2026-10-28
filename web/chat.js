@@ -369,14 +369,18 @@ async function pickAgent(a) {
     return;
   }
   if (a.id === chatAgentId()) return;
-  await saveDefaults({ model: null, effort: null, mode: null, agent: a.id });   // another agent's model and mode mean nothing here
+  // another agent's model and mode mean nothing here: this agent's own last picks come back instead
+  const own = { model: null, effort: null, mode: null, ...((((ui.claude || {}).defaults || {}).by_agent || {})[a.id]), agent: a.id };
+  await saveDefaults(own);
   const begun = ui.chat.id && (ui.chat.messages.length || ui.chat.running || (ui.chat.meta || {}).session_id);
   if (begun) {
-    await newChat({ model: null, effort: null, mode: null, agent: a.id });
+    await newChat(own);
     toast(t("A new chat with {name}", { name: a.name }), { ms: 2400 });
   } else if (ui.chat.id) {
     try {
       ui.chat.meta = await api("PUT", "/api/chats/" + ui.chat.id, { agent: a.id });
+      const restore = { model: own.model, effort: own.effort, mode: own.mode };   // the server cleared the old agent's
+      if (own.model || own.effort || own.mode) ui.chat.meta = await api("PUT", "/api/chats/" + ui.chat.id, restore);
       const i = ui.chat.list.findIndex((c) => c.id === ui.chat.id);
       if (i >= 0) ui.chat.list[i] = ui.chat.meta;
     } catch (e) { toast(e.message); return; }
