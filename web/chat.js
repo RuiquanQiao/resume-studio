@@ -608,7 +608,7 @@ function renderChatSelect() {
   const opt = (c) => {
     const state = chatState(c.id);
     return { value: c.id, label: c.title || t("New chat"), group: mixed ? (inToolFolder(c) ? t("In {name}'s folder", { name: chatPlace(c) }) : "Resume Studio") : undefined,
-      hint: manyAgents ? `${agentOf(agentOfChat(c)).short} · ${relTime(c.updated)}` : relTime(c.updated),
+      hint: manyAgents ? `${agentOf(agentOfChat(c)).short} · ${relTime(c.updated)}` : relTime(c.updated), hintClass: "chat-time-hint",
       mark: state ? () => chatMark(state, c.id) : null, tip: state ? chatStateText(state, c.id) : undefined };
   };
   sel.setOptions([...list.filter((c) => !inToolFolder(c)), ...list.filter(inToolFolder)].map(opt), ui.chat.id);

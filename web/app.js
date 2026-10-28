@@ -88,6 +88,23 @@ function mdBlocks(text) {
   const isTableSep = (l) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l);
   const cells = (l) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => mdInline(c.trim()));
   const isRule = (l) => /^\s*([-*_])(\s*\1){2,}\s*$/.test(l);
+  const itemRe = /^\s*([-*•]|\d+[.)])\s+/;
+  const indentOf = (l) => l.match(/^\s*/)[0].length;
+  // A list whose items start at this indent; a deeper list under an item nests inside it.
+  const list = (indent) => {
+    const ordered = /^\s*\d+[.)]/.test(lines[i]);
+    const items = [];
+    while (i < lines.length && itemRe.test(lines[i]) && indentOf(lines[i]) === indent) {
+      let item = lines[i].replace(itemRe, "");
+      i++;
+      while (i < lines.length && /^\s{2,}\S/.test(lines[i]) && !itemRe.test(lines[i])) item += " " + lines[i++].trim();
+      const task = /^\[([ xX])\](\s+|$)/.exec(item);   // - [ ] / - [x]: a checkbox (the plan ticks it, docs/PLAN.md)
+      const nested = i < lines.length && itemRe.test(lines[i]) && indentOf(lines[i]) > indent ? list(indentOf(lines[i])) : "";
+      items.push(task ? `<li class="task"><span class="check${task[1] === " " ? "" : " on"}" role="checkbox" aria-checked="${task[1] !== " "}"></span><span>${mdInline(item.slice(task[0].length))}${nested}</span></li>`
+        : `<li>${mdInline(item)}${nested}</li>`);
+    }
+    return ordered ? `<ol>${items.join("")}</ol>` : `<ul>${items.join("")}</ul>`;
+  };
   while (i < lines.length) {
     const l = lines[i];
     if (!l.trim()) { i++; continue; }
@@ -101,18 +118,8 @@ function mdBlocks(text) {
       out.push(`<table><thead><tr>${head.map((c) => `<th>${c}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`);
       continue;
     }
-    if (/^\s*([-*•]|\d+[.)])\s+/.test(l)) {
-      const ordered = /^\s*\d+[.)]/.test(l);
-      const items = [];
-      while (i < lines.length && /^\s*([-*•]|\d+[.)])\s+/.test(lines[i])) {
-        let item = lines[i].replace(/^\s*([-*•]|\d+[.)])\s+/, "");
-        i++;
-        while (i < lines.length && /^\s{2,}\S/.test(lines[i]) && !/^\s*([-*•]|\d+[.)])\s+/.test(lines[i])) item += " " + lines[i++].trim();
-        const task = /^\[([ xX])\](\s+|$)/.exec(item);   // - [ ] / - [x]: a checkbox (the plan ticks it, docs/PLAN.md)
-        items.push(task ? `<li class="task"><span class="check${task[1] === " " ? "" : " on"}" role="checkbox" aria-checked="${task[1] !== " "}"></span><span>${mdInline(item.slice(task[0].length))}</span></li>`
-          : `<li>${mdInline(item)}</li>`);
-      }
-      out.push(ordered ? `<ol>${items.join("")}</ol>` : `<ul>${items.join("")}</ul>`);
+    if (itemRe.test(l)) {
+      out.push(list(lines[i].match(/^\s*/)[0].length));
       continue;
     }
     if (l.startsWith(">")) {

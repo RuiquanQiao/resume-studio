@@ -472,7 +472,7 @@ function uiSelect(o) {
         "data-value": x.value ?? "", disabled: x.disabled, title: x.tip, onclick: () => choose(x.value) },
         h("span", { class: "lb-check" }, o.marks ? (x.mark ? x.mark() : null) : sel ? icon("check") : null),
         h("span", { class: "lb-main" }, h("span", { class: "lb-label" }, x.label), x.desc && h("span", { class: "lb-desc" }, x.desc)),
-        x.hint && h("span", { class: "lb-hint" }, x.hint));
+        x.hint && h("span", { class: "lb-hint" + (x.hintClass ? " " + x.hintClass : "") }, x.hint));
       if (sel) active = item;
       list.append(item);
       if (focused != null && String(x.value ?? "") === focused) item.focus({ preventScroll: true });

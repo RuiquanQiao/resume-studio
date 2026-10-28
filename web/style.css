@@ -569,6 +569,7 @@ textarea::-webkit-resizer {
 .lb-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lb-desc { font-size: 11.5px; line-height: 1.4; color: var(--text-3); white-space: normal; }
 .lb-hint, .mi-hint { flex: none; font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.lb-hint.chat-time-hint { width: 106px; overflow: hidden; text-overflow: ellipsis; text-align: right; }
 .mi-hint { margin-left: 14px; }
 .menu-item svg.i { color: var(--text-3); }
 .menu-item:disabled svg.i { opacity: .6; }
@@ -1512,6 +1513,7 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .plan-doc p { margin: 0 0 14px; text-wrap: pretty; }
 .plan-doc ul, .plan-doc ol { margin: 0 0 14px; padding-left: 24px; }
 .plan-doc li { margin: 4px 0; padding-left: 2px; }
+.plan-doc li > ul, .plan-doc li > ol { margin: 4px 0 6px; }
 .plan-doc li::marker { color: var(--text-3); }
 .plan-doc li.task { list-style: none; display: flex; align-items: flex-start; gap: 10px; margin-left: -24px; padding-left: 0; }
 .plan-doc li.task .check { margin-top: 5px; }
