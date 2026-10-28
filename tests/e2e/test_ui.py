@@ -1965,6 +1965,14 @@ def test_settings_show_the_checks_and_apply_on_done(connected, page_all, server,
     pg.click("#ws-tools .btn.icon")                                      # ⋯ → career-ops settings
     pg.click(".float .menu-item:has-text('career-ops 设置')")
     pg.wait_for_selector("#jobs-settings .chk")
+    layout = pg.locator(".modal.settings").evaluate("""modal => {
+      const body = modal.querySelector('.settings-body').getBoundingClientRect();
+      const footer = modal.querySelector('.acts').getBoundingClientRect();
+      const box = modal.getBoundingClientRect();
+      return { bodyRight: body.right, modalRight: box.right, footerBottom: footer.bottom, modalBottom: box.bottom };
+    }""")
+    assert abs(layout["bodyRight"] - layout["modalRight"]) < 1  # scrollbar belongs at the panel's right edge
+    assert layout["footerBottom"] <= layout["modalBottom"]
     assert pg.locator("#jobs-settings .chk.ok").count() >= 6
     pg.click("#jobs-settings .seg button[data-value='zh']")
     pg.click("#jobs-settings .check-row >> nth=1")                       # notes off

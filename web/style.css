@@ -873,7 +873,9 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px va
 .check-row:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); border-radius: 4px; }
 .inline-confirm { margin-top: 10px; padding: 10px 12px; border-radius: var(--r); border: 1px solid var(--accent); background: var(--accent-soft); font-size: 12.5px; }
 .inline-confirm p { margin: 4px 0 8px !important; }
-.modal.settings { max-height: 88vh; overflow: auto; }
+.modal.settings { display: grid; grid-template-rows: minmax(0, 1fr) auto; height: 88vh; max-height: 88vh; overflow: hidden; }
+.modal.settings .settings-body { min-height: 0; margin-right: -20px; padding-right: 20px; overflow-y: auto; overscroll-behavior: contain; }
+.modal.settings > .acts { padding-top: 12px; margin-top: 4px; background: var(--panel); }
 
 /* ================================================================ workspaces: Resume | Job search */
 .ws-switch { display: inline-flex; padding: 3px; gap: 2px; border-radius: 9px; background: var(--hover); border: 1px solid var(--line); }

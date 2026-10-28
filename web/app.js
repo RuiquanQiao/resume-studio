@@ -1518,6 +1518,7 @@ function openSettings(section = null) {
   document.addEventListener("keydown", onKey);
   root.replaceChildren(h("div", { class: "modal-back", onmousedown: (e) => { if (e.target === e.currentTarget) close(); } },
     h("div", { class: "modal settings", role: "dialog", "aria-modal": "true", "aria-label": t("Settings") },
+      h("div", { class: "settings-body" },
       h("h3", null, t("Settings")),
       h("p", null, t("These belong to this computer, not to your resume.")),
       agentSettingsField(),
@@ -1529,7 +1530,7 @@ function openSettings(section = null) {
           h("button", { class: "btn sm", onclick: () => changeDataFile("open") }, icon("folderOpen"), t("Open another…")),
           h("button", { class: "btn sm", onclick: () => changeDataFile("new") }, icon("plus"), t("New…")))),
       trackerField(),
-      jobsSettingsSection(),
+      jobsSettingsSection()),
       h("div", { class: "acts" }, h("button", { class: "btn primary", onclick: done }, t("Done"))))));
   setTimeout(() => {
     if (section === "jobs") { const el = $("#jobs-settings"); el.scrollIntoView({ block: "start" }); el.classList.add("flash"); }
