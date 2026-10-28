@@ -112,7 +112,7 @@ async function openPosting(id) {
 
 // a chat the server started (in the tool's folder, or a resume chat): show it like any other
 async function jobChat(url, body = {}) {
-  if (!ui.chat.available) { toast(t("The claude command was not found")); return null; }
+  if (!ui.chat.available) { toast(missingAgentText()); return null; }
   await saveDraft();
   let r;
   try { r = await api("POST", url, { ...chatSettings(), ...body }); }
@@ -195,7 +195,7 @@ function openEvaluate(anchor) {
   const go = h("button", { class: "btn primary sm", disabled: !J.draft.trim() || !ui.chat.available, onclick: evaluatePosting }, icon("sparkle"), t("Evaluate"));
   const panel = h("div", { class: "eval-box eval-float", role: "dialog", "aria-label": t("Evaluate a posting") }, ta,
     h("div", { class: "eval-bar" },
-      h("span", { class: "eval-hint" }, t("Claude runs {name}'s evaluation in a new chat; it takes a few minutes.", { name: jobsTool().name })),
+      h("span", { class: "eval-hint" }, t("The AI runs {name}'s evaluation in a new chat; it takes a few minutes.", { name: jobsTool().name })),
       go));
   requestAnimationFrame(() => autosize(ta));
   openFloat(anchor, panel, { minWidth: 460, focus: ta, onClose: () => setTimeout(renderWsTools, 0) });
@@ -288,7 +288,7 @@ function jobsMenu(anchor) {
 
 // an empty chat in the tool's folder, the composer filled with `text` for the user to finish
 async function toolChat(text, title = "") {
-  if (!ui.chat.available) { toast(t("The claude command was not found")); return; }
+  if (!ui.chat.available) { toast(missingAgentText()); return; }
   try {
     const r = await api("POST", "/api/jobs/chat", { ...chatSettings(), title: title || jobsTool().name });
     ui.chat.list = [r.chat, ...ui.chat.list];
@@ -441,8 +441,8 @@ function subsetMenu(anchor, a, v, onDone) {
 
 function fitFoot(a, onDone) {
   return h("div", { class: "fit-foot" },
-    h("button", { class: "btn sm", disabled: !ui.chat.available, title: t("Claude compares what each subset says with the evaluation and recommends one"),
-      onclick: () => { if (onDone) onDone("close"); jobChat(`/api/jobs/app/${encodeURIComponent(a.id)}/choose`); } }, icon("sparkle"), t("Ask Claude which fits")),
+    h("button", { class: "btn sm", disabled: !ui.chat.available, title: t("The AI compares what each subset says with the evaluation and recommends one"),
+      onclick: () => { if (onDone) onDone("close"); jobChat(`/api/jobs/app/${encodeURIComponent(a.id)}/choose`); } }, icon("sparkle"), t("Ask AI which fits")),
     h("button", { class: "btn sm ghost", disabled: !ui.chat.available, onclick: () => { if (onDone) onDone("close"); newSubsetFor(a); } }, icon("plus"), t("New subset for this kind of role")),
     h("span", { class: "fit-note" }, t("Ranked by how many of the posting's requirements and keywords each resume already mentions.")));
 }
@@ -482,7 +482,7 @@ async function previewSubset(id) {
 async function newSubsetFor(a) {
   const s = a.summary || {};
   const label = await modal({ title: t("New subset for this kind of role"),
-    message: t("Name it after the kind of role, not the company: you'll send it to similar postings too. Claude then picks its entries and writes its headline from this evaluation."),
+    message: t("Name it after the kind of role, not the company: you'll send it to similar postings too. The AI then picks its entries and writes its headline from this evaluation."),
     input: a.role || s.archetype || "", placeholder: t("Subset name, e.g. AI Agent Engineer"), ok: t("Create") });
   if (!label || !label.trim()) return;
   await tailor(a, null, label.trim());
@@ -894,9 +894,9 @@ function renderWsTools() {
   const name = jobsTool().name;
   const out = [];
   if (jobsReady()) out.push(h("button", { class: "btn ghost", id: "evaluate-btn", "aria-haspopup": "dialog", disabled: !ui.chat.available,
-    title: t("Claude runs {name}'s evaluation in a new chat; it takes a few minutes.", { name }), onclick: (e) => openEvaluate(e.currentTarget) },
+    title: t("The AI runs {name}'s evaluation in a new chat; it takes a few minutes.", { name }), onclick: (e) => openEvaluate(e.currentTarget) },
   icon("sparkle"), h("span", { class: "lbl" }, t("Evaluate a posting"))));
-  if (jobsReady()) out.push(h("button", { class: "btn ghost", title: t("Every mode of {name}, each one as a chat with Claude", { name }), onclick: (e) => openLauncher(e.currentTarget) }, icon("apps"), h("span", { class: "lbl" }, t("All of {name}", { name }))));
+  if (jobsReady()) out.push(h("button", { class: "btn ghost", title: t("Every mode of {name}, each one as a chat with the AI", { name }), onclick: (e) => openLauncher(e.currentTarget) }, icon("apps"), h("span", { class: "lbl" }, t("All of {name}", { name }))));
   const a = webUp() ? webApp() : null;
   if (a) {
     const linked = a.subsets || [];
@@ -912,7 +912,7 @@ function renderWsTools() {
     out.push(h("button", { class: "btn sm" + (st.needs_setup ? " primary" : ""), disabled: !ui.chat.available,
       title: (st.needs_setup ? t("{name} doesn't know what you're looking for yet (roles, location, salary), so its scores would follow someone else's targets.", { name: st.tool.name }) + " "
         : t("Your fact layer or resume subsets changed since {name}'s profile was filled from them.", { name: st.tool.name }) + " ")
-        + t("Claude fills it from your profile's fact layer and your resume subsets, and asks only for what's missing"),
+        + t("The AI fills it from your profile's fact layer and your resume subsets, and asks only for what's missing"),
       onclick: () => setupProfile(!st.needs_setup) }, icon("user"), st.needs_setup ? t("Fill its profile from my resume") : t("Update its profile")));
   }
   if (jobsReady()) out.push(h("button", { class: "btn icon ghost", title: t("More"), onclick: (e) => webMenu(e.currentTarget) }, icon("more")));
@@ -985,7 +985,7 @@ function openLauncher(anchor) {
     h("div", { class: "launcher-head" }, search,
       h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => { closeFloat(); toolChat(""); } }, icon("chat"), t("Chat in {name}", { name }))),
     grid,
-    h("div", { class: "launcher-foot" }, t("Each one opens a chat on the left where Claude runs that mode of {name}; it asks you for anything it needs.", { name })));
+    h("div", { class: "launcher-foot" }, t("Each one opens a chat on the left where the AI runs that mode of {name}; it asks you for anything it needs.", { name })));
   openFloat(anchor, panel, { minWidth: 560, focus: search, onClose: () => setTimeout(renderWsTools, 0) });
 }
 

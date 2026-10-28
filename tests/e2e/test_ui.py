@@ -334,7 +334,7 @@ def test_settings_dialog_holds_app_preferences(page, server):
     dlg.locator(":text('界面语言')").wait_for()
     assert dlg.locator(".data-path").inner_text() == state(server)["data_path"]
     page.screenshot(path=str(ART / "new-settings-open.png"))
-    dlg.locator(".select").click()
+    dlg.locator(".select[aria-label='界面语言']").click()
     page.wait_for_selector(".float [role=option]:has-text('Deutsch')")
     page.keyboard.press("Escape")                                    # closes the dropdown first
     page.wait_for_selector(".float", state="detached")
@@ -349,7 +349,7 @@ def test_settings_dialog_holds_app_preferences(page, server):
     # a picked language waits for "Done": no reload on pick, Escape drops it
     page.evaluate("window.__noReload = true")
     page.click("#settings-btn")
-    dlg.locator(".select").click()
+    dlg.locator(".select[aria-label='界面语言']").click()
     page.click(".float [role=option]:has-text('Deutsch')")
     page.wait_for_timeout(400)
     assert dlg.is_visible() and page.evaluate("window.__noReload") is True
@@ -358,7 +358,7 @@ def test_settings_dialog_holds_app_preferences(page, server):
     dlg.wait_for(state="detached")
     assert chosen_lang(server) is None
     page.click("#settings-btn")
-    dlg.locator(".select").click()
+    dlg.locator(".select[aria-label='界面语言']").click()
     page.click(".float [role=option]:has-text('Deutsch')")
     page.click(".modal.settings button:text('完成')")
     page.wait_for_function("() => window.__noReload === undefined")   # the page reloaded
@@ -544,7 +544,7 @@ def test_polish_shows_diff_and_undo_restores(page, server, data_file, fake_claud
     page.fill("#polish-box input", "更简洁")
     page.click("#polish-box button")
     page.wait_for_selector(".msg-user:has-text('QuizLoom')")
-    page.wait_for_selector(".card.diff h3:text('Claude 改了这一条')", timeout=15000)
+    page.wait_for_selector(".card.diff h3:text('AI 改了这一条')", timeout=15000)
     assert "Solo developer (polished)" in page.inner_text(".card.diff")
     page.click(".card.diff button:text('撤销，恢复到改动前')")
     wait_until(lambda: "Solo developer (polished)" not in data_file.read_text(encoding="utf-8"), msg="undo applied")
@@ -588,7 +588,7 @@ def test_mock_interview_predicts_hides_answers_and_follows_up(page, server, data
     assert page.is_visible(f"{q2} .mq-answer") and not page.is_visible(f"{q2} .mq-probe")
     page.click(f"{q2} .mq-answer")
     page.wait_for_selector(".msg-user .msg-action:has-text('回答')")
-    page.wait_for_selector("#active .card.diff h3:text('Claude 没有改动这一条')", timeout=15000)   # the fake one changes nothing
+    page.wait_for_selector("#active .card.diff h3:text('AI 没有改动这一条')", timeout=15000)   # the fake one changes nothing
     page.click("#active .card.diff button:text('知道了')")
     wait_until(lambda: "最难的问题是什么？" in data_file.read_text(encoding="utf-8"), msg="my question saved")
     page.fill(f"{q2} .mq-ans", "把课件切块。")
@@ -793,7 +793,7 @@ def test_translate_button_sends_a_native_rewrite_request(page, server, fake_clau
     add_long_bullet(server, page)
     open_entry(page, "EXP-002")
     page.click(".doc-top .seg button:text('中文')")
-    page.click("#bullet-notes button:has-text('让 Claude 写简体中文版')")
+    page.click("#bullet-notes button:has-text('让 AI 写简体中文版')")
     page.wait_for_selector(".msg-user.is-action .msg-action:text('写另一种语言')")
     wait_until(lambda: len(calls(fake_claude)) == 1, msg="claude called")
     assert "不是逐句翻译" in calls(fake_claude)[0]["stdin"] and "--lang zh" in calls(fake_claude)[0]["stdin"]
@@ -823,7 +823,7 @@ def test_project_folder_pick_sync_and_update(page, server, data_file, fake_claud
     row.wait_for()
     assert row.locator(".ev-name b").inner_text() == "demo"
     wait_until(lambda: str(repo).replace("\\", "/") in data_file.read_text(encoding="utf-8"), msg="path saved")
-    page.wait_for_selector("#evidence .ev-chip:text('Claude 还没读过')")
+    page.wait_for_selector("#evidence .ev-chip:text('AI 还没读过')")
     page.click("#evidence .sync-bar button:text('标记为已同步')")
     page.wait_for_selector("#evidence .ev-chip.ok:text('已同步')")
 
@@ -835,7 +835,7 @@ def test_project_folder_pick_sync_and_update(page, server, data_file, fake_claud
     page.wait_for_selector(".entry[data-id='EXP-002'] .e-dot")
     page.click("#evidence .ev-more")
     assert "feat: evaluation harness" in page.inner_text("#evidence .change-detail")
-    page.click("#evidence .sync-bar button:has-text('让 Claude 按新进展更新')")
+    page.click("#evidence .sync-bar button:has-text('让 AI 按新进展更新')")
     page.wait_for_selector(".msg-action:text('按项目更新')")
     page.wait_for_selector(".card.diff", timeout=15000)
     page.wait_for_selector(".entry[data-id='EXP-002'] .e-dot", state="detached", timeout=8000)   # read, so in sync again
@@ -1138,7 +1138,7 @@ def test_screenshots_of_new_parts(page, server, fake_claude, monkeypatch, tmp_pa
     open_entry(page, "EXP-002")
     open_facts(page)
     page.click("#evidence button:has-text('选择项目文件夹')")
-    page.wait_for_selector("#evidence .ev-chip:text('Claude 还没读过')")
+    page.wait_for_selector("#evidence .ev-chip:text('AI 还没读过')")
     page.wait_for_selector("#bullets .line-chip.long", timeout=40000)
     page.screenshot(path=str(ART / f"new-entry-{scheme}.png"))
     page.locator("#evidence").scroll_into_view_if_needed()
@@ -2303,7 +2303,7 @@ def test_the_plan_is_one_document_with_versions(page_all, server, data_file):
     plan = lambda: server.req("GET", "/api/plan")[1]
     pg.keyboard.press("Control+4")
     pg.wait_for_selector("#planspace .plan-empty")
-    assert pg.inner_text("#planspace").strip() == "有什么焦虑，就跟 Claude 说：它会帮你在这里理清。"   # one line, no template
+    assert pg.inner_text("#planspace").strip() == "有什么焦虑，就跟 AI 说：它会帮你在这里理清。"   # one line, no template
     assert "跟 Claude 说说你在担心什么" in pg.inner_text("#chat .chat-welcome")
     assert pg.locator("#chat .chat-welcome .suggest").count() == 0
     assert "你的计划" in pg.inner_text("#chat-context")

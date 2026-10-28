@@ -30,7 +30,7 @@ function listenPlan(es) {
 }
 
 const planWhen = (iso) => String(iso || "").slice(0, 16).replace("T", " ");
-const planBy = (v) => ({ claude: "Claude", outside: t("another editor") }[v.by] || t("you"));
+const planBy = (v) => ({ claude: t("AI"), outside: t("another editor") }[v.by] || t("you"));
 const planLine = () => (P.view ? t("version {n} of your plan", { n: P.view.n }) : P.editing ? t("your plan, being edited") : t("your plan"));
 
 function paintPlan() {
@@ -42,7 +42,7 @@ function paintPlan() {
   let main;
   if (P.editing) main = planEditor();
   else if (P.view) main = planVersionView();
-  else if (!P.data.text.trim()) main = h("div", { class: "plan-empty" }, h("p", null, t("Whatever worries you, tell Claude: it will help you sort it out here.")));
+  else if (!P.data.text.trim()) main = h("div", { class: "plan-empty" }, h("p", null, t("Whatever worries you, tell the AI: it will help you sort it out here.")));
   else main = planDoc(P.data.text, true);
   // the same page drawn again (a box ticked, Claude's change) keeps where the user was reading
   const key = P.editing ? "edit" : P.view ? `v${P.view.n}:${P.compare}` : "now";
@@ -115,7 +115,7 @@ async function savePlanEdit(force = false) {
   } catch (e) {
     if (e.status !== 409) { toast(e.message); return; }
     const ok = await modal({ title: t("The plan changed while you were editing it"),
-      message: t("Claude or another editor changed it after you started. Save yours anyway? What it said now stays in the versions."),
+      message: t("The AI or another editor changed it after you started. Save yours anyway? What it said now stays in the versions."),
       ok: t("Save mine") });
     if (ok) savePlanEdit(true);
     return;
@@ -152,7 +152,7 @@ function paintPlanEditBar() {
     h("button", { class: "btn", onclick: cancelPlanEdit }, t("Cancel")),
     h("button", { class: "btn primary", id: "plan-save", title: "Ctrl+S", onclick: () => savePlanEdit() }, t("Save"))].filter(Boolean));
 }
-const planStale = () => h("div", { class: "pe-stale" }, icon("alert"), t("Claude changed the plan while you were editing. Saving keeps what it wrote in the versions."));
+const planStale = () => h("div", { class: "pe-stale" }, icon("alert"), t("The AI changed the plan while you were editing. Saving keeps what it wrote in the versions."));
 
 // ---------------------------------------------------------------- versions
 function planVersions() {
@@ -204,8 +204,8 @@ async function restorePlan(n) {
 // the empty chat in this workspace: no suggestions to pick from, the user says it in their own words
 function planWelcome() {
   return h("div", { class: "chat-welcome" },
-    h("div", { class: "t" }, t("Tell Claude what's on your mind")),
-    h("div", null, !ui.chat.available ? t("The claude command was not found. Install Claude Code and sign in first.")
+    h("div", { class: "t" }, t("Tell {agent} what's on your mind", { agent: agentOf().short })),
+    h("div", null, !ui.chat.available ? missingAgentText()
       : t("It helps you see where you stand, the easiest way forward and how you're doing, and writes what you work out into the plan on the right, so it lasts beyond this chat.")));
 }
 

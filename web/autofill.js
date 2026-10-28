@@ -120,7 +120,7 @@ async function chooseTarget(fields) {
 
 // a chat the server started for this workspace: show it on the left
 async function fillChat(url, body = {}) {
-  if (!ui.chat.available) { toast(t("The claude command was not found")); return null; }
+  if (!ui.chat.available) { toast(missingAgentText()); return null; }
   let r;
   try { r = await api("POST", url, { ...chatSettings(), ...body }); }
   catch (e) { toast(e.message); return null; }
@@ -148,7 +148,7 @@ async function showBrowser() {
 async function checkSite() {
   await flushTyping();
   const v = fillView();
-  if (v && !v.route.recorded && !ui.chat.available) { toast(t("The claude command was not found")); return; }
+  if (v && !v.route.recorded && !ui.chat.available) { toast(missingAgentText()); return; }
   if (v && v.route.recorded) {
     try { await api("POST", `/api/autofill/${encodeURIComponent(F.site)}/check`, {}); }
     catch (e) { toast(e.message, { ms: 7000 }); }
@@ -284,26 +284,26 @@ function syncCard(v) {
       h("h2", null, t("Read your {site} profile once", { site: site.name })),
       h("ol", { class: "fill-steps" },
         h("li", null, t("Sign in to {site} once in Resume Studio's browser (“Open {site}” above).", { site: site.name })),
-        h("li", null, t("Claude reads your profile there and records how to read it: which pages, and where each field is.")),
-        h("li", null, t("From then on “Check for updates” reads {site} by itself in seconds, without Claude, and you edit the copy here.", { site: site.name }))),
+        h("li", null, t("The AI reads your profile there and records how to read it: which pages, and where each field is.")),
+        h("li", null, t("From then on “Check for updates” reads {site} by itself in seconds, without AI, and you edit the copy here.", { site: site.name }))),
       h("p", { class: "muted" }, t("Nothing changes on {site} until you press “Make these changes”.", { site: site.name })),
       h("div", { class: "row" },
         h("button", { class: "btn primary", id: "fill-check", disabled: !ui.chat.available || reading, onclick: checkSite }, icon("sparkle"),
-          reading ? t("Claude is reading…") : t("Read {site}", { site: site.name }))));
+          reading ? t("The AI is reading…") : t("Read {site}", { site: site.name }))));
   }
   const c = v.checking;
   const lc = v.last_check || {};
   const r = v.route;
   const status = c ? h("span", { class: "fs-status" }, h("span", { class: "spin" }),
     c.pages ? t("Reading {site}: page {n} of {total}…", { site: site.name, n: Math.max(1, c.page), total: c.pages }) : t("Reading {site}…", { site: site.name }))
-    : reading ? h("span", { class: "fs-status" }, h("span", { class: "spin" }), t("Claude is reading…"))
+    : reading ? h("span", { class: "fs-status" }, h("span", { class: "spin" }), t("The AI is reading…"))
     : lc.error ? h("span", { class: "fs-status bad" }, icon("alert"), lc.signed_out ? t("{site} wants you to sign in.", { site: site.name }) : t("The last check didn't finish."))
     : h("span", { class: "fs-status" }, icon("check"),
-      (lc.mode === "claude" || !lc.at) && !lc.synced ? t("Claude read {site}", { site: site.name })   // no check yet: the copy is Claude's first read
+      (lc.mode === "claude" || !lc.at) && !lc.synced ? t("The AI read {site}", { site: site.name })   // no check yet: the copy is Claude's first read
         : lc.synced ? t("{n} change from {site} came into the copy", { n: lc.synced, site: site.name }, "{n} changes from {site} came into the copy")
         : t("Nothing new on {site}", { site: site.name }));
   const menu = (e) => openMenu(e.currentTarget, [
-    { label: t("Let Claude read {site} again and record the route anew", { site: site.name }), icon: "sparkle", onClick: learnRoute, disabled: !ui.chat.available || reading },
+    { label: t("Let AI read {site} again and record the route anew", { site: site.name }), icon: "sparkle", onClick: learnRoute, disabled: !ui.chat.available || reading },
     { label: t("Open {site}", { site: site.name }), icon: "external", onClick: openSite },
   ], { align: "end" });
   return h("div", { class: "fill-card fill-sync" },
@@ -317,10 +317,10 @@ function syncCard(v) {
         icon("refresh"), t("Check for updates")),
       h("button", { class: "btn icon ghost", title: t("More"), "aria-label": t("More"), onclick: menu }, icon("more"))),
     h("div", { class: "fsy-route muted" }, r.recorded
-      ? t("Reads {site} by the recorded route ({n} page), without Claude.", { site: site.name, n: r.pages }, "Reads {site} by the recorded route ({n} pages), without Claude.")
-      : t("No read route yet: “Check for updates” lets Claude read {site} and record one.", { site: site.name })),
+      ? t("Reads {site} by the recorded route ({n} page), without AI.", { site: site.name, n: r.pages }, "Reads {site} by the recorded route ({n} pages), without AI.")
+      : t("No read route yet: “Check for updates” lets the AI read {site} and record one.", { site: site.name })),
     r.broken && h("div", { class: "fill-banner warn" }, icon("alert"),
-      h("span", { class: "nb-text" }, t("The route no longer reads {site} ({error}). The site has probably changed; Claude can read it again and record the route anew.", { site: site.name, error: r.broken })),
+      h("span", { class: "nb-text" }, t("The route no longer reads {site} ({error}). The site has probably changed; the AI can read it again and record the route anew.", { site: site.name, error: r.broken })),
       h("button", { class: "btn sm primary", disabled: !ui.chat.available || reading, onclick: learnRoute }, icon("sparkle"), t("Record the route anew"))),
     (lc.notes || []).map((n) => h("div", { class: "fill-banner" }, icon("alert"), h("span", { class: "nb-text" },
       n.kind === "removed_there_changed_here"
@@ -587,7 +587,7 @@ async function moveSite(s, index) {
 
 async function removeSite(s) {
   const ok = await modal({ title: t("Remove {site} from the list?", { site: s.name }),
-    message: t("Nothing changes on {site} itself. What Claude read there and your ticks stay saved: add the site again to get them back.", { site: s.name }),
+    message: t("Nothing changes on {site} itself. What the AI read there and your ticks stay saved: add the site again to get them back.", { site: s.name }),
     ok: t("Remove"), danger: true });
   if (!ok) return;
   F.gone = s.id;   // its "changed" event may come before this answer: nothing asks for it meanwhile
@@ -618,7 +618,7 @@ async function fillSitesChanged(pick = null) {
 function noSitesCard() {
   return h("div", { class: "fill-card fill-start" },
     h("h2", null, t("Which sites do you keep a profile on?")),
-    h("p", { class: "muted" }, t("Add the sites whose profile should say what your resume says. Resume Studio knows a few; any other works too: Claude finds its way around the first time it reads it.")),
+    h("p", { class: "muted" }, t("Add the sites whose profile should say what your resume says. Resume Studio knows a few; any other works too: the AI finds its way around the first time it reads it.")),
     h("div", { class: "row wrap" },
       (F.presets || []).map((p) => h("button", { class: "btn", onclick: () => addSite({ preset: p.id }) }, icon("plus"), p.name)),
       h("button", { class: "btn primary", onclick: () => siteDialog(null) }, icon("plus"), t("Another site…"))));
@@ -662,7 +662,7 @@ function siteDialog(s) {
     if (await addSite(body)) close();
   };
   const presetRow = !s && (F.presets || []).some((p) => !p.added) && h("div", { class: "field" },
-    h("label", null, t("Sites Resume Studio knows"), h("span", { class: "hint" }, t("Each comes with notes for Claude about its editor"))),
+    h("label", null, t("Sites Resume Studio knows"), h("span", { class: "hint" }, t("Each comes with notes for the AI about its editor"))),
     h("div", { class: "row wrap" }, F.presets.filter((p) => !p.added).map((p) =>
       h("button", { class: "btn", onclick: async () => { if (await addSite({ preset: p.id })) close(); } }, icon("plus"), p.name))));
   root.replaceChildren(h("div", { class: "modal-back", onmousedown: (e) => { if (e.target === e.currentTarget) close(); } },
@@ -672,14 +672,14 @@ function siteDialog(s) {
       !s && presetRow && h("div", { class: "fd-or" }, t("or any other site")),
       h("div", { class: "field" }, h("label", { for: "site-name" }, t("Name")), name),
       h("div", { class: "field" }, h("label", { for: "site-home" }, t("Address"),
-        h("span", { class: "hint" }, t("The page with your profile, or the site's home page: Claude finds the profile from there"))), home),
+        h("span", { class: "hint" }, t("The page with your profile, or the site's home page: the AI finds the profile from there"))), home),
       ls.length > 1 && h("div", { class: "field" }, h("label", null, t("Resume language"), h("span", { class: "hint" }, t("What the profile usually gets; you can switch it on the page too"))),
         uiSeg(ls.map((l) => ({ value: l, label: langName(l) })), lang || ls[0], (l) => { lang = l; }, { label: t("Resume language") })),
-      h("div", { class: "field" }, h("label", { for: "site-notes" }, t("Notes for Claude"),
-        h("span", { class: "hint" }, t("Optional: where things are on this site, what to watch out for. Claude reads them every time"))), notes),
+      h("div", { class: "field" }, h("label", { for: "site-notes" }, t("Notes for the AI"),
+        h("span", { class: "hint" }, t("Optional: where things are on this site, what to watch out for. The AI reads them every time"))), notes),
       s && !s.preset && h("p", { class: "muted" }, s.learned
-        ? t("Claude learned what this site has when it last read it: {list}.", { list: s.sections.map((x) => t(SECTION_NAMES[x] || x)).join(", ") })
-        : t("Claude works out which sections and limits this site has the first time it reads it.")),
+        ? t("The AI learned what this site has when it last read it: {list}.", { list: s.sections.map((x) => t(SECTION_NAMES[x] || x)).join(", ") })
+        : t("The AI works out which sections and limits this site has the first time it reads it.")),
       h("div", { class: "acts" },
         s && h("button", { class: "btn danger-soft", onclick: () => { close(); removeSite(s); } }, icon("trash"), t("Remove from the list")),
         h("span", { class: "spacer" }),
@@ -750,7 +750,7 @@ function paintFillFoot() {
   const nc = Object.keys(v.conflicts).length;
   const applying = (v.applying || []).length > 0;
   el.replaceChildren(...[
-    h("span", { class: "ff-sum" }, applying ? t("Claude is making the changes in the browser; follow along in the chat.")
+    h("span", { class: "ff-sum" }, applying ? t("The AI is making the changes in the browser; follow along in the chat.")
       : nc ? t("Settle the {n} conflict first.", { n: nc }, "Settle the {n} conflicts first.")
       : over ? t("Some text is over {site}'s limit.", { site: site.name })
       : !v.pending.length ? t("Your copy says what {site} says.", { site: site.name })
@@ -791,9 +791,9 @@ function fillWelcome() {
     t("I passed the first interview at {company}; the second is next Tuesday", { company: company || "Xinghe" }),
   ];
   return h("div", { class: "chat-welcome" },
-    h("div", { class: "t" }, onPlatform ? t("Claude, with Resume Studio's browser") : t("Claude, with your applications")),
-    h("div", null, !ui.chat.available ? t("The claude command was not found. Install Claude Code and sign in first.")
-      : onPlatform ? t("In these chats Claude can look at and work in the browser on the right: reading a profile, changing one thing, checking a page. It changes a site only when you ask.")
-      : t("Tell Claude what happened and it updates the tables; ask about a company and it finds out, with sources. It can also work in Resume Studio's browser.")),
+    h("div", { class: "t" }, onPlatform ? t("{agent}, with Resume Studio's browser", { agent: agentOf().short }) : t("{agent}, with your applications", { agent: agentOf().short })),
+    h("div", null, !ui.chat.available ? missingAgentText()
+      : onPlatform ? t("In these chats {agent} can look at and work in the browser on the right: reading a profile, changing one thing, checking a page. It changes a site only when you ask.", { agent: agentOf().short })
+      : t("Tell {agent} what happened and it updates the tables; ask about a company and it finds out, with sources. It can also work in Resume Studio's browser.", { agent: agentOf().short })),
     ui.chat.available && h("div", { class: "suggest" }, suggest.map((s) => h("button", { onclick: () => sendChat(s) }, s))));
 }

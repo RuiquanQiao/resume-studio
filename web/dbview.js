@@ -975,7 +975,7 @@ function dbvMapEl(o, rows, repaint) {
   const side = h("div", { class: "dbv-mapside" },
     off.remote.size > 0 && h("div", { class: "dbv-offgroup" }, h("b", null, t("Remote")), [...off.remote].map(([a, s]) => offRow(a, s, "remote"))),
     off.unknown.size > 0 && h("div", { class: "dbv-offgroup" }, h("b", null, t("Not found on the map")),
-      h("p", { class: "muted" }, t("Place each one yourself, or ask Claude to.")), [...off.unknown].map(([a, s]) => offRow(a, s, "unknown"))),
+      h("p", { class: "muted" }, t("Place each one yourself, or ask the AI to.")), [...off.unknown].map(([a, s]) => offRow(a, s, "unknown"))),
     none.length > 0 && h("div", { class: "dbv-offgroup" }, h("b", null, t("No place yet ({n})", { n: none.length })),
       h("div", { class: "dbv-offrows open" }, none.map((r) => dbvRowButton(o, r)))));
   const hasSide = off.remote.size || off.unknown.size || none.length;

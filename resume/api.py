@@ -49,7 +49,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         try:
             return studio.update_item(kind, b.get("id"), b.get("data"), b.get("base"))
         except Conflict as c:
-            raise HttpError(409, t("This item was just changed elsewhere (Claude or another window)"), {"current": c.current})
+            raise HttpError(409, t("This item was just changed elsewhere (the AI or another window)"), {"current": c.current})
         except (KeyError, ValueError) as e:
             raise HttpError(400, str(e))
 

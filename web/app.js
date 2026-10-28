@@ -419,7 +419,7 @@ function openSubsetMenu() {
       hint: (versionStatus() || {}).same_as ? t("Same as v{n}", { n: versionStatus().same_as }) : "", onClick: () => commitVersion() },
     job && { label: t("Version history"), icon: "history", onClick: () => select("versions", ui.subsetId) },
     "sep",
-    { header: job ? t("Ask Claude about this subset") : t("Ask Claude about all entries") },
+    { header: job ? t("Ask AI about this subset") : t("Ask AI about all entries") },
     ...(bilingual ? langs().map((l) => ({ label: t("Fill in the {lang} version", { lang: langName(l) }),
       hint: lacking(l) ? t("{n} entry lacks it", { n: lacking(l) }, "{n} entries lack it") : t("All done"), icon: "translate", disabled: !ui.chat.available || !lacking(l),
       onClick: () => aiBatch("batch_translate", { target: l }) })) : []),
@@ -674,7 +674,7 @@ function paintEditor({ flash = false, keepScroll = true } = {}) {
 
 function conflictBanner(ed) {
   return h("div", { class: "banner warn" }, icon("alert"),
-    h("span", { class: "nb-text" }, t("Claude or another window just changed this item, and you have unsaved edits here.")),
+    h("span", { class: "nb-text" }, t("The AI or another window just changed this item, and you have unsaved edits here.")),
     h("button", { class: "btn sm", onclick: () => { resetEd(ed); paintItem(ed, { flash: true }); } }, t("Load the latest")),
     h("button", { class: "btn sm danger-soft", onclick: () => saveItem(ed, true) }, t("Keep mine")));
 }
@@ -727,7 +727,7 @@ function paintDocument({ keepScroll = true, flash = false } = {}) {
     h("div", null, t("Put every real experience here; pick for each resume later.")),
     h("div", { class: "acts" },
       h("button", { class: "btn primary sm", onclick: () => newEntry((sections().find((s) => s.id === "projects") || sections()[0] || {}).id || "projects") }, icon("plus"), t("Add entry")),
-      h("button", { class: "btn sm", onclick: () => startChatWith(t("Please import the experience from my old resume into resume.yaml. The old resume is at: ")) }, icon("sparkle"), t("Let Claude import")))));
+      h("button", { class: "btn sm", onclick: () => startChatWith(t("Please import the experience from my old resume into resume.yaml. The old resume is at: ")) }, icon("sparkle"), t("Let AI import")))));
   mid.replaceChildren(wrap);
   ui.docSig = docSig();
   if (anchor) restoreAnchor(anchor); else mid.scrollTop = 0;
@@ -990,9 +990,9 @@ function entryForm(e = ui.draft, { out = false } = {}) {
   parts.push(h("details", { class: "fact-fold", open: ui.factOpen.has(e.id) || null,
     ontoggle: (x) => { if (x.target.open) ui.factOpen.add(e.id); else ui.factOpen.delete(e.id); } },
   h("summary", null, icon("chevRight"), h("span", { class: "ff-t" }, t("Fact layer and project folders")),
-    h("span", { class: "ff-sub" }, t("Only Claude sees this; it never appears on the resume")), h("span", { class: "ff-flag" }, factFlag(e.id))),
+    h("span", { class: "ff-sub" }, t("Only the AI sees this; it never appears on the resume")), h("span", { class: "ff-flag" }, factFlag(e.id))),
   h("div", { class: "card fact" }, h("div", { class: "card-b" },
-    h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, t("Write what really happened: what you did, what AI wrote, where the numbers come from, the details you wouldn't put on a resume. When Claude polishes, it stays within what this supports.")),
+    h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, t("Write what really happened: what you did, what AI wrote, where the numbers come from, the details you wouldn't put on a resume. When the AI polishes, it stays within what this supports.")),
     tfield(t("What really happened / raw notes"), e, "notes", { multiline: true, rows: 6 }),
     evidenceEditor(e)))));
   return parts;
@@ -1051,14 +1051,14 @@ function mockBody(e) {
   };
   box.append(h("div", { class: "mock-bar" },
     h("button", { class: "btn sm primary mock-run", disabled: !ui.chat.available,
-      title: ui.chat.available ? t("Claude reads this entry's bullets, notes and project folders") : t("The claude command was not found"),
+      title: ui.chat.available ? t("The AI reads this entry's bullets, notes and project folders") : missingAgentText(),
       onclick: () => aiEntry("mock", e.id, { text: instr.value, lang: L }) }, icon("sparkle"), list.length ? t("Predict more questions") : t("Predict the questions")),
     instr,
     h("button", { class: "btn sm ghost mock-hide" + (hidden ? " on" : ""), "aria-pressed": String(hidden),
       title: hidden ? t("Answers are hidden: answer out loud first, then open each one") : t("Hide the answers to practise"),
       onclick: () => { store("mockHidden", hidden ? null : "1"); ui.mockSeen.clear(); redraw(); } },
     icon(hidden ? "eyeOff" : "eye"), hidden ? t("Show all answers") : t("Hide answers"))));
-  if (!list.length) box.append(h("p", { class: "muted mock-empty" }, t("No questions yet. Claude reads this entry's bullets, notes and project folders and predicts what an interviewer will ask, with answers built only from those facts; where they run out, it leaves a 【to fill in】 for you.")));
+  if (!list.length) box.append(h("p", { class: "muted mock-empty" }, t("No questions yet. The AI reads this entry's bullets, notes and project folders and predicts what an interviewer will ask, with answers built only from those facts; where they run out, it leaves a 【to fill in】 for you.")));
   box.append(h("div", { class: "mock-list" }, list.map((q, i) => mockItem(e, q, [i], hidden, redraw, addQ))),
     h("div", { class: "row" }, h("button", { class: "btn sm mock-add", onclick: () => addQ(null) }, icon("plus"), t("Add a question"))));
   return box;
@@ -1080,9 +1080,9 @@ function mockItem(e, q, path, hidden, redraw, addQ) {
     touch(); redraw();
   };
   // follow up once there is an answer; before that, Claude can answer it (shown as the user types)
-  const probe = h("button", { class: "btn sm ghost mq-probe", title: t("Claude asks what the interviewer would ask after this answer"),
+  const probe = h("button", { class: "btn sm ghost mq-probe", title: t("The AI asks what the interviewer would ask after this answer"),
     onclick: () => aiEntry("probe", e.id, { path, lang: L }) }, icon("sparkle"), t("Follow up"));
-  const ans = h("button", { class: "btn sm ghost mq-answer", title: t("Claude answers it from this entry's facts"),
+  const ans = h("button", { class: "btn sm ghost mq-answer", title: t("The AI answers it from this entry's facts"),
     onclick: () => aiEntry("answer", e.id, { path, lang: L }) }, icon("sparkle"), t("Answer it"));
   const sync = () => {
     probe.hidden = !ui.chat.available || !(q.a || "").trim();
@@ -1113,7 +1113,7 @@ const otherLang = (l) => langs().find((x) => x !== l) || l;
 function bulletsCard(e) {
   const L = ui.editLang;
   const aiBtn = h("button", { class: "btn sm ghost ai-btn", "aria-haspopup": "menu", disabled: !ui.chat.available,
-    title: ui.chat.available ? "" : t("The claude command was not found"), onclick: (ev) => openAiMenu(ev.currentTarget, e) }, icon("sparkle"), t("Ask Claude…"), icon("chev"));
+    title: ui.chat.available ? "" : missingAgentText(), onclick: (ev) => openAiMenu(ev.currentTarget, e) }, icon("sparkle"), t("Ask AI…"), icon("chev"));
   return card(t("Bullets"), langs().length > 1 ? t("Editing {lang}", { lang: langName(L) }) : null,
     [h("div", { class: "bullet-notes", "data-aid": "bullet-notes" }, bulletNotes(e)), bulletsEditor(e)], { actions: aiBtn, cls: "bullets-card" });
 }
@@ -1124,14 +1124,14 @@ function bulletNotes(e) {
   const out = [];
   if (langs().length > 1 && missingIn(e, L)) {
     out.push(noteBar("translate", t("Some text has no {lang} yet", { lang: langName(L) }),
-      ui.chat.available && h("button", { class: "btn sm", onclick: () => aiEntry("translate", e.id, { target: L }) }, icon("sparkle"), t("Let Claude write the {lang} version", { lang: langName(L) }))));
+      ui.chat.available && h("button", { class: "btn sm", onclick: () => aiEntry("translate", e.id, { target: L }) }, icon("sparkle"), t("Let AI write the {lang} version", { lang: langName(L) }))));
   }
   const m = measuredFor(e.id, L);
   // only bullets written in this language: an untranslated one is flagged as missing instead
   const long = m ? Object.entries(m).filter(([i, x]) => x.n > 1 && bulletState(e.bullets[i], L) === "ok").length : 0;
   if (long) {
     out.push(noteBar("compress", t("{n} bullet runs past one line", { n: long }, "{n} bullets run past one line"),
-      ui.chat.available && h("button", { class: "btn sm", onclick: () => aiEntry("fit", e.id, { lang: L }) }, icon("sparkle"), t("Let Claude fit them on one line")), "warn"));
+      ui.chat.available && h("button", { class: "btn sm", onclick: () => aiEntry("fit", e.id, { lang: L }) }, icon("sparkle"), t("Let AI fit them on one line")), "warn"));
   } else if (m === null && e.bullets.some((b) => getT(b, L))) {
     out.push(h("div", { class: "note-line" }, icon("alert"), isAll() ? t("This entry's section is hidden, so it isn't in the preview and its lines can't be measured.") : t("This entry isn't ticked in “{job}”, so it isn't in the preview and its lines can't be measured.", { job: subsetName(subset()) })));
   }
@@ -1187,8 +1187,8 @@ function bulletsEditor(e) {
   if (!e.bullets.length) {
     const hasEvidence = (e.evidence || []).length;
     box.append(h("p", { class: "muted", style: "margin:0 0 8px" }, hasEvidence
-      ? t("No bullets yet. A project folder is linked, so Claude can read the project first and draft them.")
-      : t("No bullets yet. Write them yourself, or fill in the fact layer below and link a project folder, then let Claude draft them.")));
+      ? t("No bullets yet. A project folder is linked, so the AI can read the project first and draft them.")
+      : t("No bullets yet. Write them yourself, or fill in the fact layer below and link a project folder, then let the AI draft them.")));
   }
   const instr = h("input", { placeholder: t("Extra instructions (optional), e.g. stress the architecture; the second bullet overclaims"), spellcheck: "false",
     onkeydown: (ev) => { if (ev.key === "Enter" && !ev.isComposing) aiEntry("polish", e.id, { text: instr.value, lang: L }); } });
@@ -1267,8 +1267,8 @@ function evidenceRow(e, p, i, row) {
   const kind = row && row.kind;
   const chip = {
     checking: h("span", { class: "ev-chip" }, t("Checking…")),
-    same: h("span", { class: "ev-chip ok", title: row && row.synced_at ? t("Claude last read it {when}", { when: relTime(row.synced_at) }) : "" }, icon("check"), t("In sync")),
-    new: h("span", { class: "ev-chip", title: t("Claude hasn't read it since it was added") }, t("Not read by Claude yet")),
+    same: h("span", { class: "ev-chip ok", title: row && row.synced_at ? t("The AI last read it {when}", { when: relTime(row.synced_at) }) : "" }, icon("check"), t("In sync")),
+    new: h("span", { class: "ev-chip", title: t("The AI hasn't read it since it was added") }, t("Not read by the AI yet")),
     changed: h("span", { class: "ev-chip new" }, icon("refresh"), changeSummary(row && row.changes)),
     missing: h("span", { class: "ev-chip bad" }, icon("alert"), t("This path can't be found")),
   }[st];
@@ -1307,20 +1307,20 @@ function evidenceEditor(e) {
   const rows = Object.fromEntries((st.paths || []).map((r) => [r.path, r]));
   const box = h("div", { class: "evidence", "data-aid": "evidence" });
   box.append(h("div", { class: "ev-head" }, h("span", { class: "ev-title" }, t("Project folders and evidence")),
-    h("span", { class: "hint" }, t("Claude reads the code, README and commit history in them"))));
+    h("span", { class: "hint" }, t("The AI reads the code, README and commit history in them"))));
   const pending = e.evidence.map((p) => rows[p]).filter((r) => r && (r.state === "changed" || r.state === "new"));
   if (pending.length) {
     const changed = pending.some((r) => r.state === "changed");
     const empty = !e.bullets.some((b) => getT(b, ui.editLang));
     box.append(h("div", { class: "sync-bar" + (changed ? " changed" : "") }, icon(changed ? "refresh" : "folderOpen"),
-      h("span", { class: "nb-text" }, changed ? t("The project has new progress") : t("Claude hasn't read this project yet")),
+      h("span", { class: "nb-text" }, changed ? t("The project has new progress") : t("The AI hasn't read this project yet")),
       ui.chat.available && h("button", { class: "btn sm primary", onclick: () => aiEntry(empty && !changed ? "polish" : "sync", e.id, { lang: ui.editLang }) }, icon("sparkle"),
-        changed ? t("Let Claude update from the progress") : empty ? t("Let Claude read the project and write bullets") : t("Let Claude read it")),
-      h("button", { class: "btn sm ghost", title: t("The bullets already reflect the project, so Claude needn't read it; you'll be told when it changes again"), onclick: () => markSynced(e.id) }, t("Mark as in sync"))));
+        changed ? t("Let AI update from the progress") : empty ? t("Let AI read the project and write bullets") : t("Let AI read it")),
+      h("button", { class: "btn sm ghost", title: t("The bullets already reflect the project, so the AI needn't read it; you'll be told when it changes again"), onclick: () => markSynced(e.id) }, t("Mark as in sync"))));
   }
   const list = h("div", { class: "ev-list" });
   e.evidence.forEach((p, i) => list.append(evidenceRow(e, p, i, rows[p])));
-  if (!e.evidence.length) list.append(h("div", { class: "ev-empty" }, t("No project linked yet. Choose a folder and Claude reads it when writing bullets; when the project changes later, this place and the library on the left will tell you.")));
+  if (!e.evidence.length) list.append(h("div", { class: "ev-empty" }, t("No project linked yet. Choose a folder and the AI reads it when writing bullets; when the project changes later, this place and the library on the left will tell you.")));
   box.append(list, h("div", { class: "ev-actions" },
     h("button", { class: "btn sm", onclick: () => addEvidence(e, "folder") }, icon("folder"), t("Choose project folder")),
     h("button", { class: "btn sm ghost", onclick: () => addEvidence(e, "files") }, icon("file"), t("Add files")),
@@ -1418,7 +1418,7 @@ function profileForm(p = ui.draft) {
     card(t("Contacts"), job ? t("Shown in order under the name; ticked = shown in “{job}”", { job: subsetName(v) }) : t("Shown in order under the name; switch to a subset to hide some of them"), rows),
     h("details", { class: "fact-fold", open: ui.factOpen.has("profile") || null,
       ontoggle: (x) => { if (x.target.open) ui.factOpen.add("profile"); else ui.factOpen.delete("profile"); } },
-    h("summary", null, icon("chevRight"), h("span", { class: "ff-t" }, t("Fact layer")), h("span", { class: "ff-sub" }, t("Only Claude sees this"))),
+    h("summary", null, icon("chevRight"), h("span", { class: "ff-t" }, t("Fact layer")), h("span", { class: "ff-sub" }, t("Only the AI sees this"))),
     h("div", { class: "card fact" }, h("div", { class: "card-b" }, tfield(t("Job search background, constraints, preferences"), p, "notes", { multiline: true, rows: 5 })))),
   ];
 }
@@ -1545,7 +1545,7 @@ async function changeDataFile(mode) {
   try { await applyUiLang(); } catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
   if (ui.chat.running) {
     closeSettings();
-    if (!(await modal({ title: t("Switch data file?"), message: t("Claude is still working in the chat. Switching files stops it."), ok: t("Switch"), danger: true }))) return;
+    if (!(await modal({ title: t("Switch data file?"), message: t("The AI is still working in the chat. Switching files stops it."), ok: t("Switch"), danger: true }))) return;
   }
   await saveDraft();
   let r;
@@ -1626,10 +1626,10 @@ function sectionsForm() {
         h("input", { value: st.export_dir || "exports", spellcheck: "false", onchange: (ev) => { st.export_dir = ev.target.value.trim() || "exports"; saveSettings(); } })),
     ]),
     card(t("My project folders"), t("Where your own projects live, e.g. E:/Forge"), [
-      h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, t("Claude will know your projects are here: ask it in the chat which ones are worth a place on your resume; picking a folder for an entry also starts here.")),
+      h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, t("The AI will know your projects are here: ask it in the chat which ones are worth a place on your resume; picking a folder for an entry also starts here.")),
       rootRows,
       h("div", { class: "ev-actions" }, h("button", { class: "btn sm", onclick: addRoot }, icon("folder"), t("Choose folder")),
-        roots.length && ui.chat.available ? h("button", { class: "btn sm ghost", onclick: () => sendChat(t("Look at my project folders ({folders}) and pick the projects most worth putting on my resume, with your reasons. Don't change resume.yaml yet; once I confirm, add them one at a time.", { folders: roots.join(", ") })) }, icon("sparkle"), t("Let Claude pick projects")) : null),
+        roots.length && ui.chat.available ? h("button", { class: "btn sm ghost", onclick: () => sendChat(t("Look at my project folders ({folders}) and pick the projects most worth putting on my resume, with your reasons. Don't change resume.yaml yet; once I confirm, add them one at a time.", { folders: roots.join(", ") })) }, icon("sparkle"), t("Let AI pick projects")) : null),
     ]),
   ];
 }
@@ -1906,7 +1906,7 @@ function aiDiff(id) {
   };
   const names = { title: t("Name"), subtitle: t("Subtitle"), bullets: t("Bullets"), tech: t("Tech"), location: t("Location"), start: t("Start"), end: t("End"), date: t("Date"), link: t("Link"), notes: t("Fact layer"), evidence: t("Evidence paths"), interview: t("Mock interview") };
   const close = () => { delete ui.ai[id]; paintItem(edFor("entry", id)); };
-  return card(keys.length ? t("Claude changed this entry") : t("Claude didn't change this entry"), `${a.action in AI_LABELS ? t(AI_LABELS[a.action]) : ""} · ${t("the chat explains why")}`, [
+  return card(keys.length ? t("The AI changed this entry") : t("The AI didn't change this entry"), `${a.action in AI_LABELS ? t(AI_LABELS[a.action]) : ""} · ${t("the chat explains why")}`, [
     keys.map((k) => [h("div", { class: "k" }, names[k] || k), h("div", { class: "before" }, fmt(before[k], k)), h("div", { class: "after" }, fmt(after[k], k))]),
     h("div", { class: "row", style: "margin-top:12px" },
       h("button", { class: "btn sm", onclick: close }, icon("check"), keys.length ? t("Keep") : t("Got it")),
@@ -1957,7 +1957,7 @@ function finishAi(chatId) {
       const before = snaps[e.id];
       if (before && JSON.stringify(before) !== JSON.stringify(e)) { ui.ai[e.id] = { chat: chatId, action, snapshot: before, done: true }; touched.push(e.id); }
     }
-    if (!touched.length) { toast(t("Claude didn't change any entry this time; see the chat")); return; }
+    if (!touched.length) { toast(t("The AI didn't change any entry this time; see the chat")); return; }
   }
   if (!touched.length) return;
   const open = ui.sel.kind === "entry" && touched.includes(ui.sel.id);
@@ -1968,7 +1968,7 @@ function finishAi(chatId) {
   const first = touched.find((id) => id !== ui.sel.id) || touched[0];
   if (!open || touched.length > 1) {
     const name = display((entryById(first) || {}).title) || entryLabel(entryById(first));
-    toast(touched.length > 1 ? t("Claude changed {n} entries; each card shows what changed, with undo", { n: touched.length }) : t("Claude finished “{name}”", { name }),
+    toast(touched.length > 1 ? t("The AI changed {n} entries; each card shows what changed, with undo", { n: touched.length }) : t("The AI finished “{name}”", { name }),
       { ms: 6000, action: { label: t("View"), fn: () => select("entry", first) } });
   }
 }
@@ -2226,7 +2226,7 @@ function renderIssues() {
       { header: t("{lang} bullets that run past one line", { lang: langName(lang) }) },
       ...long.map((b) => { const e = entryById(b.id); return { label: t("{name} · bullet {n}", { name: display(e.title) || entryLabel(e), n: b.index + 1 }), hint: `${t("{n} line", { n: b.n }, "{n} lines")} · ${Math.round(b.fill * 100)}%`, icon: "compress", onClick: () => jumpToBullet(b.id, b.index, lang) }; }),
       "sep",
-      { label: t("Let Claude fit them all on one line"), icon: "sparkle", disabled: !ui.chat.available, onClick: () => aiBatch("batch_fit") },
+      { label: t("Let AI fit them all on one line"), icon: "sparkle", disabled: !ui.chat.available, onClick: () => aiBatch("batch_fit") },
     ], { minWidth: 280 }) }, icon("compress"), t("{n} bullet runs past one line", { n: long.length }, "{n} bullets run past one line")));
   }
   if (missing.length && langs().length > 1) {
@@ -2234,7 +2234,7 @@ function renderIssues() {
       { header: t("These entries lack {lang} and show another language for now", { lang: langName(lang) }) },
       ...missing.map((m) => { const e = entryById(m.id); return { label: display(e.title) || entryLabel(e), hint: m.bullets && m.bullets.length ? t("{n} bullet", { n: m.bullets.length }, "{n} bullets") : t("title etc."), icon: "translate", onClick: () => { ui.editLang = lang; select("entry", m.id); } }; }),
       "sep",
-      { label: t("Let Claude fill in the {lang} version", { lang: langName(lang) }), icon: "sparkle", disabled: !ui.chat.available, onClick: () => aiBatch("batch_translate", { target: lang }) },
+      { label: t("Let AI fill in the {lang} version", { lang: langName(lang) }), icon: "sparkle", disabled: !ui.chat.available, onClick: () => aiBatch("batch_translate", { target: lang }) },
     ], { minWidth: 280 }) }, icon("translate"), t("{n} entry lacks {lang}", { n: missing.length, lang: langName(lang) }, "{n} entries lack {lang}")));
   }
   box.replaceChildren(...items);
