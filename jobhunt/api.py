@@ -221,7 +221,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             job["done"].set()
         return {"ok": True}
 
-    look_dir = hunt.dir.parent.parent / ".cache" / "logo-look"
+    look_dir = studio.store.cache_dir / "logo-look"
 
     def write_look(cid: str, stats: dict | None) -> str:
         """The window's drawing of a company's logo, as a png for Claude to look at. Claude leaves it; the ones

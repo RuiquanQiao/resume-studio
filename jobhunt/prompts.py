@@ -108,7 +108,7 @@ How to work it:
   call the company done. If it is blank, someone else's icon, cut off or unreadable, send another `logo_url`.
   Leave that png where it is: Resume Studio clears it. `{j} logo <company>` gives the same look at a
   logo already there. A logo is always the company's real picture from the web: never draw or make one up, and
-  never write files into the data folder (`.studio`) yourself, because the window only shows what came in
+  never write files into the data folder (`resume-studio-data`) yourself, because the window only shows what came in
   through `fill`. Never leave a company without a logo: if every source fails, tell the user which sources you
   tried and that its logo is still missing.
 - When to apply by belongs to a role, never to the company, and is an event, not a field. Set it only from what
@@ -141,6 +141,6 @@ How to work it:
 - `sent` only when the user says they submitted. Submitting on the site is always the user's own click.
 - Never delete anything here: removing a company or a role is the user's, in the window.
 - The tables are arranged by the user like a Notion database (views as tabs, filters, sorts, groups, a board,
-  column order and widths), saved in `.studio/hunt/views.json`. Leave that file alone unless the user asks you
+  column order and widths), saved in `resume-studio-data/hunt/views.json`. Leave that file alone unless the user asks you
   to arrange a table; then edit only the views they named.
 """

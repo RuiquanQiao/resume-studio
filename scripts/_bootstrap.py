@@ -159,3 +159,11 @@ def resolve_data(arg: str | None) -> Path:
     if saved and Path(saved).is_file():
         return Path(saved)
     return DEFAULT_DATA
+
+
+def server_state(data: Path) -> Path:
+    """Where the window open on `data` keeps its address (core.store.data_dirs; an older window: .studio)."""
+    for sub in ("resume-studio-data/.cache", ".studio/.cache", ".studio"):
+        if (data.parent / sub / "server.json").is_file():
+            return data.parent / sub / "server.json"
+    return data.parent / "resume-studio-data" / ".cache" / "server.json"

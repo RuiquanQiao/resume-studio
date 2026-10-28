@@ -1,8 +1,8 @@
 """Open postings: what each company's careers sites list now, found by scanning, never typed (docs/JOB_HUNT.md, 2026-10-18).
 
-    .studio/hunt/postings.json   {"next": 9, "postings": [{id: "P1", company: "C1", key, title, url, location, category,
+    resume-studio-data/hunt/postings.json   {"next": 9, "postings": [{id: "P1", company: "C1", key, title, url, location, category,
                                   batch, deadline, posted, first_seen, last_seen, closed, changed, app, source}]}
-    .studio/hunt/scans.json      {"last_all": "...", "keywords": ["算法", "AI", ...], "daily": true,
+    resume-studio-data/hunt/scans.json      {"last_all": "...", "keywords": ["算法", "AI", ...], "daily": true,
                                   "companies": {"C1": {at, ok, error, how, found, new, closed, changed, route}}}
 
 A posting is matched across scans by its link (or, without one, its title and location), after career-ops'

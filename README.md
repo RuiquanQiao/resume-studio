@@ -14,9 +14,14 @@ It is also a first attempt at "skills with a UI": `core/` knows nothing about re
 - Or, inside Claude Code: `/resume-studio`.
 - Or from a shell: `python scripts/studio.py [--window] [--data other/resume.yaml]`.
 
-Your data lives in this folder: `resume.yaml`, plus `.studio/` (chats, history) and `exports/`.
-All three are git-ignored, so pulling updates never touches them. Settings (the gear, Ctrl+,) shows
-the data file and can open or start another one anywhere; the window remembers it in `.local/prefs.json`.
+Your data is `resume.yaml` plus the `resume-studio-data/` folder next to it (companies, applications,
+the plan, subsets' versions, chats, history), and `exports/` for the PDFs. Inside the data folder,
+`.cache/` is only what the app rebuilds by itself (LaTeX builds, screenshots); it is safe to delete.
+All of it is git-ignored, so pulling updates never touches it. Settings (the gear, Ctrl+,) shows the
+data file and can open or start another one anywhere, move your data to another folder, or export all
+of it as one zip to take elsewhere; the window remembers the file in `.local/prefs.json`.
+`.local/` holds this computer's own settings and the app's browser profile with your sign-ins: it is
+not part of your data and is never exported.
 
 Needs Python 3.10+, `xelatex` (TeX Live / MiKTeX) and a logged-in coding agent for the chat (Claude Code,
 or Codex, Qwen Code, Pi, DeepSeek Harness; see below); Job search
@@ -58,7 +63,7 @@ with the C# compiler that ships with Windows.
   the company or platform open), and can edit the resume, update the tracker and drive the browser from any
   of them. "Polish with Claude" on an entry sends the request there and shows a before/after diff with undo.
 - **Safe co-editing**: Claude's edits refresh the form and preview; editing the same item from
-  two places raises a conflict instead of overwriting; every save keeps a copy in `.studio/history`.
+  two places raises a conflict instead of overwriting; every save keeps a copy in `resume-studio-data/history`.
 - **Export** PDF + `.tex` to `settings.export_dir`.
 - **Job search (Ctrl+2)**, with [career-ops](https://github.com/santifer/career-ops) (MIT, by santifer):
   - "Evaluate a posting" in its top bar: career-ops evaluates it against your resume (a fit score, what to
@@ -104,7 +109,7 @@ with the C# compiler that ships with Windows.
   fixed shape. Empty, it is one line asking you to tell Claude what worries you. Boxes tick with a click,
   Edit opens the Markdown, and Versions shows every time the plan changed course and why. You can compare
   any version with now or go back to it, and nothing is deleted. It is plain Markdown in
-  `.studio/plan/plan.md`. See [docs/PLAN.md](docs/PLAN.md).
+  `resume-studio-data/plan/plan.md`. See [docs/PLAN.md](docs/PLAN.md).
 - **Platforms**: a local copy of each online profile (LinkedIn and BOSS直聘 come with notes for
   Claude; add any other site by its address). Edit the copy here or the profile on the site: "Check for
   updates" brings the site's changes in, your edits wait as git-style diffs until you push them, and a

@@ -188,7 +188,7 @@ def test_routes_from_a_read_to_edits_to_report(server, data_file):
     v = server.req("GET", "/api/autofill/linkedin")[1]
     assert v["synced"] and v["synced_at"] and v["pending"] == [] and v["local"] == v["base"]
     assert [i["fields"].get("start") for i in v["local"]["items"]] == ["2025-02", "2025-08", "2022-03"]   # dates as YYYY-MM
-    assert (data_file.parent / ".studio" / "autofill" / "linkedin.json").is_file()   # next to the data file
+    assert (data_file.parent / "resume-studio-data" / "autofill" / "linkedin.json").is_file()   # next to the data file
     # the resume, next to the copy: wording it differs in, entries and skills the copy lacks
     ref = v["reference"]
     p2e = next(i for i in v["local"]["items"] if i["fields"].get("name") == "QuizLoom")
@@ -304,7 +304,7 @@ def test_the_user_picks_the_sites(server, data_file):
     assert server.req("PUT", "/api/autofill/seek/settings", {"home": ""})[0] == 400   # a site of one's own needs its address
     server.req("PUT", "/api/autofill/linkedin/settings", {"name": ""})
     assert server.req("GET", "/api/autofill")[1]["sites"][0]["name"] == "LinkedIn"
-    saved = json.loads((data_file.parent / ".studio" / "autofill" / "sites.json").read_text(encoding="utf-8"))
+    saved = json.loads((data_file.parent / "resume-studio-data" / "autofill" / "sites.json").read_text(encoding="utf-8"))
     assert [s["id"] for s in saved["sites"]] == ["linkedin", "boss", "seek"] and "name" not in saved["sites"][0]
 
     # what Claude is told: the user's notes, and (for a site of their own) to say what it has
@@ -352,8 +352,8 @@ def live(headless, server, data_file, fake_site, monkeypatch):
     import dataclasses
     fake = dataclasses.replace(LI, home=fake_site + "/linkedin/profile.html", domains=["127.0.0.1"])
     monkeypatch.setitem(PRESETS, "linkedin", fake)
-    (data_file.parent / ".studio").mkdir(exist_ok=True)
-    (data_file.parent / ".studio" / "server.json").write_text(json.dumps({"url": server.url}), encoding="utf-8")
+    (data_file.parent / "resume-studio-data" / ".cache").mkdir(parents=True, exist_ok=True)
+    (data_file.parent / "resume-studio-data" / ".cache" / "server.json").write_text(json.dumps({"url": server.url}), encoding="utf-8")
     server.inst.browser.headless, server.inst.browser.pace = True, 0
     yield server
     os.environ.pop("FAKE_CLAUDE_RUN", None)
@@ -452,7 +452,7 @@ def test_browser_command_drives_a_real_page(live, data_file, fake_site):
     assert json.loads(page) == {"h": "AI Agent Engineer · 大模型工具", "untrusted": False}
     shot = out(cli(data_file, "screenshot"))
     path = shot.split("saved: ")[1].strip()
-    assert Path(path).is_file() and Path(path).is_relative_to(data_file.parent / ".studio" / "browser")
+    assert Path(path).is_file() and Path(path).is_relative_to(data_file.parent / "resume-studio-data" / ".cache" / "browser")
     assert "only files in" in out(cli(data_file, "upload", "1", str(ROOT / "README.md")))
     assert "not a text field" in out(cli(data_file, "type", "1", "--text", "x"))
     assert "is not on the page" in out(cli(data_file, "click", "999"))
@@ -690,7 +690,7 @@ def test_browser_commands_become_steps():
 def test_a_copy_read_by_an_older_version_counts_as_read(server, data_file):
     # older versions kept the time of Claude's first read as read_at: the table and the page must agree it was read
     server.req("POST", "/api/autofill/linkedin/current", SITE_NOW)
-    f = data_file.parent / ".studio" / "autofill" / "linkedin.json"
+    f = data_file.parent / "resume-studio-data" / "autofill" / "linkedin.json"
     st = json.loads(f.read_text(encoding="utf-8"))
     st["read_at"] = st.pop("synced_at")
     st.pop("last_check", None)

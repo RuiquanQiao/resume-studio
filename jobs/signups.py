@@ -8,7 +8,7 @@ A **send** is the moment a resume went out: the subset and the version of it (re
 are pinned on every application it reached, for a sign-up's roles and for an ordinary posting alike.
 This is kept apart from the tool (one JSON file next to the data file), so it survives switching tools.
 
-    .studio/applications.json
+    resume-studio-data/applications.json
     {"signups": [{id, company, site, subset, note, created,
                   roles: [{key, role, url, app}],       # app: the tracker row's id once sent
                   sent: [{at, subset, n, roles: [key]}]}],

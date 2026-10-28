@@ -1089,7 +1089,7 @@ def test_slash_commands_and_attachments(page, server, fake_claude, monkeypatch):
         addBrowserFiles([new File([bytes], 'shot.png', { type: 'image/png' })]);
     }""")
     page.wait_for_selector("#chat-files .cf-item.img img")
-    tmp = ROOT / ".cache" / "tmp" / "附件.pdf"
+    tmp = Path(os.environ["TMP"]) / "附件.pdf"
     tmp.write_bytes(b"%PDF-1.4 fake")
     monkeypatch.setenv("STUDIO_FAKE_PICK", json.dumps([str(tmp)]))
     page.click("#chat-attach")
@@ -2207,7 +2207,7 @@ def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, m
 
     # push: a chat with only the ticked changes; Claude's browser commands show as steps
     data = Path(server.inst.studio.store.path)
-    (data.parent / ".studio" / "server.json").write_text(json.dumps({"url": server.url}), encoding="utf-8")
+    (data.parent / "resume-studio-data" / ".cache" / "server.json").write_text(json.dumps({"url": server.url}), encoding="utf-8")
     b = [sys.executable, str(ROOT / "scripts" / "browser.py"), "--data", str(data)]
     monkeypatch.setenv("FAKE_CLAUDE_RUN", json.dumps({"逐条": [
         {"argv": b + ["open", server.url + "api/instance"]}, {"argv": b + ["screenshot"]},

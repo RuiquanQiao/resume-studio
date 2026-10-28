@@ -6,7 +6,7 @@ take a cheap signature:
   - plain folder: (relative path, mtime, size) of its files, skipping build/vendor dirs;
   - file: mtime + size.
 The signature at the moment Claude last worked on the entry is the baseline, kept in
-`.studio/evidence.json` (UI state, not resume data). Comparing the two gives the status
+`resume-studio-data/evidence.json` (UI state, not resume data). Comparing the two gives the status
 the UI shows, and a short change summary that goes into the "update from project" prompt.
 """
 from __future__ import annotations
@@ -26,7 +26,7 @@ from core.i18n import t
 SKIP_DIRS = {
     ".git", "node_modules", ".venv", "venv", "env", "__pycache__", ".next", ".nuxt", "dist", "build",
     "out", "target", ".cache", ".pytest_cache", ".mypy_cache", ".idea", ".vscode", ".gradle", "bin",
-    "obj", ".turbo", ".parcel-cache", "coverage", ".studio", ".DS_Store", "Pods", ".dart_tool",
+    "obj", ".turbo", ".parcel-cache", "coverage", ".studio", "resume-studio-data", ".DS_Store", "Pods", ".dart_tool",
 }
 MAX_FILES = 20000          # a folder bigger than this is summarised by its newest files only
 LISTING_KEEP = 4000        # file listing stored in the baseline (for "which files changed")

@@ -2,21 +2,21 @@
 
 Plain files next to the data file, in our own schema, so switching trackers loses nothing:
 
-    .studio/hunt/companies.json     {"next": 3, "companies": [{id: "C1", name, aliases, site, sites, industry,
+    resume-studio-data/hunt/companies.json     {"next": 3, "companies": [{id: "C1", name, aliases, site, sites, industry,
                                      strength, hq: {area, id} | null, places, size, logo, sources, kept, note,
                                      account, subset, about, created, updated}]}
-    .studio/hunt/applications.json  {"next": 5, "applications": [{id: "A1", company: "C1", role, url, channel,
+    resume-studio-data/hunt/applications.json  {"next": 5, "applications": [{id: "A1", company: "C1", role, url, channel,
                                      platform, order, status, applied, batch, note, subset,
                                      places: [{kind: "onsite"|"hybrid"|"remote", area, id?}],
                                      sent: [{at, subset, n}], schedule: [{id, kind?, title, at, minutes,
                                      where, note}],
                                      co_app, created, updated}]}
-    .studio/hunt/logos/C1.png       a company's logo, downloaded once (docs/JOB_HUNT.md, 2026-10-18)
+    resume-studio-data/hunt/logos/C1.png       a company's logo, downloaded once (docs/JOB_HUNT.md, 2026-10-18)
 
 A company fills itself: Claude researches it and sends every field at once (`fill`), each with its source.
 A field the user edits in the window goes into `kept`, and Claude's later fills leave it alone. Deadlines
 belong to roles, not to companies; a company deadline from before moves to its roles.
-    .studio/hunt/events.tsv         at  app  kind  from  to  source  note      (append-only)
+    resume-studio-data/hunt/events.tsv         at  app  kind  from  to  source  note      (append-only)
 
 The events are a ledger, like career-ops' status-log.tsv: every status change, note and send is a line,
 never edited; a correction is a new line. An application's `status` is the last status line's `to`

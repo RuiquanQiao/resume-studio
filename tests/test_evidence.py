@@ -38,7 +38,7 @@ def state(tr: EvidenceTracker, eid: str, path: str) -> dict:
 
 @needs_git
 def test_git_project_lifecycle(tmp_path, repo):
-    tr = EvidenceTracker(tmp_path / ".studio")
+    tr = EvidenceTracker(tmp_path / "resume-studio-data")
     p = str(repo).replace("\\", "/")
     assert state(tr, "E1", p)["state"] == "new"                     # Claude has not read it yet
     tr.mark_synced("E1", [p])
@@ -68,7 +68,7 @@ def test_reading_never_writes_into_the_users_repo(tmp_path, repo):
     index = repo / ".git" / "index"
     os.utime(index, (1_000_000_000, 1_000_000_000))
     (repo / "README.md").write_text("# changed\n", encoding="utf-8")
-    tr = EvidenceTracker(tmp_path / ".studio")
+    tr = EvidenceTracker(tmp_path / "resume-studio-data")
     tr.status([{"id": "E1", "evidence": [str(repo)]}], force=True)
     assert index.stat().st_mtime == 1_000_000_000                     # git ran with --no-optional-locks
 
@@ -78,7 +78,7 @@ def test_plain_folder_and_missing_paths(tmp_path):
     (proj / "src").mkdir(parents=True)
     (proj / "node_modules").mkdir()
     (proj / "src" / "a.txt").write_text("a", encoding="utf-8")
-    tr = EvidenceTracker(tmp_path / ".studio")
+    tr = EvidenceTracker(tmp_path / "resume-studio-data")
     tr.mark_synced("E1", [str(proj)])
     (proj / "node_modules" / "junk.js").write_text("x", encoding="utf-8")   # vendor dirs are ignored
     assert state(tr, "E1", str(proj))["state"] == "same"

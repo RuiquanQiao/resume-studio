@@ -240,16 +240,16 @@ def empty_info(agent: Agent) -> dict:
 
 
 class AgentHub:
-    """Every agent with its info. One per data file (the caches live in its .studio folder)."""
+    """Every agent with its info. One per data file (the caches live in its data folder's .cache)."""
 
-    def __init__(self, cwd: Path, state_dir: Path, fetchers: dict[str, Callable] | None = None):
+    def __init__(self, cwd: Path, cache_dir: Path, fetchers: dict[str, Callable] | None = None):
         from . import drivers   # drivers imports this module
         self.cwd = cwd
         fetchers = fetchers or {}
         self.infos: dict[str, AgentInfo] = {}
         for a in AGENTS:
             name = "claude-info.json" if a.id == "claude" else f"agent-{a.id}.json"
-            self.infos[a.id] = AgentInfo(a, fetchers.get(a.id) or drivers.fetcher(a), cwd, state_dir / name)
+            self.infos[a.id] = AgentInfo(a, fetchers.get(a.id) or drivers.fetcher(a), cwd, cache_dir / name)
 
     def info(self, agent_id: Any) -> AgentInfo:
         return self.infos[get(agent_id).id]

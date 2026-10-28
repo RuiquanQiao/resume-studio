@@ -29,11 +29,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from _bootstrap import resolve_data
+from _bootstrap import resolve_data, server_state
 
 
 def server_url(data: Path) -> str:
-    state = data.parent / ".studio" / "server.json"
+    state = server_state(data)
     try:
         return json.loads(state.read_text(encoding="utf-8"))["url"]
     except (OSError, ValueError, KeyError):

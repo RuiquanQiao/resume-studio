@@ -6,6 +6,7 @@ __pycache__/
 .local/
 tests/artifacts/
 .studio/
+resume-studio-data/
 examples/exports/
 
 # personal resume data must never land in the public skill repo

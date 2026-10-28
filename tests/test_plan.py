@@ -38,11 +38,11 @@ def cli(data_file, *args, stdin: str = "") -> tuple[int, str]:
 
 
 def test_a_rewrite_keeps_a_version_and_a_small_change_goes_into_the_latest(tmp_path):
-    p = Plan(tmp_path / ".studio")
+    p = Plan(tmp_path / "resume-studio-data")
     assert p.state()["text"] == "" and p.state()["versions"] == []           # nothing until the user and Claude write it
     r = p.write(DOC, why="第一次盘点", by="claude")
     assert r["made"]["n"] == 1 and r["made"]["by"] == "claude" and r["kept"]
-    assert (tmp_path / ".studio" / "plan" / "plan.md").read_text(encoding="utf-8") == DOC   # plain Markdown in the data folder
+    assert (tmp_path / "resume-studio-data" / "plan" / "plan.md").read_text(encoding="utf-8") == DOC   # plain Markdown in the data folder
     assert p.write(DOC, why="again")["made"] is None                          # nothing changed: no version
     assert len(tasks(DOC)) == 2                                               # the box in the code block isn't one
     p.tick(0, True)
@@ -62,7 +62,7 @@ def test_a_rewrite_keeps_a_version_and_a_small_change_goes_into_the_latest(tmp_p
 
 
 def test_going_back_keeps_every_version_and_an_outside_edit_is_never_lost(tmp_path):
-    p = Plan(tmp_path / ".studio")
+    p = Plan(tmp_path / "resume-studio-data")
     p.write("# v1\n", why="one")
     p.write("# v2\n", why="two")
     r = p.restore(1)
@@ -126,5 +126,5 @@ def test_the_window_edits_ticks_and_goes_back_through_the_api(server, data_file)
     note = "\n".join(n() for n in server.inst.chats.notes)
     assert "scripts" in note and "plan.py" in note and "no fixed shape" in note and "v3" in note
     assert str(ROOT / "skills" / "planning" / "SKILL.md") in note and (ROOT / "skills" / "planning" / "SKILL.md").is_file()   # the method and the calendars
-    saved = json.loads((data_file.parent / ".studio" / "plan" / "versions.json").read_text(encoding="utf-8"))
+    saved = json.loads((data_file.parent / "resume-studio-data" / "plan" / "versions.json").read_text(encoding="utf-8"))
     assert [v["n"] for v in saved] == [1, 2, 3]

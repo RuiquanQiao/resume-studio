@@ -3,7 +3,7 @@
 Claude Code answers an `initialize` control request on its stream-json channel with the
 same lists its own UI shows (models with their supported effort levels, every slash
 command and skill, output styles, the account). No model is called, so this costs nothing.
-core.agents.AgentInfo caches the answer in `.studio/claude-info.json` so the UI has it at once on the next start.
+core.agents.AgentInfo caches the answer in `resume-studio-data/.cache/claude-info.json` so the UI has it at once on the next start.
 """
 from __future__ import annotations
 

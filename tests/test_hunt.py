@@ -19,7 +19,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "career-ops"
 
 @pytest.fixture
 def hunt(tmp_path: Path) -> Hunt:
-    return Hunt(tmp_path / ".studio")
+    return Hunt(tmp_path / "resume-studio-data")
 
 
 # ---------------------------------------------------------------- the store
@@ -292,7 +292,7 @@ def test_the_old_sign_ups_move_in_once(tmp_path, data_file):
                         "note": "手机号登录", "roles": [{"key": "r1", "role": "服务端", "url": "", "app": "4"},
                                                     {"key": "r2", "role": "算法", "url": "", "app": None}],
                         "sent": [{"at": "2026-10-12T10:00:00", "subset": "RES-TECH-ZH", "n": 1, "roles": ["r1"]}]}], "sent": {}}
-    state = data_file.parent / ".studio"
+    state = data_file.parent / "resume-studio-data"
     state.mkdir(exist_ok=True)
     (state / "applications.json").write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
     from resume.app import create_app
@@ -320,8 +320,8 @@ def cli(data_file, *args, stdin: str = "") -> tuple[int, str]:
 
 @pytest.fixture
 def live(server, data_file):
-    (data_file.parent / ".studio").mkdir(exist_ok=True)
-    (data_file.parent / ".studio" / "server.json").write_text(json.dumps({"url": server.url}), encoding="utf-8")
+    (data_file.parent / "resume-studio-data" / ".cache").mkdir(parents=True, exist_ok=True)
+    (data_file.parent / "resume-studio-data" / ".cache" / "server.json").write_text(json.dumps({"url": server.url}), encoding="utf-8")
     return server
 
 
@@ -487,7 +487,7 @@ def test_a_city_the_list_doesnt_know_is_looked_up_on_openstreetmap_once(hunt, mo
 def test_places_read_wrong_by_the_first_lookup_are_looked_up_again(tmp_path):
     """2026-10-27: the first migration read 湖南长沙 as Konan (Japan); roles and companies not changed since are
     looked up again from the files it kept."""
-    d = tmp_path / ".studio" / "hunt"
+    d = tmp_path / "resume-studio-data" / "hunt"
     d.mkdir(parents=True)
     old_c = {"companies": [{"id": "C1", "name": "茶颜悦色", "location": "湖南长沙", "places": ["长沙"], "updated": "2026-10-20T10:00:00"},
                            {"id": "C2", "name": "零跑", "location": "浙江杭州", "updated": "2026-10-20T10:00:00"}]}
@@ -502,7 +502,7 @@ def test_places_read_wrong_by_the_first_lookup_are_looked_up_again(tmp_path):
         {"id": "A1", "company": "C1", "role": "店长", "places": [{"kind": "onsite", "area": "广东 广州市"}], "updated": "2026-10-20T10:00:00"}]}
     (d / "companies.json").write_text(json.dumps(now_c, ensure_ascii=False), encoding="utf-8")
     (d / "applications.json").write_text(json.dumps(now_a, ensure_ascii=False), encoding="utf-8")
-    h = Hunt(tmp_path / ".studio")
+    h = Hunt(tmp_path / "resume-studio-data")
     h.migrate()
     assert h.company("C1")["hq"] == {"area": "Changsha", "id": "g1815577"}
     assert h.company("C2")["hq"] == {"area": "Shenzhen", "id": "g1795565"}

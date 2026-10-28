@@ -1,8 +1,8 @@
 """The plan (docs/PLAN.md): one Markdown document Claude helps the user write, with no fixed shape, and
 its versions. It lives in the data folder:
 
-    .studio/plan/plan.md         the plan as it is now (plain Markdown, opens in any editor)
-    .studio/plan/versions.json   [{n, at, why, by, text, edited?}]: every time the plan changed course
+    resume-studio-data/plan/plan.md         the plan as it is now (plain Markdown, opens in any editor)
+    resume-studio-data/plan/versions.json   [{n, at, why, by, text, edited?}]: every time the plan changed course
 
 A rewrite (Claude's, with why; the user's own edit in the window) keeps a version. A small change
 (a box ticked, a line of progress) goes into the latest version instead, so the list shows only the

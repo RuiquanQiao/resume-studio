@@ -89,7 +89,7 @@ def test_codex_info_models_efforts_account(server):
     assert info["default_model"]["resolved"] == "gpt-fake-1"
     assert info["account"]["email"] == "me@example.com" and info["signed_in"] is True
     assert r["limits"]["windows"]["seven_day"]["utilization"] == 0.05
-    assert (server.inst.studio.store.state_dir / "agent-codex.json").exists()
+    assert (server.inst.studio.store.cache_dir / "agent-codex.json").exists()
 
 
 def test_a_missing_agent_says_how_to_install_it(server, monkeypatch):

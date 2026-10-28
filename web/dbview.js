@@ -10,7 +10,7 @@
 //  width?, hidden?, group? (can group by it), free? (a select whose options are the user's own: typing makes one),
 //  edit(td, row)? (its own editor over the cell)}
 // Each table has several views (tabs), each with its own layout (table | board | calendar | gantt), columns
-// (order, width, hidden, wrapped), filters, sorts and group. They are saved with the data (.studio/hunt/views.json).
+// (order, width, hidden, wrapped), filters, sorts and group. They are saved with the data (resume-studio-data/hunt/views.json).
 // A table whose rows have dates (o.dated(row) -> {start, end, cls, items: [{at, label, sub, kind}]}) can also be
 // a calendar (the items, by day) or a Gantt chart (a bar per row from start to end, its items on it). One whose
 // rows have places (o.located) can be a world map.

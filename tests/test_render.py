@@ -162,7 +162,7 @@ def test_empty_string_hides_a_bullet_in_that_language(data_file):
     doc["entries"][1]["bullets"].append({"en": "Not yet translated"})
     st.store.save(doc)
     zh = st.render("RES-TECH-EN", lang="zh", images=False)
-    tex = (data_file.parent / ".studio" / "build" / "RES-TECH-EN@zh" / "main.tex").read_text(encoding="utf-8")
+    tex = (data_file.parent / "resume-studio-data" / ".cache" / "build" / "RES-TECH-EN@zh" / "main.tex").read_text(encoding="utf-8")
     assert "English only bullet" not in tex                 # '' = not on the Chinese resume
     assert "Not yet translated" in tex                      # missing key = falls back, and is reported
     assert {"id": "EXP-002", "fields": [], "bullets": [2]} in zh["missing"]

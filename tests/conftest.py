@@ -16,11 +16,28 @@ sys.path.insert(0, str(ROOT))
 SAMPLE = ROOT / "examples" / "resume.sample.yaml"
 FAKE = Path(__file__).resolve().parent / "fake_claude.py"
 
-# keep every temp file of the test run (and of tools it starts) inside the repo
-_TMP = ROOT / ".cache" / "tmp"
-_TMP.mkdir(parents=True, exist_ok=True)
-for _k in ("TMP", "TEMP", "TMPDIR"):
-    os.environ[_k] = str(_TMP)
+PYTEST_CACHE = ROOT / ".cache" / "pytest"   # every run's --basetemp sits in here (see pytest.ini)
+
+
+def pytest_configure(config):
+    """Keep every temp file of the run (and of tools it starts) inside the repo, and let nothing pile up.
+
+    A run's TMP is <basetemp>.tmp, emptied at the start like the basetemp itself. Runs side by side
+    pass their own --basetemp=.cache/pytest/<name>; anything in .cache/pytest untouched for a day is
+    a finished run's and goes."""
+    base = Path(config.option.basetemp or PYTEST_CACHE / "main").resolve()
+    tmp = base.with_name(base.name + ".tmp")
+    PYTEST_CACHE.mkdir(parents=True, exist_ok=True)
+    if base.parent == PYTEST_CACHE.resolve():
+        old = time.time() - 86400
+        for p in PYTEST_CACHE.iterdir():
+            if p not in (base, tmp) and p.stat().st_mtime < old:
+                shutil.rmtree(p, ignore_errors=True) if p.is_dir() else p.unlink(missing_ok=True)
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True, exist_ok=True)
+    for k in ("TMP", "TEMP", "TMPDIR"):
+        os.environ[k] = str(tmp)
+
 
 # The interface follows the computer's language; pin it so the suite runs the same on every
 # machine. Most UI assertions are written against the Chinese catalog (the sample file is

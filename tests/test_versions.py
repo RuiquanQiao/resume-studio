@@ -33,7 +33,7 @@ def test_a_version_freezes_what_the_subset_renders(data_file):
                                                  interview=[{"q": "Why?", "a": "private answer"}]))
     edit_subset(st, "RES-TECH-EN", lambda v: v.update(label="Renamed", postings=[{"tool": "career-ops", "id": "9"}]))
     assert st.state()["subset_versions"]["RES-TECH-EN"]["changed"] is False
-    stored = json.loads((data_file.parent / ".studio/subsets/RES-TECH-EN.json").read_text(encoding="utf-8"))
+    stored = json.loads((data_file.parent / "resume-studio-data/subsets/RES-TECH-EN.json").read_text(encoding="utf-8"))
     assert "private story" not in json.dumps(stored, ensure_ascii=False) and "notes" not in stored["versions"][0]["content"]["entries"][0]
     assert "private answer" not in json.dumps(stored, ensure_ascii=False)          # nor the mock interview
 

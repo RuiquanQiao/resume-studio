@@ -17,12 +17,12 @@ on OpenStreetMap's Nominatim (https://nominatim.org, ODbL), in the background: w
 language. A hit becomes a place like the others, with an id of its own, kept with the data:
 
     o:R7157395  a place found on OpenStreetMap (R relation, W way, N node + its OSM id)
-    .studio/hunt/places.json   {"places": {id: {lat, lon, country, state, names}}, "asked": {key: [date, id or ""]}}
+    resume-studio-data/hunt/places.json   {"places": {id: {lat, lon, country, state, names}}, "asked": {key: [date, id or ""]}}
 
 Only a place's name is sent, one request a second at most, as Nominatim's usage policy asks (never while typing).
 What it can't find stays as written; where it is, or a place the map puts wrong, the user or Claude pins by hand:
 
-    .studio/hunt/geo.json   {"<area as written>": [lat, lon]}
+    resume-studio-data/hunt/geo.json   {"<area as written>": [lat, lon]}
 """
 from __future__ import annotations
 

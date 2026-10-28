@@ -20,6 +20,7 @@ from pathlib import Path
 from _bootstrap import PREFS_DIR, resolve_data
 
 from core import i18n
+from core.store import data_dirs
 from studyplan.store import Plan
 
 
@@ -42,7 +43,7 @@ def main() -> int:
     args = ap.parse_args()
     i18n.set_lang(i18n.Prefs(PREFS_DIR).ui_lang())
     data = resolve_data(args.data)
-    plan = Plan(data.parent / ".studio")
+    plan = Plan(data_dirs(data)[0])
 
     try:
         if args.cmd == "show":

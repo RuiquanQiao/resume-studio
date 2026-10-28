@@ -1,7 +1,7 @@
 """Per data file: the user's sites, and per site the local copy of its profile, what the site said at
 the last sync, the recorded read route, which resume subset it is compared with, and how pushing
-went. Kept in `.studio/autofill/` next to the data file (personal data: git-ignored like the rest of
-`.studio`)."""
+went. Kept in `resume-studio-data/autofill/` next to the data file (personal data: git-ignored like the rest of
+`resume-studio-data`)."""
 from __future__ import annotations
 
 import json

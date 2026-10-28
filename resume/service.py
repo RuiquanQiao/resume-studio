@@ -26,7 +26,7 @@ class Studio:
     def __init__(self, data_path: str | Path):
         self.store = YamlStore(data_path, upgrade=model.migrate)
         self.data_dir = self.store.path.parent
-        self.build_root = self.store.state_dir / "build"
+        self.build_root = self.store.cache_dir / "build"
         self.versions = versions.Versions(self.store.state_dir)
         self.extra_state = lambda: {}  # the UI layer adds runtime info (e.g. Claude availability)
         self.on_subset_renamed: list = []   # (old id, new id) -> None: records kept outside the file follow along

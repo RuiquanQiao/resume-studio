@@ -64,16 +64,17 @@ def _fake() -> tuple[bool, Any]:
     return True, json.loads(raw)
 
 
-def pick(kind: str, initial: str | None, window_dialog: Callable | None = None) -> list[str]:
-    """kind: 'folder', 'files', 'yaml' (open one data file) or 'save' (where a new data file
-    goes). Returns chosen paths (forward slashes), [] if cancelled."""
+def pick(kind: str, initial: str | None, window_dialog: Callable | None = None, name: str = "") -> list[str]:
+    """kind: 'folder', 'files', 'yaml' (open one data file), 'save' (where a new data file
+    goes) or 'zip' (where an export goes, suggested as `name`). Returns chosen paths (forward
+    slashes), [] if cancelled."""
     is_fake, value = _fake()
     start = initial if initial and Path(initial).is_dir() else str(Path.home())
     with _pick_lock:
         if is_fake:
             res = value
         elif window_dialog is not None:
-            res = window_dialog(kind, start)
+            res = window_dialog(kind, start, name)
         else:
             def ask(root):
                 from tkinter import filedialog
@@ -89,6 +90,10 @@ def pick(kind: str, initial: str | None, window_dialog: Callable | None = None) 
                     r = filedialog.asksaveasfilename(parent=root, initialdir=start, title=t("New resume data file"),
                                                      initialfile="resume.yaml", defaultextension=".yaml",
                                                      filetypes=[("YAML", "*.yaml *.yml")])
+                    return [r] if r else []
+                if kind == "zip":
+                    r = filedialog.asksaveasfilename(parent=root, initialdir=start, title=t("Export your data"),
+                                                     initialfile=name, defaultextension=".zip", filetypes=[("ZIP", "*.zip")])
                     return [r] if r else []
                 return list(filedialog.askopenfilenames(parent=root, initialdir=start, title=t("Choose files")))
             res = _tk.call(ask)

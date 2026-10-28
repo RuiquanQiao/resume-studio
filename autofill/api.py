@@ -29,7 +29,7 @@ KIND = "autofill"   # the chat workspace this tab's chats had before the chat wa
 
 def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowser) -> Autofill:
     fill = Autofill(studio)
-    shots = studio.store.state_dir / "browser"
+    shots = studio.store.cache_dir / "browser"
 
     def publish(site_id: str | None = None) -> None:
         app.bus.publish("autofill", {"site": site_id})

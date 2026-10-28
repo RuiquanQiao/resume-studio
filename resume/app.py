@@ -4,10 +4,11 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 import webbrowser
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 from urllib.parse import urlparse
 
 from autofill import api as autofill_api
@@ -24,7 +25,7 @@ from jobs import career_ops
 from jobs.base import JobTool
 from studyplan import api as plan_api
 
-from . import api, prompts
+from . import api, datafolder, prompts
 from .evidence import EvidenceTracker
 from .render.fonts import catalog as font_catalog
 from .service import Studio
@@ -106,18 +107,26 @@ def _ports(url: str | None) -> set[int]:
     return {port} if port else set()
 
 
-def switch_data(inst: Instance, path: str | Path) -> None:
+def switch_data(inst: Instance, path: str | Path, prepare: Callable[[], Any] | None = None) -> Any:
     """Work on another data file from now on, in the same window and on the same port: a fresh
     app (studio, chats, watcher) for it, and the bound one hands it every request.
-    Chats and history live next to each data file, so they switch along."""
+    Chats and history live next to each data file, so they switch along. `prepare` runs while
+    nothing has the old data open (moving it); if it fails, the old file is loaded again."""
     old_studio, interval = inst.studio, inst.watcher.interval
     app = App(static_dir=WEB)
     inst.stop()
+    try:
+        done = prepare() if prepare else None
+    except Exception:
+        _load(inst, app, old_studio.store.path, interval)
+        inst.app.forward = app
+        raise
     _load(inst, app, path, interval)
     inst.app.forward = app
     fn = inst.switched.get("fn")
     if fn:
         fn(old_studio, inst.studio)
+    return done
 
 
 def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float) -> None:
@@ -128,7 +137,7 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
     # the installed-font scan (a kpsewhich call) is part of the first page of state: run it while the window loads
     threading.Thread(target=font_catalog, name="fonts", daemon=True).start()
     # what each installed agent offers (models, effort, modes, account): cached, refreshed at every start
-    hub = AgentHub(studio.data_dir, studio.store.state_dir)
+    hub = AgentHub(studio.data_dir, studio.store.cache_dir)
     chats = ChatRunner(app.bus, ChatStore(studio.store.state_dir / "chats"), cwd=studio.data_dir, hub=hub)
     tracker = EvidenceTracker(studio.store.state_dir)
     for agent_id, info in hub.infos.items():
@@ -148,11 +157,14 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
 
     @app.route("POST", "/api/data-file")
     def data_file(req):
-        """Open another data file ({"mode": "open"}) or start a new one ({"mode": "new"}), picked
-        in the native dialog. Remembered as this computer's choice for the next start."""
+        """Open another data file ({"mode": "open"}), start a new one ({"mode": "new"}) or move all
+        the data to another folder ({"mode": "move"}), picked in the native dialog. Remembered as
+        this computer's choice for the next start."""
         mode = (req.json() or {}).get("mode")
-        if mode not in ("open", "new"):
-            raise HttpError(400, "mode must be open or new")
+        if mode not in ("open", "new", "move"):
+            raise HttpError(400, "mode must be open, new or move")
+        if mode == "move":
+            return move_data()
         try:
             picked = dialogs.pick("yaml" if mode == "open" else "save", str(studio.data_dir), inst.dialog.get("fn"))
         except Exception as e:  # noqa: BLE001
@@ -173,11 +185,50 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
             except Exception as e:  # noqa: BLE001
                 raise HttpError(400, i18n.t("This file can't be read as a resume: {error}", error=e))
         probe = Studio(target)   # one window per data file: two would overwrite each other's edits
-        if running_instance(probe.store.state_dir / "server.json", {"app": "resume-studio", "data": str(probe.store.path)}):
+        if running_instance(probe.store.cache_dir / "server.json", {"app": "resume-studio", "data": str(probe.store.path)}):
             raise HttpError(409, i18n.t("This file is already open in another Resume Studio window."))
         switch_data(inst, target)
         prefs.save(data=str(target))
         return {"path": str(target), "created": not existed}
+
+    def move_data() -> dict:
+        try:
+            picked = dialogs.pick("folder", str(studio.data_dir.parent), inst.dialog.get("fn"))
+        except Exception as e:  # noqa: BLE001
+            raise HttpError(500, i18n.t("Can't open the file picker: {error}", error=e))
+        if not picked:
+            return {"path": None}
+        folder = Path(picked[0]).expanduser().resolve()
+        try:
+            datafolder.check_move(studio, folder)
+        except ValueError as e:
+            raise HttpError(409, str(e))
+        target = folder / studio.store.path.name
+        try:
+            target, left = switch_data(inst, target, lambda: datafolder.move(studio, folder))
+        except (OSError, ValueError) as e:
+            raise HttpError(500, i18n.t("Couldn't move your data: {error}", error=e))
+        prefs.save(data=str(target))
+        return {"path": str(target), "moved": True, "left": left}
+
+    @app.route("POST", "/api/data-export")
+    def data_export(req):
+        """Everything of this data file as one zip, saved where the user picks."""
+        name = f"resume-studio-{time.strftime('%Y%m%d')}.zip"
+        try:
+            picked = dialogs.pick("zip", str(Path.home() / "Downloads"), inst.dialog.get("fn"), name)
+        except Exception as e:  # noqa: BLE001
+            raise HttpError(500, i18n.t("Can't open the file picker: {error}", error=e))
+        if not picked:
+            return {"path": None}
+        target = Path(picked[0]).expanduser().resolve()
+        if target.suffix.lower() != ".zip":
+            target = target.with_name(target.name + ".zip")
+        try:
+            n = datafolder.export_zip(studio, target)
+        except OSError as e:
+            raise HttpError(500, i18n.t("Couldn't export your data: {error}", error=e))
+        return {"path": str(target), "files": n}
 
     @app.route("GET", "/i18n.js")
     def i18n_js(req):

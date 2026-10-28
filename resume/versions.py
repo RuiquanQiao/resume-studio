@@ -6,7 +6,7 @@ picks, in every resume language. The fact layer (notes, evidence) and the mock i
 out: they are private and never part of what an employer got. The subset's name (`label`) and its
 linked postings are kept but don't count as a change: renaming a subset doesn't make a new version.
 
-Versions live next to the data file, one JSON file per subset in `.studio/subsets/`, oldest first,
+Versions live next to the data file, one JSON file per subset in `resume-studio-data/subsets/`, oldest first,
 numbered 1, 2, 3… They stay when a subset is deleted (an application may still point at one).
 """
 from __future__ import annotations

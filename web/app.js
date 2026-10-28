@@ -1375,7 +1375,7 @@ function paintEvidence() {
 }
 
 async function deleteEntry(id) {
-  if (!(await modal({ title: t("Delete “{name}”?", { name: display((entryById(id) || {}).title) || entryLabel(entryById(id)) }), message: t("It is removed from the library and every subset. You can get it back from .studio/history if needed."), ok: t("Delete"), danger: true }))) return;
+  if (!(await modal({ title: t("Delete “{name}”?", { name: display((entryById(id) || {}).title) || entryLabel(entryById(id)) }), message: t("It is removed from the library and every subset. You can get it back from resume-studio-data/history if needed."), ok: t("Delete"), danger: true }))) return;
   const ed = ui.eds.get("entry:" + id);
   if (ed) { clearTimeout(ed.timer); ed.dirty = false; }
   applyState(await api("DELETE", "/api/entries/" + encodeURIComponent(id)));
@@ -1523,12 +1523,15 @@ function openSettings(section = null) {
       h("p", null, t("These belong to this computer, not to your resume.")),
       agentSettingsField(),
       h("div", { class: "field" }, h("label", null, t("App language"), h("span", { class: "hint" }, t("The language of this window; it follows your computer unless you pick one"))), uiLangPicker()),
-      h("div", { class: "field" }, h("label", null, t("Data file"), h("span", { class: "hint" }, t("Your whole resume lives in this one file; the window opens it next time too"))),
+      h("div", { class: "field" }, h("label", null, t("Data file"), h("span", { class: "hint" }, t("Your resume is this file; companies, applications, the plan and chats are in the resume-studio-data folder next to it. The window opens it next time too"))),
         h("div", { class: "data-path" }, S.data_path),
         h("div", { class: "row wrap" },
           h("button", { class: "btn sm", onclick: () => api("POST", "/api/reveal", { path: S.data_path }) }, icon("external"), t("Show in the file manager")),
           h("button", { class: "btn sm", onclick: () => changeDataFile("open") }, icon("folderOpen"), t("Open another…")),
-          h("button", { class: "btn sm", onclick: () => changeDataFile("new") }, icon("plus"), t("New…")))),
+          h("button", { class: "btn sm", onclick: () => changeDataFile("new") }, icon("plus"), t("New…"))),
+        h("div", { class: "row wrap" },
+          h("button", { class: "btn sm", onclick: exportData }, icon("download"), t("Export all as a zip…")),
+          h("button", { class: "btn sm", onclick: () => changeDataFile("move") }, icon("folder"), t("Move to another folder…")))),
       trackerField(),
       jobsSettingsSection()),
       h("div", { class: "acts" }, h("button", { class: "btn primary", onclick: done }, t("Done"))))));
@@ -1552,8 +1555,17 @@ async function changeDataFile(mode) {
   try { r = await api("POST", "/api/data-file", { mode }); }
   catch (e) { toast(e.message); return; }
   if (!r.path || r.same) return;
-  store("dataSwitched", r.created ? "new" : "open");
+  store("dataSwitched", r.moved ? (r.left.length ? "moved-left" : "moved") : r.created ? "new" : "open");
   location.reload();
+}
+
+// One zip of the data file, its resume-studio-data folder (without the cache) and the exported PDFs.
+async function exportData() {
+  await saveDraft();
+  let r;
+  try { r = await api("POST", "/api/data-export"); }
+  catch (e) { toast(e.message); return; }
+  if (r.path) toast(t("Exported {n} files to {path}", { n: r.files, path: r.path }), { ms: 6000 });
 }
 
 // The window's own language: the computer's unless the user picks one; "Done" reloads the page to apply it.
@@ -2454,7 +2466,10 @@ function wire() {
   const switched = store("dataSwitched");
   if (switched) {
     store("dataSwitched", null);
-    toast(switched === "new" ? t("Started a new data file: {path}", { path: S.data_path }) : t("Opened {path}", { path: S.data_path }), { ms: 5000 });
+    const msg = { new: t("Started a new data file: {path}", { path: S.data_path }), open: t("Opened {path}", { path: S.data_path }),
+      moved: t("Your data is now in {path}", { path: S.data_path }),
+      "moved-left": t("Your data is now in {path}. A few old files were still in use and stayed behind; delete them when the window is closed.", { path: S.data_path }) };
+    toast(msg[switched] || msg.open, { ms: switched === "moved-left" ? 9000 : 5000 });
   }
   select("profile");
   initWorkspaces();

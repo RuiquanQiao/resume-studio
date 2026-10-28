@@ -32,7 +32,7 @@ def test_history_snapshot_on_save(data_file):
     st = Studio(data_file)
     doc, _ = st.store.load()
     st.store.save(doc)
-    assert list((data_file.parent / ".studio" / "history").glob("*.yaml"))
+    assert list((data_file.parent / "resume-studio-data" / "history").glob("*.yaml"))
 
 
 def test_rename_entry_updates_versions(data_file):

@@ -70,7 +70,7 @@ def main() -> None:
 
     data = resolve_data(args.data)
     probe = Studio(data)
-    state_file = probe.store.state_dir / "server.json"
+    state_file = probe.store.cache_dir / "server.json"
     url = running_instance(state_file, {"app": "resume-studio", "data": str(probe.store.path)})
     if url:
         print(f"  already running: {url}")
@@ -104,7 +104,7 @@ def main() -> None:
             current["state"].unlink()
         except OSError:
             pass
-        current["state"] = new.store.state_dir / "server.json"
+        current["state"] = new.store.cache_dir / "server.json"
         write_state(inst.url["url"])
 
     inst.switched["fn"] = switched
@@ -129,12 +129,13 @@ def main() -> None:
 
     inst.focus["fn"] = bring_to_front
 
-    def pick(kind: str, start: str):
+    def pick(kind: str, start: str, name: str = ""):
         # Windows uses `directory` only until the user has picked once; then it reopens at the last folder
         yaml = ("YAML (*.yaml;*.yml)",)
-        if kind == "save":
+        if kind in ("save", "zip"):
             r = window.create_file_dialog(webview.FileDialog.SAVE, directory=os.path.normpath(start),
-                                          save_filename="resume.yaml", file_types=yaml)
+                                          save_filename=name if kind == "zip" else "resume.yaml",
+                                          file_types=("ZIP (*.zip)",) if kind == "zip" else yaml)
             return [r] if isinstance(r, str) else list(r or [])
         dialog = webview.FileDialog.FOLDER if kind == "folder" else webview.FileDialog.OPEN
         return window.create_file_dialog(dialog, directory=os.path.normpath(start), allow_multiple=kind == "files",

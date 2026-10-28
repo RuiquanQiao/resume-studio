@@ -42,6 +42,10 @@ Notes
   catalog lacks, stale ones, and translations whose `{placeholders}` don't match.
 - Everything temporary stays in the repo: `.cache/` (pytest temp, Edge profile, TMP) and
   `tests/artifacts/` (screenshots). Both are git-ignored.
+- Runs side by side each pass `--basetemp=.cache/pytest/<name>` — never a new folder straight under
+  `.cache/`. A run empties its own basetemp and TMP (`<basetemp>.tmp`) at the start, and removes what
+  other runs left in `.cache/pytest/` more than a day ago. One-off scripts and copies made while
+  checking something go in the session's scratchpad, not in `.cache/`; delete them when done.
 
 ## Layout checks (how a squeezed notice can't come back)
 
@@ -133,7 +137,7 @@ copy of `examples/resume.sample.yaml` (never on real data):
       preview refresh by themselves; `git diff --no-index` shows only the intended line
 - [ ] launch `Resume Studio.exe` → a window titled "Resume Studio" with the app icon
       appears and renders `<skill>/resume.yaml`; launching again does not open a second
-      window; closing it (`CloseMainWindow`) frees the port and removes `.studio/server.json`
+      window; closing it (`CloseMainWindow`) frees the port and removes `resume-studio-data/.cache/server.json`
 - [ ] first run: copy the repo without `.venv` into `.cache/fresh/` and launch its exe →
       the setup note shows, `.venv` is built there, then the window opens
 - [ ] launcher errors: an exe copied away from the repo explains where it belongs

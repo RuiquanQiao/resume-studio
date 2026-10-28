@@ -2,8 +2,14 @@
 
 The file on disk is the single source of truth. Every read goes to disk, so edits
 made outside the UI (by Claude Code or by hand) are never lost. Writes are atomic
-and the previous version is kept under .studio/history/ as a local safety net
+and the previous version is kept under resume-studio-data/history/ as a local safety net
 between git commits.
+
+Next to the data file sits one folder, `resume-studio-data/`, with everything else the user made
+(companies, applications, the plan, subsets' versions, chats, history). The data file and that
+folder are the user's whole data: copy both to take it elsewhere. Inside it, `.cache/` holds what
+the app builds again by itself (LaTeX builds, screenshots, agents' info, the running window's
+address); it is safe to delete and is left out of an export.
 """
 from __future__ import annotations
 
@@ -19,6 +25,38 @@ from pathlib import Path
 from typing import Any
 
 from ruamel.yaml import YAML
+
+DATA_DIR = "resume-studio-data"   # next to the data file: the user's own records
+CACHE_DIR = ".cache"              # inside DATA_DIR: rebuilt on demand, never exported
+OLD_DATA_DIR = ".studio"          # before 2026-10-28: records and caches together, hidden
+# what moves from an old .studio into .cache: none of it is the user's work
+CACHE_ITEMS = ("build", "browser", "server.json", "claude-info.json", "agent-*.json")
+
+
+def data_dirs(data_file: str | os.PathLike) -> tuple[Path, Path]:
+    """(records folder, cache folder) of a data file. An old `.studio` next to it becomes the
+    records folder the first time, its caches moved into `.cache`. While that can't be renamed
+    (a window of an older version still has files open in it) it stays in use as it is."""
+    folder = Path(data_file).resolve().parent
+    new, old = folder / DATA_DIR, folder / OLD_DATA_DIR
+    if old.is_dir() and not new.exists():
+        for wait in (0.05, 0.1, 0.2, 0.4, 0.8, None):   # a virus scan holds fresh files for a moment
+            try:
+                old.rename(new)
+                break
+            except OSError:
+                if wait is None:
+                    return old, old / CACHE_DIR
+                time.sleep(wait)
+        cache = new / CACHE_DIR
+        for pattern in CACHE_ITEMS:
+            for p in list(new.glob(pattern)):
+                cache.mkdir(exist_ok=True)
+                try:
+                    p.rename(cache / p.name)
+                except OSError:
+                    pass   # it stays where it was; nothing reads it there, nothing breaks
+    return new, new / CACHE_DIR
 
 
 def to_plain(node: Any) -> Any:
@@ -77,7 +115,7 @@ class YamlStore:
     def __init__(self, path: str | os.PathLike, history_keep: int = 50, upgrade=None):
         self.path = Path(path).resolve()
         self.upgrade = upgrade  # brings an older document up to date in memory, on every read
-        self.state_dir = self.path.parent / ".studio"
+        self.state_dir, self.cache_dir = data_dirs(self.path)
         self.history_dir = self.state_dir / "history"
         self.history_keep = history_keep
         self.lock = threading.RLock()

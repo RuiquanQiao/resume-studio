@@ -83,7 +83,7 @@ def _now() -> float:
 
 
 class ChatStore:
-    """Display copies of conversations, kept next to the user's data (.studio/chats)."""
+    """Display copies of conversations, kept next to the user's data (resume-studio-data/chats)."""
 
     def __init__(self, root: Path):
         self.root = root

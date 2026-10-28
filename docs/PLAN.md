@@ -49,8 +49,8 @@ Both missed the point. The plan has no fixed shape.
   - "Go back to this version" keeps it as a new version, so nothing is ever deleted.
   - An edit made in another editor is kept as its own version ("Edited outside the window") before the
     next rewrite.
-- **Open, not tied to Claude**: the plan is `.studio/plan/plan.md` in the data folder, plain Markdown that
-  opens in any editor. Its versions are in `.studio/plan/versions.json`. The window watches both files and
+- **Open, not tied to Claude**: the plan is `resume-studio-data/plan/plan.md` in the data folder, plain Markdown that
+  opens in any editor. Its versions are in `resume-studio-data/plan/versions.json`. The window watches both files and
   follows any change.
 
 ## Claude's command: `scripts/plan.py`

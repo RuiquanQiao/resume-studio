@@ -81,7 +81,7 @@ auto-fill and the table, link parsing, and the open-roles scan, in that order.
 fills every field, each with its source, in one command (`hunt.py fill <company> --stdin`):
 
 - official name and aliases;
-- **logo**, downloaded once into `.studio/hunt/logos/` (from the site's icon or a reputable page), shown
+- **logo**, downloaded once into `resume-studio-data/hunt/logos/` (from the site's icon or a reputable page), shown
   from there, never hot-linked;
 - industry;
 - **strength**: listed → market cap with the exchange, ticker and date; not listed → valuation, funding
@@ -169,7 +169,7 @@ All three were built on 2026-10-18. Choices made on the way:
   the SVG, and the picture's address was versioned by the record's `updated`, so the window kept its cached copy
   until it was reopened, and then showed the drawn one. Now the address is versioned by the picture file itself,
   the logos folder is watched (a change there refreshes the window), and both prompts say a logo is a real
-  picture sent as `logo_url`, never drawn and never written into `.studio` directly.
+  picture sent as `logo_url`, never drawn and never written into `resume-studio-data` directly.
 - *Fixed (2026-10-23):* **a logo is looked at before it is kept.** New companies often came in with a blank
   logo. Two causes: the panel's prompt told Claude it could skip the logo once a company had a careers site
   (the site's icon would come by itself), and nothing ever looked at a picture before keeping it. A careers
@@ -182,7 +182,7 @@ All three were built on 2026-10-18. Choices made on the way:
     1.5 % shows), a plain block of one colour with no mark (F1 Solutions' site icon is a red square), or a raster
     under 32 px, and the logo the company had stays. The background icon finder passes
     such icons over for the next candidate. With no window open, only the size a png or ico states is checked;
-  - once a logo is saved, `fill` writes the window's drawing to `.cache/logo-look/<id>.png`; Claude looks at it
+  - once a logo is saved, `fill` writes the window's drawing to `resume-studio-data/.cache/logo-look/<id>.png`; Claude looks at it
     and leaves it: the app deletes the ones older than an hour (2026-10-27: Claude deleting it asked the user to
     approve a delete for every company, since deletes always ask). `hunt.py logo <company>` gives the same look at a logo already
     there;
@@ -230,7 +230,7 @@ One component (`web/dbview.js`) draws all three tables (Progress, Companies, Pla
   with "Active" (open statuses), "All" and "Board"; the others with one table view.
 - **Board**: one column per option of the group property (status by default), cards showing the title and the
   shown properties; dragging a card to another column changes that value.
-- Views live with the data in `.studio/hunt/views.json` (like a Notion database's views, they belong to the
+- Views live with the data in `resume-studio-data/hunt/views.json` (like a Notion database's views, they belong to the
   data, not to one window), through `GET/PUT /api/hunt/views`.
 
 Built the same day (`web/dbview.js`, `jobhunt/views.py`). Choices made on the way:
@@ -307,7 +307,7 @@ find out, when it fills a company in, which cities it hires in.
   every area in the tracker → `{lat, lon, name, country}` or null.
 - **Pinning**: what the list doesn't know (a park, a campus), or puts wrong, the user places by a click on the map
   (from "Not found on the map", or a pin's "wrong place?") and Claude with `hunt.py pin "<area>" <lat> <lon>`.
-  Pins live in `.studio/hunt/geo.json` and win over the list. `hunt.py where` shows where everything landed.
+  Pins live in `resume-studio-data/hunt/geo.json` and win over the list. `hunt.py where` shows where everything landed.
 - **The map** (a view layout, `o.located` on a table, like `o.dated` for the calendar): Natural Earth's land
   (public domain, 50m) drawn as one SVG path in the Miller projection, `web/geo/land.txt` (285 KB, fetched when a
   map first shows). Coastlines only, no country borders: borders are disputed, and the user's question is "where
@@ -512,7 +512,7 @@ answered in English.
 - **What the list doesn't have is looked up on OpenStreetMap**, in the background after every change: the
   name alone goes to Nominatim, one request a second at most and each name once (its usage policy; never while
   typing). A hit must carry the name that was asked for: Nominatim once offered Brisbane, USA, for 纳拉布里
-  (Narrabri). Found places (雄安 is 雄安新区, Xiong'an New Area) are kept in `.studio/hunt/places.json` with their names
+  (Narrabri). Found places (雄安 is 雄安新区, Xiong'an New Area) are kept in `resume-studio-data/hunt/places.json` with their names
   in every language and their state, and from then on behave like the list's own: suggested, on the map, read
   in the window's language. What isn't found stays as written, marked, and can be pinned.
 - **Company research is written in the language of where the user goes for the company**, never the window's
@@ -558,7 +558,7 @@ whether it refuses a driven browser, the read route, the local copy — is share
 
 ### The data (our own provider, in the data folder)
 
-Plain files in `.studio/hunt/`, git-ignored with the rest of the data. Our own schema, so switching
+Plain files in `resume-studio-data/hunt/`, git-ignored with the rest of the data. Our own schema, so switching
 trackers later loses nothing.
 
 - **`companies.json`**: one per company.
@@ -575,7 +575,7 @@ trackers later loses nothing.
 - **`events.tsv`**: append-only, like career-ops' `status-log.tsv`: date, application, from, to, source
   (window / chat / import), note. Interviews, tests, emails and notes are events too. The application's
   status is the last status event; the log is never edited, corrections are new lines.
-- **Platforms** are the existing Autofill sites (`.studio/autofill/sites.json`), now `kind: platform`.
+- **Platforms** are the existing Autofill sites (`resume-studio-data/autofill/sites.json`), now `kind: platform`.
 
 **Statuses**, one fixed list (career-ops' `states.yml` idea), shown in the user's language, mapped to
 career-ops' ids for export:
@@ -642,7 +642,7 @@ company".
 - **Settings → Applications tracker: Resume Studio | career-ops.** Resume Studio's is the default for new
   data files; existing ones keep career-ops until the user switches.
 - The Job search workspace (career-ops' own web UI) is unchanged and still there either way.
-- With Resume Studio's tracker chosen, sign-ups and applications stay in `.studio/hunt/`, and "Copy to
+- With Resume Studio's tracker chosen, sign-ups and applications stay in `resume-studio-data/hunt/`, and "Copy to
   career-ops" writes rows through its own `merge-tracker.mjs` when the user wants its analytics.
 - One-time **import** from career-ops' `data/applications.md` (statuses mapped through `states.yml`).
 - The connector contract (`jobs/base.py`) gets a second implementation, so a posting's page in Resume
@@ -653,9 +653,9 @@ company".
 
 Each step ends usable and tested, and is committed on its own.
 
-1. **Tables and data** (built 2026-10-16): `.studio/hunt/`, `scripts/hunt.py`, the workspace with its three
+1. **Tables and data** (built 2026-10-16): `resume-studio-data/hunt/`, `scripts/hunt.py`, the workspace with its three
    tabs, statuses, the events timeline, the tracker choice in Settings. Today's sign-ups
-   (`.studio/applications.json`) moved into companies + applications on first start. Built as designed,
+   (`resume-studio-data/applications.json`) moved into companies + applications on first start. Built as designed,
    with these choices made on the way:
    - The workspace is called **Applying / 网申** (求职 is already career-ops' Job search, 投递 the Applications tab).
    - A company's page already has an About card (empty until Claude researches it) and "Ask Claude about it";

@@ -245,7 +245,7 @@ function appRow(a, { inGroup = false } = {}) {
 
 // a version that went out: its page in Resume, shown as it was
 async function showSent(subsetId, n) {
-  if (!subsets().some((x) => x.id === subsetId)) { toast(t("That subset is gone; its versions are kept in .studio/subsets")); return; }
+  if (!subsets().some((x) => x.id === subsetId)) { toast(t("That subset is gone; its versions are kept in resume-studio-data/subsets")); return; }
   if (W.ws !== "resume") setWorkspace("resume");
   if (ui.subsetId !== subsetId) await switchSubset(subsetId);
   await select("versions", subsetId);

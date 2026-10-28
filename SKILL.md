@@ -153,7 +153,7 @@ subsets:
   whenever the subset goes out, so it is known later exactly what an employer got. A version freezes
   what the subset renders: its own settings plus the visible layer of the entries it picks (the library
   is shared, so editing an entry changes every subset that uses it). The fact layer is never kept in a
-  version. They live in `.studio/subsets/<subset id>.json` next to the data file; don't edit them. To
+  version. They live in `resume-studio-data/subsets/<subset id>.json` next to the data file; don't edit them. To
   see what was sent, read that file (each version's `content` is a small data file of its own); going
   back to one, previewing and exporting it are done in the window (Versions page).
 - **Resume languages** are codes from `resume/langs.py`: Latin-script languages (en, de, fr, es, it, pt,
@@ -177,7 +177,7 @@ subsets:
 
 1. **Edit resume.yaml directly** and only where the task needs it. Keep the other entries, comments, key
    order and style (inline `{}` or block). Before every save the previous version goes to
-   `.studio/history/` next to the data file; look there to roll back.
+   `resume-studio-data/history/` next to the data file; look there to roll back.
 2. **Fact boundary**: every fact, number, responsibility or scale in the visible layer (title, subtitle,
    bullets…) must be backed by `notes` or `evidence`. When unsure, leave it out or phrase it
    conservatively, and tell the user what information is missing. The notes are what the user would tell
@@ -223,7 +223,7 @@ subsets:
   STAR for behavioural questions, and stay inside the fact boundary like bullets do: where the facts run
   out, leave 【to fill in: …】 instead of inventing. Follow-ups go under the answer they react to.
 - **A project changed**: the window records each evidence folder's state when Claude last read it (git
-  HEAD + uncommitted changes, or a file list, in `.studio/evidence.json`) and tells the user when it
+  HEAD + uncommitted changes, or a file list, in `resume-studio-data/evidence.json`) and tells the user when it
   changes. "Update from project progress" sends the new commits and changed files; read them, put only
   what is worth it into the visible layer, and update every resume language.
 - **Write another language**: rule 9. The window's buttons send the request together with the check
@@ -264,16 +264,16 @@ The window connects a job-posting tool. Today that is
   let the user decide.
 - **Statuses go through career-ops' own writer** (`set-status.mjs`); the tracker and reports are read as
   career-ops documents them.
-- **What went out to a career-ops posting** is pinned in `.studio/applications.json` (don't edit it): when the
+- **What went out to a career-ops posting** is pinned in `resume-studio-data/applications.json` (don't edit it): when the
   user marks a posting sent, its linked subset is kept as a version (unless it already is one) and `{subset, n}`
-  is pinned on it. Read that version in `.studio/subsets/<subset>.json`.
+  is pinned on it. Read that version in `resume-studio-data/subsets/<subset>.json`.
 
 ## The plan (the Plan workspace, Ctrl+4)
 
 One Markdown document the user works out with Claude: where they stand, the easiest way forward, and their
 progress against what they committed to (design: `docs/PLAN.md`). It has **no fixed
-shape**: no template, no form, no ratings. It lives in `.studio/plan/plan.md`. Rewrites are kept as versions
-with their reason in `.studio/plan/versions.json`. Work it through `scripts/plan.py`; the window needn't be
+shape**: no template, no form, no ratings. It lives in `resume-studio-data/plan/plan.md`. Rewrites are kept as versions
+with their reason in `resume-studio-data/plan/versions.json`. Work it through `scripts/plan.py`; the window needn't be
 open:
 
 ```bash
@@ -296,7 +296,7 @@ Resume Studio's own tracker (design and the user's vision: `docs/JOB_HUNT.md`). 
 **applications** (one per company + role, with its status, how it goes in, what was sent and what is booked: tests, 一面, 二面…),
 **companies** (logo, industry, strength, its open roles and the user's applications; on its page its careers
 sites, the subset it is filled from and the About) and **platforms** (the online profiles below). The data lives
-in `.studio/hunt/` (`companies.json`, `applications.json`, `postings.json`, `scans.json`, `logos/`, and
+in `resume-studio-data/hunt/` (`companies.json`, `applications.json`, `postings.json`, `scans.json`, `logos/`, and
 `events.tsv`, an append-only ledger of status changes, notes and sends). Work it only through
 `scripts/hunt.py`, with the window open (every command prints what is there now):
 
@@ -330,7 +330,7 @@ python scripts/hunt.py apply P12                          # the user goes for po
   refuses a blank, plain-colour or blurry picture; once one is saved it prints a png of how the window shows
   it: look at it yourself and send another if it is wrong (leave the png: the app clears it). `hunt.py logo <company>` looks
   at one already there. A logo is the company's real picture: never draw one, never write into
-  `.studio/hunt/logos/` yourself, and never leave a company without one: if every source fails, say which you tried.
+  `resume-studio-data/hunt/logos/` yourself, and never leave a company without one: if every source fails, say which you tried.
   When to apply by is an event of the role (every role starts with its 投递 event), never a field and never the
   company's: `--apply-by 2026-10-31` when the posting gives a date; no date means 招满即止. `--batch` is the round
   in the user's own words (27秋招…); what each country's rounds mean and when they run is in
@@ -410,7 +410,7 @@ python <skill>/scripts/browser.py sync <site>       # check for updates now, by 
 
 - Every message in an Autofill chat carries a note on how to use the browser, so a user's own request
   there ("add my newest project to LinkedIn") works the same way: one change, checked, then report.
-- State per data file is in `.studio/autofill/`: `sites.json` (the user's list, in their order) and
+- State per data file is in `resume-studio-data/autofill/`: `sites.json` (the user's list, in their order) and
   `<site>.json` per site (the copy, the last sync, the route, ticks, how pushing went; it stays when a
   site is taken off the list). The presets and their guides are in `autofill/sites.py`.
 
@@ -418,8 +418,10 @@ python <skill>/scripts/browser.py sync <site>       # check for updates now, by 
 
 - `Resume Studio.exe`: double-click to open the window (source in `launcher/`, icon in `assets/`, rebuilt
   with `scripts/build_launcher.py`).
-- `resume.yaml`, `.studio/`, `exports/`: the user's data, chats, history, preferences and exported PDFs;
-  all git-ignored.
+- `resume.yaml`, `resume-studio-data/`, `exports/`: the user's data, chats, history and exported PDFs;
+  all git-ignored. `resume-studio-data/.cache/` is what the app rebuilds itself (builds, screenshots,
+  agents' info, the open window's address): never the user's work. An old `.studio/` becomes
+  `resume-studio-data/` on the next start.
 - `core/`: the resume-independent "skill + window" layer: YAML store, file watcher, SSE, HTTP server,
   Claude Code sessions (`chat.py`), interface language (`i18n.py`), hosting a skill's own web interface in
   the window (`webhost.py`), and the browser it drives (`browser.py` over `cdp.py`, pages read by `snapshot.js`).

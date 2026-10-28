@@ -2,7 +2,7 @@
 each with its own layout (table, board, calendar or Gantt), columns (order, width, hidden, wrapped), filters, sorts and group.
 They belong to the data, so they live in the data folder:
 
-    .studio/hunt/views.json   {"apps": {"active": "v1", "views": [{id, name, layout, columns, filters, sorts, group}]},
+    resume-studio-data/hunt/views.json   {"apps": {"active": "v1", "views": [{id, name, layout, columns, filters, sorts, group}]},
                                "companies": {...}, "platforms": {...}}
 
 The window owns the defaults (it knows each table's properties); this keeps what it saves, cleaned."""

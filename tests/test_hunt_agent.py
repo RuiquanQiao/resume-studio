@@ -34,7 +34,7 @@ TINY = png(16)   # a 16×16 favicon: a blur in the tables
 
 @pytest.fixture
 def hunt(tmp_path: Path) -> Hunt:
-    return Hunt(tmp_path / ".studio")
+    return Hunt(tmp_path / "resume-studio-data")
 
 
 # ---------------------------------------------------------------- a company fills itself
