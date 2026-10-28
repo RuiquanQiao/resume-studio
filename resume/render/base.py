@@ -34,5 +34,5 @@ class Renderer(ABC):
         """[{id, name, description}]"""
 
     @abstractmethod
-    def render(self, view: dict, build_dir: Path) -> RenderResult:
-        ...
+    def render(self, view: dict, build_dir: Path, pdf: bool = True) -> RenderResult:
+        """pdf=False: only lay the text out (page count and line counts), skipping the PDF itself."""

@@ -95,6 +95,7 @@ def test_codex_info_models_efforts_account(server):
 def test_a_missing_agent_says_how_to_install_it(server, monkeypatch):
     monkeypatch.setenv("STUDIO_PI_CMD", "")
     monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr("core.agents._WHICH", {})   # forget what earlier tests found on PATH
     r = server.req("GET", "/api/claude?agent=pi")[1]
     assert r["available"] is False
     pi = next(a for a in r["agents"] if a["id"] == "pi")

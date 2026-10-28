@@ -102,8 +102,9 @@ class LatexRenderer(Renderer):
     def compiler(self) -> str | None:
         return shutil.which("xelatex")
 
-    def render(self, view: dict, build_dir: Path) -> RenderResult:
+    def render(self, view: dict, build_dir: Path, pdf: bool = True) -> RenderResult:
         t0 = time.time()
+        want_pdf = pdf
         build_dir.mkdir(parents=True, exist_ok=True)
         lock = self._locks.setdefault(str(build_dir), threading.Lock())
         with lock:
@@ -117,7 +118,7 @@ class LatexRenderer(Renderer):
             except jinja2.TemplateError as e:
                 return RenderResult(False, errors=[t("Template error: {error}", error=e)])
             last = self._last.get(str(build_dir))
-            if last and last[0] == tex and last[2].pdf and last[2].pdf.exists():
+            if last and last[0] == tex and (not want_pdf or (last[2].pdf and last[2].pdf.exists())):
                 prev = last[2]
                 return RenderResult(True, pages=prev.pages, pdf=prev.pdf, source=prev.source,
                                     seconds=prev.seconds, lines=_bullet_lines(last[1], view), cached=True)
@@ -127,9 +128,12 @@ class LatexRenderer(Renderer):
             exe = self.compiler()
             if not exe:
                 return RenderResult(False, source=src, errors=[t("xelatex not found. Install TeX Live or MiKTeX.")])
+            # -no-pdf stops at the .xdv: the layout (and the line counts in the log) without the
+            # PDF driver, which takes a good third of the time
             try:
                 proc = subprocess.run(
-                    [exe, "-interaction=nonstopmode", "-halt-on-error", "-file-line-error", "main.tex"],
+                    [exe, "-interaction=nonstopmode", "-halt-on-error", "-file-line-error",
+                     *([] if want_pdf else ["-no-pdf"]), "main.tex"],
                     cwd=str(build_dir), capture_output=True, timeout=120,
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             except subprocess.TimeoutExpired:
@@ -137,17 +141,17 @@ class LatexRenderer(Renderer):
             log_path = build_dir / "main.log"
             log = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else \
                 proc.stdout.decode("utf-8", errors="replace")
-            pdf = build_dir / "main.pdf"
+            out = build_dir / ("main.pdf" if want_pdf else "main.xdv")
             pages = 0
             m = re.search(r"Output written on .*?\((\d+) pages?", log, re.S)
             if m:
                 pages = int(m.group(1))
             errors = []
-            if proc.returncode != 0 or not pdf.exists():
+            if proc.returncode != 0 or not out.exists():
                 errors = [ln for ln in log.splitlines()
                           if ln.startswith("!") or re.match(r".*main\.tex:\d+:", ln)][:8] \
                     or [t("xelatex failed, see main.log")]
-            result = RenderResult(ok=not errors, pages=pages, pdf=pdf if pdf.exists() else None,
+            result = RenderResult(ok=not errors, pages=pages, pdf=out if want_pdf and out.exists() else None,
                                   source=src, seconds=time.time() - t0, errors=errors,
                                   lines=_bullet_lines(log, view))
             if result.ok:

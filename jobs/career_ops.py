@@ -19,6 +19,7 @@ UI, and the raw report is always available.
 from __future__ import annotations
 
 import difflib
+import functools
 import hashlib
 import json
 import os
@@ -205,10 +206,34 @@ def parse_report(text: str) -> dict:
             "structured": bool(ms)}
 
 
+_WHICH: dict[str, tuple[float, str | None]] = {}
+
+
+def _which(name: str) -> str | None:
+    """shutil.which, remembered for a few seconds: on Windows each look walks PATH × PATHEXT
+    (hundreds of file checks), and the overview asks on every refresh. A tool installed meanwhile
+    still shows up within seconds."""
+    hit = _WHICH.get(name)
+    if hit and time.monotonic() - hit[0] < 10:
+        return hit[1]
+    exe = shutil.which(name)
+    _WHICH[name] = (time.monotonic(), exe)
+    return exe
+
+
 def node_version() -> tuple[int, ...] | None:
-    exe = shutil.which("node")
+    exe = _which("node")
     if not exe:
         return None
+    try:
+        return _node_version(exe, os.stat(exe).st_mtime_ns)
+    except OSError:
+        return None
+
+
+@functools.lru_cache(maxsize=4)
+def _node_version(exe: str, _mtime: int) -> tuple[int, ...] | None:
+    """The same node binary is the same version: asked once (an update changes its mtime)."""
     try:
         out = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=10,
                              creationflags=_NO_WINDOW).stdout.strip()
@@ -415,7 +440,7 @@ class CareerOps(JobTool):
                          "author": self.author},
                 "installed": self.installed(), "root": str(self.root), "home": str(self.home),
                 "custom_root": self.settings()["path"] is not None, "busy": self.busy, "error": self.last_error,
-                "settings": self.settings(), "git": bool(shutil.which("git")), "node": bool(shutil.which("node"))}
+                "settings": self.settings(), "git": bool(_which("git")), "node": bool(_which("node"))}
         if not base["installed"]:
             return base
         doc = self.doctor() or {}
@@ -657,10 +682,21 @@ class CareerOps(JobTool):
                     "report": "report", "date": "date", "notes": "notes", "url": "url", "pdf": "pdf"}
 
     def states(self) -> list[dict]:
+        path = self.root / "templates" / "states.yml"
         try:
-            data = _load_yaml(_read(self.root / "templates" / "states.yml")) or {}
+            key = (str(path), path.stat().st_mtime_ns)
+            hit = getattr(self, "_states", None)
+            if hit and hit[0] == key:   # parsed once per version of the file (asked several times a refresh)
+                return [dict(s, aliases=list(s["aliases"])) for s in hit[1]]
+            data = _load_yaml(_read(path)) or {}
         except OSError:
             return []
+        out = self._parse_states(data)
+        self._states = (key, out)
+        return [dict(s, aliases=list(s["aliases"])) for s in out]
+
+    @staticmethod
+    def _parse_states(data: Any) -> list[dict]:
         out = []
         for s in data.get("states") or [] if isinstance(data, dict) else []:
             if isinstance(s, dict) and s.get("id") and s.get("label"):

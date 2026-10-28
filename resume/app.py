@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import webbrowser
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,6 +26,7 @@ from studyplan import api as plan_api
 
 from . import api, prompts
 from .evidence import EvidenceTracker
+from .render.fonts import catalog as font_catalog
 from .service import Studio
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -123,6 +125,8 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
     (focus, pickers) and the switch through `inst`, which outlives any one data file."""
     studio = Studio(data_path)
     studio.ensure_file()
+    # the installed-font scan (a kpsewhich call) is part of the first page of state: run it while the window loads
+    threading.Thread(target=font_catalog, name="fonts", daemon=True).start()
     # what each installed agent offers (models, effort, modes, account): cached, refreshed at every start
     hub = AgentHub(studio.data_dir, studio.store.state_dir)
     chats = ChatRunner(app.bus, ChatStore(studio.store.state_dir / "chats"), cwd=studio.data_dir, hub=hub)

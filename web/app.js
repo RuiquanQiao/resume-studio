@@ -357,7 +357,7 @@ async function saveItem(ed, force = false) {
     if (ed.conflict) { ed.conflict = null; paintItem(ed); }
     if (ed.seq === seq) { ed.dirty = false; setSaveStatus(t("Saved")); }
     else ed.timer = setTimeout(() => saveItem(ed), 300);
-    scheduleRender();
+    scheduleRender(100);   // the save already waited for a pause in typing
   } catch (e) {
     if (e.status === 409) {
       ed.conflict = { current: e.data && e.data.current };
@@ -2180,6 +2180,7 @@ async function doRender() {
   // an unchanged resume comes back at once without compiling: don't flash "Rendering" for it
   // (another job's badge is wrong right away, so that one is cleared at once)
   const busyTimer = setTimeout(() => setBadge({ busy: true }), r.last && r.last.subset === vid ? 250 : 0);
+  const measured = measureEditLang(vid);   // compiles alongside the preview, not after it
   try {
     const res = await api("POST", `/api/subsets/${encodeURIComponent(vid)}/render`);
     clearTimeout(busyTimer);
@@ -2190,11 +2191,11 @@ async function doRender() {
       setBadge(res);
       paintLines();
     }
-    await measureEditLang(vid);
   } catch (e) {
     clearTimeout(busyTimer);
     setBadge({ ok: false, errors: [e.message] });
   } finally {
+    await measured;
     r.busy = false;
     if (r.again) { r.again = false; doRender(); }
   }

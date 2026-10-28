@@ -34,6 +34,21 @@ from .i18n import t
 HOME = Path.home()
 
 
+_WHICH: dict[str, tuple[float, str | None]] = {}
+
+
+def _which(name: str) -> str | None:
+    """shutil.which, remembered for a few seconds: on Windows each look walks PATH × PATHEXT
+    (hundreds of file checks) and the agent list asks for every agent on every refresh. An agent
+    installed meanwhile still shows up within seconds."""
+    hit = _WHICH.get(name)
+    if hit and time.monotonic() - hit[0] < 10:
+        return hit[1]
+    exe = shutil.which(name)
+    _WHICH[name] = (time.monotonic(), exe)
+    return exe
+
+
 def _t(text: str) -> str:
     """Marks a string for the catalogs (scripts/i18n_keys.py); t() translates it where it is shown."""
     return text
@@ -56,7 +71,7 @@ class Agent:
         override = os.environ.get(f"STUDIO_{self.id.upper()}_CMD")
         if override:
             return list(json.loads(override))
-        exe = shutil.which(self.exe)
+        exe = _which(self.exe)
         return [exe] if exe else None
 
     def installed(self) -> bool:

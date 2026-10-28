@@ -7,6 +7,7 @@ between git commits.
 """
 from __future__ import annotations
 
+import copy
 import datetime as _dt
 import hashlib
 import io
@@ -85,6 +86,7 @@ class YamlStore:
         self._yaml.width = 4096
         self._yaml.indent(mapping=2, sequence=4, offset=2)
         self._yaml.allow_unicode = True
+        self._parsed: tuple[str, Any] | None = None   # (digest, document) of the text parsed last; never handed out
 
     # ---- reading -------------------------------------------------------
     def exists(self) -> bool:
@@ -98,13 +100,17 @@ class YamlStore:
         return hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
 
     def load(self) -> tuple[Any, str]:
-        """Return (round-trip document, digest of the file text)."""
+        """Return (round-trip document, digest of the file text).
+
+        The text is always read from disk; only parsing it is skipped when it is the text parsed
+        last time (most requests read an unchanged file, and a round-trip parse is the slow part).
+        Callers get their own copy, free to change and save."""
         with self.lock:
             text = self.read_text()
-            doc = self._yaml.load(text)
-            if self.upgrade:
-                self.upgrade(doc)
-            return doc, self.digest_text(text)
+            digest = self.digest_text(text)
+            if self._parsed is None or self._parsed[0] != digest:
+                self._parsed = (digest, self.parse(text))
+            return copy.deepcopy(self._parsed[1]), digest
 
     def parse(self, text: str) -> Any:
         doc = self._yaml.load(text)

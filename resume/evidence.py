@@ -17,6 +17,7 @@ import os
 import subprocess
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -180,6 +181,12 @@ class EvidenceTracker:
         Entry state: the most pressing path state."""
         with self.lock:
             data = self._load()
+        # each git folder takes three git calls: look at all the folders at once, not one after another
+        wanted = list(dict.fromkeys(str(p) for e in entries for p in e.get("evidence") or [] if str(p).strip()))
+        if len(wanted) > 1:   # _sig's cache is a plain dict: one writer per key, safe across threads
+            with ThreadPoolExecutor(min(len(wanted), 8)) as pool:
+                list(pool.map(lambda p: self._sig(p, force), wanted))
+            force = False   # just looked: the cache holds every path now
         out = {}
         for e in entries:
             eid = str(e.get("id"))

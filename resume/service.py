@@ -237,9 +237,10 @@ class Studio:
     def _safe(self, name: str) -> str:
         return re.sub(r"[^A-Za-z0-9._-]+", "_", name) or "subset"
 
-    def render(self, subset_id: str, lang: str | None = None, images: bool = True) -> dict:
+    def render(self, subset_id: str, lang: str | None = None, images: bool = True, pdf: bool = True) -> dict:
         """Render one subset. `lang` renders it in another language (same template and layout),
-        e.g. to check that the Chinese bullets fit on one line; that build goes to its own folder."""
+        e.g. to check that the Chinese bullets fit on one line; that build goes to its own folder.
+        pdf=False only measures (pages, lines per bullet): faster, and no PDF or images."""
         doc, digest = self.store.load()
         subset = model.get_subset(doc, subset_id)
         if subset is None:
@@ -248,7 +249,7 @@ class Studio:
         if lang:
             v["lang"] = lang
         build = self._safe(subset_id) + (f"@{self._safe(lang)}" if lang else "")
-        return {**self._render_view(model.build_view(doc, v), str(subset.get("engine") or "latex"), build, images),
+        return {**self._render_view(model.build_view(doc, v), str(subset.get("engine") or "latex"), build, images and pdf, pdf),
                 "subset": subset_id, "digest": digest}
 
     def render_version(self, subset_id: str, n: int, images: bool = True) -> dict:
@@ -261,15 +262,15 @@ class Studio:
     def _version_build(self, subset_id: str, n: int) -> str:
         return f"{self._safe(subset_id)}@v{int(n)}"
 
-    def _render_view(self, view: dict, engine: str, build: str, images: bool) -> dict:
+    def _render_view(self, view: dict, engine: str, build: str, images: bool, pdf: bool = True) -> dict:
         build_dir = self.build_root / build
-        result = get_renderer(engine).render(view, build_dir)
+        result = get_renderer(engine).render(view, build_dir, pdf=pdf)
         pngs = []
         if images and result.ok and result.pdf:
             pngs = list(build_dir.glob("page-*.png"))
             pdf_time = result.pdf.stat().st_mtime
             if not (result.cached and len(pngs) == result.pages and all(p.stat().st_mtime >= pdf_time for p in pngs)):
-                pngs = rasterize(result.pdf, build_dir)
+                pngs = rasterize(result.pdf, build_dir, pages=result.pages)
         return {**result.to_json(), "lang": view["lang"], "missing": view["missing"], "images": len(pngs),
                 "stamp": int(time.time() * 1000)}
 

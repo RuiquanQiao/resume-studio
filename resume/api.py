@@ -19,7 +19,14 @@ from .service import Conflict, Studio
 
 def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTracker, hub: AgentHub,
              prefs=None) -> None:
-    render_lock = threading.Lock()
+    # one compile at a time per build folder (a subset, the subset measured in another language, a kept
+    # version): the preview and the other language's line counts compile side by side
+    render_locks: dict[str, threading.Lock] = {}
+    locks_lock = threading.Lock()
+
+    def render_lock(build: str) -> threading.Lock:
+        with locks_lock:
+            return render_locks.setdefault(build, threading.Lock())
 
     def default_agent() -> str:
         """The agent a new chat runs on: the last one picked in this app (Claude Code at first)."""
@@ -89,7 +96,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
     # ---- rendering -------------------------------------------------------
     @app.route("POST", "/api/subsets/{vid}/render")
     def render(req: Request):
-        with render_lock:
+        with render_lock(req.params["vid"]):
             try:
                 return studio.render(req.params["vid"])
             except KeyError as e:
@@ -101,9 +108,9 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         lang = str(body(req).get("lang") or "")
         if not lang:
             raise HttpError(400, t("Missing language"))
-        with render_lock:
+        with render_lock(f"{req.params['vid']}@{lang}"):
             try:
-                r = studio.render(req.params["vid"], lang=lang, images=False)
+                r = studio.render(req.params["vid"], lang=lang, pdf=False)
             except KeyError as e:
                 raise HttpError(404, str(e))
         return {"ok": r["ok"], "lang": r["lang"], "lines": r["lines"], "missing": r["missing"]}
@@ -128,7 +135,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
 
     @app.route("POST", "/api/subsets/{vid}/export")
     def export(req: Request):
-        with render_lock:
+        with render_lock(req.params["vid"]):
             return studio.export(req.params["vid"])
 
     # ---- a subset's versions ---------------------------------------------
@@ -182,7 +189,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
 
     @app.route("POST", "/api/subsets/{vid}/versions/{n}/render")
     def render_version(req: Request):
-        with render_lock:
+        with render_lock(f"{req.params['vid']}@v{number(req)}"):
             return versions_call(lambda: studio.render_version(req.params["vid"], number(req)))
 
     @app.route("GET", "/api/subsets/{vid}/versions/{n}/pdf")
@@ -205,7 +212,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
 
     @app.route("POST", "/api/subsets/{vid}/versions/{n}/export")
     def export_version(req: Request):
-        with render_lock:
+        with render_lock(f"{req.params['vid']}@v{number(req)}"):
             return versions_call(lambda: studio.export(req.params["vid"], number(req)))
 
     # ---- chat (real sessions of the user's own coding agent) -------------
@@ -455,8 +462,8 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         return [by_id[str(i)] for i in subset.get("entries") or [] if str(i) in by_id]
 
     def long_bullets(subset_id: str, lang: str) -> list[dict]:
-        with render_lock:
-            r = studio.render(subset_id, lang=lang, images=False)
+        with render_lock(f"{subset_id}@{lang}"):
+            r = studio.render(subset_id, lang=lang, pdf=False)
         if not r["ok"]:
             raise HttpError(409, t("Rendering failed; see the error above the preview first"))
         return studio.bullet_report(r)
