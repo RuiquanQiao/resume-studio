@@ -384,6 +384,18 @@ STATES = [
     State("chat, proposes a plan", then(say("PLAN 改一下"), wait(".ask.ask-plan.pending")), [".ask.ask-plan"]),
     State("chat, tasks and a queue", then(say("TASKS SLOW"), wait("#chat-tasks:not(.hidden)"), say("排队的一条"),
                                           wait("#chat-queue:not(.hidden)")), ["#chat-tasks", "#chat-queue"]),
+    # the agent picker with one agent not installed (its npm command) and one signed out (how to sign in)
+    State("chat, the agent picker", then(wait("#chat-agent-btn .lbl"), js("""() => {
+            ui.claude.agents = ui.claude.agents.map((a) => a.id === "pi" ? { ...a, installed: false } : a.id === "qwen" ? { ...a, signed_in: false } : a);
+            openAgentMenu(); }"""), wait(".float.in .pk-note")),
+          [".picker .pk-note", ".picker .pk-tag", ".picker .pk-item.off"]),
+    # a chat on Codex whose sign-in ran out: the header's chip warns, the reply says how to sign in again
+    State("chat, another agent signed out", then(wait("#chat-agent-btn .lbl"), js("""async () => {
+            await pickAgent(agentOf("codex"));
+            ui.claude.agents = ui.claude.agents.map((a) => a.id === "codex" ? { ...a, signed_in: false } : a);
+            ui.chat.messages = [{ role: "user", text: "你好", files: [] }, { role: "assistant", blocks: [], error: "Not logged in. Run codex login." }];
+            renderChat(); renderPickers(); }"""), wait(".msg-help")),
+          ["#chat-agent-btn.warn", "#chat-log .msg-help"]),
     # ---- Job search
     State("job search, not connected", key("Control+2"), ["#jobspace .connect"]),
     State("job search, git and Node missing", then(key("Control+2"), wait("#jobspace .connect"),

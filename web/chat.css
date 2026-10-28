@@ -28,6 +28,15 @@
 .pk-custom input { flex: 1; min-width: 0; height: 26px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--panel); font: 12px var(--mono); }
 .pk-custom input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 .pk-custom input.bad { border-color: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft); }
+/* the agent picker: one not installed reads as unavailable but stays clickable (it copies the install command) */
+.pk-item.off .pk-label { color: var(--text-3); }
+.pk-item .pk-desc code, .pk-desc { overflow-wrap: anywhere; }
+.pk-note { padding: 4px 10px 6px; font-size: 11.5px; line-height: 1.45; color: var(--text-3); }
+/* the chat's agent, in the chat's header: which agent this chat talks to */
+.agent-chip { flex: none; gap: 4px; max-width: 120px; padding: 0 7px; font-weight: 600; }
+.agent-chip .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.agent-chip > svg.i { width: 14px; height: 14px; color: var(--accent); }
+.agent-chip.warn, .agent-chip.warn > svg.i { color: var(--warn); }
 
 /* context + plan limits */
 .cx-pop { width: 290px; padding: 4px 6px 8px; }

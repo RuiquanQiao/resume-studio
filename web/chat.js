@@ -1,5 +1,6 @@
-// Chat sidebar: a Claude Code session with the parts of Claude Code's own UI that matter here —
-// model / effort / permission-mode pickers, permission cards, Claude's questions and plan
+// Chat sidebar: a session of the user's own coding agent (Claude Code, Codex, Qwen Code, Pi,
+// DeepSeek Harness — picked per chat) with the parts of its own UI that matter here —
+// agent / model / effort / permission-mode pickers, permission cards, the agent's questions and plan
 // approval, slash commands and skills, attachments, a message queue, the task list,
 // context use and plan limits, interrupt and fork.
 // Loaded after ui.js and before app.js; it only defines functions (app.js's state is
@@ -27,10 +28,14 @@ const MODE_INFO = {
 };
 const MODE_CYCLE = ["default", "acceptEdits", "plan"];   // Shift+Tab, like the terminal
 const EFFORT_INFO = {
-  "": [t("Auto"), t("Claude Code decides per task")],
   low: ["Low", t("Fastest, uses the least quota")], medium: ["Medium", t("Balance of speed and quality")], high: ["High", t("Thinks more carefully")],
   xhigh: ["XHigh", t("Very careful, slower")], max: ["Max", t("Deepest, uses the most quota")],
 };
+// [label, desc] of an effort level: "" is the agent's own choice; other agents add their own levels (Pi's "minimal")
+function effortInfo(lv) {
+  if (!lv) return [t("Auto"), t("{tool} decides per task", { tool: agentOf().name })];
+  return EFFORT_INFO[lv] || [lv[0].toUpperCase() + lv.slice(1), ""];
+}
 // slash commands this window handles itself (the rest go to Claude Code as typed)
 const LOCAL_COMMANDS = [
   { name: "model", desc: t("Switch model"), hint: t("[model]") },
@@ -78,6 +83,7 @@ function resetText(epoch) {
   const d = new Date(epoch * 1000), now = new Date();
   const hm = d.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" });
   if (d.toDateString() === now.toDateString()) return t("today {time}", { time: hm });
+  if (d - now > 6 * 86400e3) return d.toLocaleDateString(LOCALE, { month: "short", day: "numeric" });   // a month-long window (Codex)
   return `${d.toLocaleDateString(LOCALE, { weekday: "short" })} ${hm}`;
 }
 function relTime(epoch) {
@@ -92,25 +98,59 @@ function relTime(epoch) {
 const chatShown = () => W.chat === "on";
 const fileUrl = (path) => `/api/chats/${ui.chat.id}/file?path=${encodeURIComponent(path)}`;
 
-// ---------------------------------------------------------------- Claude Code info
-async function loadClaudeInfo(refresh = false) {
+// ---------------------------------------------------------------- the agent and what it offers
+// Every agent the app knows, as the server last listed them (installed, signed in, how to get it).
+// Until the server's list arrives, their names (core/agents.py) keep the first paint right.
+const AGENT_NAMES = { claude: ["Claude Code", "Claude", "claude"], codex: ["Codex", "Codex", "codex"], qwen: ["Qwen Code", "Qwen", "qwen"],
+  pi: ["Pi", "Pi", "pi"], dsh: ["DeepSeek Harness", "DeepSeek", "dsh"] };
+const agentList = () => (ui.claude && ui.claude.agents) || Object.entries(AGENT_NAMES).map(([id, [name, short, exe]]) =>
+  ({ id, name, short, exe, installed: true, fork: id === "claude" || id === "codex", protocol: { claude: "claude", codex: "codex", pi: "pi" }[id] || "acp" }));
+// The open chat's agent; a new chat starts on the last one picked. Chats from before agents could be
+// picked have none recorded and were all Claude Code's.
+function chatAgentId() {
+  const m = ui.chat.meta;
+  if (m && m.agent) return m.agent;
+  if (m && (m.session_id || m.fork || ui.chat.messages.length)) return "claude";
+  return (ui.claude && ui.claude.defaults && ui.claude.defaults.agent) || "claude";
+}
+function agentOf(id = chatAgentId()) {
+  return agentList().find((a) => a.id === id) || { id, name: id, short: id, exe: id, installed: true, fork: false, protocol: "" };
+}
+function agentShortOf(chatId) {
+  const c = ui.chat.list.find((x) => x.id === chatId);
+  return agentOf(!c ? chatAgentId() : c.agent || (c.session_id ? "claude" : chatSettings().agent)).short;
+}
+
+async function loadClaudeInfo(refresh = false, agent = chatAgentId()) {
   try {
-    const r = await api("GET", "/api/claude" + (refresh ? "?refresh=1" : ""));
-    ui.claude = { ...ui.claude, ...r };
-    ui.chat.available = r.available;
+    const r = await api("GET", `/api/claude?agent=${encodeURIComponent(agent)}` + (refresh ? "&refresh=1" : ""));
+    const first = !(ui.claude && ui.claude.agents);
+    ui.agentInfo = { ...ui.agentInfo, [r.agent]: r };
+    if (r.agent === chatAgentId() || !ui.claude) { ui.claude = { ...ui.claude, ...r }; ui.chat.available = r.available; }
+    else ui.claude = { ...ui.claude, agents: r.agents, defaults: r.defaults };
     if (!r.defaults) {                                        // carry over a choice the page used to keep itself
       const old = localDefaults();
       if (old) ui.claude.defaults = (await api("PUT", "/api/chat-defaults", old)).defaults;
     }
+    if (first) renderChat();   // the welcome and the sign-in help name the agent as it is installed
   } catch (_) { /* keep what we had */ }
   renderPickers();
 }
+// the open chat runs on another agent than the info shown: show that agent's (cached at once, then fresh)
+function syncAgent() {
+  const id = chatAgentId();
+  if (ui.claude && ui.claude.agent === id) return;
+  const cached = ui.agentInfo && ui.agentInfo[id];
+  if (cached) ui.claude = { ...ui.claude, ...cached, agents: (ui.claude || {}).agents || cached.agents, defaults: (ui.claude || {}).defaults };
+  loadClaudeInfo(false, id);
+}
 
-const info = () => (ui.claude && ui.claude.info) || null;
+const info = () => (ui.claude && ui.claude.agent === chatAgentId() && ui.claude.info) || null;
 // what the next message will use: the open chat's choice, or the remembered one for a new chat
 function chatSettings() {
-  if (ui.chat.meta) return { model: ui.chat.meta.model_choice || null, effort: ui.chat.meta.effort || null, mode: ui.chat.meta.mode || null };
-  return { model: null, effort: null, mode: null, ...((ui.claude && ui.claude.defaults) || localDefaults() || {}) };
+  if (ui.chat.meta) return { model: ui.chat.meta.model_choice || null, effort: ui.chat.meta.effort || null, mode: ui.chat.meta.mode || null, agent: chatAgentId() };
+  const d = { model: null, effort: null, mode: null, ...((ui.claude && ui.claude.defaults) || localDefaults() || {}) };
+  return { ...d, agent: d.agent || "claude" };
 }
 function localDefaults() { try { return JSON.parse(store("chat-defaults") || "null"); } catch (_) { return null; } }
 // new chats start with the last choice, like Claude Code; the app's prefs keep it, so a new port or restart doesn't lose it
@@ -131,13 +171,25 @@ function effectiveModel() {
   const actual = ui.chat.meta && ui.chat.meta.model;
   const resolved = actual || (i && i.default_model.resolved) || "";
   const m = allModels().find((x) => x.resolved === resolved || x.value === resolved);
-  return { name: modelName(resolved) || (i ? t(i.default_model.name) : t("Default model")), efforts: m ? m.efforts : i ? i.efforts : [], auto: m ? m.auto_mode : true, follows: true };
+  const name = agentOf().protocol === "claude" ? modelName(resolved) : (m && m.name) || resolved;
+  return { name: name || (i ? t(i.default_model.name) : t("Default model")), efforts: m ? m.efforts : i ? i.efforts : [], auto: m ? m.auto_mode : true, follows: true };
 }
 function effectiveMode() {
   const { mode } = chatSettings();
   if (mode) return mode;
   return (ui.chat.meta && ui.chat.meta.mode_actual) || (info() && info().permission_mode) || "default";
 }
+// the permission modes the agent has, each {id, label, short, icon, desc}: Claude Code's and Codex's are
+// the same four (Codex's described in its own terms by the server); an ACP agent names its own
+function modeList() {
+  const raw = (ui.claude && ui.claude.agent === chatAgentId() && ui.claude.modes) || (agentOf().protocol === "claude" ? Object.keys(MODE_INFO) : []);
+  return raw.map((m) => {
+    const id = typeof m === "string" ? m : m.id, base = MODE_INFO[id];
+    if (typeof m === "string") return base ? { id, ...base } : null;
+    return { id, label: m.label || (base && base.label) || id, short: m.label || (base && base.short) || id, icon: base ? base.icon : "shield", desc: m.desc || (base && base.desc) || "" };
+  }).filter(Boolean);
+}
+const modeInfo = (id) => modeList().find((m) => m.id === id) || (MODE_INFO[id] ? { id, ...MODE_INFO[id] } : { id, label: id, short: id, icon: "shield", desc: "" });
 
 async function setChatSetting(field, value) {
   const next = { ...chatSettings(), [field]: value };
@@ -145,7 +197,7 @@ async function setChatSetting(field, value) {
     const m = modelEntry(value);
     if (m && next.effort && !m.efforts.includes(next.effort)) { next.effort = null; if (ui.chat.id) await setChatSetting("effort", null); }
   }
-  await saveDefaults({ model: next.model, effort: next.effort, mode: next.mode });
+  await saveDefaults({ model: next.model, effort: next.effort, mode: next.mode, agent: chatAgentId() });
   if (ui.chat.id) {
     try {
       ui.chat.meta = await api("PUT", "/api/chats/" + ui.chat.id, { [field]: value });
@@ -159,19 +211,36 @@ async function setChatSetting(field, value) {
 
 // ---------------------------------------------------------------- pickers (composer bar)
 function renderPickers() {
-  const em = effectiveModel(), mode = effectiveMode(), s = chatSettings();
-  const mb = $("#chat-model-btn"), eb = $("#chat-effort-btn"), pb = $("#chat-mode-btn");
+  const em = effectiveModel(), mode = effectiveMode(), s = chatSettings(), ag = agentOf();
+  const mb = $("#chat-model-btn"), eb = $("#chat-effort-btn"), pb = $("#chat-mode-btn"), ab = $("#chat-agent-btn");
   if (!mb) return;
+  ab.replaceChildren(icon("sparkle"), h("span", { class: "lbl" }, ag.short));
+  ab.classList.toggle("warn", !ag.installed || ag.signed_in === false);
+  setTip(ab, !ag.installed ? t("{name} isn't installed · click to pick another agent", { name: ag.name })
+    : ag.signed_in === false ? t("{name} isn't signed in · click to pick another agent", { name: ag.name }) : t("Agent: {name} · click to switch", { name: ag.name }));
   mb.querySelector(".lbl").textContent = em.name;
-  setTip(mb, em.follows ? t("Model: {name} (following Claude Code's setting)", { name: em.name }) : t("Model: {name}", { name: em.name }));
+  setTip(mb, em.follows ? t("Model: {name} (following {tool}'s setting)", { name: em.name, tool: ag.name }) : t("Model: {name}", { name: em.name }));
   const noEffort = !em.efforts.length;
-  eb.querySelector(".lbl").textContent = noEffort ? "—" : EFFORT_INFO[s.effort || ""][0];
+  eb.querySelector(".lbl").textContent = noEffort ? "—" : effortInfo(s.effort)[0];
   eb.disabled = noEffort;
-  setTip(eb, noEffort ? t("{name} has no effort levels", { name: em.name }) : t("Effort: {level}", { level: EFFORT_INFO[s.effort || ""][0] }));
-  const mi = MODE_INFO[mode] || MODE_INFO.default;
-  pb.replaceChildren(icon(mi.icon), h("span", { class: "lbl" }, mi.short));
-  pb.dataset.mode = mode;
-  setTip(pb, `${s.mode ? t("Permission mode: {mode}", { mode: mi.label }) : t("Permission mode: {mode} (following Claude Code's setting)", { mode: mi.label })} · ${t("Shift+Tab to switch")}`);
+  setTip(eb, noEffort ? t("{name} has no effort levels", { name: em.name }) : t("Effort: {level}", { level: effortInfo(s.effort)[0] }));
+  const modes = modeList();
+  if (!modes.length) {
+    pb.replaceChildren(icon("shield"), h("span", { class: "lbl" }, "—"));
+    pb.disabled = true;
+    delete pb.dataset.mode;
+    setTip(pb, ag.protocol === "pi" ? t("{name} doesn't ask before acting, so it has no permission modes", { name: ag.name })
+      : t("{name} lists its permission modes once a chat has started", { name: ag.name }));
+  } else {
+    const mi = modeInfo(mode);
+    pb.disabled = false;
+    pb.replaceChildren(icon(mi.icon), h("span", { class: "lbl" }, mi.short));
+    pb.dataset.mode = mode;
+    setTip(pb, `${s.mode ? t("Permission mode: {mode}", { mode: mi.label }) : t("Permission mode: {mode} (following {tool}'s setting)", { mode: mi.label, tool: ag.name })} · ${t("Shift+Tab to switch")}`);
+  }
+  $("#chat-input").placeholder = t("Ask {agent}, or type / for commands", { agent: ag.short });
+  setTip($("#chat-stop"), t("Stop ({agent} stops after the current step)", { agent: ag.short }));
+  if (typeof paintChatToggle === "function") paintChatToggle();
   renderContextRing();
 }
 
@@ -201,7 +270,7 @@ function openPicker(anchor, panel) {
 
 function openModelMenu(anchor = $("#chat-model-btn")) {
   const i = info(), s = chatSettings();
-  if (!i) { toast(ui.claude && ui.claude.error ? ui.claude.error : t("Reading Claude Code's model list…")); loadClaudeInfo(true); return; }
+  if (!i) { toast(ui.claude && ui.claude.error ? ui.claude.error : t("Reading {tool}'s model list…", { tool: agentOf().name })); loadClaudeInfo(true); return; }
   const em = effectiveModel();
   const panel = h("div", { class: "picker", role: "menu", "aria-label": t("Model") }, h("div", { class: "pk-head" }, t("Model")));
   i.models.forEach((m, n) => {
@@ -214,13 +283,15 @@ function openModelMenu(anchor = $("#chat-model-btn")) {
   const moreBtn = h("button", { type: "button", class: "pk-more", "aria-expanded": "false",
     onclick: () => { const open = more.classList.toggle("hidden") === false; moreBtn.setAttribute("aria-expanded", String(open)); placeFloat(Float.cur); } },
     h("span", null, t("More models")), icon("chevRight"));
-  more.append(pickerItem({ label: t("Follow Claude Code's setting"), desc: t("currently {name}", { name: t(i.default_model.name) }), on: !s.model, onClick: () => setChatSetting("model", null) }));
+  more.append(pickerItem({ label: t("Follow {tool}'s setting", { tool: agentOf().name }), desc: i.default_model.name ? t("currently {name}", { name: t(i.default_model.name) }) : "",
+    on: !s.model, onClick: () => setChatSetting("model", null) }));
   for (const m of i.more_models) more.append(pickerItem({ label: m.name, desc: m.desc && t(m.desc), tag: m.tag && t(m.tag), on: s.model === m.value, onClick: () => setChatSetting("model", m.value) }));
-  const custom = h("input", { placeholder: t("Model ID, e.g. claude-opus-4-1"), spellcheck: "false", "aria-label": t("Model ID"),
+  const example = { claude: "claude-opus-4-1", codex: "gpt-5.6-terra", pi: "anthropic/claude-sonnet-4-5" }[agentOf().protocol] || "model-id";
+  const custom = h("input", { placeholder: t("Model ID, e.g. {id}", { id: example }), spellcheck: "false", "aria-label": t("Model ID"),
     value: s.model && !modelEntry(s.model) ? s.model : "" });
   const useCustom = () => {
     const v = custom.value.trim();
-    if (!/^[A-Za-z0-9][A-Za-z0-9._\-[\]]{0,80}$/.test(v)) { custom.classList.add("bad"); return; }
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:/\-[\]]{0,120}$/.test(v)) { custom.classList.add("bad"); return; }
     closeFloat(); setChatSetting("model", v);
   };
   custom.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); useCustom(); } e.stopPropagation(); });
@@ -236,7 +307,7 @@ function openEffortMenu(anchor = $("#chat-effort-btn")) {
   if (!em.efforts.length) { toast(t("{name} has no effort levels", { name: em.name })); return; }
   const panel = h("div", { class: "picker", role: "menu", "aria-label": t("Effort") }, h("div", { class: "pk-head" }, t("Effort")));
   ["", ...em.efforts].forEach((lv, n) => {
-    const [label, desc] = EFFORT_INFO[lv] || [lv, ""];
+    const [label, desc] = effortInfo(lv);
     const item = pickerItem({ label, desc, on: (s.effort || "") === lv, hint: String(n + 1), onClick: () => setChatSetting("effort", lv || null) });
     item.dataset.num = String(n + 1);
     panel.append(item);
@@ -245,27 +316,77 @@ function openEffortMenu(anchor = $("#chat-effort-btn")) {
 }
 
 function openModeMenu(anchor = $("#chat-mode-btn")) {
-  const s = chatSettings(), em = effectiveModel();
+  const s = chatSettings(), em = effectiveModel(), modes = modeList();
+  if (!modes.length) return;
   const base = (ui.chat.meta && !ui.chat.meta.mode && ui.chat.meta.mode_actual) || (info() && info().permission_mode) || "default";
   const panel = h("div", { class: "picker", role: "menu", "aria-label": t("Permission mode") }, h("div", { class: "pk-head" }, t("Permission mode"), h("span", { class: "pk-head-hint" }, t("Shift+Tab to switch"))));
-  (ui.claude && ui.claude.modes || Object.keys(MODE_INFO)).forEach((m, n) => {
-    const mi = MODE_INFO[m];
-    if (!mi) return;
-    const item = pickerItem({ label: mi.label, desc: m === "auto" && !em.auto ? t("{name} has no auto mode", { name: em.name }) : mi.desc, on: s.mode === m,
-      hint: String(n + 1), disabled: m === "auto" && !em.auto, onClick: () => setChatSetting("mode", m) });
+  modes.forEach((mi, n) => {
+    const noAuto = mi.id === "auto" && agentOf().protocol === "claude" && !em.auto;
+    const item = pickerItem({ label: mi.label, desc: noAuto ? t("{name} has no auto mode", { name: em.name }) : mi.desc, on: s.mode === mi.id,
+      hint: String(n + 1), disabled: noAuto, onClick: () => setChatSetting("mode", mi.id) });
     item.dataset.num = String(n + 1);
     item.prepend(h("span", { class: "pk-icon" }, icon(mi.icon)));
     panel.append(item);
   });
-  panel.append(h("div", { class: "menu-sep" }), pickerItem({ label: t("Follow Claude Code's setting"), desc: t("currently “{mode}”", { mode: (MODE_INFO[base] || MODE_INFO.default).label }), on: !s.mode, onClick: () => setChatSetting("mode", null) }));
+  panel.append(h("div", { class: "menu-sep" }), pickerItem({ label: t("Follow {tool}'s setting", { tool: agentOf().name }), desc: t("currently “{mode}”", { mode: modeInfo(base).label }), on: !s.mode, onClick: () => setChatSetting("mode", null) }));
   openPicker(anchor, panel);
 }
 
 function cycleMode() {
-  const cur = effectiveMode();
-  const next = MODE_CYCLE[(MODE_CYCLE.indexOf(cur) + 1) % MODE_CYCLE.length];
+  const ids = modeList().map((m) => m.id);
+  const cycle = agentOf().protocol === "claude" ? MODE_CYCLE : ids.filter((id) => id !== "auto");
+  if (!cycle.length) return;
+  const next = cycle[(cycle.indexOf(effectiveMode()) + 1) % cycle.length];
   setChatSetting("mode", next);
-  toast(t("Permission mode: {mode}", { mode: MODE_INFO[next].label }), { ms: 1400 });
+  toast(t("Permission mode: {mode}", { mode: modeInfo(next).label }), { ms: 1400 });
+}
+
+// ---------------------------------------------------------------- the agent picker
+// Every agent the user may have, as their own command line tool with its own sign-in. A chat stays on the
+// agent it started on (its history lives there), so picking another one for a chat that has begun opens a
+// new chat; an empty chat just switches. New chats start on the last pick.
+function openAgentMenu(anchor = $("#chat-agent-btn")) {
+  const cur = chatAgentId();
+  const panel = h("div", { class: "picker", role: "menu", "aria-label": t("Agent") }, h("div", { class: "pk-head" }, t("Agent")));
+  agentList().forEach((a, n) => {
+    const tag = !a.installed ? t("Not installed") : a.signed_in === false ? t("Not signed in") : null;
+    const desc = !a.installed ? t("Install: {cmd}", { cmd: a.install }) : a.signed_in === false ? a.login : a.account || "";
+    const item = pickerItem({ label: a.name, desc, tag, on: a.id === cur, hint: String(n + 1), cls: a.installed ? "" : "off", onClick: () => pickAgent(a) });
+    item.dataset.num = String(n + 1);
+    panel.append(item);
+  });
+  const begun = ui.chat.id && (ui.chat.messages.length || ui.chat.running);
+  panel.append(h("div", { class: "menu-sep" }), h("div", { class: "pk-note" }, begun
+    ? t("This chat stays with {name}; picking another agent opens a new chat.", { name: agentOf(cur).name })
+    : t("Each agent signs in with its own command line tool; nothing is shared between them.")));
+  pickerKeys(panel);   // it sits in the chat's header, so it opens downwards
+  openFloat(anchor, panel, { place: "bottom", align: "start", minWidth: 280 });
+  (panel.querySelector('.pk-item[aria-checked="true"]') || panel.querySelector(".pk-item") || panel).focus({ preventScroll: true });
+}
+
+async function pickAgent(a) {
+  if (!a.installed) {
+    try { await navigator.clipboard.writeText(a.install); } catch (_) { /* the toast still says it */ }
+    toast(t("{name} isn't installed. Run {cmd} in a terminal (copied), sign in, then pick it again.", { name: a.name, cmd: a.install }), { ms: 9000 });
+    return;
+  }
+  if (a.id === chatAgentId()) return;
+  await saveDefaults({ model: null, effort: null, mode: null, agent: a.id });   // another agent's model and mode mean nothing here
+  const begun = ui.chat.id && (ui.chat.messages.length || ui.chat.running || (ui.chat.meta || {}).session_id);
+  if (begun) {
+    await newChat({ model: null, effort: null, mode: null, agent: a.id });
+    toast(t("A new chat with {name}", { name: a.name }), { ms: 2400 });
+  } else if (ui.chat.id) {
+    try {
+      ui.chat.meta = await api("PUT", "/api/chats/" + ui.chat.id, { agent: a.id });
+      const i = ui.chat.list.findIndex((c) => c.id === ui.chat.id);
+      if (i >= 0) ui.chat.list[i] = ui.chat.meta;
+    } catch (e) { toast(e.message); return; }
+  }
+  await loadClaudeInfo(false, a.id);
+  renderChat();
+  renderComposerState();
+  renderChatSelect();
 }
 
 // ---------------------------------------------------------------- context ring + limits
@@ -300,22 +421,26 @@ function openContextPanel(anchor = $("#chat-ctx-btn")) {
     return h("div", { class: "cx-row" }, h("div", { class: "cx-line" }, h("span", null, label), h("span", { class: "cx-val" }, `${Math.round(w.utilization * 100)}%`)),
       bar(w.utilization, w.utilization >= 0.9 ? "bad" : w.utilization >= 0.7 ? "warn" : ""), w.resetsAt && h("div", { class: "cx-sub" }, t("resets {when}", { when: resetText(w.resetsAt) })));
   };
+  // other agents' windows (Codex's 30-day one on a free plan) by their length
+  const otherWins = Object.entries(lim.windows || {}).filter(([k, w]) => !["five_hour", "seven_day"].includes(k) && w && w.minutes)
+    .map(([k, w]) => win(k, w.minutes >= 1440 ? t("Last {n} day", { n: Math.round(w.minutes / 1440) }, "Last {n} days") : t("Last {n} hour", { n: Math.round(w.minutes / 60) }, "Last {n} hours")));
+  const isClaude = agentOf().protocol === "claude";
   const send = (cmd) => { closeFloat(); sendChat(cmd); };
   const panel = h("div", { class: "cx-pop", role: "dialog", "aria-label": t("Context and usage") },
     h("div", { class: "pk-head" }, t("Context")),
     known
       ? h("div", { class: "cx-row" }, h("div", { class: "cx-line" }, h("span", null, `${fmtK(c.used)} / ${fmtK(c.window)} tokens`), h("span", { class: "cx-val" }, `${Math.round(p * 100)}%`)),
-        bar(p, p >= 0.9 ? "bad" : p >= 0.7 ? "warn" : ""), h("div", { class: "cx-sub" }, p >= 0.7 ? t("Nearly full: compacting frees room, and Claude keeps the key points") : t("When it's full, Claude Code compacts it automatically")))
+        bar(p, p >= 0.9 ? "bad" : p >= 0.7 ? "warn" : ""), h("div", { class: "cx-sub" }, p >= 0.7 ? t("Nearly full: compacting frees room, and {agent} keeps the key points", { agent: agentOf().short }) : t("When it's full, {tool} compacts it automatically", { tool: agentOf().name })))
       : c && c.compacted
         ? h("div", { class: "cx-row" }, h("div", { class: "cx-line" }, h("span", null, t("Compacted")), c.window > 0 ? h("span", { class: "cx-val" }, t("window {size}", { size: fmtK(c.window) })) : null),
           bar(0), h("div", { class: "cx-sub" }, t("Usage updates after the next reply.")))
         : h("div", { class: "cx-sub" }, t("Send a message to see how much context this chat uses.")),
-    h("div", { class: "cx-acts" },
+    isClaude && h("div", { class: "cx-acts" },   // Claude Code's own slash commands
       h("button", { type: "button", class: "btn sm", disabled: !ui.chat.id || !ui.chat.meta || !ui.chat.meta.session_id, onclick: () => send("/compact") }, icon("compress"), t("Compact context")),
       h("button", { type: "button", class: "btn sm ghost", disabled: !ui.chat.id || !ui.chat.meta || !ui.chat.meta.session_id, onclick: () => send("/context") }, t("Details"))),
-    (lim.windows && (lim.windows.five_hour || lim.windows.seven_day)) && h("div", { class: "pk-head" }, t("Plan usage")),
-    win("five_hour", t("Last 5 hours")), win("seven_day", t("This week")),
-    lim.windows ? null : h("div", { class: "cx-sub" }, t("Plan usage shows after the first reply.")),
+    (lim.windows && Object.keys(lim.windows).length) && h("div", { class: "pk-head" }, t("Plan usage")),
+    win("five_hour", t("Last 5 hours")), win("seven_day", t("This week")), ...otherWins,
+    lim.windows || !["claude", "codex"].includes(agentOf().protocol) ? null : h("div", { class: "cx-sub" }, t("Plan usage shows after the first reply.")),
     acct && acct.plan && h("div", { class: "cx-foot" }, [acct.plan, acct.email].filter(Boolean).join(" · ")));
   openFloat(anchor, panel, { place: "top", align: "end", minWidth: 270, focus: panel.querySelector("button:not(:disabled)") });
 }
@@ -335,7 +460,7 @@ async function loadChats() {
   const list = visibleChats();
   const id = list.some((c) => c.id === saved) ? saved : (list[0] || {}).id || null;
   if (id) await openChat(id, { quiet: true });
-  else { ui.chat.id = null; ui.chat.meta = null; ui.chat.messages = []; renderChatSelect(); renderChat(); renderPickers(); }
+  else { ui.chat.id = null; ui.chat.meta = null; ui.chat.messages = []; syncAgent(); renderChatSelect(); renderChat(); renderPickers(); }
   paintChatDot(r.running);
 }
 
@@ -377,6 +502,8 @@ async function openChat(id, { quiet = false, refresh = false } = {}) {
   ui.chat.running = r.running;
   ui.chat.live = r.running ? { blocks: (r.live && r.live.blocks) || [] } : null;
   ui.chat.queue = (r.live && r.live.queue) || [];
+  if (r.available !== undefined) ui.chat.available = r.available;
+  syncAgent();
   store(chatKey(), id);
   renderChatSelect();
   if (!quiet || chatShown()) renderChat();
@@ -392,18 +519,18 @@ function reloadChat() {
   reloadTimer = setTimeout(() => ui.chat.id && openChat(ui.chat.id, { quiet: !chatShown(), refresh: true }), 30);
 }
 
-async function createChat() {
+async function createChat(settings = chatSettings()) {
   // in Job search a new chat works in the tool's folder (its modes and scripts load there); anywhere
   // else in Resume Studio's data folder, where it can do everything the window can
   const c = W.ws === "jobs" && jobsReady()
-    ? (await api("POST", "/api/jobs/chat", { ...chatSettings(), title: jobsTool().name })).chat
-    : await api("POST", "/api/chats", chatSettings());
+    ? (await api("POST", "/api/jobs/chat", { ...settings, title: jobsTool().name })).chat
+    : await api("POST", "/api/chats", settings);
   ui.chat.list = [c, ...ui.chat.list];
   return c;
 }
 
-async function newChat() {
-  const c = await createChat();
+async function newChat(settings) {
+  const c = await createChat(settings);
   await openChat(c.id);
   $("#chat-input").focus();
 }
@@ -452,10 +579,11 @@ function chatState(id) {
   if ((ui.chat.busy || []).includes(id) || (id === ui.chat.id && ui.chat.running)) return "running";
   return chatUnread().has(id) ? "unread" : "";
 }
-const CHAT_STATES = { running: "Claude is replying", waiting: "Claude is waiting for you", unread: "A new reply you haven't seen" };
-function chatMark(state) {
+const CHAT_STATES = { running: "{agent} is replying", waiting: "{agent} is waiting for you", unread: "A new reply you haven't seen" };
+const chatStateText = (state, id) => t(CHAT_STATES[state], { agent: agentShortOf(id) });
+function chatMark(state, id) {
   if (!state) return null;
-  return h("span", { class: "chat-mark " + state, title: t(CHAT_STATES[state]), "aria-label": t(CHAT_STATES[state]) });
+  return h("span", { class: "chat-mark " + state, title: chatStateText(state, id), "aria-label": chatStateText(state, id) });
 }
 // replies that ended in a chat the user wasn't in, kept per viewer until that chat is opened
 function chatUnread() {
@@ -474,10 +602,14 @@ function renderChatSelect() {
   const list = visibleChats();
   sel.disabled = !list.length;
   const mixed = list.some(inToolFolder) && list.some((c) => !inToolFolder(c));
+  // chats on more than one agent: each says which (a chat's agent never changes once it has begun)
+  const agentOfChat = (c) => c.agent || (c.session_id ? "claude" : chatSettings().agent);
+  const manyAgents = new Set(list.map(agentOfChat)).size > 1;
   const opt = (c) => {
     const state = chatState(c.id);
     return { value: c.id, label: c.title || t("New chat"), group: mixed ? (inToolFolder(c) ? t("In {name}'s folder", { name: chatPlace(c) }) : "Resume Studio") : undefined,
-      hint: relTime(c.updated), mark: state ? () => chatMark(state) : null, tip: state ? t(CHAT_STATES[state]) : undefined };
+      hint: manyAgents ? `${agentOf(agentOfChat(c)).short} · ${relTime(c.updated)}` : relTime(c.updated),
+      mark: state ? () => chatMark(state, c.id) : null, tip: state ? chatStateText(state, c.id) : undefined };
   };
   sel.setOptions([...list.filter((c) => !inToolFolder(c)), ...list.filter(inToolFolder)].map(opt), ui.chat.id);
 }
@@ -521,8 +653,8 @@ function renderChat() {
       t("Which follow-ups are due this week?"), t("Compare the postings I'm most interested in"),
     ];
     log.append(h("div", { class: "chat-welcome" },
-      h("div", { class: "t" }, t("Work with {name} and Claude", { name })),
-      h("div", null, ui.chat.available ? t("These chats run in {name}'s folder: Claude follows its modes and scripts, and still edits your resume when you ask. “All of {name}” above lists every mode.", { name }) : t("The claude command was not found. Install Claude Code and sign in first.")),
+      h("div", { class: "t" }, t("Work with {name} and {agent}", { name, agent: agentOf().short })),
+      h("div", null, ui.chat.available ? t("These chats run in {name}'s folder: {agent} follows its modes and scripts, and still edits your resume when you ask. “All of {name}” above lists every mode.", { name, agent: agentOf().short }) : missingAgentText()),
       ui.chat.available && h("div", { class: "suggest" }, suggest.map((s) => h("button", { onclick: () => sendChat(s) }, s)))));
     return;
   }
@@ -535,8 +667,8 @@ function renderChat() {
       t("Check whether the current subset claims anything the fact layer doesn't support"),
     ].filter((s, i, a) => a.indexOf(s) === i);
     log.append(h("div", { class: "chat-welcome" },
-      h("div", { class: "t" }, t("Work on your resume with Claude")),
-      h("div", null, ui.chat.available ? t("This is Claude Code: it can read and edit your resume data and use your installed skills, and the preview refreshes after each change. Type / for commands and skills.") : t("The claude command was not found. Install Claude Code and sign in first.")),
+      h("div", { class: "t" }, t("Work on your resume with {agent}", { agent: agentOf().short })),
+      h("div", null, ui.chat.available ? t("This is {tool}: it can read and edit your resume data and use your installed skills, and the preview refreshes after each change. Type / for commands and skills.", { tool: agentOf().name }) : missingAgentText()),
       ui.chat.available && h("div", { class: "suggest" }, suggest.map((s) => h("button", { onclick: () => sendChat(s) }, s)))));
     return;
   }
@@ -568,8 +700,9 @@ function messageEl(m, index) {
     const tools = index != null && h("div", { class: "msg-tools" },
       m.at && h("span", { class: "mt-time", title: new Date(m.at * 1000).toLocaleString() }, relTime(m.at)),
       h("button", { type: "button", class: "btn icon sm ghost", title: t("Copy"), onclick: () => copyText(m.text) }, icon("copy")),
-      h("button", { type: "button", class: "btn icon sm ghost", title: t("Go back to before this message (rewind): removes it and everything after, so you can edit and resend"), onclick: () => rewindAt(index) }, icon("rewind")),
-      h("button", { type: "button", class: "btn icon sm ghost", title: t("Fork: a new chat that stops just before this message; this chat stays as it is"), onclick: () => forkAt(index) }, icon("fork")));
+      // only agents that can resume from the middle of a conversation (Claude Code, Codex) go back past the first message
+      (agentOf().fork || index === 0) && h("button", { type: "button", class: "btn icon sm ghost", title: t("Go back to before this message (rewind): removes it and everything after, so you can edit and resend"), onclick: () => rewindAt(index) }, icon("rewind")),
+      (agentOf().fork || index === 0) && h("button", { type: "button", class: "btn icon sm ghost", title: t("Fork: a new chat that stops just before this message; this chat stays as it is"), onclick: () => forkAt(index) }, icon("fork")));
     return h("div", { class: "msg-user-wrap" + (action ? " is-action" : "") },
       h("div", { class: "msg-user" + (action ? " is-action" : "") }, action ? h("div", { class: "msg-action" }, icon("sparkle"), action in AI_LABELS ? t(AI_LABELS[action]) : action) : null,
         filesEl(m.files), m.text ? h("div", { class: "msg-text" }, m.text) : null),
@@ -586,7 +719,7 @@ function messageEl(m, index) {
   const blocks = m.blocks || [];
   const waitingOnUser = blocks.some((b) => b.type === "ask" && b.status === "pending");
   if (m.live && !waitingOnUser && (!blocks.length || blocks[blocks.length - 1].type !== "text")) {
-    el.append(h("div", { class: "thinking", "aria-label": t("Claude is thinking") }, h("i"), h("i"), h("i"),
+    el.append(h("div", { class: "thinking", "aria-label": t("{agent} is thinking", { agent: agentOf().short }) }, h("i"), h("i"), h("i"),
       ui.chat.thinking ? h("span", { class: "th-n" }, t("Thinking · {n} tokens", { n: fmtK(ui.chat.thinking) })) : null));
   }
   if (m.error) el.append(h("div", { class: "msg-error" }, m.error));
@@ -595,12 +728,26 @@ function messageEl(m, index) {
   return el;
 }
 
-// Errors that mean the `claude` command itself isn't signed in. A fixed check, not Claude:
-// Claude can't answer while it is signed out, so the window says what is wrong and how to fix it.
-const LOGIN_ERROR = /failed to authenticate|oauth|not (logged|signed) in|run \/login|invalid api key|authentication_error|api error: 401/i;
+// Errors that mean the agent's command itself isn't signed in. A fixed check, not the agent:
+// it can't answer while it is signed out, so the window says what is wrong and how to fix it.
+const LOGIN_ERROR = /failed to authenticate|oauth|not (logged|signed) in|run \/login|invalid api key|authentication_error|api error: 401|no auth type|auth_required|authentication required|unauthorized|missing api key|api key (is )?(missing|not set)/i;
 const isLoginError = (text) => LOGIN_ERROR.test(String(text || ""));
 
+// the chat's agent isn't installed: what to run
+function missingAgentText() {
+  const a = agentOf();
+  if (a.protocol === "claude") return t("The claude command was not found. Install Claude Code and sign in first.");
+  return `${t("The {cmd} command was not found. Install {name} and sign in first.", { cmd: a.exe, name: a.name })} ${a.install ? t("Install: {cmd}", { cmd: a.install }) : ""}`;
+}
+
 function loginHelpEl() {
+  const a = agentOf();
+  if (a.protocol !== "claude") {
+    return h("div", { class: "msg-help" },
+      h("div", { class: "mh-title" }, icon("alert"), t("{tool} (the command line) isn't signed in", { tool: a.name })),
+      h("div", { class: "md", html: md(t("This chat runs the `{cmd}` command, which keeps its own sign-in. It isn't signed in, or its sign-in has expired, so {agent} can't answer until it signs in again.", { cmd: a.exe, agent: a.short })) }),
+      a.login && h("div", { class: "md", html: md(t("To fix it: {how} Then send your message here again.", { how: a.login })) }));
+  }
   return h("div", { class: "msg-help" },
     h("div", { class: "mh-title" }, icon("alert"), t("Claude Code (the command line) isn't signed in")),
     h("div", { class: "md", html: md(t("This chat runs the `claude` command, which signs in on its own, separately from the Claude app. Its sign-in has expired (for example after switching accounts or not using it for a while), so Claude can't answer until it signs in again.")) }),
@@ -723,10 +870,10 @@ async function forkAt(index) {
 
 async function rewindAt(index) {
   if (!ui.chat.id) return;
-  if (ui.chat.running) { toast(t("Claude is still replying; stop it before rewinding")); return; }
+  if (ui.chat.running) { toast(t("{agent} is still replying; stop it before rewinding", { agent: agentOf().short })); return; }
   const later = ui.chat.messages.length - index;
   const ok = await modal({ title: t("Go back to before this message?"), ok: t("Rewind"),
-    message: t("This message and the {n} after it leave this chat, and Claude forgets them; the message goes back into the input so you can edit and resend it. Resume data is not rolled back (undo Claude's changes in each entry). To keep the original chat, use Fork.", { n: later - 1 }) });
+    message: t("This message and the {n} after it leave this chat, and {agent} forgets them; the message goes back into the input so you can edit and resend it. Resume data is not rolled back (undo {agent}'s changes in each entry). To keep the original chat, use Fork.", { n: later - 1, agent: agentOf().short }) });
   if (!ok) return;
   try {
     const r = await api("POST", `/api/chats/${ui.chat.id}/rewind`, { index });
@@ -758,7 +905,8 @@ async function answerAsk(a, decision, card) {
   }
 }
 
-const STATUS_TEXT = { allowed: t("Allowed"), denied: t("Denied"), cancelled: t("Cancelled (the reply was stopped)"), answered: t("Answered"), approved: t("Approved"), revise: t("Asked Claude to revise") };
+const STATUS_TEXT = { allowed: t("Allowed"), denied: t("Denied"), cancelled: t("Cancelled (the reply was stopped)"), answered: t("Answered"), approved: t("Approved") };
+const statusText = (st) => (st === "revise" ? t("Asked {agent} to revise", { agent: agentOf().short }) : STATUS_TEXT[st] || st);
 
 function suggestionLabel(s) {
   if (s.type === "setMode") return MODE_INFO[s.mode] ? t("and switch to “{mode}”", { mode: MODE_INFO[s.mode].label }) : t("and switch mode");
@@ -768,6 +916,9 @@ function suggestionLabel(s) {
     return where ? t("don't ask again for {rules} ({where})", { rules, where }) : t("don't ask again for {rules}", { rules });
   }
   if (s.type === "addDirectories") return t("and allow access to {dirs}", { dirs: (s.directories || []).join(", ") });
+  if (s.type === "session") return t("and don't ask again in this chat");                       // Codex: for this session
+  if (s.type === "rule") return t("don't ask again for {rules}", { rules: (s.rules || []).join(" ") });   // Codex: an exec-policy rule
+  if (s.type === "option") return s.label;                                                     // an ACP agent's own wording
   return t("and remember");
 }
 
@@ -776,6 +927,12 @@ function permissionDetail(a) {
   const path = inp.file_path || inp.notebook_path || inp.path;
   if (/^(Bash|PowerShell)$/.test(a.tool)) {
     return [h("pre", { class: "ask-cmd" }, inp.command || ""), inp.description && h("div", { class: "ask-sub" }, inp.description)];
+  }
+  if (inp.diff !== undefined) {   // Codex: a patch, as a unified diff
+    const lines = String(inp.diff || "").split("\n");
+    return [h("div", { class: "ask-path", title: path }, path), inp.description && h("div", { class: "ask-sub" }, inp.description),
+      h("pre", { class: "ask-diff" }, lines.slice(0, 40).map((l) => h("span", { class: l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : "" }, l + "\n")),
+        lines.length > 40 ? h("span", { class: "more" }, t("… {n} more line", { n: lines.length - 40 }, "… {n} more lines")) : null)];
   }
   if (a.tool === "Edit" || a.tool === "MultiEdit") {
     const edits = a.tool === "MultiEdit" ? inp.edits || [] : [inp];
@@ -791,17 +948,18 @@ function permissionDetail(a) {
   }
   if (inp.url) return h("div", { class: "ask-path" }, inp.url);
   if (path) return h("div", { class: "ask-path", title: path }, path);
+  if (inp.description && Object.keys(inp).length === 1) return h("div", { class: "ask-sub" }, inp.description);
   return h("pre", { class: "ask-cmd" }, JSON.stringify(inp, null, 2).slice(0, 600));
 }
 
 function permissionCard(a) {
   const pending = a.status === "pending";
   const card = h("div", { class: `ask ask-perm ${pending ? "pending" : "done " + a.status}`, "data-ask": a.id });
-  card.append(h("div", { class: "ask-h" }, icon("shield"), h("span", { class: "ask-t" }, t("Claude wants to {action}", { action: toolAction(a.tool) })),
-    !pending && h("span", { class: "ask-st" }, STATUS_TEXT[a.status] || a.status)));
+  card.append(h("div", { class: "ask-h" }, icon("shield"), h("span", { class: "ask-t" }, t("{agent} wants to {action}", { agent: agentOf().short, action: toolAction(a.tool) })),
+    !pending && h("span", { class: "ask-st" }, statusText(a.status))));
   if (pending || a.status !== "cancelled") card.append(h("div", { class: "ask-body" }, permissionDetail(a)));
   if (!pending) return card;
-  const reason = h("input", { class: "ask-input", placeholder: t("Tell Claude what to do instead (optional)"), "aria-label": t("Why not") });
+  const reason = h("input", { class: "ask-input", placeholder: t("Tell {agent} what to do instead (optional)", { agent: agentOf().short }), "aria-label": t("Why not") });
   const denyRow = h("div", { class: "ask-row hidden" }, reason, h("button", { type: "button", class: "btn sm", onclick: () => answerAsk(a, { allow: false, message: reason.value }, card) }, t("Deny and send")));
   reason.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); answerAsk(a, { allow: false, message: reason.value }, card); } });
   card.append(h("div", { class: "ask-acts" },
@@ -816,8 +974,8 @@ function questionCard(a) {
   const qs = (a.input && a.input.questions) || [];
   const pending = a.status === "pending";
   const card = h("div", { class: `ask ask-q ${pending ? "pending" : "done " + a.status}`, "data-ask": a.id });
-  card.append(h("div", { class: "ask-h" }, icon("chat"), h("span", { class: "ask-t" }, qs.length > 1 ? t("Claude has {n} questions", { n: qs.length }) : t("Claude has a question")),
-    !pending && h("span", { class: "ask-st" }, STATUS_TEXT[a.status] || a.status)));
+  card.append(h("div", { class: "ask-h" }, icon("chat"), h("span", { class: "ask-t" }, qs.length > 1 ? t("{agent} has {n} questions", { agent: agentOf().short, n: qs.length }) : t("{agent} has a question", { agent: agentOf().short })),
+    !pending && h("span", { class: "ask-st" }, statusText(a.status))));
   if (!pending) {
     if (a.answers) card.append(h("div", { class: "ask-body" }, qs.map((q) => h("div", { class: "q-done" }, h("span", { class: "q-q" }, q.question), h("span", { class: "q-a" }, a.answers[q.question] || t("(no answer)"))))));
     return card;
@@ -863,12 +1021,12 @@ function planCard(a) {
   const pending = a.status === "pending";
   const card = h("div", { class: `ask ask-plan ${pending ? "pending" : "done " + a.status}`, "data-ask": a.id });
   const st = a.status === "approved" ? `${t("Approved")} · ${a.mode === "acceptEdits" ? MODE_INFO.acceptEdits.label : a.mode === "auto" ? MODE_INFO.auto.label : t("Ask before edits")}`
-    : a.status === "revise" ? (a.feedback ? `${t("Asked Claude to revise")}: ${a.feedback}` : t("Asked Claude to revise")) : STATUS_TEXT[a.status];
-  card.append(h("div", { class: "ask-h" }, icon("plan"), h("span", { class: "ask-t" }, t("Claude's plan")), !pending && h("span", { class: "ask-st" }, st)));
+    : a.status === "revise" ? (a.feedback ? `${statusText("revise")}: ${a.feedback}` : statusText("revise")) : statusText(a.status);
+  card.append(h("div", { class: "ask-h" }, icon("plan"), h("span", { class: "ask-t" }, t("{agent}'s plan", { agent: agentOf().short })), !pending && h("span", { class: "ask-st" }, st)));
   card.append(h("div", { class: "ask-body md plan-md", html: md((a.input && a.input.plan) || "") }));
   if (!pending) return card;
   const fb = h("textarea", { class: "ask-input", rows: "2", placeholder: t("What should change? e.g. only the wording for now, keep the structure") });
-  const fbRow = h("div", { class: "ask-row hidden" }, fb, h("button", { type: "button", class: "btn sm", onclick: () => answerAsk(a, { approve: false, feedback: fb.value }, card) }, t("Send to Claude")));
+  const fbRow = h("div", { class: "ask-row hidden" }, fb, h("button", { type: "button", class: "btn sm", onclick: () => answerAsk(a, { approve: false, feedback: fb.value }, card) }, t("Send to {agent}", { agent: agentOf().short })));
   card.append(h("div", { class: "ask-acts" },
     h("button", { type: "button", class: "btn sm primary", onclick: () => answerAsk(a, { approve: true, mode: "acceptEdits" }, card) }, t("Approve, accept edits")),
     h("button", { type: "button", class: "btn sm", onclick: () => answerAsk(a, { approve: true, mode: "default" }, card) }, t("Approve, ask before edits")),
@@ -917,7 +1075,7 @@ function renderComposerState() {
   if (W.ws !== "resume") parts.length = 0;   // the resume is not what's on screen there
   if (here) parts.push(here);
   $("#chat-context").textContent = tool ? t("This chat runs in {name}'s folder; it can still edit your resume", { name: tool })
-    : parts.length ? t("Claude knows you're looking at: {what}", { what: parts.join(" · ") }) : "";
+    : parts.length ? t("{agent} knows you're looking at: {what}", { agent: agentOf().short, what: parts.join(" · ") }) : "";
   paintChatDot();
 }
 
@@ -1052,7 +1210,7 @@ function runLocal(text) {
     if (!a) { openEffortMenu(); return true; }
     const lv = a.toLowerCase();
     if (lv === "auto") setChatSetting("effort", null);
-    else if (EFFORT_INFO[lv]) setChatSetting("effort", lv);
+    else if (EFFORT_INFO[lv] || effectiveModel().efforts.includes(lv)) setChatSetting("effort", lv);
     else { toast(t("The effort level can only be low / medium / high / xhigh / max / auto")); }
     return true;
   }
@@ -1072,9 +1230,9 @@ function startChatWith(text) {
 }
 
 async function sendChat(text, { action = null, entryId = null, target = null, lang = null, path = null, files = [] } = {}) {
-  if (!ui.chat.available) { toast(t("The claude command was not found")); return false; }
+  if (!ui.chat.available) { toast(t("The {cmd} command was not found", { cmd: agentOf().exe })); return false; }
   if (!action && !text.trim() && !files.length) return false;
-  if (action && ui.chat.running) { toast(t("Claude is still replying; wait or stop it first")); return false; }
+  if (action && ui.chat.running) { toast(t("{agent} is still replying; wait or stop it first", { agent: agentOf().short })); return false; }
   await saveDraft();
   if (!ui.chat.id) {
     const c = await createChat();
@@ -1132,8 +1290,8 @@ async function submitComposer() {
 
 // ---------------------------------------------------------------- server events
 async function onChatEvent(type, ev) {
-  if (type === "claude.info") { loadClaudeInfo(); return; }
-  if (type === "claude.limits") { ui.claude = { ...ui.claude, limits: ev }; renderContextRing(); return; }
+  if (type === "claude.info") { if (!ev.agent || ev.agent === chatAgentId()) loadClaudeInfo(); else if (ui.agentInfo) delete ui.agentInfo[ev.agent]; return; }
+  if (type === "claude.limits") { if (!ev.agent || ev.agent === chatAgentId()) { ui.claude = { ...ui.claude, limits: ev }; renderContextRing(); } return; }
   if (type === "chat.start") {
     paintChatDot([...new Set([...(ui.chat.busy || []), ev.chat])]);
     // a reply this page did not start (another window, or one that began as the last ended): catch up
@@ -1151,7 +1309,8 @@ async function onChatEvent(type, ev) {
     }
     updateWaiting(ev.chat, here ? undefined : ev.ask.status === "pending");
     if (ev.ask.status === "pending" && (ev.chat !== ui.chat.id || !chatShown() || document.hidden)) {
-      const what = ev.ask.kind === "question" ? t("Claude has a question") : ev.ask.kind === "plan" ? t("Claude's plan is waiting for your approval") : t("Claude wants to {action}", { action: toolAction(ev.ask.tool) });
+      const agent = agentShortOf(ev.chat);
+      const what = ev.ask.kind === "question" ? t("{agent} has a question", { agent }) : ev.ask.kind === "plan" ? t("{agent}'s plan is waiting for your approval", { agent }) : t("{agent} wants to {action}", { agent, action: toolAction(ev.ask.tool) });
       toast(what, { ms: 8000, action: { label: t("Show me"), fn: async () => { if (ev.chat !== ui.chat.id) await openChat(ev.chat); showChat(); } } });
     }
     return;
@@ -1203,7 +1362,7 @@ async function onChatEvent(type, ev) {
     renderComposerState();
     await refresh();
     finishAi(ev.chat);
-    if (ev.error && !chatShown()) toast(isLoginError(ev.error) ? t("Claude Code isn't signed in; see the chat") : t("Claude ran into an error; see the chat"));
+    if (ev.error && !chatShown()) toast(isLoginError(ev.error) ? t("{tool} isn't signed in; see the chat", { tool: agentOf().name }) : t("{agent} ran into an error; see the chat", { agent: agentOf().short }));
   }
 }
 
@@ -1224,13 +1383,14 @@ function wireChat() {
   $("#chat-stop").append(icon("stop"));
   $("#chat-attach").append(icon("clip"));
   for (const id of ["chat-model-btn", "chat-effort-btn"]) $("#" + id).append(h("span", { class: "lbl" }));
-  $("#chat-new").onclick = newChat;
+  $("#chat-new").onclick = () => newChat();
   $("#chat-rename").onclick = () => renameChat();
   $("#chat-delete").onclick = deleteChat;
   $("#chat-attach").onclick = pickAttachments;
   $("#chat-model-btn").onclick = (e) => (Float.cur && Float.cur.anchor === e.currentTarget ? closeFloat() : openModelMenu(e.currentTarget));
   $("#chat-effort-btn").onclick = (e) => (Float.cur && Float.cur.anchor === e.currentTarget ? closeFloat() : openEffortMenu(e.currentTarget));
   $("#chat-mode-btn").onclick = (e) => (Float.cur && Float.cur.anchor === e.currentTarget ? closeFloat() : openModeMenu(e.currentTarget));
+  $("#chat-agent-btn").onclick = (e) => (Float.cur && Float.cur.anchor === e.currentTarget ? closeFloat() : openAgentMenu(e.currentTarget));
   $("#chat-ctx-btn").onclick = (e) => (Float.cur && Float.cur.anchor === e.currentTarget ? closeFloat() : openContextPanel(e.currentTarget));
   $("#chat-send").onclick = submitComposer;
   $("#chat-stop").onclick = () => ui.chat.id && api("POST", `/api/chats/${ui.chat.id}/cancel`);

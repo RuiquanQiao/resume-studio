@@ -174,12 +174,17 @@ def test_new_chat_defaults_live_in_app_prefs(server, data_file):
     """The last pick survives a restart on another port: the app's prefs keep it, Claude Code's settings don't change."""
     assert server.req("GET", "/api/claude")[1]["defaults"] is None
     code, r = server.req("PUT", "/api/chat-defaults", {"model": "sonnet", "effort": "high", "mode": None})
-    assert code == 200 and r["defaults"] == {"model": "sonnet", "effort": "high", "mode": None}
+    assert code == 200 and r["defaults"] == {"model": "sonnet", "effort": "high", "mode": None, "agent": None}
     prefs = json.loads((data_file.parent / "local" / "prefs.json").read_text(encoding="utf-8"))
-    assert prefs["chat_defaults"] == {"model": "sonnet", "effort": "high", "mode": None}
+    assert prefs["chat_defaults"] == {"model": "sonnet", "effort": "high", "mode": None, "agent": None}
     assert server.req("GET", "/api/claude")[1]["defaults"]["model"] == "sonnet"
     assert server.req("PUT", "/api/chat-defaults", {"model": "a&b"})[0] == 400
     assert server.req("PUT", "/api/chat-defaults", {"model": None})[1]["defaults"]["model"] is None   # follow Claude Code again
+    # the agent new chats start on is kept the same way, and a later model pick leaves it alone
+    assert server.req("PUT", "/api/chat-defaults", {"agent": "codex"})[1]["defaults"]["agent"] == "codex"
+    assert server.req("PUT", "/api/chat-defaults", {"model": None, "effort": None})[1]["defaults"]["agent"] == "codex"
+    assert server.req("GET", "/api/claude")[1]["agent"] == "codex"
+    assert server.req("PUT", "/api/chat-defaults", {"agent": "nope"})[0] == 400
 
 
 def _wait(cond, timeout=10, msg="condition"):

@@ -30,6 +30,10 @@ os.environ["RESUME_STUDIO_LANG"] = "zh-CN"
 os.environ["STUDIO_LOGOS"] = "off"
 # places the list doesn't know are looked up on OpenStreetMap; tests that want it hand in what it answers
 os.environ["STUDIO_PLACES"] = "off"
+# the other agents (Codex, Qwen Code, Pi, DeepSeek Harness) are never the user's real ones: tests/fake_agents.py
+FAKE_AGENTS = Path(__file__).resolve().parent / "fake_agents.py"
+for _id, _proto in (("codex", "codex"), ("qwen", "acp"), ("pi", "pi"), ("dsh", "acp")):
+    os.environ[f"STUDIO_{_id.upper()}_CMD"] = json.dumps([sys.executable, str(FAKE_AGENTS), _proto])
 
 
 @pytest.fixture

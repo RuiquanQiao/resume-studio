@@ -1,23 +1,23 @@
-"""Real Claude Code conversations behind a UI.
+"""Real agent conversations behind a UI: Claude Code, Codex, Qwen Code, Pi, DeepSeek Harness…
 
-Each chat is one Claude Code session. A reply runs `claude -p` with stream-json in AND
-out, the same channel Claude Code's own SDK uses, so the UI gets what the terminal has:
+Each chat is one session of the user's own coding agent (core/agents.py), picked per chat.
+A reply runs the agent's command line in its machine mode, the same channel its own SDK or
+editor integration uses (core/drivers.py), so the UI gets what the terminal has:
   - permission prompts come to the UI as cards (allow / deny / always allow), instead of
     being silently refused;
-  - Claude's multiple-choice questions (AskUserQuestion) and plan approval (ExitPlanMode);
+  - the agent's multiple-choice questions and plan approval;
   - stop = a real interrupt, the session stays consistent;
   - images in the message, model / effort / permission mode per chat;
-  - messages typed while Claude works are queued and sent after the current reply;
+  - messages typed while the agent works are queued and sent after the current reply;
   - context-window use and the plan's usage limits;
-  - fork a chat from any earlier message (`--fork-session --resume-session-at`).
-Later turns run `--resume <session_id>`, so the history lives in Claude Code itself.
+  - fork a chat from any earlier message (where the agent can).
+Later turns resume the agent's session, so the history lives in the agent itself.
 
 What we deliberately do NOT do (lessons from an earlier app that felt stiff):
-  - no `--bare`, no `--system-prompt`: the user's CLAUDE.md, skills, memory and
+  - no `--bare`, no `--system-prompt`: the user's CLAUDE.md / AGENTS.md, skills, memory and
     settings load exactly like in their terminal;
-  - no forced reply language: Claude answers in whatever language the user writes.
-The only addition is a short `--append-system-prompt-file` telling Claude what
-the user is looking at in the UI.
+  - no forced reply language: the agent answers in whatever language the user writes.
+The only addition is a short note telling the agent what the user is looking at in the UI.
 """
 from __future__ import annotations
 
@@ -33,6 +33,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from . import agents
 from .claude_info import EFFORTS, valid_model_id
 from .events import EventBus
 from .i18n import t
@@ -56,21 +57,25 @@ def valid_model(value: Any) -> bool:
     return value is None or valid_model_id(value)
 
 
-def valid_effort(value: Any) -> bool:
-    return value is None or value in EFFORTS
+_WORD = re.compile(r"^[A-Za-z][\w\-]{0,40}$")
 
 
-def valid_mode(value: Any) -> bool:
-    return value is None or value in MODES
+def valid_effort(value: Any, agent: Any = None) -> bool:
+    """Claude Code's levels; another agent's own (Pi's `minimal`, Codex's `none`…) are one plain word."""
+    if value is None:
+        return True
+    if agents.get(agent).protocol == "claude":
+        return value in EFFORTS
+    return isinstance(value, str) and bool(_WORD.match(value))
 
 
-def claude_command() -> list[str] | None:
-    """argv prefix for Claude Code. STUDIO_CLAUDE_CMD (a JSON list) overrides it for tests."""
-    override = os.environ.get("STUDIO_CLAUDE_CMD")
-    if override:
-        return list(json.loads(override))
-    exe = shutil.which("claude")
-    return [exe] if exe else None
+def valid_mode(value: Any, agent: Any = None) -> bool:
+    """Claude Code's modes; an ACP agent's own mode ids (`auto-edit`, `yolo`…) are one plain word."""
+    if value is None:
+        return True
+    if agents.get(agent).protocol in ("claude", "codex"):
+        return value in MODES
+    return isinstance(value, str) and bool(_WORD.match(value))
 
 
 def _now() -> float:
@@ -180,11 +185,13 @@ class ChatStore:
 
 
 class Turn:
-    """One running `claude` process: the reply in progress plus anything queued behind it."""
+    """One running agent process: the reply in progress plus anything queued behind it."""
 
     def __init__(self, chat_id: str, on_done: Any = None):
         self.chat_id = chat_id
         self.on_done = on_done         # callable(ok: bool), run after the turn is saved
+        self.driver: Any = None        # core.drivers.Driver: the agent's protocol
+        self.state: dict = {}          # the driver's own (thread / turn / session ids, RPC numbering)
         self.proc: subprocess.Popen | None = None
         self.cancelled = False
         self.closed = False            # stdin closed: no more messages can go in
@@ -235,7 +242,7 @@ def user_content(text: str, images: list[dict]) -> Any:
 class Workspace:
     """Another folder a chat can run in (e.g. a connected tool's checkout), with what it needs there.
 
-    A chat created with `workspace=<name>` runs `claude` in `cwd` instead of the data folder, so
+    A chat created with `workspace=<name>` runs its agent in `cwd` instead of the data folder, so
     that folder's CLAUDE.md and skills load. `context()` replaces the window's note for those
     chats, `prepare()` runs before every message (e.g. to sync files the tool reads), and `env`
     is added to the process environment."""
@@ -252,23 +259,33 @@ class Workspace:
 
 
 class ChatRunner:
-    def __init__(self, bus: EventBus, store: ChatStore, cwd: Path, tools: list[str] | None = None):
+    def __init__(self, bus: EventBus, store: ChatStore, cwd: Path, tools: list[str] | None = None,
+                 hub: "agents.AgentHub | None" = None):
         self.bus = bus
         self.store = store
         self.cwd = cwd
-        self.tools = tools or DEFAULT_TOOLS
+        self.tools = tools or DEFAULT_TOOLS      # Claude Code's pre-approved tools
+        self.hub = hub                           # each agent's info (models, modes…), when the app has one
         self.workspaces: dict[str, Workspace] = {}
         # what every chat in the data folder is told besides the window's own context (the tracker's and
         # the browser's commands), so a chat can do anything from any workspace
         self.notes: list[Any] = []    # callable() -> str
         self.turns: dict[str, Turn] = {}
-        self.limits: dict = {}         # the plan's usage windows, from Claude Code's rate_limit_event
+        self.limits: dict[str, dict] = {}   # agent id -> its plan's usage windows
+        self.default_agent: Any = lambda: agents.DEFAULT   # callable() -> the agent a new chat runs on
 
     def workspace(self, chat: dict | None) -> Workspace | None:
         return self.workspaces.get(str((chat or {}).get("workspace") or ""))
 
-    def available(self) -> bool:
-        return claude_command() is not None
+    def agent_info(self, agent_id: str):
+        return self.hub.info(agent_id) if self.hub else None
+
+    def set_limits(self, agent_id: str, limits: dict) -> None:
+        self.limits[agent_id] = limits
+        self.bus.publish("claude.limits", {**limits, "agent": agent_id})
+
+    def available(self, agent_id: str | None = None) -> bool:
+        return agents.get(agent_id).installed()
 
     def busy(self, chat_id: str) -> bool:
         return chat_id in self.turns
@@ -277,7 +294,7 @@ class ChatRunner:
         return list(self.turns)
 
     def waiting(self) -> list[str]:
-        """Chats where Claude is waiting for the user (a permission, a question, a plan)."""
+        """Chats where the agent is waiting for the user (a permission, a question, a plan)."""
         return [cid for cid, t in self.turns.items() if any(a["status"] == "pending" for a in t.asks.values())]
 
     def live(self, chat_id: str) -> dict | None:
@@ -292,7 +309,8 @@ class ChatRunner:
              files: list[dict] | None = None, shown: str | None = None) -> dict:
         """Start a reply, or queue the message behind the running one. Returns {"queued": bool}.
 
-        `text` goes to Claude; `shown` (default: the same) is what the transcript displays."""
+        `text` goes to the agent; `shown` (default: the same) is what the transcript displays."""
+        from .drivers import driver_for   # drivers builds on this module
         chat = self.store.meta(chat_id)
         if chat is None:
             raise KeyError(chat_id)
@@ -314,9 +332,16 @@ class ChatRunner:
             self._emit("chat.queue", chat_id, queue=turn.queue)
             return {"queued": True, "id": item["id"]}
 
-        prefix = claude_command()
+        if not chat.get("agent"):   # a chat keeps the agent it first ran on: its session lives there
+            # (chats from before agents could be picked were all Claude Code's)
+            started = chat.get("session_id") or chat.get("fork") or self.store.messages(chat_id)
+            chat = self.store.update_meta(chat_id, touch=False, agent="claude" if started else agents.get(self.default_agent()).id) or chat
+        agent = agents.get(chat.get("agent"))
+        prefix = agent.command()
         if not prefix:
-            raise RuntimeError(t("The claude command was not found. Install Claude Code and sign in first."))
+            if agent.id == "claude":
+                raise RuntimeError(t("The claude command was not found. Install Claude Code and sign in first."))
+            raise RuntimeError(t("The {cmd} command was not found. Install {name} and sign in first.", cmd=agent.exe, name=agent.name))
         ws = self.workspace(chat)
         if chat.get("workspace") and ws is None:
             raise RuntimeError(t("This chat runs in {name}, which isn't connected right now.", name=chat["workspace"]))
@@ -336,39 +361,18 @@ class ChatRunner:
         else:
             self.store.update_meta(chat_id)
 
-        cmd = prefix + ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-                        "--include-partial-messages", "--permission-prompt-tool", "stdio",
-                        "--allowedTools", ",".join(dict.fromkeys(self.tools + (ws.tools if ws else [])))]
-        if chat.get("mode"):
-            cmd += ["--permission-mode", chat["mode"]]
-        if chat.get("model_choice"):
-            cmd += ["--model", chat["model_choice"]]
-        if chat.get("effort"):
-            cmd += ["--effort", chat["effort"]]
-        fork = chat.get("fork") or {}
-        if chat.get("session_id"):
-            cmd += ["--resume", chat["session_id"]]
-        elif fork.get("session_id"):
-            cmd += ["--resume", fork["session_id"], "--fork-session"]
-            if fork.get("at"):
-                cmd += ["--resume-session-at", fork["at"]]
-        if context.strip():
-            ctx_file = self.store.root / f"{chat_id}.context.md"
-            ctx_file.write_text(context, encoding="utf-8")
-            cmd += ["--append-system-prompt-file", str(ctx_file)]
         dirs = list(add_dirs or []) + (ws.add_dirs if ws else [])
         for f in files or []:
             dirs.append(str(Path(f["path"]).parent))
-        for d in dict.fromkeys(dirs):
-            if d and Path(d).exists():
-                cmd += ["--add-dir", str(Path(d))]
-
+        spec = {"chat": chat, "prefix": prefix, "prompt": text, "images": images, "context": context,
+                "add_dirs": [str(Path(d)) for d in dict.fromkeys(dirs) if d and Path(d).exists()],
+                "cwd": ws.cwd if ws else self.cwd, "env": {**os.environ, **ws.env} if ws and ws.env else None,
+                "workspace": ws}
         turn = Turn(chat_id, on_done)
+        turn.driver = driver_for(agent)
         self.turns[chat_id] = turn
         self._emit("chat.start", chat_id, meta=meta or {})
-        cwd = ws.cwd if ws else self.cwd
-        env = {**os.environ, **ws.env} if ws and ws.env else None
-        threading.Thread(target=self._run, args=(turn, cmd, user_content(text, images), cwd, env), daemon=True).start()
+        threading.Thread(target=turn.driver.run, args=(self, turn, spec), daemon=True).start()
         return {"queued": False}
 
     def unqueue(self, chat_id: str, item_id: str) -> bool:
@@ -381,48 +385,12 @@ class ChatRunner:
         return len(turn.queue) != before
 
     def answer(self, chat_id: str, request_id: str, decision: dict) -> dict:
-        """The user's answer to a card: a permission, Claude's question, or its plan."""
+        """The user's answer to a card: a permission, the agent's question, or its plan."""
         turn = self.turns.get(chat_id)
         ask = turn.asks.get(request_id) if turn else None
         if not ask or ask["status"] != "pending":
             raise KeyError(request_id)
-        kind = ask["kind"]
-        inp = ask["input"]
-        new_mode = None
-        if kind == "question":
-            answers = {str(k): str(v) for k, v in (decision.get("answers") or {}).items()}
-            if decision.get("skip"):
-                resp = {"behavior": "deny", "message": "The user skipped this question without answering."}
-                ask["status"] = "denied"
-            else:
-                resp = {"behavior": "allow", "updatedInput": {**inp, "answers": answers}}
-                ask["status"], ask["answers"] = "answered", answers
-        elif kind == "plan":
-            if decision.get("approve"):
-                new_mode = decision.get("mode") if decision.get("mode") in ("acceptEdits", "default", "auto") else "default"
-                resp = {"behavior": "allow", "updatedInput": inp,
-                        "updatedPermissions": [{"type": "setMode", "mode": new_mode, "destination": "session"}]}
-                ask["status"], ask["mode"] = "approved", new_mode
-            else:
-                feedback = str(decision.get("feedback") or "").strip()
-                resp = {"behavior": "deny", "message": "The user wants to keep refining the plan; don't carry it out yet." + (f" Their feedback: {feedback}" if feedback else "")}
-                ask["status"], ask["feedback"] = "revise", feedback
-        else:
-            if decision.get("allow"):
-                resp = {"behavior": "allow", "updatedInput": inp}
-                sug = ask.get("suggestions") or []
-                pick = decision.get("suggestion")
-                if isinstance(pick, int) and 0 <= pick < len(sug):
-                    resp["updatedPermissions"] = [sug[pick]]
-                    if sug[pick].get("type") == "setMode":
-                        new_mode = sug[pick].get("mode")
-                    ask["always"] = pick
-                ask["status"] = "allowed"
-            else:
-                msg = str(decision.get("message") or "").strip()
-                resp = {"behavior": "deny", "message": msg or "The user declined this action."}
-                ask["status"] = "denied"
-        turn.write({"type": "control_response", "response": {"subtype": "success", "request_id": request_id, "response": resp}})
+        new_mode = turn.driver.answer(self, turn, ask, decision)
         if new_mode and new_mode in MODES:   # the next reply keeps the mode the user just chose
             self.store.update_meta(chat_id, touch=False, mode=new_mode)
             self._emit("chat.meta", chat_id, meta=self.store.meta(chat_id))
@@ -430,16 +398,10 @@ class ChatRunner:
         return ask
 
     def set_live(self, chat_id: str, model: str | None = None, mode: str | None = None) -> None:
-        """Apply a picker change to the reply in progress too (Claude Code's own control requests)."""
+        """Apply a picker change to the reply in progress too, where the agent can take it mid-reply."""
         turn = self.turns.get(chat_id)
-        if not turn:
-            return
-        if model is not None:
-            turn.write({"type": "control_request", "request_id": uuid.uuid4().hex,
-                        "request": {"subtype": "set_model", "model": model or "default"}})
-        if mode is not None:
-            turn.write({"type": "control_request", "request_id": uuid.uuid4().hex,
-                        "request": {"subtype": "set_permission_mode", "mode": mode}})
+        if turn and turn.driver:
+            turn.driver.set_live(turn, model, mode)
 
     def cancel(self, chat_id: str) -> None:
         turn = self.turns.get(chat_id)
@@ -447,21 +409,17 @@ class ChatRunner:
             return
         turn.cancelled = True
         turn.queue.clear()
+        # a real interrupt first (the session stays consistent); kill if it does not stop
+        sent = turn.driver.interrupt(turn)
         for ask in turn.asks.values():
             if ask["status"] == "pending":
                 ask["status"] = "cancelled"
-        # a real interrupt first (the session stays consistent); kill if it does not stop
-        sent = turn.write({"type": "control_request", "request_id": uuid.uuid4().hex, "request": {"subtype": "interrupt"}})
         turn.close()
         threading.Timer(4.0 if sent else 0.0, self._kill, args=(turn,)).start()
 
     def _kill(self, turn: Turn) -> None:
-        if not turn.proc or turn.proc.poll() is not None:
-            return
-        if os.name == "nt":  # claude may be a .cmd shim on Windows; end the whole tree
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(turn.proc.pid)], capture_output=True)
-        else:
-            turn.proc.terminate()
+        from .drivers import runner_kill
+        runner_kill(turn)
 
     def cancel_all(self) -> None:
         for chat_id in list(self.turns):
@@ -471,43 +429,9 @@ class ChatRunner:
                 turn.close()
                 self._kill(turn)
 
-    # ---- internals -----------------------------------------------------
+    # ---- what the drivers call -------------------------------------------
     def _emit(self, event: str, chat_id: str, **data: Any) -> None:
         self.bus.publish(event, {"chat": chat_id, **data})
-
-    def _run(self, turn: Turn, cmd: list[str], content: Any, cwd: Path | None = None, env: dict | None = None) -> None:
-        cost = None
-        try:
-            turn.proc = subprocess.Popen(
-                cmd, cwd=str(cwd or self.cwd), env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            assert turn.proc.stdout and turn.proc.stderr
-            stderr_chunks: list[bytes] = []
-            threading.Thread(target=lambda: stderr_chunks.append(turn.proc.stderr.read()), daemon=True).start()
-            turn.write({"type": "user", "message": {"role": "user", "content": content}})
-            for raw in turn.proc.stdout:
-                line = raw.decode("utf-8", errors="replace").strip()
-                if not line:
-                    continue
-                try:
-                    msg = json.loads(line)
-                except ValueError:
-                    continue
-                res = self._handle(turn, msg)
-                if res is not None:
-                    cost = res.get("cost")
-                    self._flush(turn, res.get("error"), cost)
-                    if not self._next(turn):
-                        turn.close()
-            code = turn.proc.wait()
-            time.sleep(0.05)
-            err_text = b"".join(stderr_chunks).decode("utf-8", errors="replace").strip()
-            if code != 0 and not turn.error and not turn.cancelled and not turn.flushed_any:
-                turn.error = err_text or t("claude exited with code {code}", code=code)
-        except OSError as e:
-            turn.error = t("Couldn't start claude: {error}", error=e)
-        finally:
-            self._finish(turn, cost)
 
     def _next(self, turn: Turn) -> bool:
         """After a reply: send the next queued message into the same process."""
@@ -517,13 +441,13 @@ class ChatRunner:
         self.store.append(turn.chat_id, item["msg"])
         self.store.update_meta(turn.chat_id)
         self._emit("chat.next", turn.chat_id, message=item["msg"], queue=turn.queue)
-        return turn.write({"type": "user", "message": {"role": "user", "content": user_content(item["prompt"], item["images"])}})
+        return turn.driver.send(self, turn, item["prompt"], item["images"])
 
     def _flush(self, turn: Turn, error: str | None, cost: Any) -> None:
         """One reply is complete: save it and start a fresh assistant message."""
-        for t in turn.tools.values():
-            if t["status"] == "running":
-                t["status"] = "cancelled" if turn.cancelled else "unknown"
+        for x in turn.tools.values():
+            if x["status"] == "running":
+                x["status"] = "cancelled" if turn.cancelled else "unknown"
         for a in turn.asks.values():
             if a["status"] == "pending":
                 a["status"] = "cancelled"
@@ -553,6 +477,8 @@ class ChatRunner:
                    cancelled=turn.cancelled, cost=cost)
 
     def _text(self, turn: Turn, delta: str, kind: str = "text") -> None:
+        if not delta:
+            return
         if turn.blocks and turn.blocks[-1]["type"] == kind:
             turn.blocks[-1]["text"] += delta
         else:
@@ -562,146 +488,6 @@ class ChatRunner:
     def _block(self, turn: Turn, block: dict) -> None:
         turn.blocks.append(block)
         self._emit("chat.block", turn.chat_id, block=block)
-
-    def _ask(self, turn: Turn, msg: dict) -> None:
-        req = msg.get("request") or {}
-        rid = msg.get("request_id")
-        if req.get("subtype") != "can_use_tool":
-            turn.write({"type": "control_response", "response": {"subtype": "error", "request_id": rid,
-                                                                 "error": f"Resume Studio does not support {req.get('subtype')}"}})
-            return
-        name = req.get("tool_name") or ""
-        kind = "question" if name == "AskUserQuestion" else "plan" if name == "ExitPlanMode" else "permission"
-        ask = {"type": "ask", "id": rid, "kind": kind, "tool": name, "input": req.get("input") or {},
-               "hint": _tool_hint(name, req.get("input") or {}), "desc": req.get("description") or "",
-               "suggestions": req.get("permission_suggestions") or [], "tool_use_id": req.get("tool_use_id"),
-               "status": "pending"}
-        turn.asks[rid] = ask
-        turn.blocks.append(ask)
-        self._emit("chat.ask", turn.chat_id, ask=ask)
-
-    def _tasks(self, turn: Turn, name: str, inp: dict, result: Any = None, tool_use_id: str = "") -> None:
-        """Keep the chat's task list (TaskCreate / TaskUpdate / TodoWrite) in its meta."""
-        meta = self.store.meta(turn.chat_id) or {}
-        tasks: list[dict] = list(meta.get("tasks") or [])
-        if name == "TodoWrite" and isinstance(inp.get("todos"), list):
-            tasks = [{"id": str(i + 1), "subject": t.get("content") or "", "active": t.get("activeForm") or "",
-                      "status": t.get("status") or "pending"} for i, t in enumerate(inp["todos"])]
-        elif name == "TaskCreate" and isinstance(result, dict) and isinstance(result.get("task"), dict):
-            tid = str(result["task"].get("id"))
-            tasks = [t for t in tasks if t["id"] != tid]
-            tasks.append({"id": tid, "subject": result["task"].get("subject") or inp.get("subject") or "",
-                          "active": inp.get("activeForm") or "", "status": "pending"})
-        elif name == "TaskUpdate" and inp.get("taskId") is not None:
-            tid = str(inp["taskId"])
-            for t in tasks:
-                if t["id"] == tid:
-                    if inp.get("status"):
-                        t["status"] = inp["status"]
-                    if inp.get("subject"):
-                        t["subject"] = inp["subject"]
-                    if inp.get("activeForm"):
-                        t["active"] = inp["activeForm"]
-            tasks = [t for t in tasks if t["status"] != "deleted"]
-        else:
-            return
-        self.store.update_meta(turn.chat_id, touch=False, tasks=tasks)
-        self._emit("chat.tasks", turn.chat_id, tasks=tasks)
-
-    def _handle(self, turn: Turn, msg: dict) -> dict | None:
-        mtype = msg.get("type")
-        if mtype == "system":
-            sub = msg.get("subtype")
-            if sub == "init":
-                fields = {"model": msg.get("model"), "mode_actual": msg.get("permissionMode")}
-                if msg.get("session_id"):
-                    fields.update(session_id=msg["session_id"], fork=None)
-                self.store.update_meta(turn.chat_id, touch=False, **fields)
-                self._emit("chat.init", turn.chat_id, model=msg.get("model"), mode=msg.get("permissionMode"))
-            elif sub == "compact_boundary":
-                self._block(turn, {"type": "note", "text": t("Context compacted")})
-                # the stream only reports the size before compacting; the new size arrives with the next reply
-                turn.usage = {**(turn.usage or {}), "used": None, "compacted": True}
-            elif sub == "thinking_tokens":
-                self._emit("chat.thinking", turn.chat_id, tokens=msg.get("estimated_tokens"))
-        elif mtype == "control_request":
-            self._ask(turn, msg)
-        elif mtype == "control_cancel_request":
-            ask = turn.asks.get(msg.get("request_id"))
-            if ask and ask["status"] == "pending":
-                ask["status"] = "cancelled"
-                self._emit("chat.ask", turn.chat_id, ask=ask)
-        elif mtype == "rate_limit_event":
-            info = msg.get("rate_limit_info") or {}
-            self.limits = {"status": info.get("status"), "windows": info.get("unifiedWindows") or {},
-                           "type": info.get("rateLimitType"), "resets": info.get("resetsAt"), "at": _now()}
-            self.bus.publish("claude.limits", self.limits)
-        elif mtype == "stream_event":
-            ev = msg.get("event") or {}
-            if msg.get("parent_tool_use_id"):
-                return None  # subagent chatter stays out of the main transcript
-            delta = ev.get("delta") or {}
-            if ev.get("type") == "content_block_delta":
-                if delta.get("type") == "text_delta":
-                    self._text(turn, delta.get("text", ""))
-                elif delta.get("type") == "thinking_delta" and delta.get("thinking"):
-                    self._text(turn, delta["thinking"], "thinking")
-        elif mtype == "assistant":
-            if msg.get("parent_tool_use_id"):
-                return None
-            message = msg.get("message") or {}
-            if msg.get("uuid"):
-                turn.last_uuid = msg["uuid"]
-            usage = message.get("usage") or {}
-            if usage and message.get("model") != "<synthetic>":
-                used = sum(int(usage.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens",
-                                                            "cache_read_input_tokens", "output_tokens"))
-                turn.usage = {**(turn.usage or {}), "used": used, "model": message.get("model")}
-                turn.usage.pop("compacted", None)
-            for block in message.get("content") or []:
-                if block.get("type") == "text" and message.get("model") == "<synthetic>" and block.get("text"):
-                    self._text(turn, block["text"])   # local commands (/context, /cost…) answer without streaming
-                if block.get("type") != "tool_use":
-                    continue
-                inp = block.get("input") or {}
-                tool = {"type": "tool", "id": block.get("id"), "name": block.get("name"),
-                        "hint": _tool_hint(block.get("name"), inp), "status": "running", "result": "",
-                        "input": _small_input(block.get("name"), inp)}
-                turn.tools[tool["id"]] = tool
-                turn.blocks.append(tool)
-                self._emit("chat.tool", turn.chat_id, tool=tool)
-                if block.get("name") in ("TodoWrite", "TaskUpdate"):
-                    self._tasks(turn, block["name"], inp)
-        elif mtype == "user":
-            for block in (msg.get("message") or {}).get("content") or []:
-                if not isinstance(block, dict) or block.get("type") != "tool_result":
-                    continue
-                tool = turn.tools.get(block.get("tool_use_id"))
-                if not tool:
-                    continue
-                tool["status"] = "error" if block.get("is_error") else "done"
-                tool["result"] = _result_preview(block.get("content"))
-                self._emit("chat.tool", turn.chat_id, tool=tool)
-                if tool["name"] == "TaskCreate":
-                    self._tasks(turn, "TaskCreate", tool.get("input") or {}, msg.get("tool_use_result"))
-        elif mtype == "result":
-            sid = msg.get("session_id")
-            if sid:
-                self.store.update_meta(turn.chat_id, touch=False, session_id=sid)
-            if not any(b["type"] == "text" for b in turn.blocks) and msg.get("result") and not msg.get("is_error"):
-                self._text(turn, msg["result"])   # nothing streamed: fall back to the final text
-            usage = msg.get("modelUsage") or {}
-            model = (turn.usage or {}).get("model")
-            mu = usage.get(model) if model in usage else next(iter(usage.values()), None) if usage else None
-            if mu and mu.get("contextWindow"):
-                turn.usage = {**(turn.usage or {}), "window": mu["contextWindow"]}
-            error = None
-            if msg.get("is_error") or msg.get("subtype", "success") not in ("success", None):
-                error = msg.get("result") or t("Claude reported an error")
-                if turn.cancelled:
-                    error = None
-            return {"error": error, "cost": msg.get("total_cost_usd")}
-        return None
 
 
 def _title_from(text: str) -> str:

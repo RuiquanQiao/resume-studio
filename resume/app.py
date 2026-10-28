@@ -12,8 +12,8 @@ from urllib.parse import urlparse
 from autofill import api as autofill_api
 from core import dialogs, i18n
 from core.browser import ManagedBrowser
-from core.chat import ChatRunner, ChatStore, claude_command
-from core.claude_info import ClaudeInfo
+from core.agents import AgentHub
+from core.chat import ChatRunner, ChatStore
 from core.server import App, HttpError, TextResponse, running_instance
 from core.watcher import FileWatcher, SignatureWatcher
 from core.webhost import WebHost
@@ -42,7 +42,7 @@ class Instance:
     focus: dict = field(default_factory=dict)   # {"fn": callable} — how to bring the UI to front
     url: dict = field(default_factory=dict)     # {"url": str} once bound
     dialog: dict = field(default_factory=dict)  # {"fn": callable(kind, start)} — the window's own picker
-    info: ClaudeInfo | None = None
+    agents: AgentHub | None = None
     # {"fn": callable(old_studio, new_studio)} — the launcher moves its server.json along
     switched: dict = field(default_factory=dict)
     window: bool = False
@@ -123,14 +123,16 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
     (focus, pickers) and the switch through `inst`, which outlives any one data file."""
     studio = Studio(data_path)
     studio.ensure_file()
-    chats = ChatRunner(app.bus, ChatStore(studio.store.state_dir / "chats"), cwd=studio.data_dir)
+    # what each installed agent offers (models, effort, modes, account): cached, refreshed at every start
+    hub = AgentHub(studio.data_dir, studio.store.state_dir)
+    chats = ChatRunner(app.bus, ChatStore(studio.store.state_dir / "chats"), cwd=studio.data_dir, hub=hub)
     tracker = EvidenceTracker(studio.store.state_dir)
-    # what the user's Claude Code offers (models, effort, commands): cached, refreshed at every start
-    info = ClaudeInfo(claude_command, studio.data_dir, studio.store.state_dir / "claude-info.json")
-    info.refresh_async(lambda: app.bus.publish("claude.info", {}))
-    api.register(app, studio, chats, tracker, info, prefs=inst.prefs)
+    for agent_id, info in hub.infos.items():
+        if agent_id == "claude" or info.agent.installed():
+            info.refresh_async(lambda a=agent_id: app.bus.publish("claude.info", {"agent": a}))
+    api.register(app, studio, chats, tracker, hub, prefs=inst.prefs)
     identity = {"app": "resume-studio", "data": str(studio.store.path)}
-    inst.studio, inst.chats, inst.identity, inst.info = studio, chats, identity, info
+    inst.studio, inst.chats, inst.identity, inst.agents = studio, chats, identity, hub
     window = inst.window
 
     app.route("GET", "/api/instance")(lambda req: {**identity, "window": window})

@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
-from core import dialogs
+from core import agents, dialogs
 from core.chat import ChatRunner, Workspace, valid_effort, valid_mode, valid_model
 from core.i18n import t
 from core.server import App, HttpError, Request
@@ -112,10 +112,12 @@ def register(app: App, studio: Studio, chats: ChatRunner, tool: JobTool, *, pick
         out = {}
         if b.get("model") is not None and valid_model(b["model"]):
             out["model_choice"] = b["model"] or None
-        if b.get("effort") is not None and valid_effort(b["effort"]):
+        if b.get("effort") is not None and valid_effort(b["effort"], b.get("agent")):
             out["effort"] = b["effort"] or None
-        if b.get("mode") is not None and valid_mode(b["mode"]):
+        if b.get("mode") is not None and valid_mode(b["mode"], b.get("agent")):
             out["mode"] = b["mode"] or None
+        if b.get("agent") and agents.valid(b["agent"]):
+            out["agent"] = b["agent"]
         return out
 
     def start_chat(b: dict, title: str, text: str | None, *, in_tool: bool, context: str = "",

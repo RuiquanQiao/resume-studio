@@ -3,7 +3,7 @@
 Claude Code answers an `initialize` control request on its stream-json channel with the
 same lists its own UI shows (models with their supported effort levels, every slash
 command and skill, output styles, the account). No model is called, so this costs nothing.
-The answer is cached in `.studio/claude-info.json` so the UI has it at once on the next start.
+core.agents.AgentInfo caches the answer in `.studio/claude-info.json` so the UI has it at once on the next start.
 """
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import json
 import re
 import subprocess
 import threading
-import time
 from pathlib import Path
 from typing import Any
 
@@ -31,11 +30,11 @@ LATEST = [
 
 CREDITS = "Requires usage credits"
 
-_MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._\-\[\]]{0,80}$")
+_MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\-\[\]]{0,120}$")   # Pi names models provider/id[:thinking]
 
 
 def valid_model_id(value: Any) -> bool:
-    """Passed to the CLI as one argv item; `claude` may be a .cmd shim, so keep it shell-inert."""
+    """Passed to the CLI as one argv item; the command may be a .cmd shim, so keep it shell-inert."""
     return isinstance(value, str) and bool(_MODEL_ID.match(value))
 
 
@@ -115,56 +114,11 @@ def normalize(raw: dict) -> dict:
     }
 
 
-class ClaudeInfo:
-    def __init__(self, command, cwd: Path, cache: Path):
-        self.command = command          # callable -> argv prefix or None
-        self.cwd = cwd
-        self.cache = cache
-        self.lock = threading.Lock()
-        self.data: dict | None = None
-        self.error: str | None = None
-        self.fetched = 0.0
-        self.loading = False
-        try:
-            saved = json.loads(cache.read_text(encoding="utf-8"))
-            self.data, self.fetched = saved["data"], float(saved.get("fetched") or 0)
-        except (OSError, ValueError, KeyError, TypeError):
-            pass
-
-    def get(self) -> dict:
-        return {"info": self.data, "error": self.error, "fetched": self.fetched, "loading": self.loading}
-
-    def refresh_async(self, on_done=None) -> None:
-        if self.loading:
-            return
-        self.loading = True
-
-        def run():
-            try:
-                self.refresh()
-            finally:
-                if on_done:
-                    on_done()
-        threading.Thread(target=run, daemon=True).start()
-
-    def refresh(self, timeout: float = 20) -> dict:
-        with self.lock:
-            self.loading = True
-            try:
-                prefix = self.command()
-                if not prefix:
-                    self.error = t("The claude command was not found")
-                    return self.get()
-                raw = probe(prefix, self.cwd, timeout)
-                self.data, self.error, self.fetched = normalize(raw), None, time.time()
-                self.cache.parent.mkdir(parents=True, exist_ok=True)
-                self.cache.write_text(json.dumps({"data": self.data, "fetched": self.fetched}, ensure_ascii=False),
-                                      encoding="utf-8")
-            except Exception as e:  # noqa: BLE001 - the UI falls back to the cached / built-in list
-                self.error = t("Couldn't read Claude Code's info: {error}", error=e)
-            finally:
-                self.loading = False
-            return self.get()
+def fetch(prefix: list[str], cwd: Path, timeout: float) -> dict:
+    """What core.agents.AgentInfo asks every agent for: here, Claude Code's `initialize` answer."""
+    data = normalize(probe(prefix, cwd, timeout))
+    data["signed_in"] = True if data["account"].get("email") or data["account"].get("provider") else None
+    return data
 
 
 def probe(prefix: list[str], cwd: Path, timeout: float) -> dict:

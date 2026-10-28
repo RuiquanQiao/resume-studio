@@ -6,8 +6,9 @@ import mimetypes
 import threading
 from pathlib import Path
 
+from core import agents
+from core.agents import AgentHub
 from core.chat import IMAGE_TYPES, MODES, ChatRunner, valid_effort, valid_mode, valid_model
-from core.claude_info import ClaudeInfo
 from core.i18n import t
 from core.server import App, FileResponse, HttpError, Request
 
@@ -16,10 +17,17 @@ from .evidence import EvidenceTracker
 from .service import Conflict, Studio
 
 
-def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTracker, info: ClaudeInfo,
+def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTracker, hub: AgentHub,
              prefs=None) -> None:
     render_lock = threading.Lock()
-    studio.extra_state = lambda: {"claude": {"available": chats.available(), "running": chats.running()}}
+
+    def default_agent() -> str:
+        """The agent a new chat runs on: the last one picked in this app (Claude Code at first)."""
+        picked = ((prefs.load().get("chat_defaults") if prefs else None) or {}).get("agent")
+        return agents.get(picked).id
+
+    chats.default_agent = default_agent
+    studio.extra_state = lambda: {"claude": {"available": chats.available(default_agent()), "running": chats.running()}}
 
     def body(req: Request) -> dict:
         data = req.json()
@@ -200,24 +208,46 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         with render_lock:
             return versions_call(lambda: studio.export(req.params["vid"], number(req)))
 
-    # ---- chat (real Claude Code sessions) --------------------------------
+    # ---- chat (real sessions of the user's own coding agent) -------------
+    def mode_list(agent: agents.Agent, data: dict) -> list:
+        """The permission modes the picker offers: Claude Code's; Codex's as its approval policy and
+        sandbox (core.drivers.CODEX_MODES, described here); an ACP agent's own ({id, label, desc})."""
+        if agent.protocol == "claude":
+            return MODES
+        if agent.protocol == "codex":
+            desc = {"plan": t("Read-only sandbox: Codex can look but not change anything"),
+                    "default": t("Asks before running commands that aren't known to be safe"),
+                    "acceptEdits": t("Edits and runs commands inside this folder; asks before going outside it"),
+                    "auto": t("Codex's reviewer decides; asks only when something is risky")}
+            return [{"id": m, "desc": desc[m]} for m in data.get("modes") or desc]
+        return data.get("modes") or []
+
     @app.route("GET", "/api/claude")
     def claude_info(req: Request):
-        """Models, effort levels, slash commands and account, as the user's Claude Code reports them."""
+        """Models, effort levels, modes, commands and account, as the user's agent reports them
+        (`?agent=codex`; the default is the agent new chats start on), and every agent with whether
+        it is installed and signed in."""
+        agent = agents.get((req.query.get("agent") or [default_agent()])[0])
+        info = hub.info(agent.id)
         if req.query.get("refresh"):
             info.refresh()
-        elif info.data is None and not info.loading:
-            info.refresh_async(lambda: app.bus.publish("claude.info", {}))
-        return {**info.get(), "available": chats.available(), "limits": chats.limits, "modes": MODES,
+        elif info.data is None and not info.loading and agent.installed():
+            info.refresh_async(lambda: app.bus.publish("claude.info", {"agent": agent.id}))
+        data = info.data or {}
+        return {**info.get(), "agent": agent.id, "agents": hub.listing(), "available": agent.installed(),
+                "limits": chats.limits.get(agent.id) or data.get("limits") or {}, "modes": mode_list(agent, data),
                 "defaults": (prefs.load().get("chat_defaults") if prefs else None)}
 
     @app.route("PUT", "/api/chat-defaults")
     def set_chat_defaults(req: Request):
-        """What a new chat starts with: the last model / effort / mode picked in this app. Kept in the
-        app's own prefs (not the page's storage, which a new port would lose) and never in Claude Code's
-        settings: null for a field means "follow Claude Code"."""
-        f = chat_fields({k: v for k, v in body(req).items() if k in ("model", "effort", "mode")})
-        saved = {"model": f.get("model_choice"), "effort": f.get("effort"), "mode": f.get("mode")}
+        """What a new chat starts with: the last agent / model / effort / mode picked in this app. Kept in
+        the app's own prefs (not the page's storage, which a new port would lose) and never in the agent's
+        settings: null for a field means "follow the agent's own setting"."""
+        b = body(req)
+        f = chat_fields({k: v for k, v in b.items() if k in ("model", "effort", "mode", "agent")})
+        kept = ((prefs.load().get("chat_defaults") if prefs else None) or {}).get("agent")
+        saved = {"model": f.get("model_choice"), "effort": f.get("effort"), "mode": f.get("mode"),
+                 "agent": f.get("agent") if "agent" in b else kept}   # a model pick leaves the agent as it was
         if prefs:
             prefs.save(chat_defaults=saved)
         return {"defaults": saved}
@@ -225,22 +255,28 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
     @app.route("GET", "/api/chats")
     def list_chats(req: Request):
         return {"chats": chats.store.list(), "running": chats.running(), "waiting": chats.waiting(),
-                "available": chats.available()}
+                "available": chats.available(default_agent())}
 
-    def chat_fields(b: dict) -> dict:
+    def chat_fields(b: dict, agent: str | None = None) -> dict:
+        """`agent`: the chat's agent, whose own effort levels and modes are the valid ones."""
         fields = {}
+        agent = b.get("agent") or agent or default_agent()
         if "model" in b:
             if not valid_model(b["model"]):
                 raise HttpError(400, t("Unknown model: {name}", name=b["model"]))
             fields["model_choice"] = b["model"] or None
         if "effort" in b:
-            if not valid_effort(b["effort"]):
+            if not valid_effort(b["effort"], agent):
                 raise HttpError(400, t("Unknown effort level: {name}", name=b["effort"]))
             fields["effort"] = b["effort"] or None
         if "mode" in b:
-            if not valid_mode(b["mode"]):
+            if not valid_mode(b["mode"], agent):
                 raise HttpError(400, t("Unknown permission mode: {name}", name=b["mode"]))
             fields["mode"] = b["mode"] or None
+        if "agent" in b:
+            if not agents.valid(b["agent"]):
+                raise HttpError(400, t("Unknown agent: {name}", name=b["agent"]))
+            fields["agent"] = b["agent"] or None
         if "title" in b:
             title = " ".join(str(b["title"] or "").split())[:60]
             if not title:
@@ -255,17 +291,25 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
     @app.route("PUT", "/api/chats/{cid}")
     def update_chat(req: Request):
         cid = req.params["cid"]
-        fields = chat_fields(body(req))
-        meta = chats.store.update_meta(cid, touch=False, **fields) if fields else chats.store.meta(cid)
-        if meta is None:
+        before = chats.store.meta(cid)
+        if before is None:
             raise HttpError(404, t("Chat not found"))
+        fields = chat_fields(body(req), before.get("agent"))
+        if "agent" in fields and agents.get(fields["agent"]).id != agents.get(before.get("agent") or default_agent()).id \
+                and (before.get("session_id") or before.get("fork") or chats.store.messages(cid)):
+            # the conversation lives in the agent it ran on; another agent can't pick it up
+            raise HttpError(409, t("This chat already talks to {name}; start a new chat for another agent",
+                                   name=agents.get(before.get("agent")).name))
+        if "agent" in fields and fields["agent"] != before.get("agent"):   # another agent's model / mode mean nothing here
+            fields.update(model_choice=None, effort=None, mode=None)
+        meta = chats.store.update_meta(cid, touch=False, **fields) if fields else before
         # a reply in progress follows the new model / mode too, like switching in Claude Code mid-turn
         chats.set_live(cid, model=fields["model_choice"] or "" if "model_choice" in fields else None,
-                       mode=(fields["mode"] or info_mode()) if "mode" in fields else None)
+                       mode=(fields["mode"] or info_mode(meta)) if "mode" in fields else None)
         return meta
 
-    def info_mode() -> str:
-        return str((info.data or {}).get("permission_mode") or "default")
+    def info_mode(meta: dict) -> str:
+        return str((hub.info(meta.get("agent") or default_agent()).data or {}).get("permission_mode") or "default")
 
     @app.route("GET", "/api/chats/{cid}")
     def get_chat(req: Request):
@@ -273,7 +317,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         if meta is None:
             raise HttpError(404, t("Chat not found"))
         return {"chat": meta, "messages": chats.store.messages(meta["id"]), "running": chats.busy(meta["id"]),
-                "live": chats.live(meta["id"])}
+                "live": chats.live(meta["id"]), "available": chats.available(meta.get("agent") or default_agent())}
 
     @app.route("DELETE", "/api/chats/{cid}")
     def delete_chat(req: Request):
@@ -292,7 +336,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
             raise HttpError(409, t("This request has already ended"))
 
     def cut_point(cid: str, req: Request, verb: str) -> tuple[dict, list, int, dict | None]:
-        """Where a fork / rewind starts: just before user message `index`, as a Claude Code resume point."""
+        """Where a fork / rewind starts: just before user message `index`, as the agent's resume point."""
         meta = chats.store.meta(cid)
         if meta is None:
             raise HttpError(404, t("Chat not found"))
@@ -307,6 +351,10 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         at = next((m.get("uuid") for m in reversed(before) if m.get("role") == "assistant"), None)
         if before and not at:
             raise HttpError(409, t("This chat was recorded by an older version, so it can't {action} from the middle; start from the first message", action=verb))
+        agent = agents.get(meta.get("agent"))
+        if before and not agent.fork:
+            raise HttpError(409, t("{name} can't go back to the middle of a chat; you can only start again from the first message",
+                                   name=agent.name))
         # a chat that was itself forked and has not replied since still points at its source session
         sid = meta.get("session_id") or (meta.get("fork") or {}).get("session_id")
         return meta, msgs, index, ({"session_id": sid, "at": at} if before and sid else None)
@@ -317,14 +365,14 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         meta, msgs, index, point = cut_point(req.params["cid"], req, t("fork"))
         new = chats.store.create(title=t("{title} (fork)", title=meta.get("title") or t("Chat")), model_choice=meta.get("model_choice"),
                                  effort=meta.get("effort"), mode=meta.get("mode"), tasks=None, fork=point,
-                                 workspace=meta.get("workspace"))
+                                 workspace=meta.get("workspace"), agent=meta.get("agent"))
         chats.store.save_messages(new["id"], msgs[:index])
         return {"chat": new, "text": msgs[index].get("text") or "", "files": msgs[index].get("files") or []}
 
     @app.route("POST", "/api/chats/{cid}/rewind")
     def rewind(req: Request):
         """Go back to just before message `index` in this same chat; later messages are dropped.
-        Claude Code continues from that point (`--fork-session --resume-session-at`)."""
+        The agent continues from that point (Claude Code: `--fork-session --resume-session-at`, Codex: `thread/fork`)."""
         cid = req.params["cid"]
         if chats.busy(cid):
             raise HttpError(409, t("This chat is still replying; stop it before rewinding"))

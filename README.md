@@ -18,7 +18,8 @@ Your data lives in this folder: `resume.yaml`, plus `.studio/` (chats, history) 
 All three are git-ignored, so pulling updates never touches them. Settings (the gear, Ctrl+,) shows
 the data file and can open or start another one anywhere; the window remembers it in `.local/prefs.json`.
 
-Needs Python 3.10+, `xelatex` (TeX Live / MiKTeX) and a logged-in Claude Code for the chat; Job search
+Needs Python 3.10+, `xelatex` (TeX Live / MiKTeX) and a logged-in coding agent for the chat (Claude Code,
+or Codex, Qwen Code, Pi, DeepSeek Harness; see below); Job search
 (career-ops) also needs git and Node.js 22+.
 Everything is installed into this folder (`.venv`, `.cache`, `.local/providers`); nothing global.
 The exe is a 16 KB launcher built from `launcher/Launcher.cs` by `scripts/build_launcher.py`
@@ -47,7 +48,13 @@ with the C# compiler that ships with Windows.
   questions of your own can be added and answered by Claude.
 - **Live preview** as page images; in a subset a second page is flagged as overflow.
 - **One chat with Claude Code** on the left, the same in every workspace (hide it with the Claude button, Ctrl+J):
-  streamed replies, tool steps, resumable sessions. Claude is told what is on screen (the entry being edited,
+  streamed replies, tool steps, resumable sessions.
+- **Pick the agent** in the chat's header: Claude Code, Codex, Qwen Code, Pi or DeepSeek Harness, each the
+  user's own command line tool with its own sign-in (Resume Studio never stores a key). The top bar's button
+  and every card say which one is answering. A chat stays with the agent it started on (its history lives
+  there); new chats start on the last one picked. Claude Code runs over its stream-json channel, Codex over
+  `codex app-server`, Pi over `pi --mode rpc`, and Qwen Code / DeepSeek Harness over the
+  [Agent Client Protocol](https://agentclientprotocol.com), so any ACP agent fits (`core/agents.py`). Claude is told what is on screen (the entry being edited,
   the company or platform open), and can edit the resume, update the tracker and drive the browser from any
   of them. "Polish with Claude" on an entry sends the request there and shows a before/after diff with undo.
 - **Safe co-editing**: Claude's edits refresh the form and preview; editing the same item from
