@@ -288,7 +288,7 @@ function syncCard(v) {
         h("li", null, t("From then on “Check for updates” reads {site} by itself in seconds, without AI, and you edit the copy here.", { site: site.name }))),
       h("p", { class: "muted" }, t("Nothing changes on {site} until you press “Make these changes”.", { site: site.name })),
       h("div", { class: "row" },
-        h("button", { class: "btn primary", id: "fill-check", disabled: !ui.chat.available || reading, onclick: checkSite }, icon("sparkle"),
+        h("button", { class: "btn primary", id: "fill-check", "aria-busy": reading && "true", disabled: !ui.chat.available || reading, onclick: checkSite }, icon("sparkle"),
           reading ? t("The AI is reading…") : t("Read {site}", { site: site.name }))));
   }
   const c = v.checking;
@@ -313,7 +313,7 @@ function syncCard(v) {
         h("span", { class: "muted" }, v.synced_at ? t("synced {when}", { when: relTime(v.synced_at) }) : "")),
       status,
       h("span", { class: "spacer" }),
-      h("button", { class: "btn", id: "fill-check", disabled: !!c || reading || (!r.recorded && !ui.chat.available), onclick: checkSite },
+      h("button", { class: "btn", id: "fill-check", "aria-busy": (!!c || reading) && "true", disabled: !!c || reading || (!r.recorded && !ui.chat.available), onclick: checkSite },
         icon("refresh"), t("Check for updates")),
       h("button", { class: "btn icon ghost", title: t("More"), "aria-label": t("More"), onclick: menu }, icon("more"))),
     h("div", { class: "fsy-route muted" }, r.recorded
@@ -321,7 +321,7 @@ function syncCard(v) {
       : t("No read route yet: “Check for updates” lets the AI read {site} and record one.", { site: site.name })),
     r.broken && h("div", { class: "fill-banner warn" }, icon("alert"),
       h("span", { class: "nb-text" }, t("The route no longer reads {site} ({error}). The site has probably changed; the AI can read it again and record the route anew.", { site: site.name, error: r.broken })),
-      h("button", { class: "btn sm primary", disabled: !ui.chat.available || reading, onclick: learnRoute }, icon("sparkle"), t("Record the route anew"))),
+      h("button", { class: "btn sm primary", "aria-busy": reading && "true", disabled: !ui.chat.available || reading, onclick: learnRoute }, icon("sparkle"), t("Record the route anew"))),
     (lc.notes || []).map((n) => h("div", { class: "fill-banner" }, icon("alert"), h("span", { class: "nb-text" },
       n.kind === "removed_there_changed_here"
         ? t("“{item}” is gone from {site}, but you had edited it here: it stays in your copy and goes up again if you push it.", { item: n.label, site: site.name })

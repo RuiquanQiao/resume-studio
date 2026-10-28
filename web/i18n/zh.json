@@ -1877,5 +1877,10 @@
  "This folder already has {names}; pick an empty one, or open that data file instead.": "这个文件夹里已经有 {names}；请选一个空文件夹，或者直接打开那里的数据文件。",
  "Couldn't move your data: {error}": "数据没能移动：{error}",
  "Couldn't export your data: {error}": "数据没能导出：{error}",
- "Export your data": "导出数据"
+ "Export your data": "导出数据",
+ "Reading {names}": "正在读：{names}",
+ "Scanning {n} of {total}…": "正在扫描 {n}/{total}…",
+ "Waiting for the companies before it…": "排队中，先扫前面的公司…",
+ "Waiting…": "排队中…",
+ "{agent} is done; see the chat": "{agent} 做完了，去对话里看看"
 }

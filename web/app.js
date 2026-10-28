@@ -540,7 +540,7 @@ function outlineRows({ pop = false } = {}) {
         : t("{n} project has new progress since the last sync", { n: changed.length }, "{n} projects have new progress since the last sync")),
       changed.length === 1
         ? h("button", { class: "btn sm", onclick: () => select("entry", changed[0].id) }, t("View"))
-        : h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => aiBatch("batch_sync") }, icon("sparkle"), t("Update one by one"))));
+        : h("button", { class: "btn sm", "data-ai": "batch", disabled: !ui.chat.available, onclick: () => aiBatch("batch_sync") }, icon("sparkle"), t("Update one by one"))));
   }
 
   const included = new Set(job ? v.entries || [] : entries().map((e) => e.id));
@@ -1050,7 +1050,7 @@ function mockBody(e) {
     setTimeout(() => { const ta = document.querySelector(`.mq[data-path='${key}'] > .mq-q`); if (ta) ta.focus(); }, 0);
   };
   box.append(h("div", { class: "mock-bar" },
-    h("button", { class: "btn sm primary mock-run", disabled: !ui.chat.available,
+    h("button", { class: "btn sm primary mock-run", "data-ai": "entry:" + e.id, disabled: !ui.chat.available,
       title: ui.chat.available ? t("The AI reads this entry's bullets, notes and project folders") : missingAgentText(),
       onclick: () => aiEntry("mock", e.id, { text: instr.value, lang: L }) }, icon("sparkle"), list.length ? t("Predict more questions") : t("Predict the questions")),
     instr,
@@ -1080,9 +1080,9 @@ function mockItem(e, q, path, hidden, redraw, addQ) {
     touch(); redraw();
   };
   // follow up once there is an answer; before that, Claude can answer it (shown as the user types)
-  const probe = h("button", { class: "btn sm ghost mq-probe", title: t("The AI asks what the interviewer would ask after this answer"),
+  const probe = h("button", { class: "btn sm ghost mq-probe", "data-ai": "entry:" + e.id, title: t("The AI asks what the interviewer would ask after this answer"),
     onclick: () => aiEntry("probe", e.id, { path, lang: L }) }, icon("sparkle"), t("Follow up"));
-  const ans = h("button", { class: "btn sm ghost mq-answer", title: t("The AI answers it from this entry's facts"),
+  const ans = h("button", { class: "btn sm ghost mq-answer", "data-ai": "entry:" + e.id, title: t("The AI answers it from this entry's facts"),
     onclick: () => aiEntry("answer", e.id, { path, lang: L }) }, icon("sparkle"), t("Answer it"));
   const sync = () => {
     probe.hidden = !ui.chat.available || !(q.a || "").trim();
@@ -1112,7 +1112,7 @@ const otherLang = (l) => langs().find((x) => x !== l) || l;
 
 function bulletsCard(e) {
   const L = ui.editLang;
-  const aiBtn = h("button", { class: "btn sm ghost ai-btn", "aria-haspopup": "menu", disabled: !ui.chat.available,
+  const aiBtn = h("button", { class: "btn sm ghost ai-btn", "aria-haspopup": "menu", "data-ai": "entry:" + e.id, disabled: !ui.chat.available,
     title: ui.chat.available ? "" : missingAgentText(), onclick: (ev) => openAiMenu(ev.currentTarget, e) }, icon("sparkle"), t("Ask AI…"), icon("chev"));
   return card(t("Bullets"), langs().length > 1 ? t("Editing {lang}", { lang: langName(L) }) : null,
     [h("div", { class: "bullet-notes", "data-aid": "bullet-notes" }, bulletNotes(e)), bulletsEditor(e)], { actions: aiBtn, cls: "bullets-card" });
@@ -1124,14 +1124,14 @@ function bulletNotes(e) {
   const out = [];
   if (langs().length > 1 && missingIn(e, L)) {
     out.push(noteBar("translate", t("Some text has no {lang} yet", { lang: langName(L) }),
-      ui.chat.available && h("button", { class: "btn sm", onclick: () => aiEntry("translate", e.id, { target: L }) }, icon("sparkle"), t("Let AI write the {lang} version", { lang: langName(L) }))));
+      ui.chat.available && h("button", { class: "btn sm", "data-ai": "entry:" + e.id, onclick: () => aiEntry("translate", e.id, { target: L }) }, icon("sparkle"), t("Let AI write the {lang} version", { lang: langName(L) }))));
   }
   const m = measuredFor(e.id, L);
   // only bullets written in this language: an untranslated one is flagged as missing instead
   const long = m ? Object.entries(m).filter(([i, x]) => x.n > 1 && bulletState(e.bullets[i], L) === "ok").length : 0;
   if (long) {
     out.push(noteBar("compress", t("{n} bullet runs past one line", { n: long }, "{n} bullets run past one line"),
-      ui.chat.available && h("button", { class: "btn sm", onclick: () => aiEntry("fit", e.id, { lang: L }) }, icon("sparkle"), t("Let AI fit them on one line")), "warn"));
+      ui.chat.available && h("button", { class: "btn sm", "data-ai": "entry:" + e.id, onclick: () => aiEntry("fit", e.id, { lang: L }) }, icon("sparkle"), t("Let AI fit them on one line")), "warn"));
   } else if (m === null && e.bullets.some((b) => getT(b, L))) {
     out.push(h("div", { class: "note-line" }, icon("alert"), isAll() ? t("This entry's section is hidden, so it isn't in the preview and its lines can't be measured.") : t("This entry isn't ticked in “{job}”, so it isn't in the preview and its lines can't be measured.", { job: subsetName(subset()) })));
   }
@@ -1197,7 +1197,7 @@ function bulletsEditor(e) {
       h("button", { class: "btn sm", onclick: () => { e.bullets.push(langs().length > 1 ? { [L]: "" } : ""); /* the other languages show as missing until written */ touch(); redraw(); setTimeout(() => { const ta = document.querySelectorAll("#bullets textarea"); if (ta.length) ta[ta.length - 1].focus(); }, 0); } }, icon("plus"), t("Add bullet")),
       h("span", { class: "muted", style: "font-size:12px" }, t("Supports **bold**, *italic*, [text](link)"))),
     h("div", { class: "polish-box hidden", "data-aid": "polish-box" }, instr,
-      h("button", { class: "btn primary sm", onclick: () => aiEntry("polish", e.id, { text: instr.value, lang: L }) }, icon("sparkle"), t("Polish"))));
+      h("button", { class: "btn primary sm", "data-ai": "entry:" + e.id, onclick: () => aiEntry("polish", e.id, { text: instr.value, lang: L }) }, icon("sparkle"), t("Polish"))));
   return box;
 }
 
@@ -1314,7 +1314,7 @@ function evidenceEditor(e) {
     const empty = !e.bullets.some((b) => getT(b, ui.editLang));
     box.append(h("div", { class: "sync-bar" + (changed ? " changed" : "") }, icon(changed ? "refresh" : "folderOpen"),
       h("span", { class: "nb-text" }, changed ? t("The project has new progress") : t("The AI hasn't read this project yet")),
-      ui.chat.available && h("button", { class: "btn sm primary", onclick: () => aiEntry(empty && !changed ? "polish" : "sync", e.id, { lang: ui.editLang }) }, icon("sparkle"),
+      ui.chat.available && h("button", { class: "btn sm primary", "data-ai": "entry:" + e.id, onclick: () => aiEntry(empty && !changed ? "polish" : "sync", e.id, { lang: ui.editLang }) }, icon("sparkle"),
         changed ? t("Let AI update from the progress") : empty ? t("Let AI read the project and write bullets") : t("Let AI read it")),
       h("button", { class: "btn sm ghost", title: t("The bullets already reflect the project, so the AI needn't read it; you'll be told when it changes again"), onclick: () => markSynced(e.id) }, t("Mark as in sync"))));
   }
@@ -1641,7 +1641,7 @@ function sectionsForm() {
       h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, t("The AI will know your projects are here: ask it in the chat which ones are worth a place on your resume; picking a folder for an entry also starts here.")),
       rootRows,
       h("div", { class: "ev-actions" }, h("button", { class: "btn sm", onclick: addRoot }, icon("folder"), t("Choose folder")),
-        roots.length && ui.chat.available ? h("button", { class: "btn sm ghost", onclick: () => sendChat(t("Look at my project folders ({folders}) and pick the projects most worth putting on my resume, with your reasons. Don't change resume.yaml yet; once I confirm, add them one at a time.", { folders: roots.join(", ") })) }, icon("sparkle"), t("Let AI pick projects")) : null),
+        roots.length && ui.chat.available ? h("button", { class: "btn sm ghost", "data-ai": "pick-projects", onclick: () => aiRun("pick-projects", () => sendChat(t("Look at my project folders ({folders}) and pick the projects most worth putting on my resume, with your reasons. Don't change resume.yaml yet; once I confirm, add them one at a time.", { folders: roots.join(", ") }))) }, icon("sparkle"), t("Let AI pick projects")) : null),
     ]),
   ];
 }
@@ -1942,21 +1942,28 @@ async function undoAi(id) {
 }
 
 // one entry: snapshot it first so the result can be compared and undone
+// its AI buttons spin until the reply ends (aiRun)
 async function aiEntry(action, entryId, extra = {}) {
-  await saveDraft();
-  const snapshot = clone(entryById(entryId));
-  delete ui.ai[entryId];
-  if (["mock", "probe", "answer"].includes(action)) ui.mockOpen.add(entryId);   // the result shows where it was asked
-  const ok = await sendChat(extra.text || "", { action, entryId, target: extra.target, lang: extra.lang, path: extra.path });
-  if (ok) ui.ai[entryId] = { chat: ui.chat.id, action, snapshot, done: false };
+  await aiRun("entry:" + entryId, async () => {
+    await saveDraft();
+    const snapshot = clone(entryById(entryId));
+    delete ui.ai[entryId];
+    if (["mock", "probe", "answer"].includes(action)) ui.mockOpen.add(entryId);   // the result shows where it was asked
+    const ok = await sendChat(extra.text || "", { action, entryId, target: extra.target, lang: extra.lang, path: extra.path });
+    if (ok) ui.ai[entryId] = { chat: ui.chat.id, action, snapshot, done: false };
+    return ok;
+  });
 }
 
 // a whole subset: snapshot every entry; each one Claude touches gets its own diff + undo
 async function aiBatch(action, extra = {}) {
-  await saveDraft();
-  const snaps = Object.fromEntries(entries().map((e) => [e.id, clone(e)]));
-  const ok = await sendChat("", { action, target: extra.target, lang: extra.lang });
-  if (ok) ui.batch = { chat: ui.chat.id, action, snaps };
+  await aiRun("batch", async () => {
+    await saveDraft();
+    const snaps = Object.fromEntries(entries().map((e) => [e.id, clone(e)]));
+    const ok = await sendChat("", { action, target: extra.target, lang: extra.lang });
+    if (ok) ui.batch = { chat: ui.chat.id, action, snaps };
+    return ok;
+  });
 }
 
 function finishAi(chatId) {

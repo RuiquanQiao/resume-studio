@@ -387,6 +387,32 @@ def test_a_scan_holds_the_browser_while_it_reads_and_says_what_it_found(hunt):
     assert sc.last_run["failed"] == 1 and browser.holds == 0
 
 
+def test_a_run_shows_how_far_it_got_from_the_click_to_the_end(hunt, monkeypatch):
+    """The window's Scan buttons spin for the whole run: it is there before the first company is read, between one
+    company and the next, and a second start while it goes on joins its queue instead of a run of its own."""
+    import jobhunt.scan as scan_mod
+    ps = Postings(hunt)
+    hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
+    hunt.add_company({"name": "示例基金"})
+    page = "https://careers.xinghe.example/campus/jobs"
+    browser = FakeBrowser({page: {"postings": [{"title": "服务端研发工程师", "url": page + "/1"}]}})
+    seen = []
+    sc = Scanner(hunt, ps, NoTool(), browser, lambda: seen.append((dict(sc.batch) if sc.batch else None, list(sc.queue), dict(sc.running))))
+    sc.save_route("星河科技", {"pages": [{"url": page, "script": "async (h) => ({postings: []})"}]})
+    threads = []
+    monkeypatch.setattr(scan_mod.threading, "Thread", lambda target, **kw: threads.append(target) or type("T", (), {"start": lambda self: None})())
+    sc.start(["C1"])
+    assert seen[-1][:2] == ({"total": 1, "done": 0, "auto": False}, ["C1"])     # at once, before anything is read
+    sc.start(["C2", "C1"])                                                        # C1 is queued already
+    assert len(threads) == 1 and sc.queue == ["C1", "C2"] and sc.batch["total"] == 2
+    threads[0]()
+    between = [s for s in seen if s[0] and not s[2]]                              # no company being read just then
+    assert any(s[0]["done"] == 1 for s in between)                                # still a run, one of two done
+    assert seen[-1] == (None, [], {}) and sc.last_run["companies"] == 2
+    sc.start([])                                                                  # nothing to scan: no run at all
+    assert sc.batch is None and len(threads) == 1
+
+
 needs_node = pytest.mark.skipif(not shutil.which("node"), reason="Node.js not installed")
 
 

@@ -1277,6 +1277,34 @@ async function sendChat(text, { action = null, entryId = null, target = null, la
   }
 }
 
+// a button's AI work (ui.js AI_WORK): spinning from the click until the chat it started stops replying. `start`
+// sends the chat (sendChat's true, or jobChat's reply); one that didn't start, or ended already, stops at once.
+async function aiRun(key, start) {
+  if (AI_WORK.has(key)) return null;
+  AI_WORK.set(key, { chat: null });
+  paintWorking();
+  let r = null;
+  try { r = await start(); } catch (e) { toast(e.message); }
+  const chat = r && r.chat ? r.chat.id : r ? ui.chat.id : null;
+  if (!chat) { AI_WORK.delete(key); paintWorking(); return r; }
+  AI_WORK.get(key).chat = chat;
+  if (!["running", "waiting"].includes(chatState(chat))) {   // a quick reply ended while the request was out
+    const last = chat === ui.chat.id ? ui.chat.messages[ui.chat.messages.length - 1] : null;
+    aiRunDone(chat, last && last.error);
+  }
+  return r;
+}
+
+// a chat stopped replying: its buttons stop spinning, and with the chat out of sight a toast says it is done
+function aiRunDone(chatId, error) {
+  const keys = [...AI_WORK].filter(([, w]) => w.chat === chatId).map(([k]) => k);
+  if (!keys.length) return;
+  keys.forEach((k) => AI_WORK.delete(k));
+  paintWorking();
+  if (!error && (!chatShown() || document.hidden || chatId !== ui.chat.id))
+    toast(t("{agent} is done; see the chat", { agent: agentShortOf(chatId) }), { ms: 6000, action: { label: t("Show me"), fn: async () => { if (chatId !== ui.chat.id) await openChat(chatId); showChat(); } } });
+}
+
 async function submitComposer() {
   const input = $("#chat-input");
   const text = input.value.trim();
@@ -1318,7 +1346,7 @@ async function onChatEvent(type, ev) {
     return;
   }
   if (type === "chat.done" && ev.chat !== ui.chat.id) setUnread(ev.chat, true);   // ended while the user was elsewhere
-  if (type === "chat.done") paintChatDot((ui.chat.busy || []).filter((id) => id !== ev.chat));
+  if (type === "chat.done") { paintChatDot((ui.chat.busy || []).filter((id) => id !== ev.chat)); aiRunDone(ev.chat, ev.error); }
   if (ev.chat !== ui.chat.id) {
     if (type === "chat.done") {
       const r = await api("GET", "/api/chats");

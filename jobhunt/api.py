@@ -288,7 +288,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 "applications": apps, "events": evs,
                 "postings": sorted(posts.all(c["id"]), key=lambda p: (bool(p.get("closed")), p.get("category") or "", p["title"])),
                 "scan": {k: v for k, v in st.items() if k != "route"} | {"recorded": bool(st.get("route")),
-                                                                       "running": scanner.running.get(c["id"])},
+                                                                       "running": scanner.running.get(c["id"]),
+                                                                       "queued": c["id"] in scanner.queue},
                 "keywords": posts.scans()["keywords"]}
 
     def app_view(ref: str) -> dict:
@@ -392,7 +393,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         return {**tb, "platforms": platforms(), "tracker": tracker(), "career_ops": tool.installed(),
                 "scan": {"keywords": sc["keywords"], "daily": sc["daily"], "last_all": sc["last_all"],
                          "running": dict(scanner.running), "providers": scanner.providers_ready(),
-                         "last_run": scanner.last_run},
+                         "last_run": scanner.last_run, "queued": list(scanner.queue),
+                         "batch": dict(scanner.batch) if scanner.batch else None},
                 "changes": posts.changes(), "geo": located(), "places": place_names()}
 
     @app.route("GET", "/api/hunt/places")

@@ -1877,5 +1877,10 @@
  "This folder already has {names}; pick an empty one, or open that data file instead.": "이 폴더에 이미 {names}이(가) 있습니다. 빈 폴더를 고르거나 그 데이터 파일을 여세요.",
  "Couldn't move your data: {error}": "데이터를 옮기지 못했습니다: {error}",
  "Couldn't export your data: {error}": "데이터를 내보내지 못했습니다: {error}",
- "Export your data": "데이터 내보내기"
+ "Export your data": "데이터 내보내기",
+ "Reading {names}": "읽는 중: {names}",
+ "Scanning {n} of {total}…": "스캔 중 {n}/{total}…",
+ "Waiting for the companies before it…": "앞의 회사를 기다리는 중…",
+ "Waiting…": "대기 중…",
+ "{agent} is done; see the chat": "{agent} 작업이 끝났습니다. 채팅을 확인하세요"
 }

@@ -2006,5 +2006,10 @@
  "This folder already has {names}; pick an empty one, or open that data file instead.": "Dieser Ordner enthält bereits {names}; wählen Sie einen leeren oder öffnen Sie stattdessen diese Datendatei.",
  "Couldn't move your data: {error}": "Daten konnten nicht verschoben werden: {error}",
  "Couldn't export your data: {error}": "Daten konnten nicht exportiert werden: {error}",
- "Export your data": "Daten exportieren"
+ "Export your data": "Daten exportieren",
+ "Reading {names}": "Liest gerade {names}",
+ "Scanning {n} of {total}…": "Durchsuche {n} von {total}…",
+ "Waiting for the companies before it…": "Wartet auf die Firmen davor…",
+ "Waiting…": "Wartet…",
+ "{agent} is done; see the chat": "{agent} ist fertig; siehe den Chat"
 }

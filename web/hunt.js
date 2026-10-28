@@ -688,7 +688,9 @@ function companyLogo(c, cls = "", slot = false) {
 
 // ---- open postings (docs/JOB_HUNT.md, 2026-10-18) ----
 const scanInfo = () => (H.data && H.data.scan) || { running: {}, keywords: [] };
-const scanning = (cid) => !!(scanInfo().running || {})[cid];
+// read now, or asked for a moment ago (H.starting, until the server has the run)
+const scanning = (cid) => !!(scanInfo().running || {})[cid] || H.starting === "all" || (Array.isArray(H.starting) && H.starting.includes(cid));
+const scanQueued = (cid) => (scanInfo().queued || []).includes(cid);   // in the run, after the companies before it
 const kwMatch = (title) => { const kw = scanInfo().keywords || []; return !kw.length || kw.some((k) => title.toLowerCase().includes(k.toLowerCase())); };
 
 // the company's open postings, as one chip in the table (the ones matching the user's keywords)
@@ -713,18 +715,25 @@ function scanDone() {
 }
 
 async function scanCompanies(ids = null) {
+  H.starting = ids || "all";   // the button spins from the click, not from the server's first word
+  paintHunt();
   try {
     await api("POST", "/api/hunt/scan", ids ? { companies: ids } : {});
+    H.starting = null;
     await loadHunt({ quiet: true });
   } catch (e) { toast(e.message); }
+  finally { if (H.starting) { H.starting = null; paintHunt(); } }
 }
 
+// while a run goes on: how far it got, counted the whole time (not only while a company is being read)
 function scanAllButton() {
-  const busy = Object.keys(scanInfo().running || {}).length > 0;
-  const last = scanInfo().last_all;
-  return h("button", { class: "btn sm", id: "hunt-scan-all", disabled: busy,
-    title: last ? t("Last scanned {when}", { when: huntWhen(last) }) : t("Reads every company's careers sites for open roles"),
-    onclick: () => scanCompanies() }, busy ? h("span", { class: "spin" }) : icon("refresh"), busy ? t("Scanning…") : t("Scan all"));
+  const sc = scanInfo(), b = sc.batch;
+  const busy = !!b || H.starting === "all" || Object.keys(sc.running || {}).length > 0;
+  const now = H.data.companies.filter((c) => (sc.running || {})[c.id]).map((c) => c.name);
+  return h("button", { class: "btn sm", id: "hunt-scan-all", "aria-busy": busy && "true", disabled: busy,
+    title: now.length ? t("Reading {names}", { names: now.join(", ") }) : sc.last_all ? t("Last scanned {when}", { when: huntWhen(sc.last_all) }) : t("Reads every company's careers sites for open roles"),
+    onclick: () => scanCompanies() }, icon("refresh"),
+  !busy ? t("Scan all") : b && b.total > 1 ? t("Scanning {n} of {total}…", { n: Math.min(b.done + 1, b.total), total: b.total }) : t("Scanning…"));
 }
 
 // what the last day's scans brought, and the sites Claude still has to learn once
@@ -754,14 +763,17 @@ function scanNews() {
     rows,
     learn.length > 0 && h("div", { class: "note-bar" }, icon("sparkle"), h("span", { class: "nb-text" },
       t("{names}: the AI reads the site once and records how, then scans need no AI.", { names: learn.map((c) => c.name).join(", ") })),
-      h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => askLearn(learn) }, icon("sparkle"), t("Let AI learn them"))),
+      h("button", { class: "btn sm", "data-ai": aiKey("learn", learn), disabled: !ui.chat.available, onclick: () => askLearn(learn) }, icon("sparkle"), t("Let AI learn them"))),
     noSites.length > 0 && h("div", { class: "note-bar" }, icon("alert"), h("span", { class: "nb-text" },
       t("{names}: no careers site known yet.", { names: noSites.map((c) => c.name).join(", ") })),
-      h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => noSites.forEach(askFill) }, icon("sparkle"), t("Ask AI to find them"))));
+      h("button", { class: "btn sm", "data-ai": aiKey("fill", noSites), disabled: !ui.chat.available, onclick: () => askFill(noSites) }, icon("sparkle"), t("Ask AI to find them"))));
 }
 
+// a button's key for asking the AI about these companies: one company's buttons share it, wherever they are
+const aiKey = (what, cs) => what + ":" + cs.map((c) => c.id).join(",");
+
 function askLearn(cs) {
-  sendChat(t("Find the open roles on the careers sites of {names}, and record a scan route for each so later scans need no AI.", { names: cs.map((c) => c.name).join(", ") }));
+  aiRun(aiKey("learn", cs), () => sendChat(t("Find the open roles on the careers sites of {names}, and record a scan route for each so later scans need no AI.", { names: cs.map((c) => c.name).join(", ") })));
 }
 
 // a company's open postings, on its page
@@ -778,7 +790,9 @@ function postingsCard(v) {
   const hidden = open.length - open.filter((p) => kwMatch(p.title)).length;
   const limit = H.plimit || 120;
   const busy = scanning(c.id) || sc.running;
+  const waiting = !busy && (sc.queued || scanQueued(c.id));
   const status = busy ? h("span", { class: "fs-status" }, h("span", { class: "spin" }), t("Scanning…"))
+    : waiting ? null   // the Scan button says it, spinning
     : !sc.at ? h("span", { class: "muted" }, t("not scanned yet"))
     : sc.ok ? h("span", { class: "muted" }, t("scanned {when} · {how}", { when: huntWhen(sc.at), how: howName(sc.how) }))
     : h("span", { class: "fs-status bad" }, icon("alert"), sc.signed_out ? t("The site asks to sign in") : t("The last scan didn't work"));
@@ -798,10 +812,11 @@ function postingsCard(v) {
   const search = searchBox("posting-search", H.pq || "", t("Search these roles"), (v) => { H.pq = v; });
   // the head carries the count, when it was read and Scan: all still at hand with the list folded away
   const acts = [status,
-    sc.needs === "claude" && h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Let AI learn its site")),
-    !sc.ok && sc.at && sc.how === "route" && h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Ask AI to record it again")),
-    h("button", { class: "btn sm", id: "company-scan", disabled: !!busy || sc.needs === "sites", title: sc.needs === "sites" ? t("Add a careers site below first") : null,
-      onclick: () => scanCompanies([c.id]) }, icon("refresh"), t("Scan"))];
+    sc.needs === "claude" && h("button", { class: "btn sm", "data-ai": aiKey("learn", [c]), disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Let AI learn its site")),
+    !sc.ok && sc.at && sc.how === "route" && h("button", { class: "btn sm", "data-ai": aiKey("learn", [c]), disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Ask AI to record it again")),
+    h("button", { class: "btn sm", id: "company-scan", "aria-busy": (busy || waiting) && "true", disabled: !!busy || waiting || sc.needs === "sites",
+      title: sc.needs === "sites" ? t("Add a careers site below first") : waiting ? t("Waiting for the companies before it…") : null,
+      onclick: () => scanCompanies([c.id]) }, icon("refresh"), busy ? t("Scanning…") : waiting ? t("Waiting…") : t("Scan"))];
   return card(t("Open roles"), "", [
     !sc.ok && sc.error && h("div", { class: "note-bar warn" }, icon("alert"), h("span", { class: "nb-text" }, sc.error),
       sc.signed_out && c.site && h("button", { class: "btn sm", onclick: () => signInMode(c.site) }, icon("user"), t("Sign in to {site}", { site: c.name }))),
@@ -849,8 +864,12 @@ function companyProps() {
     text("industry", t("Industry"), 150, { group: true }),
     text("strength", t("Strength"), 200),
     { key: "roles", label: t("Roles"), type: "relation", width: 300, get: (c) => (c.apps || []).map((a) => a.role),
-      render: (c) => h("div", { class: "role-chips" }, (c.apps || []).map(roleChip), openChip(c),
-        !(c.apps || []).length && !openChip(c) && h("span", { class: "c-muted" }, scanning(c.id) ? t("Scanning…") : t("none yet"))) },
+      // a scan going on comes first: the chips after it may be cut off at the cell's edge
+      render: (c) => h("div", { class: "role-chips" },
+        scanning(c.id) ? h("span", { class: "scan-chip" }, h("span", { class: "spin" }), t("Scanning…"))
+          : scanQueued(c.id) && h("span", { class: "scan-chip c-muted" }, t("Waiting…")),
+        (c.apps || []).map(roleChip), openChip(c),
+        !scanning(c.id) && !scanQueued(c.id) && !(c.apps || []).length && !openChip(c) && h("span", { class: "c-muted" }, t("none yet"))) },
     placesProp("places", t("Hires in"), (c, v) => cellCompany(c, { places: v })),
     { key: "hq", label: t("Headquarters"), type: "custom", width: 130, hidden: true, group: true, get: (c) => (c.hq ? placeName(c.hq) : ""),
       render: (c) => c.hq ? placeChip(c.hq) : "",
@@ -997,7 +1016,7 @@ async function newCompany(name = "") {
   if (!made) return null;
   await loadHunt({ quiet: true });
   openHunt("company", made.id);
-  askFill(made);
+  askFill([made]);
   return made;
 }
 
@@ -1032,7 +1051,7 @@ async function addFromLink() {
   if (!/^https?:\/\//i.test(url)) url = "https://" + url;
   const same = ((H.data && H.data.applications) || []).find((a) => a.url && a.url.replace(/\/$/, "") === url.replace(/\/$/, ""));
   if (same) { toast(t("That posting is already on the list")); openHunt("app", same.id); return; }
-  sendChat(t("Read this posting and add it: {url}", { url }));
+  aiRun("add-link", () => sendChat(t("Read this posting and add it: {url}", { url })));
 }
 
 async function newApplication(companyId = null) {
@@ -1046,7 +1065,7 @@ async function newApplication(companyId = null) {
       try {
         let cid = fixed ? fixed.id : f.cid || (cs.find((c) => c.name.toLowerCase() === f.company.toLowerCase()) || {}).id;
         if (!cid) {
-          try { const made = (await api("POST", "/api/hunt/companies", { name: f.company, different: !!f.different })).company; cid = made.id; askFill(made); }
+          try { const made = (await api("POST", "/api/hunt/companies", { name: f.company, different: !!f.different })).company; cid = made.id; askFill([made]); }
           catch (e) {
             if (e.status === 409 && e.data && e.data.same) cid = e.data.same.id;   // one of its other names: that company
             else if (sameCompany(e, f.company, m, { label: (c) => t("Use {company}", { company: c.name }), pick: (c) => m.retry({ cid: c.id }) })) return;
@@ -1130,7 +1149,7 @@ function companyPage(v) {
   return [
     backTo("companies"),
     h("div", { class: "ed-head" }, companyLogo(c, "lg"), h("h1", null, c.name), h("span", { class: "id" }, c.id), h("span", { class: "ed-acts" },
-      h("button", { class: "btn sm", id: "company-fill", disabled: !ui.chat.available, onclick: () => askFill(c) }, icon("sparkle"),
+      h("button", { class: "btn sm", id: "company-fill", "data-ai": aiKey("fill", [c]), disabled: !ui.chat.available, onclick: () => askFill([c]) }, icon("sparkle"),
         filledSome(c) ? t("Ask AI to fill it in again") : t("Ask AI to fill it in")),
       c.site && h("button", { class: "btn sm", title: c.site, onclick: () => openInBrowser(c.site) }, icon("external"), t("Open its site")),
       h("button", { class: "btn icon ghost", title: t("More"), "aria-label": t("More"), onclick: (e) => openMenu(e.currentTarget, [
@@ -1249,9 +1268,9 @@ function researchWhy(r) {
 const wrongLanguage = (c) => !!(c.research && c.research.rewrite);
 function askRewrite(cs) {
   if (!ui.chat.available || !cs.length) return;
-  sendChat(cs.length === 1
+  aiRun(aiKey("rewrite", cs), () => sendChat(cs.length === 1
     ? t("Write what is known about {company} again in {lang}: its industry, strength, size and the About, with the same facts and sources.", { company: cs[0].name, lang: cs[0].research.lang_name })
-    : t("Write what is known about these companies again, each in the language it is described in: their industry, strength, size and the About, with the same facts and sources. {names}", { names: cs.map((c) => c.name).join(", ") }));
+    : t("Write what is known about these companies again, each in the language it is described in: their industry, strength, size and the About, with the same facts and sources. {names}", { names: cs.map((c) => c.name).join(", ") })));
 }
 // on a company's page: what is there is in another language than the company is described in
 function languageBar(c) {
@@ -1259,7 +1278,7 @@ function languageBar(c) {
   if (!wrongLanguage(c)) return null;
   return h("div", { class: "note-bar", id: "company-language" }, icon("translate"),
     h("span", { class: "nb-text" }, t("This is in {now}. {company} is described in {lang}: {why}.", { now: r.rewrite_name, company: c.name, lang: r.lang_name, why: researchWhy(r) })),
-    h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => askRewrite([c]) }, icon("sparkle"), t("Ask AI to write it in {lang}", { lang: r.lang_name })));
+    h("button", { class: "btn sm", "data-ai": aiKey("rewrite", [c]), disabled: !ui.chat.available, onclick: () => askRewrite([c]) }, icon("sparkle"), t("Ask AI to write it in {lang}", { lang: r.lang_name })));
 }
 // over the companies table: every company described in another language, rewritten at once
 function languagesBar(cs) {
@@ -1268,13 +1287,17 @@ function languagesBar(cs) {
   return h("div", { class: "note-bar", id: "hunt-languages" }, icon("translate"),
     h("span", { class: "nb-text", title: t("A company is described in the language of where you apply to it, else of its headquarters, when your resume is written in that language; else in English.") },
       t("Described in another language than theirs: {names}.", { names: wrong.map((c) => c.name).join(", ") })),
-    h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => askRewrite(wrong) }, icon("sparkle"), t("Ask AI to rewrite them")));
+    h("button", { class: "btn sm", "data-ai": aiKey("rewrite", wrong), disabled: !ui.chat.available, onclick: () => askRewrite(wrong) }, icon("sparkle"), t("Ask AI to rewrite them")));
 }
 
-// Claude researches the company and fills every field (docs/JOB_HUNT.md, 2026-10-18)
-function askFill(c) {
+// Claude researches each company and fills every field (docs/JOB_HUNT.md, 2026-10-18); one message each, queued in one chat
+function askFill(cs) {
   if (!ui.chat.available) return;
-  sendChat(t("Find out about {company} and fill in all its fields: industry, strength, headquarters, the cities it hires in, size, its careers sites, its logo and the About, each with a source.", { company: c.name }));
+  aiRun(aiKey("fill", cs), async () => {
+    let ok = false;
+    for (const c of cs) ok = await sendChat(t("Find out about {company} and fill in all its fields: industry, strength, headquarters, the cities it hires in, size, its careers sites, its logo and the About, each with a source.", { company: c.name })) || ok;
+    return ok;
+  });
 }
 
 async function moveApp(a, place) {
@@ -1376,7 +1399,7 @@ function appPage(v) {
     card(t("Job description"), jdSub(a, v.reading), [
       (v.reading || {}).error && h("div", { class: "note-bar warn" }, icon("alert"),
         h("span", { class: "nb-text" }, t("Its page didn't read: {error}", { error: v.reading.error })),
-        ui.chat.available && h("button", { class: "btn sm", onclick: () => sendChat(t("Read the posting at {url} and fill in {role} at {company}: its job description, location and apply-by date.", { url: a.url, role: a.role, company: c.name })) },
+        ui.chat.available && h("button", { class: "btn sm", "data-ai": "read:" + a.id, onclick: () => aiRun("read:" + a.id, () => sendChat(t("Read the posting at {url} and fill in {role} at {company}: its job description, location and apply-by date.", { url: a.url, role: a.role, company: c.name }))) },
           icon("sparkle"), t("Ask AI to read it"))),
       h("div", { class: "field" }, h("textarea", { id: "app-jd", rows: 6, value: a.jd || "", spellcheck: "false", "aria-label": t("Job description"),
         placeholder: t("Paste the posting's text here: duties, requirements, pluses. Or send the AI its link or a screenshot."),

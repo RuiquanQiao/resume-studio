@@ -167,7 +167,7 @@ function jobsBanners(st) {
     const file = cv.conflicts[0];
     out.push(h("div", { class: "jobs-banner warn" }, icon("alert"),
       h("span", { class: "nb-text" }, t("{file} in {name} was changed there, so Resume Studio stopped updating it from your library.", { file, name: st.tool.name })),
-      h("button", { class: "btn sm", disabled: !ui.chat.available, onclick: () => jobChat("/api/jobs/cv/resolve", { file }) }, icon("sparkle"), t("Bring the changes in")),
+      h("button", { class: "btn sm", "data-ai": "cv-resolve:" + file, disabled: !ui.chat.available, onclick: () => aiRun("cv-resolve:" + file, () => jobChat("/api/jobs/cv/resolve", { file })) }, icon("sparkle"), t("Bring the changes in")),
       h("button", { class: "btn sm ghost", onclick: () => overwriteCv(file) }, t("Use my library"))));
   }
   // its targeting profile (missing or stale) has its button in the top bar
@@ -503,7 +503,8 @@ function requirementsCard(reqs) {
 function actionsCard(a) {
   const acts = (J.data && J.data.actions) || [];
   return card(t("Next steps with {name}", { name: jobsTool().name }), t("each one opens a chat"), h("div", { class: "act-grid" },
-    acts.map((x) => h("button", { class: "act", disabled: !ui.chat.available, onclick: () => jobChat(`/api/jobs/app/${encodeURIComponent(a.id)}/action`, { action: x.id }) },
+    acts.map((x) => h("button", { class: "act", "data-ai": `act:${a.id}:${x.id}`, disabled: !ui.chat.available,
+      onclick: () => aiRun(`act:${a.id}:${x.id}`, () => jobChat(`/api/jobs/app/${encodeURIComponent(a.id)}/action`, { action: x.id })) },
       icon(x.icon || "sparkle"), h("span", { class: "act-main" }, h("span", { class: "act-l" }, x.label), h("span", { class: "act-d" }, x.desc)))),
     h("button", { class: "act", disabled: !ui.chat.available, onclick: () => toolChat(t("About {job} (report {report}): ", { job: [a.company, a.role].filter(Boolean).join(" — "), report: a.report || "#" + a.id }), a.company || "") },
       icon("chat"), h("span", { class: "act-main" }, h("span", { class: "act-l" }, t("Ask about this job")), h("span", { class: "act-d" }, t("Anything else, in your own words"))))));

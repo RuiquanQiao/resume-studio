@@ -1877,5 +1877,10 @@
  "This folder already has {names}; pick an empty one, or open that data file instead.": "このフォルダーにはすでに {names} があります。空のフォルダーを選ぶか、そのデータファイルを開いてください。",
  "Couldn't move your data: {error}": "データを移動できませんでした: {error}",
  "Couldn't export your data: {error}": "データを書き出せませんでした: {error}",
- "Export your data": "データを書き出す"
+ "Export your data": "データを書き出す",
+ "Reading {names}": "読み込み中：{names}",
+ "Scanning {n} of {total}…": "スキャン中 {n}/{total}…",
+ "Waiting for the companies before it…": "前の会社の順番待ち…",
+ "Waiting…": "順番待ち…",
+ "{agent} is done; see the chat": "{agent} が完了しました。チャットをご覧ください"
 }

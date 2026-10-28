@@ -1345,7 +1345,8 @@ def test_a_scan_started_in_the_window_says_when_it_is_done(page, server, monkeyp
     pg.keyboard.press("Control+3")
     pg.click(".hunt-tab[data-tab=companies]")
     pg.click("#hunt-scan-all")
-    pg.wait_for_selector("#hunt-scan-all[disabled] .spin")             # a spinner one can see
+    pg.wait_for_selector("#hunt-scan-all[disabled][aria-busy=true]")    # a spinner one can see (drawn by style.css)
+    assert pg.evaluate("getComputedStyle(document.querySelector('#hunt-scan-all'), '::before').animationName") == "spin"
     pg.screenshot(path=str(ART / "hunt-scan-running.png"), clip=pg.locator("#hunt-scan-all").bounding_box())
     pg.wait_for_selector("#toast.show:has-text('扫描完成')")
     assert "2 个新" in pg.inner_text("#toast") and "0 个已关闭" in pg.inner_text("#toast")

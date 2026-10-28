@@ -1071,7 +1071,13 @@ button.fg-title { text-transform: none; letter-spacing: 0; font-size: 12.5px; co
 .fs-status svg.i { width: 14px; height: 14px; color: var(--ok); }
 .fs-status.bad, .fs-status.bad svg.i { color: var(--bad); }
 .btn .spin { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
-.fs-status .spin, .fs-status + .spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--accent); border-right-color: transparent; animation: spin .8s linear infinite; }
+/* a button whose work is running (ui.js markWorking): a spinner in place of its icon, at full strength, not greyed */
+[aria-busy="true"]:disabled { opacity: 1; cursor: progress; }
+[aria-busy="true"] > svg.i:first-child { display: none; }
+[aria-busy="true"]::before { content: ""; display: inline-block; flex: none; align-self: center; width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
+.scan-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.scan-chip .spin, .fs-status .spin, .fs-status + .spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--accent); border-right-color: transparent; animation: spin .8s linear infinite; }
 .fill-viewtabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--hover); border: 1px solid var(--line); }
 .fv-tab { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: var(--text-2); font-weight: 600; cursor: pointer; }
 .fv-tab:hover { color: var(--text); }

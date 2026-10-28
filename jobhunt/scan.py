@@ -68,6 +68,10 @@ class Scanner:
         self.lock = threading.Lock()
         self._providers: dict[str, str | None] = {}   # url -> career-ops provider id (or None), per run of the app
         self.last_run: dict = {}               # the last scan_many: {at, auto, companies, new, closed, failed}
+        # the run started from the window (start): the companies still waiting, and how far it got, so the window
+        # can say "3 of 12" from the click to the end, between one company and the next too
+        self.queue: list[str] = []
+        self.batch: dict | None = None         # {total, done, auto} while a run goes on
 
     # ---- which sites, read how ----
     @staticmethod
@@ -238,7 +242,56 @@ class Scanner:
         return out
 
     def start(self, ids: list[str], *, auto: bool = False) -> None:
-        threading.Thread(target=self.scan_many, args=(ids,), kwargs={"auto": auto}, daemon=True, name="hunt-scan").start()
+        """Scan in the background. While a run goes on, more companies join its queue instead of a second run;
+        one the user starts makes the whole run theirs (routes may open the browser, and it ends with a toast)."""
+        with self.lock:
+            new = [i for i in dict.fromkeys(ids) if i not in self.queue and i not in self.running]
+            if self.batch is not None:
+                self.queue += new
+                self.batch["total"] += len(new)
+                self.batch["auto"] = self.batch["auto"] and auto
+                joined = True
+            elif new:
+                self.queue, self.batch, joined = new, {"total": len(new), "done": 0, "auto": auto}, False
+            else:
+                return
+        self.publish()   # the window shows the run at once, before the first company is read
+        if not joined:
+            threading.Thread(target=self._run, daemon=True, name="hunt-scan").start()
+
+    def _run(self) -> None:
+        out: list[dict] = []
+        auto, ended = True, False
+        try:
+            with self._hold():
+                while True:
+                    with self.lock:
+                        if not self.queue:
+                            auto = self.batch["auto"]
+                            self.batch, ended = None, True   # in the same lock as the check: a later start begins a new run
+                            break
+                        cid = self.queue.pop(0)
+                        auto = self.batch["auto"]
+                    try:
+                        out.append(self.scan(cid, allow_route=not auto or self.browser_open()))
+                    except Exception as e:  # noqa: BLE001  one company's trouble never stops the rest
+                        out.append({"company": cid, "error": str(e)})
+                    with self.lock:
+                        if self.batch is not None:
+                            self.batch["done"] += 1
+                if not auto or out:
+                    self.postings.mark_all_scanned()
+                self.last_run = {"at": time.time(), "auto": auto, "companies": len(out),
+                                 "new": sum(int(r.get("new") or 0) for r in out),
+                                 "closed": sum(int(r.get("closed") or 0) for r in out),
+                                 "failed": sum(1 for r in out if r.get("error"))}
+        except BaseException:
+            with self.lock:   # never left looking busy
+                if not ended:
+                    self.batch, self.queue = None, []
+            raise
+        finally:
+            self.publish()
 
     def save_route(self, ref: str, data: Any) -> tuple[dict, list[str]]:
         r, errs = validate_route(data)

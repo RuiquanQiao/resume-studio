@@ -60,8 +60,22 @@ function h(tag, attrs, ...kids) {
     el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
   }
   if (tip) setTip(el, tip);
+  if (attrs && attrs["data-ai"] != null) markWorking(el);
   return el;
 }
+
+// ---- buttons that start work running past the click (the AI, a scan) ----
+// Like any app's loading button: from the click until the work ends the button spins in place of its icon and
+// can't be pressed twice. `"data-ai": key` names the work (an entry, a company…), so the button keeps spinning
+// through repaints, and the same work's other buttons spin with it. aiRun (chat.js) starts and ends the work.
+const AI_WORK = new Map();   // key -> { chat }: chat is null while the request that starts it is out
+function markWorking(el) {
+  const on = AI_WORK.has(el.getAttribute("data-ai"));
+  if (on) el.setAttribute("aria-busy", "true"); else el.removeAttribute("aria-busy");
+  if (on && !el.disabled) { el.disabled = true; el.dataset.aiOff = "1"; }
+  else if (!on && el.dataset.aiOff) { el.disabled = false; delete el.dataset.aiOff; }   // only what it disabled itself
+}
+function paintWorking() { for (const el of document.querySelectorAll("[data-ai]")) markWorking(el); }
 
 // A change shows at once, also while the user types: the part of the page is rebuilt, and the field being
 // typed in comes back with its text, caret and focus, so typing carries on as in any app. Only while an IME
