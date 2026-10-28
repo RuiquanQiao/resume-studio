@@ -15,6 +15,7 @@ const H = {
   q: "",                 // the search box
   loading: null,
   editing: null,         // the booked thing being edited on a role's page (its id)
+  notes: {},             // a timeline note typed but not added yet, per application: {text, on}; repaints keep it
 };
 
 const HUNT_TABS = { apps: "Progress", companies: "Companies", platforms: "Platforms" };
@@ -1340,8 +1341,12 @@ function appPage(v) {
     placeholder: c.subset ? t("Like the company: {name}", { name: subsetName(subsets().find((x) => x.id === c.subset)) || c.subset }) : t("Pick a subset"),
     options: subsets().filter((x) => x.id !== ALL).map((x) => ({ value: x.id, label: subsetName(x) })),
     onChange: (val) => editApp(a.id, { subset: val }) });
-  const note = h("textarea", { id: "app-note-new", rows: 2, placeholder: t("What happened? e.g. 笔试已交"), spellcheck: "false" });
-  const when = h("input", { type: "date", id: "app-note-on", value: today(), "aria-label": t("When") });
+  // a repaint (a refresh from the server, Claude's edits) rebuilds these, so what is typed lives in H.notes, not only in the box
+  const draft = H.notes[a.id] || (H.notes[a.id] = { text: "", on: today() });
+  const note = h("textarea", { id: "app-note-new", rows: 2, placeholder: t("What happened? e.g. 笔试已交"), spellcheck: "false",
+    oninput: (e) => { draft.text = e.target.value; } }, draft.text);
+  const when = h("input", { type: "date", id: "app-note-on", value: draft.on, "aria-label": t("When"),
+    oninput: (e) => { draft.on = e.target.value; }, onchange: (e) => { draft.on = e.target.value; } });
   return [
     h("div", { class: "row" }, backTo("apps"), h("button", { class: "btn sm ghost", onclick: () => openHunt("company", c.id) }, icon("globe"), c.name)),
     h("div", { class: "ed-head" }, h("h1", null, h("span", { class: "co" }, c.name, " / "), h("span", { class: "r" }, a.role)),
@@ -1428,6 +1433,7 @@ async function addAppNote(a, text, on) {
   if (!text.trim()) { const el = $("#app-note-new"); if (el) el.focus(); return; }
   try {
     H.view = await api("POST", `/api/hunt/apps/${encodeURIComponent(a.id)}/note`, { note: text, on: on === today() ? "" : on });
+    delete H.notes[a.id];
     paintHunt();
     loadHunt({ quiet: true });
   } catch (e) { toast(e.message); }
