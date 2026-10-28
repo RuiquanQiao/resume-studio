@@ -771,6 +771,11 @@ function paintChatToggle() {
   b.setAttribute("aria-pressed", String(W.chat === "on"));
   const lbl = b.querySelector(".lbl");   // the open chat's agent (Claude, Codex, Qwen…)
   if (lbl && typeof agentOf === "function") lbl.textContent = agentOf().short;
+  const m = ui.chat.meta || {};
+  const hasProvider = !!(m.agent || m.session_id || m.fork || ui.chat.messages.length || (ui.claude && ui.claude.defaults && ui.claude.defaults.agent));
+  const providerIcon = hasProvider && typeof agentIconName === "function" ? agentIconName(agentOf().id) : "chat";
+  const glyph = b.querySelector("svg.i");
+  if (glyph) glyph.replaceWith(icon(providerIcon));
   const dot = b.querySelector(".tab-dot");
   if (dot) dot.classList.toggle("hidden", !(ui.chat.running || (ui.chat.busy || []).length || ui.chat.waiting.size));
   if (dot) dot.classList.toggle("wait", ui.chat.waiting.size > 0);

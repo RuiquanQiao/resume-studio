@@ -1503,7 +1503,7 @@ function openSettings(section = null) {
   if (root.firstChild) return;
   pendingUiLang = undefined;
   const done = async () => {
-    try { await applyJobsSettings(); await applyTracker(); } catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
+    try { await applyAgentSetting(); await applyJobsSettings(); await applyTracker(); } catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
     try { if (await applyUiLang()) { await saveDraft(); location.reload(); return; } }
     catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
     close();
@@ -1511,7 +1511,7 @@ function openSettings(section = null) {
   const close = () => {
     for (const k of Object.keys(jobsPending)) delete jobsPending[k];
     pendingTracker = undefined; pendingDaily = undefined;
-    pendingUiLang = undefined; closeSettings = () => {}; root.replaceChildren(); document.removeEventListener("keydown", onKey); $("#settings-btn").focus(); };
+    pendingUiLang = undefined; pendingAgentSetting = undefined; closeSettings = () => {}; root.replaceChildren(); document.removeEventListener("keydown", onKey); $("#settings-btn").focus(); };
   closeSettings = close;
   // bubble phase: an open dropdown takes Escape first (it stops the event in the capture phase)
   const onKey = (e) => { if (e.key === "Escape") close(); };
@@ -1520,6 +1520,7 @@ function openSettings(section = null) {
     h("div", { class: "modal settings", role: "dialog", "aria-modal": "true", "aria-label": t("Settings") },
       h("h3", null, t("Settings")),
       h("p", null, t("These belong to this computer, not to your resume.")),
+      agentSettingsField(),
       h("div", { class: "field" }, h("label", null, t("App language"), h("span", { class: "hint" }, t("The language of this window; it follows your computer unless you pick one"))), uiLangPicker()),
       h("div", { class: "field" }, h("label", null, t("Data file"), h("span", { class: "hint" }, t("Your whole resume lives in this one file; the window opens it next time too"))),
         h("div", { class: "data-path" }, S.data_path),

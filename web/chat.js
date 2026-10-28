@@ -116,6 +116,31 @@ function chatAgentId() {
 function agentOf(id = chatAgentId()) {
   return agentList().find((a) => a.id === id) || { id, name: id, short: id, exe: id, installed: true, fork: false, protocol: "" };
 }
+function agentIconName(id) {
+  return ({ claude: "agentClaude", codex: "agentCodex", qwen: "agentQwen", pi: "agentPi", dsh: "agentDeepSeek" })[id] || "chat";
+}
+function agentSettingsField() {
+  const chosen = chatAgentId();
+  const select = uiSelect({ cls: "field-select agent-provider-select", label: t("Agent provider"), value: chosen, menuWidth: 420,
+    options: agentList().map((a) => ({
+      value: a.id, label: a.name, short: a.name,
+      mark: () => { const mark = icon(agentIconName(a.id)); mark.classList.add("agent-mark"); return mark; },
+      desc: !a.installed ? t("Install: {cmd}", { cmd: a.install }) : a.signed_in === false ? a.login : a.account || "",
+      hint: !a.installed ? t("Not installed") : a.signed_in === false ? t("Not signed in") : "",
+      hintClass: !a.installed || a.signed_in === false ? "warn" : "",
+    })),
+    onChange: (id) => { pendingAgentSetting = id; },
+  });
+  pendingAgentSetting = undefined;
+  return h("div", { class: "field" }, h("label", null, t("Agent provider"), h("span", { class: "hint" }, t("The agent used for new chats and this chat when it is empty"))), select.el);
+}
+let pendingAgentSetting;
+async function applyAgentSetting() {
+  if (!pendingAgentSetting) return;
+  const id = pendingAgentSetting;
+  pendingAgentSetting = undefined;
+  await pickAgent(agentOf(id));
+}
 function agentShortOf(chatId) {
   const c = ui.chat.list.find((x) => x.id === chatId);
   return agentOf(!c ? chatAgentId() : c.agent || (c.session_id ? "claude" : chatSettings().agent)).short;
@@ -212,12 +237,8 @@ async function setChatSetting(field, value) {
 // ---------------------------------------------------------------- pickers (composer bar)
 function renderPickers() {
   const em = effectiveModel(), mode = effectiveMode(), s = chatSettings(), ag = agentOf();
-  const mb = $("#chat-model-btn"), eb = $("#chat-effort-btn"), pb = $("#chat-mode-btn"), ab = $("#chat-agent-btn");
+  const mb = $("#chat-model-btn"), eb = $("#chat-effort-btn"), pb = $("#chat-mode-btn");
   if (!mb) return;
-  ab.replaceChildren(icon("sparkle"), h("span", { class: "lbl" }, ag.short));
-  ab.classList.toggle("warn", !ag.installed || ag.signed_in === false);
-  setTip(ab, !ag.installed ? t("{name} isn't installed · click to pick another agent", { name: ag.name })
-    : ag.signed_in === false ? t("{name} isn't signed in · click to pick another agent", { name: ag.name }) : t("Agent: {name} · click to switch", { name: ag.name }));
   mb.querySelector(".lbl").textContent = em.name;
   setTip(mb, em.follows ? t("Model: {name} (following {tool}'s setting)", { name: em.name, tool: ag.name }) : t("Model: {name}", { name: em.name }));
   const noEffort = !em.efforts.length;
@@ -339,29 +360,6 @@ function cycleMode() {
   const next = cycle[(cycle.indexOf(effectiveMode()) + 1) % cycle.length];
   setChatSetting("mode", next);
   toast(t("Permission mode: {mode}", { mode: modeInfo(next).label }), { ms: 1400 });
-}
-
-// ---------------------------------------------------------------- the agent picker
-// Every agent the user may have, as their own command line tool with its own sign-in. A chat stays on the
-// agent it started on (its history lives there), so picking another one for a chat that has begun opens a
-// new chat; an empty chat just switches. New chats start on the last pick.
-function openAgentMenu(anchor = $("#chat-agent-btn")) {
-  const cur = chatAgentId();
-  const panel = h("div", { class: "picker", role: "menu", "aria-label": t("Agent") }, h("div", { class: "pk-head" }, t("Agent")));
-  agentList().forEach((a, n) => {
-    const tag = !a.installed ? t("Not installed") : a.signed_in === false ? t("Not signed in") : null;
-    const desc = !a.installed ? t("Install: {cmd}", { cmd: a.install }) : a.signed_in === false ? a.login : a.account || "";
-    const item = pickerItem({ label: a.name, desc, tag, on: a.id === cur, hint: String(n + 1), cls: a.installed ? "" : "off", onClick: () => pickAgent(a) });
-    item.dataset.num = String(n + 1);
-    panel.append(item);
-  });
-  const begun = ui.chat.id && (ui.chat.messages.length || ui.chat.running);
-  panel.append(h("div", { class: "menu-sep" }), h("div", { class: "pk-note" }, begun
-    ? t("This chat stays with {name}; picking another agent opens a new chat.", { name: agentOf(cur).name })
-    : t("Each agent signs in with its own command line tool; nothing is shared between them.")));
-  pickerKeys(panel);   // it sits in the chat's header, so it opens downwards
-  openFloat(anchor, panel, { place: "bottom", align: "start", minWidth: 280 });
-  (panel.querySelector('.pk-item[aria-checked="true"]') || panel.querySelector(".pk-item") || panel).focus({ preventScroll: true });
 }
 
 async function pickAgent(a) {
@@ -1390,7 +1388,6 @@ function wireChat() {
   $("#chat-model-btn").onclick = (e) => (Float.cur && Float.cur.anchor === e.currentTarget ? closeFloat() : openModelMenu(e.currentTarget));
   $("#chat-effort-btn").onclick = (e) => (Float.cur && Float.cur.anchor === e.currentTarget ? closeFloat() : openEffortMenu(e.currentTarget));
   $("#chat-mode-btn").onclick = (e) => (Float.cur && Float.cur.anchor === e.currentTarget ? closeFloat() : openModeMenu(e.currentTarget));
-  $("#chat-agent-btn").onclick = (e) => (Float.cur && Float.cur.anchor === e.currentTarget ? closeFloat() : openAgentMenu(e.currentTarget));
   $("#chat-ctx-btn").onclick = (e) => (Float.cur && Float.cur.anchor === e.currentTarget ? closeFloat() : openContextPanel(e.currentTarget));
   $("#chat-send").onclick = submitComposer;
   $("#chat-stop").onclick = () => ui.chat.id && api("POST", `/api/chats/${ui.chat.id}/cancel`);

@@ -1802,6 +1802,8 @@
  "{n} company couldn't be read": "{n} 家公司没读到",
  "A new chat with {name}": "已开一个新对话，用 {name}",
  "Agent": "智能体",
+ "Agent provider": "智能体供应商",
+ "The agent used for new chats and this chat when it is empty": "用于新聊天，以及当前空聊天的智能体",
  "Agent: {name} · click to switch": "智能体：{name} · 点击切换",
  "Ask {agent}, or type / for commands": "问 {agent}，或输入 / 用命令",
  "Asked {agent} to revise": "已请 {agent} 继续修改",
