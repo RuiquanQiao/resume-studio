@@ -329,11 +329,20 @@ def run_steps(server, data_file, steps: dict):
     os.environ["FAKE_CLAUDE_RUN"] = json.dumps(steps)
 
 
+# Chromium's blocked ports above 1024 (net/base/port_util.cc)
+UNSAFE_PORTS = {1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679,
+                6697, 10080}
+
+
 @pytest.fixture
 def fake_site():
     handler = functools.partial(SimpleHTTPRequestHandler, directory=str(SITES_DIR))
     handler.log_message = lambda *a, **k: None
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    while True:   # a random port can be one browsers refuse to open (ERR_UNSAFE_PORT: 6697 IRC, 5060 SIP, …)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        if srv.server_port not in UNSAFE_PORTS:
+            break
+        srv.server_close()
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{srv.server_port}"
     srv.shutdown()
@@ -471,6 +480,18 @@ def test_browser_command_drives_a_real_page(live, data_file, fake_site):
     assert b["state"] == "running" and b["browser"] == "Microsoft Edge" and b["url"].endswith("/linkedin/profile.html")
     live.req("POST", "/api/browser/stop", {})
     assert live.req("GET", "/api/browser")[1]["state"] == "off"
+
+
+def test_a_page_busy_for_longer_than_a_command_waits_still_answers(live, data_file, fake_site):
+    """BOSS直聘's home page keeps its main thread busy for seconds at a time while it loads; a command
+    sent meanwhile waits for the page instead of timing out (the push used to fail on every item)."""
+    cli(data_file, "open", fake_site + "/jobs/busy.html")
+    snap = out(cli(data_file, "snapshot"))
+    r = cli(data_file, "click", ref_of(snap, '"Get busy"'))
+    assert r.returncode == 0, out(r)
+    time.sleep(0.5)                                  # its script now runs for 33 s; CDP calls give up after 30
+    r = cli(data_file, "snapshot")
+    assert r.returncode == 0 and "done" in out(r), out(r)
 
 
 @pytest.fixture

@@ -645,6 +645,7 @@ class ManagedBrowser:
         with self.lock:
             sid = self._session()
             assert self.conn is not None
+            self._ask()
             for attempt in (0, 1):
                 ctx = self._context(sid)
                 try:
@@ -664,19 +665,32 @@ class ManagedBrowser:
                 return res.get("value") if by_value else res
             raise BrowserError("the page kept changing; try again")
 
-    def _eval_page(self, expression: str) -> Any:
-        r = self._send("Runtime.evaluate", {"expression": expression, "returnByValue": True})
+    def _eval_page(self, expression: str, timeout: float = 30.0) -> Any:
+        r = self._send("Runtime.evaluate", {"expression": expression, "returnByValue": True}, timeout=timeout)
         return (r.get("result") or {}).get("value")
 
     def _pause(self, lo: float = 0.25, hi: float = 0.7) -> None:
         if self.pace:
             time.sleep(random.uniform(lo, hi) * self.pace)
 
+    def _ask(self, expression: str = "1", wait: float = 60.0) -> Any:
+        """A short question to the page. Some pages (BOSS直聘's home) keep their main thread busy for many
+        seconds while loading, and every script waits for it: keep asking until it answers, then say so
+        rather than time out."""
+        end = time.time() + wait
+        while True:
+            try:
+                return self._eval_page(expression, timeout=5)
+            except CdpError:
+                if time.time() > end:
+                    raise BrowserError(f"the page has been busy (its own scripts running) for {int(wait)} seconds and "
+                                       "doesn't answer; run the command again in a moment, or open the page anew")
+
     def here(self) -> dict:
         with self.lock:
             self._session()
-            url = self._eval_page("location.href") or ""
-            title = self._eval_page("document.title") or ""
+            url = self._ask("location.href") or ""
+            title = self._ask("document.title") or ""
             if self.current in self.pages:
                 self.pages[self.current].update(url=url, title=title)
             return {"url": url, "title": title}
@@ -685,9 +699,9 @@ class ManagedBrowser:
         end = time.time() + timeout
         while time.time() < end:
             try:
-                if self._eval_page("document.readyState") == "complete":
+                if self._eval_page("document.readyState", timeout=3) == "complete":
                     break
-            except CdpError:
+            except CdpError:   # busy loading: ask again
                 pass
             time.sleep(0.2)
         time.sleep(0.4 if self.pace else 0.05)   # single-page apps render a moment after "load"

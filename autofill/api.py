@@ -286,6 +286,12 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
                                    items=", ".join(i["label"] for i in over)))
         bro(browser.ensure)
         st = fill.load(site.id)
+
+        def profile_url(st: dict) -> str:
+            """Where the profile is: where Claude last read it, else the recorded route's first page."""
+            pages = (st.get("route") or {}).get("pages") or [{}]
+            return str((st.get("current") or {}).get("url") or pages[0].get("url") or "")
+
         fill.save(site.id, applied={}, applying=[i["id"] for i in items])   # each push reports afresh
 
         def done(ok: bool) -> None:
@@ -299,7 +305,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
                     pass
 
         chat = start_chat(b, site, t("Update {site}", site=site.name), prompts.apply_message(site, len(items)),
-                          prompts.apply_context(site, str(studio.store.path), items, str((st.get("current") or {}).get("url") or "")),
+                          prompts.apply_context(site, str(studio.store.path), items, profile_url(st)),
                           done, action="autofill_apply")
         fill.save(site.id, apply_chat=chat["id"])
         publish(site.id)

@@ -164,7 +164,7 @@ A field the site doesn't have: leave it out and say so in the report note.
 ```
 
 ## How
-- The profile was read at {current_url or site.home}.
+- The profile was read at {current_url or site.home}: open that page directly.
 - Before each change: `{cli(data_path)} report {site.id} <id> doing`. After it is saved and you checked
   the page shows it: `report {site.id} <id> done`. If it can't be done: `report {site.id} <id> failed
   --note "why"` and go on with the next one. The window shows each one's state live.

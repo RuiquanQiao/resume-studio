@@ -1,0 +1,11 @@
+<!doctype html>
+<!-- A page whose own script keeps the main thread busy for a long while (tests only), like BOSS直聘's home
+     page while it loads: every script sent to the page waits until it is done. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Busy page</title></head>
+<body>
+<h1>Busy page</h1>
+<button onclick="setTimeout(() => { const end = Date.now() + 33000; while (Date.now() < end) {} document.getElementById('st').textContent = 'done'; }, 50)">Get busy</button>
+<p id="st">idle</p>
+</body>
+</html>
