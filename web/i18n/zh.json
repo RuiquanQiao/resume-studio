@@ -801,7 +801,6 @@
  "Only the AI sees this; it never appears on the resume": "只给 AI 看，永远不会出现在简历上",
  "Only the roles you look for": "只看你想找的岗位",
  "Only this subset's setup goes (which entries, headline, template and layout); the library itself is untouched.": "只删除这个子集的配置（选了哪些经历、求职方向、模板和版面），经历库本身不受影响。",
- "Only this window's record goes; your resume data is untouched.": "只删除界面里的记录，不影响简历数据。",
  "Open Job search": "打开求职工作台",
  "Open a page": "打开一个页面",
  "Open a page for you to sign in": "打开一个页面让你登录",
@@ -1903,5 +1902,7 @@
  "Archived": "已归档",
  "Restore this chat before sending a message.": "请先恢复此会话，再发送消息。",
  "This permanently deletes the agent's session and this app's copy.": "这会永久删除智能体的会话和此应用中的副本。",
- "This agent does not support session {operation} through its protocol.": "该智能体的协议不支持会话操作 {operation}，记录未更改。"
+ "{name} has no way to delete its own copy of a conversation, so it stays in {name}'s history.": "{name} 没有提供删除自身会话记录的方法，所以这段对话仍保留在 {name} 的历史里。",
+ "Question": "问题",
+ "This conversation is open in the Codex app. Close it there, then try again.": "这段对话正在 Codex 应用里打开着。请先在那边关掉，再重试。"
 }

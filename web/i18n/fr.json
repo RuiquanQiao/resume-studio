@@ -807,7 +807,6 @@
  "Only the AI sees this; it never appears on the resume": "Visible uniquement par l’IA ; n'apparaît jamais sur le CV",
  "Only the roles you look for": "Seulement les postes recherchés",
  "Only this subset's setup goes (which entries, headline, template and layout); the library itself is untouched.": "Seule la configuration de ce sous-ensemble disparaît (entrées choisies, accroche, modèle et mise en page) ; la bibliothèque n'est pas touchée.",
- "Only this window's record goes; your resume data is untouched.": "Seul l'historique de cette fenêtre disparaît ; les données de votre CV ne sont pas touchées.",
  "Open Job search": "Ouvrir Recherche d’emploi",
  "Open a page": "Ouvrir une page",
  "Open a page for you to sign in": "Ouvrir une page pour vous connecter",
@@ -2025,5 +2024,23 @@
  "Scanning {n} of {total}…": "Analyse {n} sur {total}…",
  "Waiting for the companies before it…": "En attente des entreprises précédentes…",
  "Waiting…": "En attente…",
- "{agent} is done; see the chat": "{agent} a terminé ; voir le chat"
+ "{agent} is done; see the chat": "{agent} a terminé ; voir le chat",
+ "After": "Après",
+ "Archive this chat": "Archiver cette conversation",
+ "Archived": "Archivée",
+ "Before": "Avant",
+ "Moved": "Déplacé",
+ "Position {from} → {to}": "Position {from} → {to}",
+ "Question": "Question",
+ "Restore this chat": "Restaurer cette conversation",
+ "Restore this chat before sending a message.": "Restaurez cette conversation avant d'envoyer un message.",
+ "Save your edits before undoing the AI changes.": "Enregistrez vos modifications avant d'annuler celles de l'IA.",
+ "This entry changed again after the AI finished. Undo was not applied; review the current entry first.": "Cette entrée a encore changé après l'IA. L'annulation n'a pas été appliquée ; vérifiez d'abord l'entrée actuelle.",
+ "This permanently deletes the agent's session and this app's copy.": "Cela supprime définitivement la session de l'agent et la copie de cette application.",
+ "{name} has no way to delete its own copy of a conversation, so it stays in {name}'s history.": "{name} ne permet pas de supprimer sa propre copie d'une conversation : elle reste dans l'historique de {name}.",
+ "{n} changed item": [
+  "{n} modification",
+  "{n} modifications"
+ ],
+ "This conversation is open in the Codex app. Close it there, then try again.": "Cette conversation est ouverte dans l'application Codex. Fermez-la là-bas, puis réessayez."
 }

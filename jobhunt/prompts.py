@@ -65,7 +65,7 @@ it only through this command (Bash); every call prints what is there now, and th
 - **Open postings** (what the companies' sites list now; not applications until the user goes for one):
   `{j} scan [<company> ..]` reads the sites now (career-ops' providers for Moka, Feishu/ByteDance, Tencent, Meituan,
   Alibaba, Greenhouse, Lever, Ashby…; a recorded route in Resume Studio's browser for any other site) ·
-  `{j} scan-route <company> --file route.json` · `{j} postings <company> --stdin [--partial]` ·
+  `{j} scan-route <company> --stdin` · `{j} postings <company> --stdin [--partial]` ·
   `{j} apply P12` (the user goes for posting P12: it becomes an application) ·
   `{j} keywords "算法, AI, Agent"` (the roles the user looks for; other postings are folded away).
 
@@ -127,8 +127,8 @@ How to work it:
   otherwise read the rendered list by headings, labels and text, never by generated class names. Write
   `{{"pages": [{{"url": "<the list's address>", "script": "async (h) => ({{postings: [{{title, url, location,
   category, batch: 'campus'|'intern'|'social', deadline: 'YYYY-MM-DD', posted}}]}})"}}]}}` (return
-  `{{signed_out: true}}` when the page asks to sign in), test the script with the browser's `extract`, then save it
-  with `scan-route`: it runs once and its postings come in; later scans replay it with no Claude. Read every
+  `{{signed_out: true}}` when the page asks to sign in), test the script with the browser's `extract`, then send it
+  with `scan-route --stdin` (never as a file in the user's folder): it runs once and its postings come in; later scans replay it with no Claude. Read every
   posting of every list the site has (campus, intern), not only the first page. Each page's script has 2 minutes
   and some sites answer slowly: time one request first, and split a long list into several pages of the route
   (one request each, at most 20 pages in all) rather than one script that pages through all of it; a page that doesn't read is reported and

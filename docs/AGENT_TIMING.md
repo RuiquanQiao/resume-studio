@@ -28,7 +28,7 @@ for these integrations; no new provider-specific clock is implemented for them.
 ## References
 
 - [Codex app-server](https://learn.chatgpt.com/docs/app-server)
-- Installed CLI schema: `.cache/codex-protocol-timing/v2/TurnStartedNotification.json`
+- Installed CLI schema: `codex app-server generate-json-schema --out <dir>`, then `v2/TurnStartedNotification.json`
 - [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk)
 - [Pi JSON/RPC event definitions](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/json.md)
 

@@ -111,9 +111,9 @@ Resume Studio then runs by itself every time, without you. {why} Change nothing 
      text, **never by generated class names** (like `pvs-1x7a`): those change every release.
    - Read only. The script may scroll and click a "see more" / "…more" toggle to show the whole text,
      and nothing else.
-   - Test it on the page: `{b} extract --file read.js` (or `--stdin` with a quoted heredoc) prints what
+   - Test it on the page: `{b} extract --stdin` (a quoted heredoc; no file) prints what
      it returns. Fix it until it matches what you see, every item and the whole text.
-4. Save the route: `{b} route {site.id} --file route.json` with
+4. Save the route: `{b} route {site.id} --stdin` with
    `{{"pages": [{{"url": "<the page's full address>", "reads": ["experience"], "script": "async (h) => ..."}}]}}`
    (`reads`: what that page gives, from basics, {", ".join(site.sections)}). It is run once at once and prints
    what it read: compare it with the pages; send it again until it is right.{_shape_step(site)}

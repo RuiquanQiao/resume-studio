@@ -6,7 +6,7 @@ import mimetypes
 import threading
 from pathlib import Path
 
-from core import agents
+from core import agents, session_lifecycle
 from core.agents import AgentHub
 from core.chat import IMAGE_TYPES, MODES, ChatRunner, valid_effort, valid_mode, valid_model
 from core.i18n import t
@@ -329,36 +329,29 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         return {"chat": meta, "messages": chats.store.messages(meta["id"]), "running": chats.busy(meta["id"]),
                 "live": chats.live(meta["id"]), "available": chats.available(meta.get("agent") or default_agent())}
 
-    @app.route("DELETE", "/api/chats/{cid}")
-    def delete_chat(req: Request):
-        cid = req.params["cid"]
+    def in_agent(cid: str, operation: str) -> tuple[dict, str | None]:
+        """Archive / unarchive / delete the chat's session in the agent first: on failure the window's copy stays."""
         chat = chats.store.meta(cid)
         if chat is None:
             raise HttpError(404, t("Chat not found"))
         if chats.busy(cid):
             raise HttpError(409, t("This chat is still replying"))
-        from core.session_lifecycle import operate
         try:
-            operate(chat, "delete", (chats.workspace(chat) or chats).cwd)
+            return chat, session_lifecycle.operate(chat, operation, (chats.workspace(chat) or chats).cwd)
         except (RuntimeError, OSError) as e:
             raise HttpError(409, str(e))
-        chats.store.delete(cid)
-        return {"chats": chats.store.list()}
+
+    @app.route("DELETE", "/api/chats/{cid}")
+    def delete_chat(req: Request):
+        _, note = in_agent(req.params["cid"], "delete")
+        chats.store.delete(req.params["cid"])
+        return {"chats": chats.store.list(), "note": note}
 
     @app.route("POST", "/api/chats/{cid}/archive")
     def archive_chat(req: Request):
         cid = req.params["cid"]
-        chat = chats.store.meta(cid)
-        if chat is None:
-            raise HttpError(404, t("Chat not found"))
-        if chats.busy(cid):
-            raise HttpError(409, t("This chat is still replying"))
-        restore = bool(chat.get("archived"))
-        from core.session_lifecycle import operate
-        try:
-            operate(chat, "unarchive" if restore else "archive", (chats.workspace(chat) or chats).cwd)
-        except (RuntimeError, OSError) as e:
-            raise HttpError(409, str(e))
+        restore = bool((chats.store.meta(cid) or {}).get("archived"))
+        in_agent(cid, "unarchive" if restore else "archive")
         chats.store.update_meta(cid, archived=not restore)
         return {"chats": chats.store.list(), "chat": chats.store.meta(cid)}
 

@@ -26,7 +26,7 @@
     python scripts/hunt.py sent 星河科技                      # the sign-up on its site went out (every role not sent yet)
     python scripts/hunt.py sent 星河科技/服务端 [--subset SUB-002]
     python scripts/hunt.py scan [星河科技 ...]                # read the companies' sites for open postings now
-    python scripts/hunt.py scan-route 星河科技 --file route.json   # record how to read its job list, run it once
+    python scripts/hunt.py scan-route 星河科技 --stdin <<'JSON' ... JSON   # record how to read its job list, run it once
     python scripts/hunt.py postings 星河科技 --stdin [--partial]   # the postings you read yourself (no route possible)
     python scripts/hunt.py apply P12                        # the user goes for posting P12: it becomes an application
     python scripts/hunt.py keywords "算法, AI, Agent, 后端"  # the roles the user looks for (others are folded away)

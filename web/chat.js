@@ -544,6 +544,7 @@ async function deleteChat() {
   if (!(await modal({ title: t("Delete this chat?"), message: t("This permanently deletes the agent's session and this app's copy."), ok: t("Delete"), danger: true }))) return;
   try {
     const r = await api("DELETE", "/api/chats/" + ui.chat.id);
+    if (r.note) toast(r.note, { ms: 8000 });
     ui.chat.list = r.chats;
     const next = visibleChats()[0];
     if (next) await openChat(next.id);

@@ -9,8 +9,8 @@
     python scripts/browser.py select 15 "March"
     python scripts/browser.py press Enter
     python scripts/browser.py screenshot               # prints the PNG's path (open it with Read)
-    python scripts/browser.py extract --file read.js   # run a read script on the open page, print its JSON
-    python scripts/browser.py route linkedin --file route.json   # save the read route and run it once
+    python scripts/browser.py extract --stdin <<'JS' ... JS  # run a read script on the open page, print its JSON
+    python scripts/browser.py route linkedin --stdin <<'JSON' ... JSON   # save the read route and run it once
     python scripts/browser.py sync linkedin             # check for updates now, by the route
     python scripts/browser.py profile linkedin --stdin <<'JSON' ... JSON   # what the site's profile says now
     python scripts/browser.py report linkedin item.i3 done

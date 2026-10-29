@@ -738,8 +738,9 @@ def codex_fetch(prefix: list[str], cwd: Path, timeout: float) -> dict:
             "limits": codex_limits(limits) if isinstance(limits, dict) else None}
 
 
-def _rpc_probe(cmd: list[str], cwd: Path, timeout: float, steps: list[tuple[str, Any]]) -> dict:
-    """Send JSON-RPC requests one by one (params None = a notification) and collect the answers by method."""
+def _rpc_probe(cmd: list[str], cwd: Path, timeout: float, steps: list[tuple[str, Any]], strict: bool = False) -> dict:
+    """Send JSON-RPC requests one by one (params None = a notification) and collect the answers by method.
+    An error answer stops it on `initialize`, or on any request when `strict`."""
     proc = subprocess.Popen(cmd, cwd=str(cwd), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                             creationflags=NO_WINDOW)
     assert proc.stdin and proc.stdout
@@ -762,8 +763,8 @@ def _rpc_probe(cmd: list[str], cwd: Path, timeout: float, steps: list[tuple[str,
                 except ValueError:
                     continue
                 if isinstance(got, dict) and got.get("id") == n and "method" not in got:
-                    if "error" in got and method == steps[0][0]:
-                        raise RuntimeError((got["error"] or {}).get("message") or "initialize failed")
+                    if "error" in got and (strict or method == steps[0][0]):
+                        raise RuntimeError((got["error"] or {}).get("message") or f"{method} failed")
                     answers[method] = got.get("result")
                     break
             else:

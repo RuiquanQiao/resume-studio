@@ -315,7 +315,7 @@ python scripts/hunt.py ics                                # every round and appl
 python scripts/hunt.py fill 星河科技 --stdin <<'JSON' ... JSON    # research: every field at once, each with a source
 python scripts/hunt.py sent 星河科技                         # the user submitted the sign-up on its site
 python scripts/hunt.py scan [星河科技]                        # read the companies' sites for open postings
-python scripts/hunt.py scan-route 星河科技 --file route.json   # record how to read a site's job list (once)
+python scripts/hunt.py scan-route 星河科技 --stdin <<'JSON' ... JSON   # record how to read a site's job list (once)
 python scripts/hunt.py apply P12                          # the user goes for posting P12
 ```
 
@@ -403,8 +403,8 @@ python <skill>/scripts/browser.py select <ref> "<option>"   # native selects; cu
 python <skill>/scripts/browser.py press Enter       # Escape, Tab, ArrowDown, ctrl+a…
 python <skill>/scripts/browser.py screenshot        # prints a PNG path to open with Read
 python <skill>/scripts/browser.py upload <ref> <file>       # only files inside the data folder (exported PDFs)
-python <skill>/scripts/browser.py extract --file read.js    # run a read script on the open page, print its JSON
-python <skill>/scripts/browser.py route <site> --file route.json   # save the read route and run it once
+python <skill>/scripts/browser.py extract --stdin <<'JS' ... JS   # run a read script on the open page, print its JSON
+python <skill>/scripts/browser.py route <site> --stdin <<'JSON' ... JSON   # save the read route and run it once
 python <skill>/scripts/browser.py sync <site>       # check for updates now, by the route
 ```
 
