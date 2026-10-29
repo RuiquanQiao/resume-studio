@@ -369,7 +369,9 @@ class ChatRunner:
             dirs.append(str(Path(f["path"]).parent))
         spec = {"chat": chat, "prefix": prefix, "prompt": text, "images": images, "context": context,
                 "add_dirs": [str(Path(d)) for d in dict.fromkeys(dirs) if d and Path(d).exists()],
-                "cwd": ws.cwd if ws else self.cwd, "env": {**os.environ, **ws.env} if ws and ws.env else None,
+                "cwd": ws.cwd if ws else self.cwd,
+                # scripts/browser.py sends the chat's id, so the chat drives a browser tab of its own
+                "env": {**os.environ, **(ws.env if ws else {}), "RESUME_STUDIO_CHAT": chat_id},
                 "workspace": ws}
         turn = Turn(chat_id, on_done)
         turn.driver = driver_for(agent)

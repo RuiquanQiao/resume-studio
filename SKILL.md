@@ -392,6 +392,9 @@ Edge) with a profile of its own in `<skill>/.local/browser/` and drives it over 
 - A browser started for work (a scan, a check, your commands) closes itself a minute after the work is
   done (no reply running, no scan or check). One the user opened stays open, and so does one you show
   them with `front`: use `front` when the user should look at or finish something there.
+- Each chat drives a tab of its own (the app gives the agent `RESUME_STUDIO_CHAT`, which the browser command
+  sends), and so does each check for updates, so a scan chat and a push chat at the same time never land on
+  each other's page. `tab <n>` refuses a tab that other work is using right now.
 - **The browser command** (standard library only; the window must be open):
 
 ```bash

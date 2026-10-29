@@ -36,6 +36,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
 
     browser.on_change = lambda: app.bus.publish("browser", browser.status())
     browser.busy = lambda: bool(chats.running())   # Claude may use it at any point of a reply: it waits for the end
+    browser.active = chats.busy                    # a replying chat keeps its tab: no other work takes it meanwhile
 
     def body(req: Request) -> dict:
         data = req.json()
@@ -214,7 +215,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
             publish(site.id)
 
         try:
-            with browser.hold():
+            with browser.hold(), browser.acting(f"check:{site.id}"):
                 bro(browser.ensure)
                 reading, scope = route.run(browser, site, r, base, progress)
             return {"ok": True, **fill.take_reading(site, reading, scope, "route")}
@@ -339,7 +340,8 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         st = fill.load(site.id)
         base, _ = fill.copies(site.id, st)
         try:
-            reading, scope = route.run(browser, site, r, base)
+            with browser.acting(req.headers.get("X-Resume-Studio-Chat")):   # in the tab of the chat that sent it
+                reading, scope = route.run(browser, site, r, base)
         except route.RouteBroken as e:
             return {"text": f"saved, but running it failed{' on ' + e.page if e.page else ''}: {e}\nFix the script and send the route again."}
         return {"text": "saved. Running it read this (compare it with the page; when it matches, run `sync`):\n"
@@ -477,6 +479,9 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
                                 "to sign in there and switch back. Until then browser commands are refused."}
             raise HttpError(400, f"unknown command {cmd!r}")
 
-        return bro(run)
+        # each chat works in a browser tab of its own (scripts/browser.py sends its id): two chats, or a chat and a
+        # check for updates, never land on each other's page
+        with browser.acting(req.headers.get("X-Resume-Studio-Chat")):
+            return bro(run)
 
     return fill

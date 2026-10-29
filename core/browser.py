@@ -30,6 +30,7 @@ from .cdp import CdpError, Connection, version_info
 SNAPSHOT_JS = (Path(__file__).with_name("snapshot.js")).read_text(encoding="utf-8")
 WORLD = "resume-studio"
 CLOSE_WARNING = 15.0   # seconds the window offers to keep a browser open before it closes itself
+MAX_TABS = 8            # past this, work takes a tab whose work is done instead of opening yet another
 
 
 class BrowserError(Exception):
@@ -253,8 +254,15 @@ class ManagedBrowser:
         self.signin_url = ""                  # sign-in mode: the page it opened at
         self.lock = threading.RLock()
         self.pages: dict[str, dict] = {}      # targetId -> {url, title, opener}
-        self.current: str | None = None
-        self.reading: tuple[str, str | None] | None = None   # read_page's own tab, and the one it stands in for
+        # Each piece of work drives a tab of its own, so two of them never land on each other's page: a chat by
+        # its id (scripts/browser.py sends it), a check for updates by its site, read_page by its tab. None is
+        # the window's own (showing a site to the user). `current` is the tab of the work this thread does.
+        self.tab_of: dict[str | None, str] = {}
+        self.local = threading.local()
+        self.acting_now: dict[str, int] = {}  # work inside `acting()` right now
+        self.active: Callable[[str], bool] | None = None   # work that may send its next command any moment (a chat replying)
+        self.last_tab: str | None = None      # the tab last worked in: what the window shows
+        self.closed: set[str] = set()         # tabs closed here: a late event about one never brings it back
         self.sessions: dict[str, str] = {}    # targetId -> sessionId
         self.contexts: dict[str, int] = {}    # sessionId -> isolated world's execution context
         self.on_change: Callable[[], None] | None = None
@@ -267,13 +275,71 @@ class ManagedBrowser:
         self.idle_close = idle_close          # seconds after the work is done
         self.closing = False                  # within CLOSE_WARNING of closing itself
 
+    # ---- whose tab ------------------------------------------------------------
+    @property
+    def work(self) -> str | None:
+        """The piece of work this thread is doing (None: the window's own)."""
+        return getattr(self.local, "work", None)
+
+    @property
+    def current(self) -> str | None:
+        return self.tab_of.get(self.work)
+
+    @current.setter
+    def current(self, tid: str | None) -> None:
+        if tid is None:
+            self.tab_of.pop(self.work, None)
+        else:
+            self.tab_of[self.work] = tid
+
+    class _Acting:
+        def __init__(self, b: "ManagedBrowser", key: str | None):
+            self.b, self.key = b, key
+
+        def __enter__(self):
+            self.before = self.b.work
+            self.b.local.work = self.key
+            if self.key is not None:
+                with self.b.lock:
+                    self.b.acting_now[self.key] = self.b.acting_now.get(self.key, 0) + 1
+            return self.b
+
+        def __exit__(self, *exc):
+            self.b.local.work = self.before
+            if self.key is not None:
+                with self.b.lock:
+                    n = self.b.acting_now.get(self.key, 1) - 1
+                    if n:
+                        self.b.acting_now[self.key] = n
+                    else:
+                        self.b.acting_now.pop(self.key, None)
+            return False
+
+    def acting(self, key: str | None) -> "ManagedBrowser._Acting":
+        """`with browser.acting(chat_id):` around what one piece of work does: it works in that work's own tab."""
+        return self._Acting(self, key or None)
+
+    def _busy_with(self, key: str | None) -> bool:
+        if key is None:
+            return False          # the window's own: a page shown to the user is never in the way
+        if self.acting_now.get(key):
+            return True
+        try:
+            return bool(self.active and self.active(key))
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _taken(self, tid: str, key: str | None) -> bool:
+        """Another piece of work is using tab `tid` now."""
+        return any(t == tid and k != key and self._busy_with(k) for k, t in list(self.tab_of.items()))
+
     # ---- lifecycle -----------------------------------------------------------
     def profile_dir(self, kind: str) -> Path:
         return self.profile_root / kind
 
     def status(self) -> dict:
         found = find_browser(self.prefer)
-        shown = self.reading[1] if self.reading and self.current == self.reading[0] else self.current
+        shown = self.last_tab if self.last_tab in self.pages else self.tab_of.get(None)
         page = self.pages.get(shown or "") or {}
         if self.state == "running" and (self.conn is None or self.conn.closed):
             self._lost()
@@ -291,7 +357,8 @@ class ManagedBrowser:
 
     def _lost(self) -> None:
         self.state, self.conn, self.owner, self.closing = "off", None, "", False
-        self.pages, self.sessions, self.contexts, self.current = {}, {}, {}, None
+        self.pages, self.sessions, self.contexts, self.tab_of, self.last_tab = {}, {}, {}, {}, None
+        self.closed = set()
 
     def ensure(self) -> bool:
         """Running and connected, starting it (or reattaching to the one left open) when needed.
@@ -383,12 +450,17 @@ class ManagedBrowser:
         for t in conn.send("Target.getTargets").get("targetInfos", []):
             self._track(t)
         pages = [tid for tid, p in self.pages.items() if p["type"] == "page"]
-        self.current = pages[-1] if pages else None
-        if self.current is None:
-            self.current = conn.send("Target.createTarget", {"url": "about:blank"})["targetId"]
+        self.tab_of = {None: pages[-1] if pages else self._new_tab()}
+
+    def _new_tab(self, **opts: Any) -> str:
+        """A blank tab, known at once (its targetCreated event may come after the first command for it)."""
+        assert self.conn is not None
+        tid = self.conn.send("Target.createTarget", {"url": "about:blank", **opts})["targetId"]
+        self.pages.setdefault(tid, {"type": "page", "url": "about:blank", "title": "", "opener": None})
+        return tid
 
     def _track(self, t: dict) -> None:
-        if t.get("type") != "page":
+        if t.get("type") != "page" or t.get("targetId") in self.closed:
             return
         self.pages[t["targetId"]] = {"type": "page", "url": t.get("url", ""), "title": t.get("title", ""),
                                      "opener": t.get("openerId")}
@@ -399,9 +471,11 @@ class ManagedBrowser:
             info = p.get("targetInfo") or {}
             known = info.get("targetId") in self.pages
             self._track(info)
-            # a page opened from the one being worked on (a link with target=_blank): follow it
-            if method == "Target.targetCreated" and not known and info.get("type") == "page" and info.get("openerId") == self.current:
-                self.current = info["targetId"]
+            # a page opened from one being worked on (a link with target=_blank): that work follows it
+            if method == "Target.targetCreated" and not known and info.get("type") == "page" and info.get("openerId"):
+                for k, t in list(self.tab_of.items()):
+                    if t == info["openerId"]:
+                        self.tab_of[k] = info["targetId"]
             self._changed()
         elif method == "Target.targetDestroyed":
             tid = p.get("targetId")
@@ -409,9 +483,9 @@ class ManagedBrowser:
             sid = self.sessions.pop(tid, None)
             if sid:
                 self.contexts.pop(sid, None)
-            if tid == self.current:
-                rest = list(self.pages)
-                self.current = rest[-1] if rest else None
+            for k, t in list(self.tab_of.items()):
+                if t == tid:
+                    self.tab_of.pop(k, None)   # its next command finds it another tab
             self._changed()
         elif method == "Runtime.executionContextsCleared" or method == "Page.frameNavigated":
             sid = msg.get("sessionId")
@@ -616,13 +690,25 @@ class ManagedBrowser:
         self.ensure()
         self.last_used = time.time()
         assert self.conn is not None
-        if self.current is None or self.current not in self.pages:
-            pages = list(self.pages)
-            self.current = pages[-1] if pages else self.conn.send("Target.createTarget", {"url": "about:blank"})["targetId"]
-        sid = self.sessions.get(self.current)
+        key = self.work
+        tid = self.current
+        if tid is None or tid not in self.pages or self._taken(tid, key):
+            # no tab yet, or another piece of work is in it: a tab no other work has (the window's first), else a new
+            # one, so a chat coming back to its tab finds its page there; past MAX_TABS, one whose work is done
+            claimed = {t for k, t in self.tab_of.items() if k is not None and k != key}
+            pages = [t for t in reversed(self.pages) if not self._taken(t, key)]
+            free = [t for t in [self.tab_of.get(None), *pages] if t in pages and t not in claimed]
+            if not free and len(self.pages) >= MAX_TABS:
+                free = pages
+            tid = free[0] if free else self._new_tab()
+            self.current = tid
+        if not (key or "").startswith("read:") and self.last_tab != tid:
+            self.last_tab = tid
+            self._changed()
+        sid = self.sessions.get(tid)
         if sid is None:
-            sid = self.conn.send("Target.attachToTarget", {"targetId": self.current, "flatten": True})["sessionId"]
-            self.sessions[self.current] = sid
+            sid = self.conn.send("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
+            self.sessions[tid] = sid
             self.conn.send("Page.enable", session=sid)
         return sid
 
@@ -700,7 +786,7 @@ class ManagedBrowser:
             self.ensure()
             assert self.conn is not None
             if new_tab:
-                self.current = self.conn.send("Target.createTarget", {"url": "about:blank"})["targetId"]
+                self.current = self._new_tab()
             r = self._send("Page.navigate", {"url": url})
             if r.get("errorText"):
                 raise BrowserError(f"couldn't open {url}: {r['errorText']}")
@@ -754,8 +840,9 @@ class ManagedBrowser:
         with self.lock:
             self.ensure()
             assert self.conn is not None
-            before = self.current
-            tid = self.conn.send("Target.createTarget", {"url": "about:blank", "newWindow": True, "background": True})["targetId"]
+            tid = self._new_tab(newWindow=True, background=True)
+            acting = self.acting(f"read:{tid}")
+            acting.__enter__()
             try:
                 try:
                     win = self.conn.send("Browser.getWindowForTarget", {"targetId": tid})
@@ -763,7 +850,7 @@ class ManagedBrowser:
                                                                "bounds": {"left": -32000, "top": 0, "width": 1280, "height": 900}})
                 except CdpError:
                     pass   # headless, or a browser that can't: it reads all the same
-                self.current, self.reading = tid, (tid, before)
+                self.current = tid
                 r = self._send("Page.navigate", {"url": url})
                 if r.get("errorText"):
                     raise BrowserError(f"couldn't open {url}: {r['errorText']}")
@@ -774,12 +861,13 @@ class ManagedBrowser:
                     self.conn.send("Target.closeTarget", {"targetId": tid})
                 except CdpError:
                     pass
+                self.closed.add(tid)
                 self.pages.pop(tid, None)
                 sid = self.sessions.pop(tid, None)
                 if sid:
                     self.contexts.pop(sid, None)
-                self.current = before if before in self.pages else (list(self.pages)[-1] if self.pages else None)
-                self.reading = None
+                self.current = None
+                acting.__exit__(None, None, None)
 
     def _mouse_click(self, x: float, y: float, count: int = 1) -> None:
         base = {"x": x, "y": y, "button": "left", "clickCount": count}
@@ -935,6 +1023,9 @@ class ManagedBrowser:
             ids = list(self.pages)
             if not 0 <= index < len(ids):
                 raise BrowserError(f"there is no tab {index}")
+            if self._taken(ids[index], self.work):
+                raise BrowserError(f"other work (another chat, or a check) is using tab {index} right now; "
+                                   "stay in your own tab, or open a new one with `open <url> --new-tab`")
             self.current = ids[index]
             return self.here()
 

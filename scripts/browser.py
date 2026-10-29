@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -42,7 +43,10 @@ def server_url(data: Path) -> str:
 
 def call(url: str, method: str, path: str, payload: dict | None = None) -> dict:
     data = json.dumps(payload or {}, ensure_ascii=False).encode("utf-8") if method != "GET" else None
-    req = urllib.request.Request(url.rstrip("/") + path, data=data, method=method, headers={"Content-Type": "application/json"})
+    headers = {"Content-Type": "application/json"}
+    if os.environ.get("RESUME_STUDIO_CHAT"):   # the chat running this: it works in a browser tab of its own
+        headers["X-Resume-Studio-Chat"] = os.environ["RESUME_STUDIO_CHAT"]
+    req = urllib.request.Request(url.rstrip("/") + path, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=180) as r:
             return json.loads(r.read().decode("utf-8"))
