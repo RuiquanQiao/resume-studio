@@ -32,8 +32,9 @@ class HttpError(Exception):
 
 
 class Request:
-    def __init__(self, method: str, path: str, query: dict, params: dict, body: bytes):
+    def __init__(self, method: str, path: str, query: dict, params: dict, body: bytes, headers: Any = None):
         self.method = method
+        self.headers = headers if headers is not None else {}
         self.path = path
         self.query = query
         self.params = params
@@ -181,7 +182,7 @@ class App:
                     match = regex.match(path)
                     if not match:
                         continue
-                    req = Request(method, path, parse_qs(url.query), match.groupdict(), body)
+                    req = Request(method, path, parse_qs(url.query), match.groupdict(), body, self.headers)
                     try:
                         result = fn(req)
                     except HttpError as e:

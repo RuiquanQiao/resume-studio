@@ -368,9 +368,13 @@ def live(headless, server, data_file, fake_site, monkeypatch):
     os.environ.pop("FAKE_CLAUDE_RUN", None)
 
 
-def cli(data_file, *args, stdin: str = "") -> subprocess.CompletedProcess:
+def cli(data_file, *args, stdin: str = "", chat: str | None = None) -> subprocess.CompletedProcess:
+    """scripts/browser.py as a chat runs it (`chat`: the chat's id, which the app puts in its environment)."""
+    env = {k: v for k, v in os.environ.items() if k != "RESUME_STUDIO_CHAT"}
+    if chat:
+        env["RESUME_STUDIO_CHAT"] = chat
     return subprocess.run([sys.executable, str(BROWSER_PY), "--data", str(data_file), *args], input=stdin.encode("utf-8"),
-                          capture_output=True, timeout=120)
+                          capture_output=True, timeout=120, env=env)
 
 
 def out(p) -> str:
@@ -492,6 +496,82 @@ def test_a_page_busy_for_longer_than_a_command_waits_still_answers(live, data_fi
     time.sleep(0.5)                                  # its script now runs for 33 s; CDP calls give up after 30
     r = cli(data_file, "snapshot")
     assert r.returncode == 0 and "done" in out(r), out(r)
+
+
+def test_two_chats_driving_at_once_keep_to_their_own_tabs(live, data_file, fake_site):
+    """A scan chat reading a careers site while another chat pushes a profile (2026-10-30: the scan's `open` took
+    the tab the push was clicking in, and the push's next snapshot landed on the careers page). Each chat works in
+    a tab of its own, chosen by the chat id scripts/browser.py sends; so does a check for updates."""
+    b = live.inst.browser
+    profile_url, posting_url = fake_site + "/linkedin/profile.html", fake_site + "/jobs/posting.html"
+
+    def drive(chat: str, url: str, title: str, rounds: int, seen: list):
+        assert cli(data_file, "open", url, chat=chat).returncode == 0
+        for _ in range(rounds):
+            r = out(cli(data_file, "snapshot", "--max", "300", chat=chat))
+            seen.append(r.splitlines()[0])
+            if chat == "push":                           # and it clicks on its page meanwhile
+                snap = out(cli(data_file, "snapshot", chat=chat))
+                r = cli(data_file, "click", ref_of(snap, '"Edit intro"'), chat=chat)
+                assert r.returncode == 0, out(r)
+                cli(data_file, "press", "Escape", chat=chat)
+            else:
+                cli(data_file, "open", url, chat=chat)    # a scan goes from page to page
+
+    # one after the other, interleaved: the scan's open comes between the push's open and its snapshot
+    assert cli(data_file, "open", profile_url, chat="push").returncode == 0
+    assert "星河科技" in out(cli(data_file, "open", posting_url, chat="scan"))
+    assert out(cli(data_file, "snapshot", "--max", "300", chat="push")).startswith("Alex Chen | Profile — " + profile_url)
+    assert out(cli(data_file, "snapshot", "--max", "300", chat="scan")).startswith("星河科技校园招聘 — " + posting_url)
+    # and at the same time, with a check for updates by a route running too
+    seen: dict[str, list] = {"push": [], "scan": []}
+    errors: list = []
+
+    def run(fn, *a):
+        try:
+            fn(*a)
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    checked: list = []
+
+    def check():
+        with b.acting("check:linkedin"):
+            for _ in range(3):
+                checked.append(b.open(profile_url)["url"])
+                checked.append(b.run_script("async (h) => location.href"))
+
+    threads = [threading.Thread(target=run, args=(drive, "push", profile_url, "Alex Chen", 3, seen["push"])),
+               threading.Thread(target=run, args=(drive, "scan", posting_url, "星河科技", 3, seen["scan"])),
+               threading.Thread(target=run, args=(check,))]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join(180)
+    assert not errors, errors
+    assert seen["push"] and all(s == "Alex Chen | Profile — " + profile_url for s in seen["push"]), seen["push"]
+    assert seen["scan"] and all(s == "星河科技校园招聘 — " + posting_url for s in seen["scan"]), seen["scan"]
+    assert checked and all(u == profile_url for u in checked), checked
+    # the user still sees and can use every tab; a chat can't take a tab another chat is working in
+    tabs = out(cli(data_file, "tabs"))
+    assert profile_url in tabs and posting_url in tabs
+    scan_tab = next(int(l.split(":")[0].strip(" *")) for l in tabs.splitlines() if posting_url in l)
+    b.active = lambda key: key == "scan"                 # the scan chat is still replying
+    try:
+        assert "is using tab" in out(cli(data_file, "tab", str(scan_tab), chat="push"))
+    finally:
+        b.active = live.inst.chats.busy
+    # the window shows the tab last worked in
+    assert live.req("GET", "/api/browser")[1]["url"] in (profile_url, posting_url)
+
+
+def test_a_chat_carries_its_id_to_the_browser_command(server, fake_claude):
+    """The agent's process has the chat's id in its environment, so scripts/browser.py can send it."""
+    chats = server.inst.chats
+    chat = chats.store.create(title="t")
+    chats.send(chat["id"], "hi")
+    server.wait_idle(chat["id"])
+    assert calls(fake_claude)[-1]["env"].get("RESUME_STUDIO_CHAT") == chat["id"]
 
 
 @pytest.fixture

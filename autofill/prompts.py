@@ -27,7 +27,8 @@ def tools_note(data_path: str) -> str:
 Resume Studio drives a real browser (its own Chrome or Edge window, with the user's sign-ins for
 these sites). You work in it only through this command (Bash); every call prints what happened:
 
-- `{b} open <url>` / `back` / `tabs` / `tab <n>`
+- `{b} open <url>` / `back` / `tabs` / `tab <n>`. This chat has a tab of its own: other chats and the window's
+  checks work in other tabs at the same time, so stay in yours (`tab <n>` refuses one that other work is using).
 - `{b} snapshot` — the whole page as lines, including what is off screen. Controls carry a ref:
   `[12] button "Edit"`, `[13] textbox "Title*" = "current value" maxlength=100`, `[14] select ... options: ...`.
   `snapshot --dialog` shows only the open dialog; `snapshot --in <ref>` one part of the page.
