@@ -2351,3 +2351,61 @@ def test_the_plan_is_one_document_with_versions(page_all, server, data_file):
     assert "每天 2 道题" in plan()["text"] and plan()["versions"][-1]["why"] == "回到 v1"
     pg.wait_for_selector(".plan-side .ps-item.on >> text=当前")
     no_native(pg)
+
+
+def test_scan_learning_button_starts_and_releases(page_all):
+    pg = page_all
+    pg.evaluate("""() => {
+      ui.chat.available = true;
+      window.learnMessage = null;
+      sendChat = (message) => { window.learnMessage = message; return new Promise((resolve) => { window.finishLearn = resolve; }); };
+      const card = postingsCard({company: {id: 'C81', name: 'Test Company'}, scan: {needs: 'claude'}, postings: []});
+      card.id = 'learn-test'; document.body.append(card);
+    }""")
+    button = pg.locator('#learn-test button[data-ai="learn:C81"]')
+    button.click()
+    pg.wait_for_function("() => window.learnMessage !== null")
+    assert "Test Company" in pg.evaluate("window.learnMessage")
+    assert button.is_disabled()
+    pg.evaluate("window.finishLearn(false)")
+    pg.wait_for_function("() => !document.querySelector('#learn-test button[data-ai]').disabled")
+
+
+def test_working_timer_restarts_for_each_reply(page_all):
+    pg = page_all
+    result = pg.evaluate("""async () => {
+      ui.chat.available = true;
+      ui.chat.id = 'timer-test'; ui.chat.running = false;
+      ui.chat.messages = [{role: 'user', text: 'old', at: Date.now()/1000 - 720}];
+      ui.chat.liveSince = {chat: ui.chat.id, at: Date.now() - 720000};
+      saveDraft = async () => {};
+      const originalApi = api;
+      api = async (method, path) => {
+        if (method === 'POST' && path.endsWith('/send')) return {text: 'new', files: []};
+        if (method === 'GET' && path === '/api/chats') return {chats: []};
+        return originalApi(method, path);
+      };
+      await sendChat('new');
+      const firstAge = Date.now() - workStart();
+      const messageHasTime = !!ui.chat.messages.at(-1).at;
+      // Authoritative live timing survives reloading, even if a queued message was sent much earlier.
+      ui.chat.live = {blocks: [], started_at: Date.now()/1000 - 5};
+      ui.chat.messages.at(-1).at = Date.now()/1000 - 600;
+      const serverAge = Date.now() - workStart();
+      // Even the fallback for older servers belongs to this reply, not this chat.
+      ui.chat.messages = []; ui.chat.live = {blocks: []};
+      const fallbackAge = Date.now() - workStart();
+      ui.chat.running = false; ui.chat.live = null;
+      await sendChat('another new message');
+      const secondAge = Date.now() - workStart();
+      document.querySelectorAll('.working').forEach(paintWorking);
+      return {firstAge, secondAge, serverAge, fallbackAge, messageHasTime,
+        displayed: document.querySelector('.working .wk-t')?.textContent};
+    }""")
+    assert result["messageHasTime"]
+    assert 0 <= result["firstAge"] < 2000
+    assert 0 <= result["secondAge"] < 2000
+    assert 4900 <= result["serverAge"] < 7000
+    assert 0 <= result["fallbackAge"] < 2000
+    assert "0s" in result["displayed"]
+    pg.screenshot(path=str(ART / "working-timer.png"))

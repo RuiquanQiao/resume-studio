@@ -75,7 +75,7 @@ function markWorking(el) {
   if (on && !el.disabled) { el.disabled = true; el.dataset.aiOff = "1"; }
   else if (!on && el.dataset.aiOff) { el.disabled = false; delete el.dataset.aiOff; }   // only what it disabled itself
 }
-function paintWorking() { for (const el of document.querySelectorAll("[data-ai]")) markWorking(el); }
+function paintAiWorking() { for (const el of document.querySelectorAll("[data-ai]")) markWorking(el); }
 
 // A change shows at once, also while the user types: the part of the page is rebuilt, and the field being
 // typed in comes back with its text, caret and focus, so typing carries on as in any app. Only while an IME
@@ -126,6 +126,7 @@ const ICONS = {
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   more: '<path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3.2"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
+  archive: '<path d="M4 5h16v4H4zM5 9v10h14V9M9 13h6"/>',
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
   grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3.2"/>',
   up: '<path d="m6 15 6-6 6 6"/>',

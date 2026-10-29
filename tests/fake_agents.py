@@ -112,6 +112,11 @@ def codex():
         method, p, rid = m["method"], m.get("params") or {}, m.get("id")
         if method == "initialize":
             out({"id": rid, "result": {"userAgent": "fake-codex"}})
+        elif method in ("thread/archive", "thread/unarchive", "thread/delete"):
+            if p.get("threadId") == "missing":
+                out({"id": rid, "error": {"code": -32600, "message": "no such thread"}})
+            else:
+                out({"id": rid, "result": {}})
         elif method == "account/read":
             out({"id": rid, "result": {"account": {"type": "chatgpt", "email": "me@example.com", "planType": "plus"}, "requiresOpenaiAuth": True}})
         elif method == "model/list":

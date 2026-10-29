@@ -1751,3 +1751,14 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .chat-mark.unread { background: var(--accent); }
 .chat-mark.running { width: 10px; height: 10px; border: 2px solid var(--accent); border-right-color: transparent; animation: spin .8s linear infinite; }
 .lb-opt.on:has(.chat-mark), .lb-opt.on { background: var(--accent-soft); }
+.ai-review .card-b { min-width: 0; }
+.ai-changes { display: grid; gap: 10px; }
+.ai-change { border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; min-width: 0; }
+.ai-change-path { padding: 6px 10px; background: var(--panel-2); color: var(--text-2); font-size: 11.5px; font-weight: 650; overflow-wrap: anywhere; }
+.ai-change-line { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 8px; padding: 7px 10px; font-size: 12.5px; line-height: 1.55; }
+.ai-change-line + .ai-change-line { border-top: 1px solid var(--line); }
+.ai-change-side { color: var(--text-2); font-size: 11px; font-weight: 600; }
+.ai-change-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-change mark { color: inherit; border-radius: 2px; text-decoration: none; }
+.ai-review-summary { margin: 0 0 10px; color: var(--text-2); font-size: 12px; }
+.ai-review .row { flex-wrap: wrap; }

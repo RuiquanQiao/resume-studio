@@ -189,6 +189,7 @@ class Turn:
 
     def __init__(self, chat_id: str, on_done: Any = None):
         self.chat_id = chat_id
+        self.started_at = _now()
         self.on_done = on_done         # callable(ok: bool), run after the turn is saved
         self.driver: Any = None        # core.drivers.Driver: the agent's protocol
         self.state: dict = {}          # the driver's own (thread / turn / session ids, RPC numbering)
@@ -301,7 +302,7 @@ class ChatRunner:
         turn = self.turns.get(chat_id)
         if not turn:
             return None
-        return {"blocks": turn.blocks, "queue": turn.queue}
+        return {"blocks": turn.blocks, "queue": turn.queue, "started_at": turn.started_at}
 
     # ---- public --------------------------------------------------------
     def send(self, chat_id: str, text: str, context: str = "", add_dirs: list[str] | None = None,
@@ -314,6 +315,8 @@ class ChatRunner:
         chat = self.store.meta(chat_id)
         if chat is None:
             raise KeyError(chat_id)
+        if chat.get("archived"):
+            raise RuntimeError(t("Restore this chat before sending a message."))
         msg = {"role": "user", "text": text if shown is None else shown, "at": _now(), "meta": meta or {},
                "files": [{"name": f["name"], "path": f["path"], "image": f.get("image", False)} for f in files or []]}
         images = images or []
@@ -371,7 +374,7 @@ class ChatRunner:
         turn = Turn(chat_id, on_done)
         turn.driver = driver_for(agent)
         self.turns[chat_id] = turn
-        self._emit("chat.start", chat_id, meta=meta or {})
+        self._emit("chat.start", chat_id, meta=meta or {}, started_at=turn.started_at)
         threading.Thread(target=turn.driver.run, args=(self, turn, spec), daemon=True).start()
         return {"queued": False}
 
@@ -438,9 +441,10 @@ class ChatRunner:
         if turn.cancelled or not turn.queue:
             return False
         item = turn.queue.pop(0)
+        turn.started_at = _now()
         self.store.append(turn.chat_id, item["msg"])
         self.store.update_meta(turn.chat_id)
-        self._emit("chat.next", turn.chat_id, message=item["msg"], queue=turn.queue)
+        self._emit("chat.next", turn.chat_id, message=item["msg"], queue=turn.queue, started_at=turn.started_at)
         return turn.driver.send(self, turn, item["prompt"], item["images"])
 
     def _flush(self, turn: Turn, error: str | None, cost: Any) -> None:

@@ -1890,5 +1890,18 @@
  "Scanning {n} of {total}…": "正在扫描 {n}/{total}…",
  "Waiting for the companies before it…": "排队中，先扫前面的公司…",
  "Waiting…": "排队中…",
- "{agent} is done; see the chat": "{agent} 做完了，去对话里看看"
+ "{agent} is done; see the chat": "{agent} 做完了，去对话里看看",
+ "Before": "修改前",
+ "After": "修改后",
+ "This entry changed again after the AI finished. Undo was not applied; review the current entry first.": "AI 完成后，这条经历又被修改过。为避免覆盖后续修改，未执行撤销；请先检查当前内容。",
+ "{n} changed item": "{n} 处变更",
+ "Save your edits before undoing the AI changes.": "请先保存当前编辑，再撤销 AI 的修改。",
+ "Moved": "移动",
+ "Position {from} → {to}": "位置 {from} → {to}",
+ "Archive this chat": "归档此会话",
+ "Restore this chat": "恢复此会话",
+ "Archived": "已归档",
+ "Restore this chat before sending a message.": "请先恢复此会话，再发送消息。",
+ "This permanently deletes the agent's session and this app's copy.": "这会永久删除智能体的会话和此应用中的副本。",
+ "This agent does not support session {operation} through its protocol.": "该智能体的协议不支持会话操作 {operation}，记录未更改。"
 }

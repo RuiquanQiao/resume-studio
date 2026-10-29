@@ -504,7 +504,7 @@ async function openChat(id, { quiet = false, refresh = false } = {}) {
   ui.chat.meta = r.chat;
   ui.chat.messages = r.messages;
   ui.chat.running = r.running;
-  ui.chat.live = r.running ? { blocks: (r.live && r.live.blocks) || [] } : null;
+  ui.chat.live = r.running ? { blocks: (r.live && r.live.blocks) || [], started_at: r.live && r.live.started_at } : null;
   ui.chat.queue = (r.live && r.live.queue) || [];
   if (r.available !== undefined) ui.chat.available = r.available;
   syncAgent();
@@ -541,13 +541,24 @@ async function newChat(settings) {
 
 async function deleteChat() {
   if (!ui.chat.id) return;
-  if (!(await modal({ title: t("Delete this chat?"), message: t("Only this window's record goes; your resume data is untouched."), ok: t("Delete"), danger: true }))) return;
+  if (!(await modal({ title: t("Delete this chat?"), message: t("This permanently deletes the agent's session and this app's copy."), ok: t("Delete"), danger: true }))) return;
   try {
     const r = await api("DELETE", "/api/chats/" + ui.chat.id);
     ui.chat.list = r.chats;
     const next = visibleChats()[0];
     if (next) await openChat(next.id);
     else { ui.chat.id = null; ui.chat.meta = null; ui.chat.messages = []; store(chatKey(), null); renderChatSelect(); renderChat(); renderPickers(); renderTasks(); }
+  } catch (e) { toast(e.message); }
+}
+
+async function archiveChat() {
+  if (!ui.chat.id) return;
+  try {
+    const r = await api("POST", `/api/chats/${ui.chat.id}/archive`);
+    ui.chat.list = r.chats;
+    ui.chat.meta = r.chat;
+    renderChatSelect();
+    renderComposerState();
   } catch (e) { toast(e.message); }
 }
 
@@ -611,11 +622,13 @@ function renderChatSelect() {
   const manyAgents = new Set(list.map(agentOfChat)).size > 1;
   const opt = (c) => {
     const state = chatState(c.id);
-    return { value: c.id, label: c.title || t("New chat"), group: mixed ? (inToolFolder(c) ? t("In {name}'s folder", { name: chatPlace(c) }) : "Resume Studio") : undefined,
+    return { value: c.id, label: (c.archived ? t("Archived") + " · " : "") + (c.title || t("New chat")), group: mixed ? (inToolFolder(c) ? t("In {name}'s folder", { name: chatPlace(c) }) : "Resume Studio") : undefined,
       hint: manyAgents ? `${agentOf(agentOfChat(c)).short} · ${relTime(c.updated)}` : relTime(c.updated), hintClass: "chat-time-hint",
       mark: state ? () => chatMark(state, c.id) : null, tip: state ? chatStateText(state, c.id) : undefined };
   };
   sel.setOptions([...list.filter((c) => !inToolFolder(c)), ...list.filter(inToolFolder)].map(opt), ui.chat.id);
+  const archive = $("#chat-archive");
+  if (archive) { archive.title = ui.chat.meta && ui.chat.meta.archived ? t("Restore this chat") : t("Archive this chat"); archive.disabled = !ui.chat.id; }
 }
 const chatPlace = (c) => (jobsReady() && c.workspace === (J.data.status.tool || {}).id ? jobsTool().name : c.workspace);
 
@@ -747,12 +760,14 @@ function tickWorking() {
   if (!els.length) { clearInterval(workTimer); workTimer = 0; return; }
   els.forEach(paintWorking);
 }
-// the reply began with the message it answers; a turn without one (a scheduled action) from when it showed up
+// Use this reply's server start, including after reopening or leaving the queue.
 function workStart() {
+  if (ui.chat.live && ui.chat.live.started_at) return ui.chat.live.started_at * 1000;
   const u = ui.chat.messages.findLast((m) => m.role === "user");
   if (u && u.at) return u.at * 1000;
-  if (!ui.chat.liveSince || ui.chat.liveSince.chat !== ui.chat.id) ui.chat.liveSince = { chat: ui.chat.id, at: Date.now() };
-  return ui.chat.liveSince.at;
+  const live = ui.chat.live || (ui.chat.live = { blocks: [] });
+  if (!live.started_at) live.started_at = Date.now() / 1000;
+  return live.started_at * 1000;
 }
 function paintWorking(el) {
   const now = Date.now(), s = Math.max(0, Math.floor((now - workStart()) / 1000));
@@ -1101,9 +1116,10 @@ function renderLive(now = false) {
 function renderComposerState() {
   const running = ui.chat.running;
   $("#chat-stop").classList.toggle("hidden", !running);
-  $("#chat-send").disabled = !ui.chat.available;
+  const archived = !!(ui.chat.meta && ui.chat.meta.archived);
+  $("#chat-send").disabled = !ui.chat.available || archived;
   setTip($("#chat-send"), running ? t("Queue: sent after this reply (Enter)") : t("Send (Enter) · Shift+Enter for a new line"));
-  $("#chat-input").disabled = !ui.chat.available;
+  $("#chat-input").disabled = !ui.chat.available || archived;
   const parts = [];
   if (ui.subsetId) parts.push(isAll() ? `ALL (${t("All entries")})` : t("the subset “{name}”", { name: subsetName(subset()) }));
   if (ui.sel.kind === "entry" && entryById(ui.sel.id)) parts.push(`“${display(entryById(ui.sel.id).title) || entryLabel(entryById(ui.sel.id))}”`);
@@ -1111,7 +1127,7 @@ function renderComposerState() {
   const here = screenLine();
   if (W.ws !== "resume") parts.length = 0;   // the resume is not what's on screen there
   if (here) parts.push(here);
-  $("#chat-context").textContent = tool ? t("This chat runs in {name}'s folder; it can still edit your resume", { name: tool })
+  $("#chat-context").textContent = archived ? t("Restore this chat before sending a message.") : tool ? t("This chat runs in {name}'s folder; it can still edit your resume", { name: tool })
     : parts.length ? t("{agent} knows you're looking at: {what}", { agent: agentOf().short, what: parts.join(" · ") }) : "";
   paintChatDot();
 }
@@ -1285,10 +1301,10 @@ async function sendChat(text, { action = null, entryId = null, target = null, la
   const queued = ui.chat.running;
   if (!queued) {
     ui.chat.running = true;
-    ui.chat.live = { blocks: [] };
+    ui.chat.live = { blocks: [], started_at: Date.now() / 1000 };
     ui.chat.thinking = 0;
     const who = entryId ? `“${display((entryById(entryId) || {}).title) || entryLabel(entryById(entryId))}”` : "";
-    ui.chat.messages.push({ role: "user", text: action ? `${who}${text ? ": " + text : ""}` || "…" : text, meta: { action },
+    ui.chat.messages.push({ role: "user", at: Date.now() / 1000, text: action ? `${who}${text ? ": " + text : ""}` || "…" : text, meta: { action },
       files: files.map((f) => ({ name: f.name, path: f.path || "", image: !!f.preview, preview: f.preview })) });
     renderChat();
     renderComposerState();
@@ -1317,11 +1333,11 @@ async function sendChat(text, { action = null, entryId = null, target = null, la
 async function aiRun(key, start) {
   if (AI_WORK.has(key)) return null;
   AI_WORK.set(key, { chat: null });
-  paintWorking();
+  paintAiWorking();
   let r = null;
   try { r = await start(); } catch (e) { toast(e.message); }
   const chat = r && r.chat ? r.chat.id : r ? ui.chat.id : null;
-  if (!chat) { AI_WORK.delete(key); paintWorking(); return r; }
+  if (!chat) { AI_WORK.delete(key); paintAiWorking(); return r; }
   AI_WORK.get(key).chat = chat;
   if (!["running", "waiting"].includes(chatState(chat))) {   // a quick reply ended while the request was out
     const last = chat === ui.chat.id ? ui.chat.messages[ui.chat.messages.length - 1] : null;
@@ -1335,7 +1351,7 @@ function aiRunDone(chatId, error) {
   const keys = [...AI_WORK].filter(([, w]) => w.chat === chatId).map(([k]) => k);
   if (!keys.length) return;
   keys.forEach((k) => AI_WORK.delete(k));
-  paintWorking();
+  paintAiWorking();
   if (!error && (!chatShown() || document.hidden || chatId !== ui.chat.id))
     toast(t("{agent} is done; see the chat", { agent: agentShortOf(chatId) }), { ms: 6000, action: { label: t("Show me"), fn: async () => { if (chatId !== ui.chat.id) await openChat(chatId); showChat(); } } });
 }
@@ -1358,9 +1374,10 @@ async function onChatEvent(type, ev) {
   if (type === "claude.info") { if (!ev.agent || ev.agent === chatAgentId()) loadClaudeInfo(); else if (ui.agentInfo) delete ui.agentInfo[ev.agent]; return; }
   if (type === "claude.limits") { if (!ev.agent || ev.agent === chatAgentId()) { ui.claude = { ...ui.claude, limits: ev }; renderContextRing(); } return; }
   if (type === "chat.start") {
+    if (ev.chat === ui.chat.id && ui.chat.live && ev.started_at) ui.chat.live.started_at = ev.started_at;
     paintChatDot([...new Set([...(ui.chat.busy || []), ev.chat])]);
     // a reply this page did not start (another window, or one that began as the last ended): catch up
-    if (ev.chat === ui.chat.id && !ui.chat.running) { ui.chat.running = true; ui.chat.live = { blocks: [] }; renderComposerState(); reloadChat(); }
+    if (ev.chat === ui.chat.id && !ui.chat.running) { ui.chat.running = true; ui.chat.live = { blocks: [], started_at: ev.started_at || Date.now() / 1000 }; renderComposerState(); reloadChat(); }
     return;
   }
   if (type === "chat.ask") {
@@ -1415,6 +1432,10 @@ async function onChatEvent(type, ev) {
   } else if (type === "chat.queue") {
     ui.chat.queue = ev.queue; renderQueue();
   } else if (type === "chat.reply" || type === "chat.next") {
+    if (type === "chat.next" && ui.chat.live) {
+      ui.chat.live.started_at = ev.started_at || Date.now() / 1000;
+      ui.chat.thinking = 0;
+    }
     reloadChat();
   } else if (type === "chat.done") {
     ui.chat.running = false;
@@ -1443,6 +1464,7 @@ function wireChat() {
   $("#chat-select-slot").replaceWith(ui.w.chat.el);
   $("#chat-new").append(icon("plus"));
   $("#chat-rename").append(icon("pen"));
+  $("#chat-archive").append(icon("archive"));
   $("#chat-delete").append(icon("trash"));
   $("#chat-send").append(icon("send"));
   $("#chat-stop").append(icon("stop"));
@@ -1450,6 +1472,7 @@ function wireChat() {
   for (const id of ["chat-model-btn", "chat-effort-btn"]) $("#" + id).append(h("span", { class: "lbl" }));
   $("#chat-new").onclick = () => newChat();
   $("#chat-rename").onclick = () => renameChat();
+  $("#chat-archive").onclick = archiveChat;
   $("#chat-delete").onclick = deleteChat;
   $("#chat-attach").onclick = pickAttachments;
   $("#chat-model-btn").onclick = (e) => (Float.cur && Float.cur.anchor === e.currentTarget ? closeFloat() : openModelMenu(e.currentTarget));

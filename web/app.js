@@ -1904,38 +1904,127 @@ async function restoreVersion(n) {
 const AI_LABELS = { mock: "Mock interview", probe: "Follow-up", answer: "Answer", polish: "Polish", translate: "Another language", fit: "Fit on one line", sync: "Update from the project", batch_translate: "Fill in a language", batch_fit: "Fit on one line", batch_sync: "Update from the project",
   autofill_read: "Read a profile", autofill_apply: "Update a profile" };
 
-function aiDiff(id) {
-  const a = ui.ai[id];
-  const before = a.snapshot;
-  const after = entryById(id) || {};
-  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])]
-    .filter((k) => JSON.stringify(before[k] ?? null) !== JSON.stringify(after[k] ?? null));
-  const fmt = (v, k) => {
-    if (k === "interview") return mockOutline(v || []);   // the questions only: the answers are in the card below
-    const one = (x) => (x && typeof x === "object" ? Object.entries(x).map(([l, s]) => `[${l}] ${s === "" ? t("(hidden)") : s}`).join("\n   ") : String(x ?? ""));
-    if (Array.isArray(v)) return v.map((x) => "• " + one(x)).join("\n");
-    return one(v);
+// Compare individual values instead of treating an entire field as a replacement.
+function aiChanges(before, after) {
+  const changes = [];
+  const equal = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const label = (path) => path.join(" · ");
+  const walk = (a, b, path) => {
+    if (equal(a, b)) return;
+    if (Array.isArray(a) || Array.isArray(b)) {
+      const old = Array.isArray(a) ? a : [], next = Array.isArray(b) ? b : [];
+      // Preserve exact matches as anchors, then pair remaining items only when their text is similar.
+      const ops = lcsOps(old.map(JSON.stringify), next.map(JSON.stringify));
+      let oi = 0, ni = 0, pendingOld = [], pendingNew = [];
+      // LCS leaves moved values as one deletion and one insertion. Match identical
+      // unmatched values across blocks before pairing edited items.
+      let scanOld = 0, scanNew = 0;
+      const removed = [], added = [];
+      for (const [op] of ops) {
+        if (op === "same") { scanOld++; scanNew++; }
+        else if (op === "del") removed.push(scanOld++);
+        else added.push(scanNew++);
+      }
+      const movedOld = new Set(), movedNew = new Set();
+      for (const x of removed) {
+        const y = added.find((n) => !movedNew.has(n) && equal(old[x], next[n]));
+        if (y !== undefined) {
+          movedOld.add(x); movedNew.add(y);
+          changes.push({ path: label(path), move: true, from: x + 1, to: y + 1, value: old[x] });
+        }
+      }
+      const flush = () => {
+        while (pendingOld.length && pendingNew.length) {
+          const x = pendingOld[0], y = pendingNew[0];
+          const text = (v) => typeof v === "string" ? v : JSON.stringify(v ?? "");
+          const aa = text(x.value), bb = text(y.value);
+          if (wordMarks(aa, bb)) { walk(x.value, y.value, [...path, `${x.index + 1}`]); pendingOld.shift(); pendingNew.shift(); }
+          else break;
+        }
+        for (const x of pendingOld) walk(x.value, undefined, [...path, `${x.index + 1}`]);
+        for (const x of pendingNew) walk(undefined, x.value, [...path, `${x.index + 1}`]);
+        pendingOld = []; pendingNew = [];
+      };
+      for (const [op] of ops) {
+        if (op === "same") { flush(); oi++; ni++; }
+        else if (op === "del") { if (!movedOld.has(oi)) pendingOld.push({ value: old[oi], index: oi }); oi++; }
+        else { if (!movedNew.has(ni)) pendingNew.push({ value: next[ni], index: ni }); ni++; }
+      }
+      flush(); return;
+    }
+    const object = (v) => v && typeof v === "object" && !Array.isArray(v);
+    if (object(a) || object(b)) {
+      const keys = [...new Set([...Object.keys(a || {}), ...Object.keys(b || {})])];
+      keys.sort((x, y) => (x === ui.editLang ? -1 : y === ui.editLang ? 1 : 0));
+      for (const k of keys) {
+        const field = { q: t("Question"), a: t("Answer"), follow_ups: t("Follow-up") }[k] || (k === "zh" ? "中文" : k === "en" ? "English" : k);
+        walk(object(a) ? a[k] : undefined, object(b) ? b[k] : undefined, [...path, field]);
+      }
+      return;
+    }
+    changes.push({ path: label(path), before: a, after: b });
   };
   const names = { title: t("Name"), subtitle: t("Subtitle"), bullets: t("Bullets"), tech: t("Tech"), location: t("Location"), start: t("Start"), end: t("End"), date: t("Date"), link: t("Link"), notes: t("Fact layer"), evidence: t("Evidence paths"), interview: t("Mock interview") };
+  for (const k of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (k !== "id") walk(before[k], after[k], [names[k] || k]);
+  }
+  return changes;
+}
+
+function aiDiff(id) {
+  const a = ui.ai[id], before = a.snapshot, after = a.result || entryById(id) || {};
+  const changes = aiChanges(before, after);
+  const show = (v) => v === undefined || v === null ? t("(empty)") : v === "" ? t("(hidden)") : String(v);
+  const clean = (v) => show(v).replace(/\*\*(.*?)\*\*/g, "$1").replace(/`([^`]+)`/g, "$1");
+  const rows = changes.map((c) => {
+    if (c.move) {
+      const value = c.value && typeof c.value === "object" ? (c.value[ui.editLang] || Object.values(c.value).find((v) => typeof v === "string") || JSON.stringify(c.value)) : c.value;
+      return h("div", { class: "ai-change" }, h("div", { class: "ai-change-path" }, c.path),
+        h("div", { class: "ai-change-line" }, h("span", { class: "ai-change-side" }, t("Moved")),
+          h("span", { class: "ai-change-text" }, t("Position {from} → {to}", { from: c.from, to: c.to }), " · ", clean(value))));
+    }
+    const old = clean(c.before), next = clean(c.after);
+    // Keep formatting-only edits visible rather than silently hiding them.
+    const from = old === next && !Object.is(c.before, c.after) ? show(c.before) : old;
+    const to = old === next && !Object.is(c.before, c.after) ? show(c.after) : next;
+    const marks = c.before != null && c.after != null ? wordMarks(from, to) : null;
+    const line = (side, value, parts) => h("div", { class: "ai-change-line " + side },
+      h("span", { class: "ai-change-side" }, side === "old" ? t("Before") : t("After")),
+      h("span", { class: "ai-change-text" }, ...(parts || [value])));
+    return h("div", { class: "ai-change" }, h("div", { class: "ai-change-path" }, c.path),
+      c.before != null && line("old", from, marks && marks.del),
+      c.after != null && line("new", to, marks && marks.add));
+  });
   const close = () => { delete ui.ai[id]; paintItem(edFor("entry", id)); };
-  return card(keys.length ? t("The AI changed this entry") : t("The AI didn't change this entry"), `${a.action in AI_LABELS ? t(AI_LABELS[a.action]) : ""} · ${t("the chat explains why")}`, [
-    keys.map((k) => [h("div", { class: "k" }, names[k] || k), h("div", { class: "before" }, fmt(before[k], k)), h("div", { class: "after" }, fmt(after[k], k))]),
+  return card(changes.length ? t("The AI changed this entry") : t("The AI didn't change this entry"), `${a.action in AI_LABELS ? t(AI_LABELS[a.action]) : ""} · ${t("the chat explains why")}`, [
+    changes.length && h("p", { class: "ai-review-summary" }, t("{n} changed item", { n: changes.length }, "{n} changed items")),
+    h("div", { class: "ai-changes" }, rows),
     h("div", { class: "row", style: "margin-top:12px" },
-      h("button", { class: "btn sm", onclick: close }, icon("check"), keys.length ? t("Keep") : t("Got it")),
-      keys.length && h("button", { class: "btn sm danger-soft", onclick: () => undoAi(id) }, icon("undo"), t("Undo, back to before")),
+      h("button", { class: "btn sm", onclick: close }, icon("check"), changes.length ? t("Keep") : t("Got it")),
+      changes.length && h("button", { class: "btn sm danger-soft", onclick: () => undoAi(id) }, icon("undo"), t("Undo, back to before")),
       h("button", { class: "btn sm ghost", onclick: () => showChat() }, icon("chat"), t("Open the chat"))),
-  ], { cls: "diff" });
+  ], { cls: "ai-review" });
 }
 
 async function undoAi(id) {
-  const snap = ui.ai[id].snapshot;
+  const a = ui.ai[id], current = entryById(id), result = a.result;
+  if (!current || !result) return;
+  const ed = ui.eds.get("entry:" + id);
+  if (ed && ed.dirty) { toast(t("Save your edits before undoing the AI changes.")); return; }
+  const keys = [...new Set([...Object.keys(a.snapshot), ...Object.keys(result)])].filter((k) => k !== "id" && JSON.stringify(a.snapshot[k]) !== JSON.stringify(result[k]));
+  if (keys.some((k) => JSON.stringify(current[k]) !== JSON.stringify(result[k]))) {
+    toast(t("This entry changed again after the AI finished. Undo was not applied; review the current entry first."));
+    return;
+  }
+  const restored = clone(current);
+  for (const k of keys) { if (k in a.snapshot) restored[k] = clone(a.snapshot[k]); else delete restored[k]; }
   try {
-    const s = await api("PUT", "/api/item", { kind: "entry", id: snap.id, data: snap, base: itemHash("entry", snap.id) });
+    const s = await api("PUT", "/api/item", { kind: "entry", id, data: restored, base: itemHash("entry", id) });
     delete ui.ai[id];
     applyState(s);
-    const ed = edFor("entry", snap.id);
-    resetEd(ed);
-    paintItem(ed, { flash: true });
+    const editor = edFor("entry", id);
+    resetEd(editor);
+    paintItem(editor, { flash: true });
     scheduleRender();
     toast(t("Restored to before the change"));
   } catch (e) { toast(t("Undo failed: {error}", { error: e.message })); }
@@ -1968,13 +2057,13 @@ async function aiBatch(action, extra = {}) {
 
 function finishAi(chatId) {
   const touched = [];
-  for (const [id, a] of Object.entries(ui.ai)) if (a.chat === chatId && !a.done) { a.done = true; touched.push(id); }
+  for (const [id, a] of Object.entries(ui.ai)) if (a.chat === chatId && !a.done) { a.done = true; a.result = clone(entryById(id) || {}); touched.push(id); }
   if (ui.batch && ui.batch.chat === chatId) {
     const { snaps, action } = ui.batch;
     ui.batch = null;
     for (const e of entries()) {
       const before = snaps[e.id];
-      if (before && JSON.stringify(before) !== JSON.stringify(e)) { ui.ai[e.id] = { chat: chatId, action, snapshot: before, done: true }; touched.push(e.id); }
+      if (before && JSON.stringify(before) !== JSON.stringify(e)) { ui.ai[e.id] = { chat: chatId, action, snapshot: before, result: clone(e), done: true }; touched.push(e.id); }
     }
     if (!touched.length) { toast(t("The AI didn't change any entry this time; see the chat")); return; }
   }

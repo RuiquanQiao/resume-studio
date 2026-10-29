@@ -11,6 +11,27 @@ import pytest
 from core import agents
 
 
+def test_codex_uses_provider_turn_start_time():
+    from types import SimpleNamespace
+    from core.chat import Turn
+    from core.drivers import CodexDriver
+
+    events = []
+    runner = SimpleNamespace(_emit=lambda *a, **kw: events.append((a, kw)))
+    turn = Turn("clock")
+    turn.state = {"rpc": SimpleNamespace(dispatch=lambda msg: False), "thread": "main"}
+    driver = CodexDriver(agents.get("codex"))
+    local_start = turn.started_at
+    for value in (None, 0, True, "invalid"):
+        driver.handle(runner, turn, {"method": "turn/started", "params": {"threadId": "main", "turn": {"startedAt": value}}})
+        assert turn.started_at == local_start
+    driver.handle(runner, turn, {"method": "turn/started", "params": {"threadId": "child", "turn": {"startedAt": 123}}})
+    assert turn.started_at == local_start
+    driver.handle(runner, turn, {"method": "turn/started", "params": {"threadId": "main", "turn": {"startedAt": 1700000000}}})
+    assert turn.started_at == 1700000000
+    assert events[-1][1]["started_at"] == 1700000000
+
+
 @pytest.fixture
 def agent_log(tmp_path, monkeypatch):
     log = tmp_path / "agents.jsonl"
@@ -125,6 +146,23 @@ def test_codex_chat_resumes_its_thread(server, agent_log, data_file):
     resume = sent(agent_log, "thread/resume")[0]["params"]
     assert resume["threadId"] == meta["session_id"]
     assert server.req("GET", "/api/claude?agent=codex")[1]["limits"]["windows"]["five_hour"]["utilization"] == 0.12
+
+
+def test_reply_start_time_resets_after_queue_wait(server):
+    cid = new_chat(server, "codex")
+    say(server, cid, "QUESTION")
+    ask = pending(server, cid)
+    initial = server.req("GET", f"/api/chats/{cid}")[1]["live"]["started_at"]
+    say(server, cid, "SLOW")
+    turn = server.inst.chats.turns[cid]
+    turn.queue[0]["msg"]["at"] = initial - 600
+    server.req("POST", f"/api/chats/{cid}/answer", {"request_id": ask["id"], "answers": {"Which colour?": "Blue"}})
+    _wait(lambda: not turn.queue, msg="queued reply started")
+    live = server.req("GET", f"/api/chats/{cid}")[1]["live"]
+    assert initial <= live["started_at"] <= time.time()
+    assert time.time() - live["started_at"] < 5
+    server.req("POST", f"/api/chats/{cid}/cancel")
+    server.wait_idle(cid)
 
 
 def test_codex_approval_card_and_question(server, agent_log):

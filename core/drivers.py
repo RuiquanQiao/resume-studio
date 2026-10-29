@@ -509,8 +509,17 @@ class CodexDriver(Driver):
                 turn.error = e
                 self.reply_done(runner, turn, e)
             else:
-                turn.state["turn"] = ((r or {}).get("turn") or {}).get("id")
+                tr = (r or {}).get("turn") or {}
+                turn.state["turn"] = tr.get("id")
+                self._timing(runner, turn, tr)
         return turn.state["rpc"].call("turn/start", params, started)
+
+    def _timing(self, runner, turn, tr):
+        # Codex owns the turn clock; older servers may omit startedAt.
+        started = tr.get("startedAt")
+        if isinstance(started, (int, float)) and not isinstance(started, bool) and started > 0:
+            turn.started_at = started
+            runner._emit("chat.start", turn.chat_id, started_at=started)
 
     def interrupt(self, turn):
         if not turn.state.get("turn"):
@@ -570,7 +579,9 @@ class CodexDriver(Driver):
             return None
         if p.get("threadId") and turn.state.get("thread") and p["threadId"] != turn.state["thread"]:
             return None   # a subagent's thread
-        if method == "item/agentMessage/delta":
+        if method == "turn/started":
+            self._timing(runner, turn, p.get("turn") or {})
+        elif method == "item/agentMessage/delta":
             turn.state["streamed"].add(p.get("itemId"))
             runner._text(turn, p.get("delta") or "")
         elif method in ("item/reasoning/summaryTextDelta", "item/reasoning/textDelta"):

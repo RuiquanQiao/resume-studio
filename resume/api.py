@@ -331,10 +331,36 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
 
     @app.route("DELETE", "/api/chats/{cid}")
     def delete_chat(req: Request):
-        if chats.busy(req.params["cid"]):
+        cid = req.params["cid"]
+        chat = chats.store.meta(cid)
+        if chat is None:
+            raise HttpError(404, t("Chat not found"))
+        if chats.busy(cid):
             raise HttpError(409, t("This chat is still replying"))
-        chats.store.delete(req.params["cid"])
+        from core.session_lifecycle import operate
+        try:
+            operate(chat, "delete", (chats.workspace(chat) or chats).cwd)
+        except (RuntimeError, OSError) as e:
+            raise HttpError(409, str(e))
+        chats.store.delete(cid)
         return {"chats": chats.store.list()}
+
+    @app.route("POST", "/api/chats/{cid}/archive")
+    def archive_chat(req: Request):
+        cid = req.params["cid"]
+        chat = chats.store.meta(cid)
+        if chat is None:
+            raise HttpError(404, t("Chat not found"))
+        if chats.busy(cid):
+            raise HttpError(409, t("This chat is still replying"))
+        restore = bool(chat.get("archived"))
+        from core.session_lifecycle import operate
+        try:
+            operate(chat, "unarchive" if restore else "archive", (chats.workspace(chat) or chats).cwd)
+        except (RuntimeError, OSError) as e:
+            raise HttpError(409, str(e))
+        chats.store.update_meta(cid, archived=not restore)
+        return {"chats": chats.store.list(), "chat": chats.store.meta(cid)}
 
     @app.route("POST", "/api/chats/{cid}/answer")
     def answer(req: Request):
