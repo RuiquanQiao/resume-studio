@@ -1545,6 +1545,8 @@
  "not looked into yet": "まだ調べていません",
  "not read yet": "未読",
  "not scanned yet": "まだスキャンしていません",
+ "A plain scan can't read its site": "通常のスキャンではこのサイトを読めません",
+ "No careers site to scan": "スキャンする採用サイトがありません",
  "not yet": "まだ",
  "nothing new from the last day's scans": "この 1 日のスキャンに新しい変化はありません",
  "now": "現在",

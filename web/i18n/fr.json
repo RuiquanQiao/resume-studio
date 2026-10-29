@@ -1563,6 +1563,8 @@
  "not looked into yet": "pas encore étudiée",
  "not read yet": "pas encore lu",
  "not scanned yet": "pas encore analysé",
+ "A plain scan can't read its site": "Une analyse simple ne peut pas lire son site",
+ "No careers site to scan": "Aucun site carrières à analyser",
  "not yet": "pas encore",
  "nothing new from the last day's scans": "rien de nouveau dans les analyses du dernier jour",
  "now": "aujourd'hui",

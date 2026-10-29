@@ -1545,6 +1545,8 @@
  "not looked into yet": "还没查",
  "not read yet": "还没读过",
  "not scanned yet": "还没扫描过",
+ "A plain scan can't read its site": "普通扫描读不了它的网站",
+ "No careers site to scan": "没有可扫描的招聘网站",
  "not yet": "还没有",
  "nothing new from the last day's scans": "最近一天的扫描没有新变化",
  "now": "至今",
