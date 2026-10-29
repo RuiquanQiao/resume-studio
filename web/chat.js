@@ -855,6 +855,7 @@ function stepLabel(s, result) {
     case "snapshot": return [s.part === "dialog" ? t("Read the dialog") : s.part === "part" ? t("Read part of the page") : t("Read the page")];
     case "text": return [t("Read the page's text")];
     case "click": return [t("Click {what}", { what })];
+    case "hover": return [t("Point at {what}", { what })];
     case "type": return [t("Type into {what}", { what }), s.text ? `“${clipText(s.text)}”` : ""];
     case "select": return [t("Choose {option} in {what}", { option: `“${clipText(s.option, 30)}”`, what })];
     case "press": return [t("Press {key}", { key: s.key })];

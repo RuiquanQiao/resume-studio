@@ -398,6 +398,7 @@ Edge) with a profile of its own in `<skill>/.local/browser/` and drives it over 
 python <skill>/scripts/browser.py open <url>        # also: back, tabs, tab <n>, front
 python <skill>/scripts/browser.py snapshot          # the whole page, a [ref] on every control; --dialog, --in <ref>
 python <skill>/scripts/browser.py click <ref>       # real mouse / keyboard input, the way a person's arrives
+python <skill>/scripts/browser.py hover <ref>       # menus that open on hover; `click` on a "(shows on hover)" button hovers its row first
 python <skill>/scripts/browser.py type <ref> --text "..."   # or --stdin with a quoted heredoc for long text
 python <skill>/scripts/browser.py select <ref> "<option>"   # native selects; custom pickers: click, then click
 python <skill>/scripts/browser.py press Enter       # Escape, Tab, ArrowDown, ctrl+a…

@@ -34,7 +34,18 @@
     return cs.display !== "none" && cs.visibility !== "hidden";
   }
 
-  const TEXT_INPUTS = new Set(["", "text", "email", "url", "tel", "number", "search", "password", "date", "month"]);
+  // buttons and links a site hides until the mouse is over their row (BOSS直聘's 编辑 / 删除 under each entry):
+  // a hidden part of the page holding only a few of them. A hidden form or dialog (fields, many buttons) isn't one.
+  function hoverOnly(el) {
+    if (el.getAttribute("aria-hidden") === "true" || el.hidden) return [];
+    const cs = win(el).getComputedStyle(el);
+    if (cs.display !== "none" && cs.visibility !== "hidden") return [];
+    const all = [el, ...el.querySelectorAll("a,button,input,select,textarea,[role],[contenteditable]")].filter((c) => kind(c));
+    if (!all.length || all.length > 6 || all.some((c) => !["button", "link", "menuitem"].includes(kind(c)))) return [];
+    return all;
+  }
+
+  const TEXT_INPUTS =new Set(["", "text", "email", "url", "tel", "number", "search", "password", "date", "month"]);
 
   // what kind of control this is, or "" for anything else
   function kind(el) {
@@ -156,7 +167,11 @@
       if (node.nodeType !== 1) return;
       const el = node, t = tag(el);
       if (["script", "style", "noscript", "template", "svg", "head", "meta", "link"].includes(t)) return;
-      if (!shown(el)) return;
+      if (!shown(el)) {
+        const hov = hoverOnly(el);
+        if (hov.length) { flush(); for (const c of hov) push("  " + describe(c, kind(c)) + " (shows on hover)"); }
+        return;
+      }
       const cs = win(el).getComputedStyle(el);
       const block = BLOCK.has(cs.display) || t === "br";
       const r = role(el);
@@ -239,6 +254,26 @@
     return { x, y, covered };
   }
 
+  // a control that shows only on hover: where to put the mouse (the nearest part of the page that is shown),
+  // or null when it is shown already
+  function hoverPoint(ref) {
+    const e = el(ref);
+    if (shown(e) && e.getBoundingClientRect().width > 0) return null;
+    let a = e.parentElement;
+    while (a && !shown(a)) a = a.parentElement;
+    if (!a) throw new Error(`ref ${ref} is hidden and nothing around it is shown`);
+    a.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+    const r = a.getBoundingClientRect();
+    let x = r.left + Math.min(r.width / 2, 40), y = r.top + Math.min(r.height / 2, 20), w = win(a);
+    while (w !== w.top && w.frameElement) {
+      const fr = w.frameElement.getBoundingClientRect();
+      x += fr.left; y += fr.top; w = w.parent;
+    }
+    return { x, y };
+  }
+
+  const isShown = (ref) => { const e = el(ref); return shown(e) && e.getBoundingClientRect().width > 0; };
+
   function describeShort(e) {
     const k = kind(e) || tag(e);
     return `${k} ${q(clip(name(e, k), 60))}`;
@@ -312,5 +347,5 @@
     },
   };
 
-  globalThis.__rs = { snapshot, point, focus, choose, read, el, target, helpers, kind: (ref) => kind(el(ref)), rich: (ref) => !!el(ref).isContentEditable };
+  globalThis.__rs = { snapshot, point, hoverPoint, isShown, focus, choose, read, el, target, helpers, kind: (ref) => kind(el(ref)), rich: (ref) => !!el(ref).isContentEditable };
 })();

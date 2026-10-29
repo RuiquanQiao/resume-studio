@@ -444,6 +444,8 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
                 return {"data": browser.run_script(str(b.get("script") or ""), timeout=90)}
             if cmd == "click":
                 return browser.click(ref)
+            if cmd == "hover":
+                return browser.hover(ref)
             if cmd == "type":
                 return browser.type(ref, str(b.get("text") or ""), clear=not b.get("append"))
             if cmd == "select":

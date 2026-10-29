@@ -35,6 +35,8 @@ these sites). You work in it only through this command (Bash); every call prints
 - `{b} click <ref>` · `type <ref> --text "..."` (replaces the field's text; for long or multi-line
   text use `type <ref> --stdin` with a quoted heredoc) · `select <ref> "<option>"` (native selects only;
   custom pickers: click, then click the option) · `press Enter|Escape|Tab|ArrowDown|ctrl+a` · `scroll [<ref>]`
+  · `hover <ref>` (menus that open on hover). Buttons a site shows only while the mouse is over their row
+  appear in the snapshot marked `(shows on hover)`: `click` them as they are, it moves the mouse there first.
 - `{b} screenshot` saves a PNG and prints its path: open it with Read when the lines aren't enough.
 - `{b} text` — the page's plain text (long lists, when snapshots are cut off).
 

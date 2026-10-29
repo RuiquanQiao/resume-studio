@@ -107,6 +107,7 @@ def main() -> int:
     p = sub.add_parser("snapshot"); p.add_argument("--dialog", action="store_true"); p.add_argument("--in", dest="within"); p.add_argument("--max", type=int)
     sub.add_parser("text")
     p = sub.add_parser("click"); p.add_argument("ref")
+    p = sub.add_parser("hover", help="put the mouse over an element (menus and buttons that show on hover)"); p.add_argument("ref")
     p = sub.add_parser("type"); p.add_argument("ref"); p.add_argument("--text"); p.add_argument("--stdin", action="store_true")
     p.add_argument("--file"); p.add_argument("--append", action="store_true", help="keep what the field holds and add to it")
     p = sub.add_parser("select"); p.add_argument("ref"); p.add_argument("option")
@@ -161,7 +162,7 @@ def main() -> int:
         payload["url"] = args.url
     elif c == "snapshot":
         payload.update(dialog=args.dialog, within=args.within, max=args.max)
-    elif c in ("click", "select", "type", "upload", "scroll"):
+    elif c in ("click", "hover", "select", "type", "upload", "scroll"):
         payload["ref"] = args.ref
     if c == "type":
         payload.update(text=read_text(args), append=args.append)

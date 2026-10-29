@@ -456,6 +456,13 @@ def test_browser_command_drives_a_real_page(live, data_file, fake_site):
     assert "only files in" in out(cli(data_file, "upload", "1", str(ROOT / "README.md")))
     assert "not a text field" in out(cli(data_file, "type", "1", "--text", "x"))
     assert "is not on the page" in out(cli(data_file, "click", "999"))
+    # buttons that show only while the mouse is over their row (BOSS直聘's 编辑 / 删除) are listed, and click reaches them
+    edit = next(l for l in snap.splitlines() if "编辑" in l)
+    assert "(shows on hover)" in edit and "删除" in snap
+    r = cli(data_file, "click", ref_of(snap, '"编辑"'))
+    assert r.returncode == 0 and 'target: link "编辑"' in out(r), out(r)
+    assert live.inst.browser._eval_page("document.getElementById('edu-edit').textContent") == "编辑 ✓"
+    assert cli(data_file, "hover", ref_of(snap, '"Edit intro"')).returncode == 0
     assert cli(data_file, "press", "Escape").returncode == 0
     # its own profile, inside the app's folder (never the user's everyday browser profile)
     prof = data_file.parent / "local" / "browser" / "msedge"

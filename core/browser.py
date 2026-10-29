@@ -36,7 +36,7 @@ class BrowserError(Exception):
     """Something the caller (and the user) should read."""
 
 
-COMMANDS = {"open", "snapshot", "text", "click", "type", "select", "press", "scroll", "upload", "screenshot", "tabs",
+COMMANDS = {"open", "snapshot", "text", "click", "hover", "type", "select", "press", "scroll", "upload", "screenshot", "tabs",
             "tab", "back", "front", "sign-in", "profile", "report", "signed-out", "extract", "route", "sync"}
 
 
@@ -157,7 +157,7 @@ def _step(rest: str, body: str) -> dict | None:
         step["url"] = a[0]
     elif cmd == "snapshot":
         step["part"] = "dialog" if flags.get("dialog") else ("part" if flags.get("in") else "page")
-    elif cmd in ("click", "type", "select", "upload", "scroll") and a:
+    elif cmd in ("click", "hover", "type", "select", "upload", "scroll") and a:
         step["ref"] = a[0]
     if cmd == "type":
         step["text"] = str(flags.get("text") if isinstance(flags.get("text"), str) else body)[:300]
@@ -787,9 +787,36 @@ class ManagedBrowser:
         self._send("Input.dispatchMouseEvent", {"type": "mousePressed", **base})
         self._send("Input.dispatchMouseEvent", {"type": "mouseReleased", **base})
 
+    def _mouse_move(self, x: float, y: float) -> None:
+        self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+
+    def _reveal(self, ref: str) -> bool:
+        """A control the site shows only while the mouse is over its row: put the mouse there, as a person would.
+        True when it had to (and it showed)."""
+        h = self._js(f"hoverPoint({int(ref)})")
+        if not h:
+            return False
+        self._mouse_move(h["x"], h["y"])
+        for _ in range(10):
+            time.sleep(0.05)
+            if self._js(f"isShown({int(ref)})"):
+                return True
+        raise BrowserError(f"ref {ref} stayed hidden with the mouse over its part of the page; "
+                           "take a new snapshot, or hover a nearer ref first")
+
+    def hover(self, ref: str) -> dict:
+        with self.lock:
+            what = self._js(f"target({int(ref)})")
+            if not self._reveal(ref):
+                p = self._js(f"point({int(ref)})")
+                self._mouse_move(p["x"], p["y"])
+            self._pause(0.2, 0.4)
+            return {**self.here(), "target": what}
+
     def click(self, ref: str) -> dict:
         with self.lock:
             what = self._js(f"target({int(ref)})")
+            self._reveal(ref)
             p = self._js(f"point({int(ref)})")
             self._pause(0.1, 0.3)
             self._mouse_click(p["x"], p["y"])
