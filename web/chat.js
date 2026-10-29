@@ -158,6 +158,8 @@ async function loadClaudeInfo(refresh = false, agent = chatAgentId()) {
       if (old) ui.claude.defaults = (await api("PUT", "/api/chat-defaults", old)).defaults;
     }
     if (first) renderChat();   // the welcome and the sign-in help name the agent as it is installed
+    // the first call goes out before the remembered agent is known: its answer names it, so read that one's too
+    if (r.agent === agent && chatAgentId() !== agent) { syncAgent(); return; }
   } catch (_) { /* keep what we had */ }
   renderPickers();
 }
