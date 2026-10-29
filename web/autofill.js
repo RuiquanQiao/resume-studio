@@ -280,8 +280,12 @@ function syncCard(v) {
   const site = fillSite();
   const reading = !!v.reading;
   if (!v.synced) {
+    const err = (v.last_check || {}).error;
     return h("div", { class: "fill-card fill-start" },
       h("h2", null, t("Read your {site} profile once", { site: site.name })),
+      // a read that was tried and didn't finish says so, not only "read it once"
+      err && h("div", { class: "fill-banner warn" }, icon("alert"), h("span", { class: "nb-text" },
+        (v.last_check || {}).signed_out ? t("{site} wants you to sign in.", { site: site.name }) : t("The last check didn't finish.") + " " + err)),
       h("ol", { class: "fill-steps" },
         h("li", null, t("Sign in to {site} once in Resume Studio's browser (“Open {site}” above).", { site: site.name })),
         h("li", null, t("The AI reads your profile there and records how to read it: which pages, and where each field is.")),

@@ -1563,6 +1563,16 @@
  "not looked into yet": "aún sin investigar",
  "not read yet": "aún sin leer",
  "not scanned yet": "aún sin escanear",
+ "{n} company's site needs the AI to learn it first": [
+  "La IA debe aprender primero el sitio de {n} empresa",
+  "La IA debe aprender primero los sitios de {n} empresas"
+ ],
+ "{n} company has no careers site": [
+  "{n} empresa no tiene sitio de empleo",
+  "{n} empresas no tienen sitio de empleo"
+ ],
+ "{names}: the last scan didn't work; their pages say why.": "{names}: el último escaneo no funcionó; sus páginas dicen por qué.",
+ "Its page didn't read": "No se pudo leer su página",
  "A plain scan can't read its site": "Un escaneo normal no puede leer su sitio",
  "No careers site to scan": "No hay sitio de empleo que escanear",
  "not yet": "aún no",

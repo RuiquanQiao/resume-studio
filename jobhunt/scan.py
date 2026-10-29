@@ -55,6 +55,19 @@ def validate_route(data: Any) -> tuple[dict, list[str]]:
     return ({"pages": pages} if not errs else {}), errs
 
 
+
+def run_summary(out: list[dict], auto: bool) -> dict:
+    """What a run did, for its toast: a company stopped before reading anything (its site needs the AI, or none is
+    known) is counted apart, so "0 new" never stands for a site nobody could read."""
+    unread = [r for r in out if not r.get("error") and "found" not in r]
+    return {"at": time.time(), "auto": auto, "companies": len(out),
+            "read": sum(1 for r in out if "found" in r),
+            "new": sum(int(r.get("new") or 0) for r in out),
+            "closed": sum(int(r.get("closed") or 0) for r in out),
+            "failed": sum(1 for r in out if r.get("error")),
+            "needs_ai": sum(1 for r in unread if r.get("needs") in ("claude", "browser")),
+            "no_site": sum(1 for r in unread if r.get("needs") == "sites")}
+
 class RouteFailed(Exception):
     def __init__(self, message: str, signed_out: bool = False):
         super().__init__(message)
@@ -234,10 +247,7 @@ class Scanner:
                     out.append({"company": cid, "error": str(e)})
             if not auto or out:
                 self.postings.mark_all_scanned()
-            self.last_run = {"at": time.time(), "auto": auto, "companies": len(out),
-                             "new": sum(int(r.get("new") or 0) for r in out),
-                             "closed": sum(int(r.get("closed") or 0) for r in out),
-                             "failed": sum(1 for r in out if r.get("error"))}
+            self.last_run = run_summary(out, auto)
         self.publish()
         return out
 
@@ -281,10 +291,7 @@ class Scanner:
                             self.batch["done"] += 1
                 if not auto or out:
                     self.postings.mark_all_scanned()
-                self.last_run = {"at": time.time(), "auto": auto, "companies": len(out),
-                                 "new": sum(int(r.get("new") or 0) for r in out),
-                                 "closed": sum(int(r.get("closed") or 0) for r in out),
-                                 "failed": sum(1 for r in out if r.get("error"))}
+                self.last_run = run_summary(out, auto)
         except BaseException:
             with self.lock:   # never left looking busy
                 if not ended:

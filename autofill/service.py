@@ -269,7 +269,8 @@ class Autofill:
             st = self.load(site.id)
             pend = [p for p in self.pending(site, st) if p["checked"]] if st.get("base") or st.get("current") else None
             out.append({**site.public(), "synced_at": st.get("synced_at") or st.get("read_at"), "signed_out": bool(st.get("signed_out")),
-                        "changes": len(pend) if pend is not None else None, "conflicts": len(st.get("conflicts") or {})})
+                        "changes": len(pend) if pend is not None else None, "conflicts": len(st.get("conflicts") or {}),
+                        "check_error": (st.get("last_check") or {}).get("error") or ""})
         return out
 
     # ---- a fresh read of the site comes in (by the route, or from Claude) ---------------

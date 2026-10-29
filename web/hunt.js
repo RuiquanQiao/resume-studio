@@ -694,6 +694,15 @@ const scanQueued = (cid) => (scanInfo().queued || []).includes(cid);   // in the
 const kwMatch = (title) => { const kw = scanInfo().keywords || []; return !kw.length || kw.some((k) => title.toLowerCase().includes(k.toLowerCase())); };
 
 // the company's open postings, as one chip in the table (the ones matching the user's keywords)
+// an empty Roles cell whose sites couldn't be read says so: "none yet" would read as "it has no openings"
+function scanTrouble(c) {
+  const ps = c.postings || {}, sc = ps.scan || {};
+  const say = sc.at && sc.ok === false ? (sc.signed_out ? t("The site asks to sign in") : t("The last scan didn't work"))
+    : ps.needs === "claude" ? t("A plain scan can't read its site")
+    : ps.needs === "sites" ? t("No careers site to scan") : "";
+  return say && h("span", { class: "fs-status warn" }, icon("alert"), say);
+}
+
 function openChip(c) {
   const ps = c.postings || {};
   const news = (ps.news || {}).new || 0;
@@ -709,8 +718,11 @@ function scanDone() {
   const seen = H.lastRun;
   H.lastRun = run.at || 0;
   if (seen === undefined || !run.at || run.at === seen || run.auto) return;
-  const parts = [t("{n} new", { n: run.new }), t("{n} closed", { n: run.closed })];
+  // counts only from sites that were read: a run that read none says why instead of "0 new"
+  const parts = run.read === 0 ? [] : [t("{n} new", { n: run.new }), t("{n} closed", { n: run.closed })];
   if (run.failed) parts.push(t("{n} company couldn't be read", { n: run.failed }, "{n} companies couldn't be read"));
+  if (run.needs_ai) parts.push(t("{n} company's site needs the AI to learn it first", { n: run.needs_ai }, "{n} companies' sites need the AI to learn them first"));
+  if (run.no_site) parts.push(t("{n} company has no careers site", { n: run.no_site }, "{n} companies have no careers site"));
   toast(t("Scan finished: {what}", { what: parts.join(" · ") }), { ms: 6000 });
 }
 
@@ -742,6 +754,9 @@ function scanNews() {
   const names = Object.fromEntries(d.companies.map((c) => [c.id, c]));
   const learn = d.companies.filter((c) => (c.postings || {}).needs === "claude");
   const noSites = d.companies.filter((c) => (c.postings || {}).needs === "sites");
+  // "nothing new" beside a scan that didn't work would read as "read fine, found nothing"
+  const broke = d.companies.filter((c) => { const sc = (c.postings || {}).scan || {}; return sc.at && sc.ok === false && !scanning(c.id); });
+  const readToday = d.companies.some((c) => { const sc = (c.postings || {}).scan || {}; return sc.ok && Date.now() - Date.parse(sc.at) < 864e5; });
   const rows = (d.changes || []).map((ch) => {
     const c = names[ch.company];
     if (!c) return null;
@@ -758,7 +773,8 @@ function scanNews() {
     placeholder: t("e.g. 算法, AI, Agent, 后端"), "aria-label": t("Roles you look for"),
     onchange: async (e) => { try { await api("PUT", "/api/hunt/scan-settings", { keywords: e.target.value }); await loadHunt({ quiet: true }); } catch (err) { toast(err.message); } } });
   return h("div", { class: "scan-news" },
-    h("div", { class: "sn-head" }, h("b", null, t("Today")), h("span", { class: "muted" }, rows.length ? "" : t("nothing new from the last day's scans")),
+    // "nothing new" only after a scan that read a site; with none read, the bars below say why
+    h("div", { class: "sn-head" }, h("b", null, t("Today")), h("span", { class: "muted" }, rows.length || !readToday ? "" : t("nothing new from the last day's scans")),
       h("span", { class: "spacer" }), h("label", { class: "kw-label", for: "hunt-keywords" }, t("Roles you look for")), kwInput),
     rows,
     learn.length > 0 && h("div", { class: "note-bar" }, icon("sparkle"), h("span", { class: "nb-text" },
@@ -766,7 +782,9 @@ function scanNews() {
       h("button", { class: "btn sm", "data-ai": aiKey("learn", learn), disabled: !ui.chat.available, onclick: () => askLearn(learn) }, icon("sparkle"), t("Let AI learn them"))),
     noSites.length > 0 && h("div", { class: "note-bar" }, icon("alert"), h("span", { class: "nb-text" },
       t("{names}: no careers site known yet.", { names: noSites.map((c) => c.name).join(", ") })),
-      h("button", { class: "btn sm", "data-ai": aiKey("fill", noSites), disabled: !ui.chat.available, onclick: () => askFill(noSites) }, icon("sparkle"), t("Ask AI to find them"))));
+      h("button", { class: "btn sm", "data-ai": aiKey("fill", noSites), disabled: !ui.chat.available, onclick: () => askFill(noSites) }, icon("sparkle"), t("Ask AI to find them"))),
+    broke.length > 0 && h("div", { class: "note-bar warn" }, icon("alert"), h("span", { class: "nb-text" },
+      t("{names}: the last scan didn't work; their pages say why.", { names: broke.map((c) => c.name).join(", ") }))));
 }
 
 // a button's key for asking the AI about these companies: one company's buttons share it, wherever they are
@@ -872,7 +890,7 @@ function companyProps() {
         scanning(c.id) ? h("span", { class: "scan-chip" }, h("span", { class: "spin" }), t("Scanning…"))
           : scanQueued(c.id) && h("span", { class: "scan-chip c-muted" }, t("Waiting…")),
         (c.apps || []).map(roleChip), openChip(c),
-        !scanning(c.id) && !scanQueued(c.id) && !(c.apps || []).length && !openChip(c) && h("span", { class: "c-muted" }, t("none yet"))) },
+        !scanning(c.id) && !scanQueued(c.id) && !(c.apps || []).length && !openChip(c) && (scanTrouble(c) || h("span", { class: "c-muted" }, t("none yet")))) },
     placesProp("places", t("Hires in"), (c, v) => cellCompany(c, { places: v })),
     { key: "hq", label: t("Headquarters"), type: "custom", width: 130, hidden: true, group: true, get: (c) => (c.hq ? placeName(c.hq) : ""),
       render: (c) => c.hq ? placeChip(c.hq) : "",
@@ -912,14 +930,16 @@ function platformsTable() {
   const apps = (H.data && H.data.applications) || [];
   if (!F.sites) { loadFill(); return h("div", { class: "muted" }, t("Loading…")); }
   const host = (s) => (s.home || "").replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
-  const profile = (s) => !s.synced_at ? "unread" : s.conflicts ? "conflicts" : s.changes ? "changes" : "step";
-  const PROFILE = { unread: t("Not read yet"), conflicts: t("Has conflicts"), changes: t("Changes to push"), step: t("In step") };
+  // a check that didn't finish comes first: "Not read yet" or "In step" would hide it
+  const profile = (s) => s.check_error ? "failed" : !s.synced_at ? "unread" : s.conflicts ? "conflicts" : s.changes ? "changes" : "step";
+  const PROFILE = { failed: t("The last check didn't finish."), unread: t("Not read yet"), conflicts: t("Has conflicts"), changes: t("Changes to push"), step: t("In step") };
   const nApps = (s) => apps.filter((a) => a.channel === "platform" && a.platform === s.id).length;
   const props = [
     { key: "name", label: t("Platform"), type: "title", width: 200, get: (s) => s.name,
       render: (s) => h("span", { class: "co-text" }, h("span", { class: "c-main-name" }, s.name), h("span", { class: "c-alias" }, host(s))) },
     { key: "profile", label: t("Your profile there"), type: "custom", width: 180, group: true, get: (s) => PROFILE[profile(s)],
-      render: (s) => h("span", { class: "c-muted" }, !s.synced_at ? t("Not read yet") : s.conflicts ? t("{n} conflict", { n: s.conflicts }, "{n} conflicts")
+      render: (s) => s.check_error ? h("span", { class: "fs-status bad", title: s.check_error }, icon("alert"), PROFILE.failed)
+        : h("span", { class: "c-muted" }, !s.synced_at ? t("Not read yet") : s.conflicts ? t("{n} conflict", { n: s.conflicts }, "{n} conflicts")
         : s.changes ? t("{n} change to push", { n: s.changes }, "{n} changes to push") : t("In step")) },
     { key: "signin", label: t("Sign-in"), type: "custom", width: 130, get: (s) => (s.signed_out ? t("Sign in") : s.synced_at ? t("Signed in") : ""),
       render: (s) => s.signed_out ? h("span", { class: "state-chip s-warn" }, t("Sign in")) : h("span", { class: "c-muted" }, s.synced_at ? t("Signed in") : "") },
@@ -1427,6 +1447,8 @@ function appPage(v) {
 function jdSub(a, reading) {
   if ((reading || {}).running) return h("span", { class: "fs-status" }, h("span", { class: "spin" }), t("Reading its page…"));
   if (a.jd && a.jd_read) return t("read from its page {date}", { date: a.jd_read });
+  // folded, the card shows only this line: a page that didn't read must not pass for one never tried
+  if (!a.jd && (reading || {}).error) return h("span", { class: "fs-status bad" }, icon("alert"), t("Its page didn't read"));
   return a.jd ? "" : t("not kept yet");
 }
 
