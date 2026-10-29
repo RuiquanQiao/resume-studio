@@ -761,7 +761,7 @@ function toolEl(tool) {
   const step = tool.input && tool.input.browser;
   if (step) return browserStepEl(tool, step, st);
   return h("details", { class: "tool" },
-    h("summary", null, st, h("span", { class: "tn" }, TOOL_NAMES[tool.name] || tool.name), h("span", { class: "th", title: tool.hint || "" }, shortHint(tool.hint))),
+    h("summary", null, st, h("span", { class: "tn", title: TOOL_NAMES[tool.name] || tool.name }, TOOL_NAMES[tool.name] || tool.name), h("span", { class: "th", title: tool.hint || "" }, shortHint(tool.hint))),
     tool.result && h("pre", null, tool.result));
 }
 

@@ -161,7 +161,8 @@ body[data-chat="off"] .workspace { grid-template-columns: minmax(600px, 1fr) 5px
 .chat-head .select { flex: 1; }
 /* its size comes from the pane, never from its messages: with that said (contain), a keystroke in the
    composer no longer lays out every message of a long chat again (~30ms a key at a few thousand nodes) */
-.chat-log { flex: 1; min-height: 0; overflow: auto; padding: 14px 14px 8px; display: flex; flex-direction: column; gap: 14px; contain: size layout; }
+/* it scrolls down only: anything wide (code, tables) scrolls inside its own box, so text is never cut off at the left edge */
+.chat-log { flex: 1; min-height: 0; overflow: hidden auto; padding: 14px 14px 8px; display: flex; flex-direction: column; gap: 14px; contain: size layout; }
 .msg-user { align-self: flex-end; max-width: 88%; padding: 8px 12px; border-radius: 12px 12px 4px 12px; background: var(--accent-soft); white-space: pre-wrap; word-break: break-word; }
 .msg-ai { max-width: 100%; word-break: break-word; }
 .msg-ai .md > :first-child { margin-top: 0; }
@@ -181,7 +182,8 @@ body[data-chat="off"] .workspace { grid-template-columns: minmax(600px, 1fr) 5px
 .tool { margin: 4px 0; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2); font-size: 12.5px; }
 .tool summary { display: flex; align-items: center; gap: 7px; padding: 5px 9px; cursor: pointer; list-style: none; color: var(--text-2); }
 .tool summary::-webkit-details-marker { display: none; }
-.tool .tn { font-weight: 600; color: var(--text); white-space: nowrap; }
+/* a name can be a whole URL (Codex names some calls by the page): it shrinks to an ellipsis like the hint, never widening the log */
+.tool .tn { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; color: var(--text); white-space: nowrap; }
 .tool .th { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11.5px var(--mono); color: var(--text-3); flex: 1; min-width: 0; }
 .tool .st { flex: none; width: 14px; height: 14px; }
 .tool .st.running { border-radius: 50%; border: 2px solid var(--accent); border-right-color: transparent; animation: spin .8s linear infinite; }
