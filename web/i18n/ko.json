@@ -1582,6 +1582,7 @@
  "run a command": "명령 실행",
  "same as now": "지금과 같음",
  "scanned {when} · {how}": "{when} 스캔 · {how}",
+ "scanned {when} · some pages didn't read": "{when} 스캔 · 일부 페이지를 읽지 못했습니다",
  "search file contents": "파일 내용 검색",
  "search the web": "웹 검색",
  "skill": "스킬",

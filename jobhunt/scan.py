@@ -29,20 +29,24 @@ from pathlib import Path
 from typing import Any, Callable
 
 from core.browser import BrowserError
+from core.cdp import CdpError
 from core.i18n import t
 
 from .postings import Postings
 from .store import Hunt
 
 BRIDGE = Path(__file__).resolve().parent.parent / "jobs" / "co_scan.mjs"
+MAX_PAGES = 20   # of a recorded route, each with 2 minutes
 
 
 def validate_route(data: Any) -> tuple[dict, list[str]]:
     errs: list[str] = []
     if not isinstance(data, dict) or not isinstance(data.get("pages"), list) or not data["pages"]:
         return {}, ['the route must be {"pages": [{"url", "script"}, ...]}']
+    if len(data["pages"]) > MAX_PAGES:   # said, never cut: the pages past the limit would just go unread
+        errs.append(f"a route has at most {MAX_PAGES} pages; this one has {len(data['pages'])}: read more postings per page")
     pages = []
-    for n, p in enumerate(data["pages"][:20]):
+    for n, p in enumerate(data["pages"][:MAX_PAGES]):
         if not isinstance(p, dict):
             errs.append(f"pages[{n}] must be an object")
             continue
@@ -78,6 +82,7 @@ class Scanner:
     def __init__(self, hunt: Hunt, postings: Postings, tool: Any, browser: Any, publish: Callable[[], None]):
         self.hunt, self.postings, self.tool, self.browser, self.publish = hunt, postings, tool, browser, publish
         self.running: dict[str, str] = {}      # company id -> what is reading it now
+        self.started: dict[str, float] = {}    # company id -> when that reading began
         self.lock = threading.Lock()
         self._providers: dict[str, str | None] = {}   # url -> career-ops provider id (or None), per run of the app
         self.last_run: dict = {}               # the last scan_many: {at, auto, companies, new, closed, failed}
@@ -140,7 +145,7 @@ class Scanner:
         return self.browser.hold() if hasattr(self.browser, "hold") else contextlib.nullcontext()
 
     # ---- one company ----
-    def run_route(self, route: dict) -> list[dict]:
+    def run_route(self, route: dict, errors: list[str] | None = None) -> list[dict]:
         """Each page in a tab of its own, off the screen (core/browser.py read_page): a scan never takes the tab
         the user or Claude is working in. A browser the scan started closes itself once nothing uses it
         (core/browser.py close_if_idle); one the user opened stays."""
@@ -149,23 +154,32 @@ class Scanner:
                 self.browser.ensure()
             except BrowserError as e:
                 raise RouteFailed(str(e))
-            return self._read_route(route)
+            return self._read_route(route, errors)
 
-    def _read_route(self, route: dict) -> list[dict]:
+    def _read_route(self, route: dict, errors: list[str] | None = None) -> list[dict]:
+        """One page that doesn't read (a slow site timing out) never throws away the pages that did: its trouble
+        goes into `errors` and the rest is kept. Only a route that read nothing at all fails."""
         found: list[dict] = []
+        problems: list[str] = []
         for p in route.get("pages") or []:
             try:
                 out = self.browser.read_page(p["url"], p["script"], timeout=120)
-            except BrowserError as e:
-                raise RouteFailed(t("the page {url} didn't read: {error}", url=p["url"], error=str(e)))
+            except (BrowserError, CdpError) as e:   # CdpError: the page didn't even open in time (Page.navigate)
+                problems.append(t("the page {url} didn't read: {error}", url=p["url"], error=str(e)))
+                continue
             if isinstance(out, dict) and out.get("signed_out"):
                 raise RouteFailed(t("the site asks to sign in"), signed_out=True)
             rows = out.get("postings") if isinstance(out, dict) else out
             if not isinstance(rows, list):
-                raise RouteFailed(t("the script on {url} gave no list of postings", url=p["url"]))
+                problems.append(t("the script on {url} gave no list of postings", url=p["url"]))
+                continue
             found += rows
         if not found:
-            raise RouteFailed(t("the route found no postings at all: the site has probably changed"))
+            raise RouteFailed("; ".join(problems) or t("the route found no postings at all: the site has probably changed"))
+        if errors is not None:
+            errors += problems
+        elif problems:
+            raise RouteFailed("; ".join(problems))
         return found
 
     def scan(self, ref: str, *, allow_route: bool = True) -> dict:
@@ -180,8 +194,9 @@ class Scanner:
         c = self.hunt.company(ref)
         with self.lock:
             if c["id"] in self.running:
-                return {"company": c["id"], "busy": True}
+                return {"company": c["id"], "busy": True, "since": round(time.time() - self.started.get(c["id"], time.time()))}
             self.running[c["id"]] = "scan"
+            self.started[c["id"]] = time.time()
         self.publish()
         try:
             plan = self.plan(c)
@@ -201,7 +216,7 @@ class Scanner:
                     self.running[c["id"]] = "route"
                     self.publish()
                     try:
-                        found += self.run_route(self.postings.route(c["id"]) or {})
+                        found += self.run_route(self.postings.route(c["id"]) or {}, errors)
                         hows.append("route")
                     except RouteFailed as e:
                         if not found:
@@ -226,6 +241,7 @@ class Scanner:
         finally:
             with self.lock:
                 self.running.pop(c["id"], None)
+                self.started.pop(c["id"], None)
             self.publish()
 
     def browser_open(self) -> bool:

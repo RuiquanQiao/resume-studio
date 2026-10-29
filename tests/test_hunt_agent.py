@@ -351,6 +351,8 @@ def test_a_site_is_scanned_by_its_recorded_route(hunt):
     assert sc.scan("星河科技")["needs"] == "claude"                                 # no provider, no route yet
     assert ps.scan_state("C1")["needs"] == "claude"
     assert validate_route({"pages": [{"url": "ftp://x", "script": "1"}]})[1]
+    many = {"pages": [{"url": page, "script": "async (h) => ({postings: []})"}] * 21}
+    assert "at most 20 pages" in validate_route(many)[1][0] and not validate_route({"pages": many["pages"][:20]})[1]
     r, errs = sc.save_route("星河科技", {"pages": [{"url": page, "script": "async (h) => ({postings: []})"}]})
     assert not errs
     res = sc.scan("星河科技")
@@ -364,6 +366,82 @@ def test_a_site_is_scanned_by_its_recorded_route(hunt):
     browser.pages[page] = {"postings": []}
     res = sc.scan("星河科技")
     assert res["route_broken"] and not res["signed_out"] and not ps.all()[0]["closed"]
+
+
+def test_one_page_that_times_out_keeps_what_the_other_pages_read(hunt):
+    """A slow site (长鑫's social list) timing out on one page of the route: the campus and intern pages it read
+    still come in, nothing is closed for the page it couldn't read, and the scan says which page didn't."""
+    from core.browser import BrowserError
+    from core.cdp import CdpError
+    ps = Postings(hunt)
+    hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
+    campus, intern, social = (f"https://careers.xinghe.example/{k}/jobs" for k in ("campus", "intern", "social"))
+
+    class SlowSocial(FakeBrowser):
+        def read_page(self, url, script, timeout=60.0):
+            if url == social and self.slow:
+                self.opened.append(url)
+                raise BrowserError("Runtime.evaluate timed out")
+            if url == intern and self.slow_to_open:
+                raise CdpError("Page.navigate timed out")
+            return super().read_page(url, script, timeout)
+    browser = SlowSocial({campus: {"postings": [{"title": "存储芯片设计", "url": campus + "/1"}]},
+                          intern: {"postings": [{"title": "芯片验证实习", "url": intern + "/1"}]},
+                          social: {"postings": [{"title": "DRAM 工艺专家", "url": social + "/1"}]}})
+    browser.slow = browser.slow_to_open = False
+    sc = Scanner(hunt, ps, NoTool(), browser, lambda: None)
+    sc.save_route("星河科技", {"pages": [{"url": u, "script": "async (h) => ({postings: []})"} for u in (campus, intern, social)]})
+    assert sc.scan("星河科技")["found"] == 3
+    browser.slow = True
+    browser.pages[campus]["postings"].append({"title": "封装设计", "url": campus + "/2"})
+    res = sc.scan("星河科技")
+    assert (res["found"], res["new"], res["closed"]) == (3, 1, 0) and social in res["errors"][0]
+    st = ps.scan_state("C1")
+    assert st["ok"] and "Runtime.evaluate timed out" in st["error"] and st["how"] == "route"
+    assert sorted(p["title"] for p in ps.all() if not p["closed"]) == ["DRAM 工艺专家", "存储芯片设计", "封装设计", "芯片验证实习"]
+    # a page that doesn't even open in time is one page that didn't read too, never the end of the scan
+    browser.slow_to_open = True
+    res = sc.scan("星河科技")
+    assert res["found"] == 2 and len(res["errors"]) == 2 and "Page.navigate timed out" in res["errors"][0]
+    # every page timing out is still a scan that didn't work, saying why
+    browser.pages = {}
+    browser.read_page = lambda url, script, timeout=60.0: (_ for _ in ()).throw(BrowserError("Runtime.evaluate timed out"))
+    res = sc.scan("星河科技")
+    assert res["route_broken"] and "timed out" in res["error"] and not ps.scan_state("C1")["ok"]
+
+
+def test_postings_kept_without_a_link_are_the_same_ones_once_a_scan_gives_links(hunt):
+    """长鑫's first route gave no links: the route recorded again gives them, and its 80 postings stay the same 80
+    (their ids and applications kept), not 80 closed and 80 new."""
+    ps = Postings(hunt)
+    hunt.add_company({"name": "星河科技"})
+    ps.merge("C1", [{"title": "FPGA开发(J20770)", "location": "安徽省·合肥市, 上海市"}, {"title": "IO设计(J20772)"},
+                    # an old route read the kind of job as its place: matched by title alone, as the only one so named
+                    {"title": "DRAM电路设计工程师(J21562)", "location": "全职"},
+                    # two kept by one title: which one is which can't be told, so neither is taken
+                    {"title": "工艺工程师", "location": "全职"}, {"title": "工艺工程师", "location": "兼职"}], how="route")
+    old = {p["title"]: p["id"] for p in ps.all()}
+    res = ps.merge("C1", [{"title": "FPGA开发(J20770)", "location": "安徽省·合肥市, 上海市", "url": "https://cxmt.example/campus/detail?jobAdId=1"},
+                          {"title": "封装设计(J20773)", "url": "https://cxmt.example/campus/detail?jobAdId=3"},
+                          {"title": "DRAM电路设计工程师(J21562)", "location": "安徽省·合肥市", "url": "https://cxmt.example/social/detail?jobAdId=4"},
+                          {"title": "工艺工程师", "location": "上海市", "url": "https://cxmt.example/social/detail?jobAdId=5"}], how="route")
+    assert sorted(p["title"] for p in res["new"]) == ["封装设计(J20773)", "工艺工程师"]
+    assert sorted(p["title"] for p in res["closed"]) == ["IO设计(J20772)", "工艺工程师", "工艺工程师"]
+    dram = next(p for p in ps.all() if p["title"] == "DRAM电路设计工程师(J21562)")
+    assert dram["id"] == old["DRAM电路设计工程师(J21562)"] and dram["location"] == "安徽省·合肥市" and not dram["closed"]
+    fpga = next(p for p in ps.all() if p["title"] == "FPGA开发(J20770)")
+    assert fpga["id"] == old["FPGA开发(J20770)"] and fpga["url"].endswith("jobAdId=1") and not fpga["closed"]
+    assert ps.merge("C1", [{"title": "FPGA开发(J20770)", "location": "安徽省·合肥市, 上海市", "url": "https://cxmt.example/campus/detail?jobAdId=1"},
+                           {"title": "封装设计(J20773)", "url": "https://cxmt.example/campus/detail?jobAdId=3"}], how="route")["new"] == []
+
+
+def test_a_second_scan_of_a_company_still_being_read_says_for_how_long(hunt):
+    ps = Postings(hunt)
+    hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
+    sc = Scanner(hunt, ps, NoTool(), FakeBrowser({}), lambda: None)
+    sc.running["C1"], sc.started["C1"] = "route", time.time() - 95
+    res = sc.scan("星河科技")
+    assert res["busy"] and 94 <= res["since"] <= 97
 
 
 def test_a_scan_holds_the_browser_while_it_reads_and_says_what_it_found(hunt):

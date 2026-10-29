@@ -1606,6 +1606,7 @@
  "run a command": "ejecutar un comando",
  "same as now": "igual que ahora",
  "scanned {when} · {how}": "escaneado {when} · {how}",
+ "scanned {when} · some pages didn't read": "escaneado {when} · algunas páginas no se pudieron leer",
  "search file contents": "buscar en el contenido de archivos",
  "search the web": "buscar en la web",
  "skill": "habilidad",

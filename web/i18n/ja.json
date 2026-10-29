@@ -1582,6 +1582,7 @@
  "run a command": "コマンドを実行する",
  "same as now": "今と同じ",
  "scanned {when} · {how}": "{when}にスキャン · {how}",
+ "scanned {when} · some pages didn't read": "{when}にスキャン · 一部のページを読めませんでした",
  "search file contents": "ファイルの内容を検索する",
  "search the web": "Web を検索する",
  "skill": "スキル",

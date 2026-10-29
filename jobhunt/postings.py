@@ -161,6 +161,10 @@ class Postings:
         with self.hunt.lock:
             data = self._data()
             mine = {p["key"]: p for p in data["postings"] if p["company"] == c["id"]}
+            linkless: dict[str, list[str]] = {}   # title -> the keys of the postings kept without a link
+            for key, p in mine.items():
+                if key.startswith("t:"):
+                    linkless.setdefault(_key(p["title"]), []).append(key)
             new, changed, reopened, keys = [], [], 0, set()
             for r in rows:
                 k = fingerprint(r)
@@ -168,6 +172,17 @@ class Postings:
                     continue
                 keys.add(k)
                 p = mine.get(k)
+                if p is None and r["url"]:
+                    # a posting kept without a link (a route that gave none) now has one: the same posting, never
+                    # one closed and a new one opened (it keeps its id and the application linked to it). By title
+                    # and place, or by title alone when one such posting has it (an old route read the place wrong)
+                    bare = fingerprint({**r, "url": ""})
+                    if bare not in mine:
+                        same = linkless.get(_key(r["title"])) or []
+                        bare = same[0] if len(same) == 1 and same[0] in mine else ""
+                    if bare in mine:
+                        p = mine.pop(bare)
+                        p["key"], mine[k] = k, p
                 if p is None:
                     p = {"id": f"P{data['next']}", "company": c["id"], "key": k, **r, "first_seen": seen_now, "last_seen": seen_now,
                          "closed": "", "changed": {}, "app": None, "source": how}

@@ -124,9 +124,12 @@ the company (creating and filling it when new), adds the posting with its detail
 - Any other site (Xinghe's own site, Moka, 北森…) is read in Resume Studio's browser by a **recorded route**,
   as profiles are (`autofill/route.py`): the first scan lets Claude find the job list, sign-in included (the
   user signs in with the row's button), and record read-only page scripts; later scans replay them with no
-  Claude. A route that stops working asks Claude to record it again.
+  Claude. A route that stops working asks Claude to record it again. A route has at most 20 pages, each with
+  2 minutes; a page that doesn't read (a slow site timing out, 2026-10-29) is named on the company, and what
+  the other pages read is kept, closing nothing.
 - Postings are matched across scans by a fingerprint (company, title, location, link; after career-ops'
-  `listing-fingerprint.mjs`): new ones are marked **new**, gone ones **closed**, changed deadlines shown.
+  `listing-fingerprint.mjs`): new ones are marked **new**, gone ones **closed**, changed deadlines shown. A
+  posting kept without a link that a later scan finds with one stays the same posting.
 - **Today's changes**: after a scan the Companies tab says what is new, closed or changed, per company.
 - **Daily**: when the window opens and the last scan is more than a day old, it scans by itself (only routes
   and APIs, never Claude). Settings can turn this off.

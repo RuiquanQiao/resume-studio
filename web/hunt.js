@@ -815,6 +815,8 @@ function postingsCard(v) {
     : !sc.at && sc.needs === "claude" ? h("span", { class: "fs-status warn" }, icon("alert"), t("A plain scan can't read its site"))
     : !sc.at && sc.needs === "sites" ? h("span", { class: "fs-status warn" }, icon("alert"), t("No careers site to scan"))
     : !sc.at ? h("span", { class: "muted" }, t("not scanned yet"))
+    // read in part (a slow page timed out): what it read is kept, and the bar below says which page didn't
+    : sc.ok && sc.error ? h("span", { class: "fs-status warn" }, icon("alert"), t("scanned {when} · some pages didn't read", { when: huntWhen(sc.at) }))
     : sc.ok ? h("span", { class: "muted" }, t("scanned {when} · {how}", { when: huntWhen(sc.at), how: howName(sc.how) }))
     : h("span", { class: "fs-status bad" }, icon("alert"), sc.signed_out ? t("The site asks to sign in") : t("The last scan didn't work"));
   const row = (p) => h("div", { class: "post-row" + (p.closed ? " closed" : ""), "data-id": p.id },
@@ -839,7 +841,7 @@ function postingsCard(v) {
       title: sc.needs === "sites" ? t("Add a careers site below first") : waiting ? t("Waiting for the companies before it…") : null,
       onclick: () => scanCompanies([c.id]) }, icon("refresh"), busy ? t("Scanning…") : waiting ? t("Waiting…") : t("Scan"))];
   return card(t("Open roles"), "", [
-    !sc.ok && sc.error && h("div", { class: "note-bar warn" }, icon("alert"), h("span", { class: "nb-text" }, sc.error),
+    sc.error && h("div", { class: "note-bar warn" }, icon("alert"), h("span", { class: "nb-text" }, sc.error),
       sc.signed_out && c.site && h("button", { class: "btn sm", onclick: () => signInMode(c.site) }, icon("user"), t("Sign in to {site}", { site: c.name }))),
     sc.needs === "sites" && h("p", { class: "muted card-p" }, t("No careers site known yet: ask the AI to fill the company in, or type one below.")),
     // read fine and found nothing: say so, or an empty card looks like a scan that never ran

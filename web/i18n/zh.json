@@ -1582,6 +1582,7 @@
  "run a command": "运行命令",
  "same as now": "与当前相同",
  "scanned {when} · {how}": "{when}扫描 · {how}",
+ "scanned {when} · some pages didn't read": "{when}扫描 · 有的页面没读出来",
  "search file contents": "搜索文件内容",
  "search the web": "搜索网页",
  "skill": "技能",

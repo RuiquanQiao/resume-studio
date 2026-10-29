@@ -243,6 +243,13 @@ def failed_scan(c):
     c.server.inst.hunt.scanner.postings.failed("C1", "the site asks to sign in", how="route", signed_out=True)
 
 
+def scan_read_in_part(c):
+    """One page of the route timed out (a slow site): what the others read is kept, and the error is shown."""
+    filled_companies(c)
+    url = "https://careers.xinghe.example/social/jobs/一个很长的地址/" + "x" * 120
+    c.server.inst.hunt.scanner.postings.set_scan_state("C1", error=f"the page {url} didn't read: Runtime.evaluate timed out")
+
+
 def read_failed(c):
     """A role added from the open postings (its row says so), whose page then didn't read."""
     filled_companies(c)
@@ -442,6 +449,8 @@ STATES = [
           lambda pg, c: (pg.wait_for_selector(".note-bar.warn #app-read, #app-read"), pg.evaluate("() => document.querySelector('#app-read').scrollIntoView({block: 'center'})"))), ["section.card .note-bar.warn", "#app-read"], prepare=read_failed),
     State("applying, a company whose scan failed", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
           [".card-acts .fs-status.bad", ".note-bar.warn"], prepare=failed_scan),
+    State("applying, a company whose scan read only some pages", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
+          [".card-acts .fs-status.warn", ".note-bar.warn", ".post-row"], prepare=scan_read_in_part),
     State("applying, a long table scrolled both ways, two columns frozen", then(applying("apps"),
           js("""() => { const tb = DBV.tables.apps, v = tb.views[0]; v.freeze = 2; paintHunt(); }"""),
           js("() => { document.querySelector('.hunt-scroll').scrollTop = 400; document.querySelector('.dbv-body').scrollLeft = 300; }")),

@@ -129,7 +129,10 @@ How to work it:
   category, batch: 'campus'|'intern'|'social', deadline: 'YYYY-MM-DD', posted}}]}})"}}]}}` (return
   `{{signed_out: true}}` when the page asks to sign in), test the script with the browser's `extract`, then save it
   with `scan-route`: it runs once and its postings come in; later scans replay it with no Claude. Read every
-  posting of every list the site has (campus, intern), not only the first page. When no script can do it, read
+  posting of every list the site has (campus, intern), not only the first page. Each page's script has 2 minutes
+  and some sites answer slowly: time one request first, and split a long list into several pages of the route
+  (one request each, at most 20 pages in all) rather than one script that pages through all of it; a page that doesn't read is reported and
+  the others are kept. Give every posting its own `url` and its closing date when the site has them. When no script can do it, read
   the postings yourself and send them with `postings`.
 - **A posting's link** (pasted in the chat, or "Read this posting and add it: <link>"): read the page (web fetch;
   when it needs scripts or a sign-in, open it in Resume Studio's browser with the browser commands). Find the

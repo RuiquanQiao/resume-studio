@@ -102,12 +102,15 @@ def server_url(data: Path) -> str:
         sys.exit(f"Resume Studio isn't open for {data} (no {state}). Open the window first.")
 
 
-def call(url: str, cmd: str, args: dict) -> dict:
+SCAN_WAIT = 3600   # seconds: a route has at most 20 pages of 2 minutes each, and several companies may be scanned
+
+
+def call(url: str, cmd: str, args: dict, timeout: float = 120) -> dict:
     data = json.dumps({"cmd": cmd, "args": args}, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url.rstrip("/") + "/api/hunt/do", data=data, method="POST",
                                  headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=120) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         try:
@@ -115,6 +118,8 @@ def call(url: str, cmd: str, args: dict) -> dict:
         except ValueError:
             msg = str(e)
         sys.exit(f"error: {msg}")
+    except TimeoutError:
+        sys.exit(f"error: no answer within {int(timeout)} s; Resume Studio may still be working on it (`show` the company to see)")
     except OSError as e:
         sys.exit(f"error: can't reach Resume Studio at {url} ({e}). Is the window open?")
 
@@ -425,8 +430,12 @@ def main() -> int:
             print(LOOK.format(path=r["look"]))
         return 0
     elif c in ("scan", "scan-route", "postings"):
+        # a scan answers once every page is read: a slow site's route takes minutes (up to 2 per page), and giving
+        # up sooner left it running in the window, so a retry read "already being scanned" as a stuck scan
+        if c in ("scan", "scan-route"):
+            print("scanning: a slow site can take several minutes; this waits for the answer", flush=True)
         if c == "scan":
-            r = call(url, "scan", {"companies": args.companies})
+            r = call(url, "scan", {"companies": args.companies}, timeout=SCAN_WAIT)
         else:
             raw = sys.stdin.buffer.read().decode("utf-8-sig") if args.stdin else Path(args.file).read_text(encoding="utf-8-sig") if args.file else ""
             try:
@@ -434,13 +443,14 @@ def main() -> int:
             except ValueError as e:
                 sys.exit(f"error: that isn't valid JSON ({e})")
             if c == "scan-route":
-                r = call(url, c, {"ref": args.ref, "route": got})
+                r = call(url, c, {"ref": args.ref, "route": got}, timeout=SCAN_WAIT)
             else:
                 rows = got.get("postings") if isinstance(got, dict) else got
                 r = call(url, c, {"ref": args.ref, "postings": rows, "partial": args.partial})
         for x in r["scanned"]:
             if x.get("busy"):
-                print(f"{x['company']}: already being scanned")
+                print(f"{x['company']}: still being scanned ({x.get('since', 0)} s so far), not stuck: its result shows "
+                      "on the company once it ends. Wait and `show` it rather than scanning again or restarting")
             elif x.get("error"):
                 print(f"{x['company']}: failed: {x['error']}" + (" (signed out: the user signs in with the button on its row)" if x.get("signed_out") else ""))
             elif "found" in x:
