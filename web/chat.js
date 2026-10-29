@@ -873,7 +873,7 @@ function browserStepEl(tool, steps, st) {
   const src = shots.length ? "/api/browser/shot/" + shots[shots.length - 1] : null;
   const last = steps[steps.length - 1];
   return h("div", { class: "tool-step" + (last.cmd === "report" ? " s-" + (last.state || "") : "") },
-    h("details", { class: "tool step" },
+    h("details", { class: "tool bstep" },
       h("summary", null, st, h("span", { class: "tn" }, label),
         steps.length > 1 ? h("span", { class: "th" }, t("+{n} more step", { n: steps.length - 1 }, "+{n} more steps")) : detail && h("span", { class: "th" }, detail)),
       steps.length > 1 && h("ol", { class: "step-list" }, labels.map(([l, d]) => h("li", null, l, d ? h("span", { class: "muted" }, " " + d) : null))),

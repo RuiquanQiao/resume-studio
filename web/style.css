@@ -193,8 +193,9 @@ body[data-chat="off"] .workspace { grid-template-columns: minmax(600px, 1fr) 5px
 /* a step in Resume Studio's browser: "Click “Add position”", in words, with the screenshot when there is one */
 .tool-step { margin: 2px 0; }
 .tool-step .tool { margin: 0; }
-.tool.step .tn { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 520; }
-.tool.step .th { font: 12px var(--font); color: var(--text-3); }
+/* "bstep", not "step": the connect dialog's .step is a flex row, which laid an open card out sideways */
+.tool.bstep .tn { font-weight: 520; }
+.tool.bstep .th { font: 12px var(--font); color: var(--text-3); }
 .tool-step.s-done .tool { border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
 .tool-step.s-failed .tool { border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }
 .step-list { margin: 0; padding: 6px 10px 8px 30px; border-top: 1px solid var(--line); font-size: 12.5px; line-height: 1.6; color: var(--text); }

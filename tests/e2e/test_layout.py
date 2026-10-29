@@ -396,6 +396,18 @@ STATES = [
             ui.chat.messages = [{ role: "user", text: "你好", files: [] }, { role: "assistant", blocks: [], error: "Not logged in. Run codex login." }];
             renderChat(); renderPickers(); }"""), wait(".msg-help")),
           ["#chat-agent-btn.warn", "#chat-log .msg-help"]),
+    # every kind of step a reply shows, opened, with names and output too long for the pane (a URL as a tool's
+    # name, four browser actions in one card): each stays inside the pane and reads top to bottom
+    State("chat, long steps opened", then(wait("#chat-log"), js("""() => {
+            const url = "https://cxmt.zhiye.com/campus-recruitment/metax-tech/58123/jobs?page=1&size=100&verylongparameter=abcdefghijklmnopqrstuvwxyz";
+            const res = "ok: 长鑫存储技术有限公司 – " + url + "\\n" + "x".repeat(300);
+            ui.chat.messages = [{ role: "user", text: "看看 " + url, files: [] }, { role: "assistant", blocks: [
+              { type: "tool", name: url, status: "done", hint: "Get-Content " + url, result: res },
+              { type: "tool", name: "Bash", status: "done", input: { browser: [{ cmd: "open", url }, { cmd: "text" },
+                { cmd: "open", url: "https://cxmt.zhiye.com/social/jobs" }, { cmd: "type", ref: "e1", text: "长".repeat(100) }] }, result: res },
+              { type: "text", text: "Done." }] }];
+            renderChat(); document.querySelectorAll("#chat-log details").forEach((d) => { d.open = true; }); }""")),
+          ["#chat-log .tool.bstep[open] .step-list", "#chat-log .tool[open] pre"]),
     # ---- Job search
     State("job search, not connected", key("Control+2"), ["#jobspace .connect"]),
     State("job search, git and Node missing", then(key("Control+2"), wait("#jobspace .connect"),
