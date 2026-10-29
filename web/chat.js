@@ -723,13 +723,46 @@ function messageEl(m, index) {
   const blocks = m.blocks || [];
   const waitingOnUser = blocks.some((b) => b.type === "ask" && b.status === "pending");
   if (m.live && !waitingOnUser && (!blocks.length || blocks[blocks.length - 1].type !== "text")) {
-    el.append(h("div", { class: "thinking", "aria-label": t("{agent} is thinking", { agent: agentOf().short }) }, h("i"), h("i"), h("i"),
-      ui.chat.thinking ? h("span", { class: "th-n" }, t("Thinking · {n} tokens", { n: fmtK(ui.chat.thinking) })) : null));
+    el.append(workingEl());
   }
   if (m.error) el.append(h("div", { class: "msg-error" }, m.error));
   if (m.error && isLoginError(m.error)) el.append(loginHelpEl());
   if (m.cancelled) el.append(h("div", { class: "msg-note" }, t("Stopped")));
   return el;
+}
+
+// a reply still going, like Claude Code: a glyph that keeps changing and the time so far, so a long step
+// never looks stuck. Both change from script, so they go on with Windows' animations off (which stops CSS ones)
+const WORK_GLYPHS = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"];
+let workTimer = 0;
+function workingEl() {
+  const el = h("div", { class: "working", "aria-label": t("{agent} is thinking", { agent: agentOf().short }) },
+    h("span", { class: "wk-g", "aria-hidden": "true" }), h("span", { class: "wk-t" }));
+  paintWorking(el);
+  if (!workTimer) workTimer = setInterval(tickWorking, 120);
+  return el;
+}
+function tickWorking() {
+  const els = document.querySelectorAll(".working");
+  if (!els.length) { clearInterval(workTimer); workTimer = 0; return; }
+  els.forEach(paintWorking);
+}
+// the reply began with the message it answers; a turn without one (a scheduled action) from when it showed up
+function workStart() {
+  const u = ui.chat.messages.findLast((m) => m.role === "user");
+  if (u && u.at) return u.at * 1000;
+  if (!ui.chat.liveSince || ui.chat.liveSince.chat !== ui.chat.id) ui.chat.liveSince = { chat: ui.chat.id, at: Date.now() };
+  return ui.chat.liveSince.at;
+}
+function paintWorking(el) {
+  const now = Date.now(), s = Math.max(0, Math.floor((now - workStart()) / 1000));
+  const time = s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`
+    : `${Math.floor(s / 3600)}h ${String(Math.floor(s / 60) % 60).padStart(2, "0")}m`;
+  const text = ui.chat.thinking ? t("Thinking… ({time} · {n} tokens)", { time, n: fmtK(ui.chat.thinking) }) : t("Working… ({time})", { time });
+  const g = WORK_GLYPHS[Math.floor(now / 120) % WORK_GLYPHS.length];
+  const [ge, te] = el.children;
+  if (ge.textContent !== g) ge.textContent = g;
+  if (te.textContent !== text) te.textContent = text;
 }
 
 // Errors that mean the agent's command itself isn't signed in. A fixed check, not the agent:

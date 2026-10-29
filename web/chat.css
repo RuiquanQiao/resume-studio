@@ -122,7 +122,6 @@
 .thought summary::before { content: "▸ "; }
 .thought[open] summary::before { content: "▾ "; }
 .thought .md { margin-top: 4px; padding-left: 10px; border-left: 2px solid var(--line); color: var(--text-2); }
-.th-n { margin-left: 6px; font-size: 12px; color: var(--text-3); align-self: center; }
 
 /* cards: permission / question / plan */
 .ask { margin: 6px 0; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--panel); overflow: hidden; }

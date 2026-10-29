@@ -200,10 +200,12 @@ body[data-chat="off"] .workspace { grid-template-columns: minmax(600px, 1fr) 5px
 .step-list { margin: 0; padding: 6px 10px 8px 30px; border-top: 1px solid var(--line); font-size: 12.5px; line-height: 1.6; color: var(--text); }
 .step-shot { display: block; margin: 4px 0 6px; padding: 0; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--panel); cursor: zoom-in; width: 100%; }
 .step-shot img { display: block; width: 100%; max-height: 180px; object-fit: cover; object-position: top; }
-.thinking { display: inline-flex; gap: 4px; padding: 6px 0; }
-.thinking i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); animation: pulse 1s infinite; }
-.thinking i:nth-child(2) { animation-delay: .15s; }
-.thinking i:nth-child(3) { animation-delay: .3s; }
+/* a reply still going (chat.js workingEl): the glyph and the clock change from script; the shimmer is extra */
+.working { display: flex; align-items: center; gap: 6px; padding: 4px 0; font-size: 12.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.wk-g { flex: none; width: 14px; text-align: center; font-size: 14px; line-height: 1; color: var(--accent); }
+.wk-t { background: linear-gradient(90deg, var(--text-2) 40%, var(--text) 50%, var(--text-2) 60%) 0 0 / 300% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent; animation: wk-shine 2.4s linear infinite; }
+@keyframes wk-shine { from { background-position: 100% 0; } to { background-position: 0 0; } }
 .msg-error { padding: 8px 12px; border-radius: var(--r); background: var(--bad-soft); color: var(--bad); white-space: pre-wrap; font-size: 12.5px; }
 .msg-help { margin-top: 6px; padding: 8px 12px; border-radius: var(--r); background: var(--warn-soft); font-size: 12.5px; }
 .msg-help .mh-title { display: flex; align-items: center; gap: 6px; font-weight: 650; color: var(--warn); margin-bottom: 4px; }
@@ -626,7 +628,8 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px va
 
 @media (prefers-reduced-motion: reduce) {
   .float, .tip, .select > svg.i, .cp-sw, input[type=range]::-webkit-slider-thumb { transition: none; }
-  .tab-dot, .thinking i { animation: none; }
+  .tab-dot, .wk-t { animation: none; }
+  .wk-t { color: var(--text-2); background: none; }
 }
 
 /* ================================================================ library signals */
