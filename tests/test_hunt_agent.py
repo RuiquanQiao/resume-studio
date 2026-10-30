@@ -242,8 +242,8 @@ def test_claude_fills_a_company_from_its_command(live, data_file, monkeypatch):
     # deadlines are the roles'
     code, out = cli(data_file, "add-role", "星河科技", "服务端研发工程师", "--apply-by", "2026-10-31", "--url", "https://careers.xinghe.example/job/1")
     assert "apply by 2026-10-31" in out
-    code, out = cli(data_file, "edit-role", "星河科技/服务端研发", "--apply-by", "", "--batch", "27秋招")
-    assert code == 0 and "apply by" not in out and "batch 27秋招" in out             # "" drops it: nothing known
+    code, out = cli(data_file, "edit-role", "星河科技/服务端研发", "--apply-by", "")
+    assert code == 0 and "apply by" not in out                                     # "" drops it: nothing known
     code, out = cli(data_file, "edit-role", "星河科技/服务端研发", "--apply-by", "rolling")
     assert code == 0 and "apply by until filled (招满即止)" in out
 
@@ -340,6 +340,45 @@ class FakeBrowser:
 class NoTool:
     def installed(self):
         return False
+
+
+def test_a_role_follows_its_posting_off_the_site_and_back(hunt):
+    ps = Postings(hunt)
+    hunt.add_company({"name": "Tencent"})
+    url = "https://careers.tencent.com/jobdesc.html?postId="
+    found = [{"title": "后台开发工程师", "url": url + "1"}, {"title": "算法工程师", "url": url + "2"}, {"title": "测试开发", "url": url + "3"}]
+    # one added by Claude under another name, linked by its link; one by the same name; one applied to already
+    want = hunt.add_application("Tencent", {"role": "后台开发（深圳）", "url": "HTTPS://Careers.Tencent.com/jobdesc.html?postId=1"})
+    same = hunt.add_application("Tencent", {"role": "算法工程师"})
+    sent = hunt.add_application("Tencent", {"role": "测试开发", "url": url + "3", "status": "interview"})
+    ps.merge("Tencent", found, how="tencent")
+    assert {p["title"]: p["app"] for p in ps.all()} == {"后台开发工程师": want["id"], "算法工程师": same["id"], "测试开发": sent["id"]}
+    # a partial read closes nothing, so changes nothing
+    ps.merge("Tencent", [], how="tencent", complete=False)
+    assert hunt.application(want["id"])["status"] == "saved"
+    # all gone from the site: the ones not applied to are closed, the interview goes on with a line in its timeline
+    r = ps.merge("Tencent", [{"title": "别的岗位", "url": url + "9"}], how="tencent")
+    assert sorted(r["roles_closed"]) == sorted([want["id"], same["id"]])
+    assert [hunt.application(x["id"])["status"] for x in (want, same, sent)] == ["closed", "closed", "interview"]
+    ev = [e for e in hunt.events(sent["id"]) if e["kind"] == "note"]
+    assert len(ev) == 1 and ev[0]["source"] == "scan" and "Tencent" in ev[0]["note"]
+    last = hunt.events(want["id"])[-1]
+    assert last["to"] == "closed" and last["source"] == "scan"
+    # a closed role isn't open, and isn't stamped as applied
+    assert hunt.application(want["id"])["applied"] == ""
+    # back on the site: back to want to apply
+    ps.merge("Tencent", found, how="tencent")
+    assert [hunt.application(x["id"])["status"] for x in (want, same, sent)] == ["saved", "saved", "interview"]
+    # a role the user withdrew stays withdrawn when its posting goes
+    hunt.set_status(same["id"], "withdrawn")
+    ps.merge("Tencent", found[:1] + found[2:], how="tencent")
+    assert hunt.application(same["id"])["status"] == "withdrawn"
+    # a role added after its posting left the site follows it at the next read that finds it still gone
+    ps.merge("Tencent", found + [{"title": "运维开发", "url": url + "5"}], how="tencent")
+    ps.merge("Tencent", found, how="tencent")
+    late = hunt.add_application("Tencent", {"role": "运维（深圳）", "url": url + "5"})
+    r = ps.merge("Tencent", found, how="tencent")
+    assert r["roles_closed"] == [late["id"]] and hunt.application(late["id"])["status"] == "closed"
 
 
 def test_a_site_is_scanned_by_its_recorded_route(hunt):

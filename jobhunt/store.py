@@ -6,7 +6,7 @@ Plain files next to the data file, in our own schema, so switching trackers lose
                                      strength, hq: {area, id} | null, places, size, logo, sources, kept, note,
                                      account, subset, about, created, updated}]}
     resume-studio-data/hunt/applications.json  {"next": 5, "applications": [{id: "A1", company: "C1", role, url, channel,
-                                     platform, order, status, applied, batch, note, subset,
+                                     platform, order, status, applied, note, subset,
                                      places: [{kind: "onsite"|"hybrid"|"remote", area, id?}],
                                      sent: [{at, subset, n}], schedule: [{id, kind?, title, at, minutes,
                                      where, note}],
@@ -52,8 +52,10 @@ is applied to.
 The usual rounds (笔试, 测评, 一面 … 终面) and the apply event are built in: `kind` names them and `title` stays
 "" so they read in the interface's language (`event_title`); a title the user types is theirs, kept as written.
 
-An application's `batch` is the user's own name for the hiring round it belongs to: 27秋招, 2027 Graduate
-Program, Summer Internship 2027… Free text: what rounds there are differs by country, so none is built in.
+A role linked to a posting (jobhunt/postings.py) follows it (docs/JOB_HUNT.md, 2026-10-30): when a scan finds the
+posting gone from the company's site, a role still at "want to apply" becomes "posting closed", and one further on
+gets a line in its timeline (the posting closing then says nothing about how it is going). A posting back on
+the site puts a role it closed back to "want to apply".
 """
 from __future__ import annotations
 
@@ -79,6 +81,7 @@ STATES = [
     ("hired", "Hired", "hired"),
     ("rejected", "Not successful", "rejected"),
     ("withdrawn", "Withdrawn", "discarded"),
+    ("closed", "Posting closed", "discarded"),   # gone from the company's site before it was applied to (a scan says so)
 ]
 STATE_IDS = [s[0] for s in STATES]
 OPEN = {"saved", "applied", "assessment", "interview"}
@@ -93,6 +96,7 @@ ALIASES = {
     "hired": ["accepted", "joined", "入职", "已入职", "签约", "三方"],
     "rejected": ["rejection", "declined", "fail", "failed", "拒", "被拒", "挂", "未通过", "感谢信"],
     "withdrawn": ["withdraw", "discarded", "gave up", "放弃", "不去", "撤回"],
+    "closed": ["posting closed", "taken down", "no longer listed", "已下架", "下架", "岗位关闭", "已关闭", "撤岗"],
 }
 CHANNELS = ["site", "platform", "referral", "other"]
 # how far a role has come, for what booking a round moves it to (forward only)
@@ -864,7 +868,7 @@ class Hunt:
         raise KeyError(t("{company} has no role “{role}”", company=c["name"], role=role.strip()))
 
     def _app_fields(self, a: dict, fields: dict) -> None:
-        for k, limit in (("role", 120), ("url", 500), ("referral", 80), ("subset", 80), ("batch", 40)):
+        for k, limit in (("role", 120), ("url", 500), ("referral", 80), ("subset", 80)):
             if k in fields:
                 a[k] = _text(fields[k], limit)
         if "note" in fields:
@@ -898,7 +902,7 @@ class Hunt:
                 raise ValueError(t("{company} already has {role}", company=c["name"], role=role))
             status = state_of(fields.get("status") or "saved")
             a = {"id": f"A{data['next']}", "company": c["id"], "role": "", "url": "", "referral": "", "channel": "site", "platform": "",
-                 "order": 0, "status": status, "applied": "", "batch": "", "note": "", "jd": "", "subset": "",
+                 "order": 0, "status": status, "applied": "", "note": "", "jd": "", "subset": "",
                  "places": [], "sent": [], "schedule": [], "co_app": None, "created": _now(), "updated": _now()}
             # an apply event only when a closing date (or 招满即止) was given: not knowing is no event
             self._app_fields(a, {"channel": "site", **fields})
@@ -953,7 +957,7 @@ class Hunt:
             if to == frm and not note:
                 return a
             a["status"] = to
-            if to not in ("saved", "withdrawn") and not a.get("applied"):
+            if to not in ("saved", "withdrawn", "closed") and not a.get("applied"):
                 a["applied"] = day[:10] or time.strftime("%Y-%m-%d")
             a["updated"] = _now()
             self._write("applications.json", data)

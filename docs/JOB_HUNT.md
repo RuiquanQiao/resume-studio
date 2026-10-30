@@ -320,7 +320,7 @@ find out, when it fills a company in, which cities it hires in.
   there too. Beside the map: remote rows by region, places not found, and rows with no place yet. Filters apply;
   sort, group and properties don't show.
 
-## 2026-10-21: the deadline is an event; the batch
+## 2026-10-21: the deadline is an event; the batch (removed 2026-10-30)
 
 (Superseded in part by "no deadline column; the next step" below: no `rolling` flag, no Deadline column.)
 
@@ -530,7 +530,26 @@ answered in English.
   the user's approval in Claude Code, so each company research stopped to ask. The
   app clears the ones older than an hour itself.
 
-## Why the button said "Open LinkedIn"
+## 2026-10-30: no batch; roles follow their postings; the version that went out is picked
+
+Asked for: drop the Batch column. The daily scan already reads every company's site, so the roles in Progress need
+no round to be sorted by: a role whose posting is taken down should change status by itself. And the Resume sent
+cell should let the user pick which resume went out, where they click, instead of opening the role's page (which,
+for a role on the company's own site, the default, had no picker at all).
+
+- **The batch is gone**: from the table, the role's page, `hunt.py add-role / edit-role` and Claude's instructions.
+  Old values stay in `applications.json` unread. The postings' own kind (campus, intern) is the site's, and stays.
+- **A role follows its posting** (jobhunt/postings.py `_follow`). Roles are linked to postings by their link, or by
+  their name (as before). When a scan that read every list finds the posting gone: a role at Want to apply becomes
+  **Posting closed** (a new status, not open, so it leaves Active; `discarded` in career-ops), with a timeline line
+  from the scan. A role already applied to, in tests or interviewing only gets the timeline line: postings are often
+  taken down once they have enough applicants, while their interviews go on, so it says nothing about that role. A
+  posting back on the site puts a role it closed back to Want to apply.
+- **Resume sent** is edited over its cell: the subset, then the version (as it is now, kept as a new one if it
+  changed, or an older one that went out before it was marked here), Mark as sent, and the sends so far. The role's
+  page has the same picker for every channel; a role on a company's site can still be marked with all its others
+  from the company's page.
+
 
 The Autofill page is organised around **the selected profile site**: LinkedIn and BOSS直聘 are its tabs,
 and every button in the page acts on the selected one. Xinghe is not one of its sites, so nothing on the

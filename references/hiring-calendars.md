@@ -1,7 +1,7 @@
-# Hiring calendars: what a batch name means, country by country
+# Hiring calendars: what a hiring round's name means, country by country
 
-Read this before you name, read or reason about a role's `batch` (27秋招, 2027 Graduate Program, Summer 2027…) or
-about when something opens, closes or starts. The user's batch names are their own words; this is what those words
+Read this before you read or reason about a hiring round (27秋招, 2027 Graduate Program, Summer 2027…) or
+about when something opens, closes or starts. The rounds the user names are their own words; this is what those words
 usually mean, so you can work like someone who knows the market. These are typical windows, gathered in October 2026
 from the sources at the end. A company's own page always wins: when a date matters, look it up there.
 
@@ -111,10 +111,9 @@ jobs while studying and internships are posted all year, each with its own start
 
 ## How to use this
 
-- **Naming a batch**: reuse the names the user's roles already have (`list`). When there are none yet, use the
-  market's own word for the round in the language of the posting (27秋招, 2027 Graduate Program, Summer 2027 Internship),
-  never a scheme of your own.
-- **Reading a batch**: convert it to dates before you advise on timing ("27春招" is Feb–Apr 2027).
+- **Naming a round**: use the market's own word for it in the language of the posting (27秋招, 2027 Graduate Program,
+  Summer 2027 Internship), never a scheme of your own.
+- **Reading a round**: convert it to dates before you advise on timing ("27春招" is Feb–Apr 2027).
 - **Eligibility**: check the posting's graduation window against the user's graduation date in the profile notes,
   especially for students abroad applying in China.
 - **When it matters, look it up**: these windows shift by a few weeks each year and differ by company. Search the

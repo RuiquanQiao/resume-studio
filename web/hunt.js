@@ -20,7 +20,7 @@ const H = {
 
 const HUNT_TABS = { apps: "Progress", companies: "Companies", platforms: "Platforms" };
 const HSTATES = { saved: "Want to apply", applied: "Applied", assessment: "Tests", interview: "Interviewing", offer: "Offer",
-  hired: "Hired", rejected: "Not successful", withdrawn: "Withdrawn" };
+  hired: "Hired", rejected: "Not successful", withdrawn: "Withdrawn", closed: "Posting closed" };
 const HCHANNELS = { site: "Its own site", platform: "A platform", referral: "Referral", other: "Other" };
 const huntState = (id) => t(HSTATES[id] || id || "—");
 const hChip = (id) => h("span", { class: "state-chip s-" + (id || "unknown") }, huntState(id));
@@ -282,7 +282,6 @@ function appProps() {
   const states = () => (d.states || []).map((s) => ({ value: s.id, label: huntState(s.id), cls: "s-" + s.id }));
   const channels = () => Object.entries(HCHANNELS).map(([value, label]) => ({ value, label: t(label), cls: "s-plain" }));
   const co = (a) => huntCompany(a.company) || {};
-  const batches = () => usedBatches().map((b) => ({ value: b, label: b, cls: "s-plain" }));
   return [
     { key: "role", label: t("Role"), type: "title", width: 220, get: (a) => a.role },
     { key: "company", label: t("Company"), type: "relation", width: 170, group: true, get: (a) => co(a).name || "",
@@ -297,10 +296,9 @@ function appProps() {
     { key: "channel", label: t("How"), type: "select", width: 150, min: 120, wrap: true, hidden: true, get: (a) => a.channel || "site", options: channels,
       render: (a) => h("span", { class: "c-muted" }, channelText(a)),
       set: (a, v) => cellApp(a, { channel: v, ...(v === "platform" && !a.platform && (F.sites || []).length ? { platform: F.sites[0].id } : {}) }) },
-    { key: "batch", label: t("Batch"), type: "select", width: 130, free: true, get: (a) => a.batch || "", options: batches,
-      set: (a, v) => cellApp(a, { batch: v }) },
     { key: "sent", label: t("Resume sent"), type: "custom", width: 190, min: 130, get: (a) => (a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : ""),
-      render: (a) => h("span", { class: "c-muted c-resume" }, a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : "", resumeButton(a)) },
+      render: (a) => h("span", { class: "c-muted c-resume" }, a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : "", resumeButton(a)),
+      edit: (td, a) => openSentPop(td, a) },
     { key: "last", label: t("Latest"), type: "custom", width: 220, get: (a) => (a.last ? a.last.at : ""),
       render: (a) => a.last ? h("span", { class: "c-last" }, h("span", { class: "c-when" }, huntWhen(a.last.at)), h("span", { class: "c-what" }, lastText(a.last))) : "" },
     // one cell for one thing to do: what and when together, sorted by when (an apply with no date, 招满即止, last)
@@ -498,8 +496,6 @@ async function openEvents(a) {   // the role's page, at its events
   const box = document.querySelector(".bk-list") || document.querySelector(".bk-new");
   if (box) box.scrollIntoView({ block: "center" });
 }
-// the rounds the user's roles are in (27秋招, 2027 Graduate Program…), for picking one again
-const usedBatches = () => [...new Set(((H.data && H.data.applications) || []).map((a) => a.batch).filter(Boolean))].sort((x, y) => x.localeCompare(y, I18N.lang));
 
 function bookedWhen(at, { weekday = true } = {}) {
   const d = dbvDay(at);
@@ -647,7 +643,7 @@ function appsTable() {
   const d = H.data;
   const names = Object.fromEntries(d.companies.map((c) => [c.id, c.name]));
   const all = [...d.applications].sort((a, b) => (names[a.company] || "").localeCompare(names[b.company] || "") || (a.order || 0) - (b.order || 0));
-  const shown = all.filter((a) => matches(names[a.company], a.role, a.note, a.jd, a.batch, ...(a.schedule || []).map(evTitle), ...(a.places || []).map(placeText)));
+  const shown = all.filter((a) => matches(names[a.company], a.role, a.note, a.jd, ...(a.schedule || []).map(evTitle), ...(a.places || []).map(placeText)));
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Your applications")),
       h("p", null, t("Every role you apply for, wherever it goes in. Tell the AI on the left what happened (“Xinghe 一面过了”), or change it here."))),
@@ -672,6 +668,69 @@ function resumeButton(a) {
   if (!id || !subsets().some((x) => x.id === id)) return null;
   return h("button", { class: "btn sm ghost hunt-resume", title: t("Open “{name}” in Resume", { name: subsetName(subsets().find((x) => x.id === id)) }),
     onclick: () => previewSubset(id) }, icon("file"), t("Resume"));
+}
+
+// the Resume sent cell, edited where it is: which subset, which version of it (as it is now, or one kept before:
+// sent before it was marked here), Mark as sent, and what went out so far. Nothing is saved until Mark as sent.
+function openSentPop(td, a) {
+  const c = huntCompany(a.company) || {};
+  const choices = subsets().filter((x) => x.id !== ALL);
+  const pick = { subset: choices.some((x) => x.id === roleSubset(a)) ? roleSubset(a) : null, n: 0 };   // n 0: as it is now
+  const vers = {};   // subset id -> its versions, newest first (null while they load)
+  const panel = h("div", { class: "menu dbv-pop sentpop", role: "dialog", "aria-label": t("Resume sent") });
+  const load = async (id) => {
+    if (!id || id in vers) return;
+    vers[id] = null;
+    try { vers[id] = (await api("GET", versionsUrl(id))).versions || []; }
+    catch (e) { vers[id] = []; }
+    if (panel.isConnected) paint();
+  };
+  const opt = (on, label, { hint = "", desc = "", onClick } = {}) => h("button", { type: "button", class: "lb-opt" + (on ? " on" : ""),
+    "aria-pressed": String(on), onclick: onClick },
+  h("span", { class: "lb-check" }, on ? icon("check") : null),
+  h("span", { class: "lb-main" }, h("span", { class: "lb-label" }, label), desc && h("span", { class: "lb-desc" }, desc)),
+  hint && h("span", { class: "lb-hint" }, hint));
+  const send = async () => {
+    const label = subsetName(choices.find((x) => x.id === pick.subset)) || pick.subset;
+    try {
+      const r = await api("POST", `/api/hunt/apps/${encodeURIComponent(a.id)}/sent`, { subset: pick.subset, ...(pick.n ? { n: pick.n } : {}) });
+      applyState(r);
+      closeFloat();
+      toast(t("Sent with “{name}” v{n}", { name: label, n: r.n }));
+    } catch (e) { toast(e.message, { ms: 9000 }); }
+    loadHunt({ quiet: true });
+  };
+  const paint = () => {
+    const st = (pick.subset && versionStatus(pick.subset)) || {};
+    const vs = pick.subset ? vers[pick.subset] : [];
+    const now = !pick.subset ? "" : st.same_as ? t("Same as v{n}", { n: st.same_as }) : t("kept as v{n}", { n: (st.latest || 0) + 1 });
+    panel.replaceChildren(...[
+      h("div", { class: "sentpop-head" }, h("b", null, t("Resume sent")), h("span", { class: "muted" }, [c.name, a.role].filter(Boolean).join(" / "))),
+      h("div", { class: "lb-group" }, t("Resume")),
+      choices.length ? h("div", { class: "sentpop-list", id: "sentpop-subsets" }, choices.map((x) => opt(pick.subset === x.id, subsetName(x), {
+        hint: x.id === c.subset ? t("the company's") : "", onClick: () => { pick.subset = x.id; pick.n = 0; paint(); load(x.id); } })))
+        : h("p", { class: "muted sentpop-p" }, t("No subsets yet: make one in Resume first.")),
+      pick.subset && h("div", { class: "lb-group" }, t("Version")),
+      pick.subset && h("div", { class: "sentpop-list", id: "sentpop-versions" },
+        opt(pick.n === 0, t("As it is now"), { hint: now, onClick: () => { pick.n = 0; paint(); } }),
+        vs == null ? h("div", { class: "muted sentpop-p" }, h("span", { class: "spin" }), t("Loading…"))
+          : vs.map((v) => opt(pick.n === v.n, `v${v.n}`, { hint: fmtWhen(v.at), desc: v.note || "", onClick: () => { pick.n = v.n; paint(); } }))),
+      (a.sent || []).length > 0 && h("div", { class: "lb-group" }, t("Sent so far")),
+      (a.sent || []).length > 0 && h("div", { class: "sentpop-sent" }, [...a.sent].reverse().map((x) => h("div", { class: "sentpop-row" },
+        h("span", { class: "sentpop-what" }, sentText(x)), h("span", { class: "muted" }, fmtWhen(x.at)),
+        h("button", { class: "btn sm ghost icon", title: t("See what went out"), "aria-label": t("See what went out"),
+          onclick: () => { closeFloat(); showSent(x.subset, x.n); } }, icon("history"))))),
+      h("div", { class: "sentpop-acts" },
+        pick.subset && h("button", { class: "btn sm ghost", onclick: () => { closeFloat(); previewSubset(pick.subset); } }, icon("file"), t("Open in Resume")),
+        h("span", { class: "spacer" }),
+        h("button", { class: "btn sm primary", id: "sentpop-send", disabled: !pick.subset, onclick: send }, icon("check"),
+          (a.sent || []).length ? t("Mark as sent again") : t("Mark as sent"))),
+    ].filter(Boolean));
+  };
+  paint();
+  openFloat(td, panel, { minWidth: Math.max(td.offsetWidth, 340), onClose: dbvAfterClose,
+    focus: panel.querySelector("#sentpop-subsets .lb-opt.on") || panel.querySelector(".lb-opt") });
+  load(pick.subset);
 }
 
 const today = () => dbvYmd(new Date());
@@ -1412,11 +1471,7 @@ function appPage(v) {
     card(t("The role"), "", [
       h("div", { class: "grid2" }, hfield(t("Role"), a.role, save("role")), hfield(t("Link"), a.url, save("url"), { placeholder: "https://…", link: true })),
       h("div", { class: "field", id: "app-places" }, h("label", null, t("Location")), placesEditor(a.places, (v) => { a.places = v; save("places")(v); })),
-      h("div", { class: "grid2" }, h("div", { class: "field" }, h("label", { for: "app-batch" }, t("Batch")),
-        h("input", { id: "app-batch", list: "app-batches", value: a.batch || "", placeholder: t("27秋招, 2027 Graduate Program…"), spellcheck: "false",
-          onchange: (e) => { const val = e.target.value.trim(); if (val !== (a.batch || "")) { a.batch = val; save("batch")(val); } } }),
-        h("datalist", { id: "app-batches" }, usedBatches().map((b) => h("option", { value: b })))),
-        hfield(t("Referral code"), a.referral, save("referral"), { placeholder: t("none: no referral") })),
+      hfield(t("Referral code"), a.referral, save("referral"), { placeholder: t("none: no referral") }),
       h("div", { class: "field" }, h("label", null, t("How it goes in")), h("div", { class: "row wrap" }, channel, plat && plat.el,
         a.channel === "site" && h("span", { class: "muted" }, t("choice {n} on {company}'s site", { n: a.order, company: c.name })))),
       hfield(t("Notes"), a.note, save("note"), { multiline: true }),
@@ -1431,10 +1486,10 @@ function appPage(v) {
         onchange: (e) => { const val = e.target.value.trim(); if (val !== (a.jd || "")) { a.jd = val; a.jd_read = ""; editApp(a.id, { jd: val, jd_read: "" }, { repaint: false }); } } }, a.jd || "")),
     ], { actions: readButton(a, v.reading), fold: "app-jd" }),
     card(t("Resume sent"), (a.sent || []).length ? t("{n} time", { n: a.sent.length }, "{n} times") : t("not yet"), [
-      a.channel !== "site" && h("div", { class: "field" }, h("label", null, t("Goes out with")), h("div", { class: "su-subset" }, pick.el)),
-      a.channel === "site" && h("p", { class: "card-p muted" }, t("It goes out with the sign-up on {company}'s site: mark that as sent on the company's page.", { company: c.name })),
+      h("div", { class: "field" }, h("label", null, t("Goes out with")), h("div", { class: "su-subset" }, pick.el)),
+      a.channel === "site" && h("p", { class: "card-p muted" }, t("To mark every role on {company}'s site at once, use the company's page.", { company: c.name })),
       h("div", { class: "row" },
-        a.channel !== "site" && h("button", { class: "btn primary", id: "app-send", disabled: !subId, onclick: () => sendApp(a, subId) }, icon("check"),
+        h("button", { class: "btn primary", id: "app-send", disabled: !subId, onclick: () => sendApp(a, subId) }, icon("check"),
           (a.sent || []).length ? t("Mark as sent again") : t("Mark as sent")),
         subId && subsets().some((x) => x.id === subId) && h("button", { class: "btn sm ghost", id: "app-resume", onclick: () => previewSubset(subId) }, icon("file"),
           t("Open “{name}” in Resume", { name: subsetName(subsets().find((x) => x.id === subId)) }))),

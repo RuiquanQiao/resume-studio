@@ -368,11 +368,20 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         copied = guard(lambda: copy_to_tracker(out, c, subset_label(doc, sub), n))
         return {"n": n, "subset": sub, "sent": [a["id"] for a in out], "copied": copied}
 
-    def send_app(ref: str, subset: str | None, source: str) -> dict:
+    def send_app(ref: str, subset: str | None, source: str, version: int | None = None) -> dict:
+        """`version`: an older version the user says went out (sent before it was marked here); none: what the
+        subset says now, kept as a version if it isn't one."""
         a = hunt.application(ref)
         c = hunt.company(a["company"])
         sub = subset_to_send(studio, subset or a.get("subset") or c.get("subset") or None)
-        n = keep_version(studio, sub, f"{c['name']} — {a['role']}")
+        if version:
+            if not studio.versions.get(sub, int(version)):
+                raise HttpError(404, t("{subset} has no v{n}", subset=subset_label(studio.store.load()[0], sub), n=version))
+            n = int(version)
+        else:
+            n = keep_version(studio, sub, f"{c['name']} — {a['role']}")
+        if subset and subset != (a.get("subset") or c.get("subset")):
+            hunt.update_application(a["id"], {"subset": subset})   # what it went out with is what it goes out with
         a = hunt.mark_sent(a["id"], sub, n, source=source)
         doc, _ = studio.store.load()
         copied = guard(lambda: copy_to_tracker([a], c, subset_label(doc, sub), n))
@@ -588,7 +597,11 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     @app.route("POST", "/api/hunt/apps/{aid}/sent")
     def app_sent(req: Request):
         b = body(req)
-        r = guard(lambda: send_app(req.params["aid"], str(b.get("subset") or "") or None, "window"))
+        try:
+            version = int(b.get("n") or 0) or None
+        except (TypeError, ValueError):
+            raise HttpError(400, t("The version must be a number"))
+        r = guard(lambda: send_app(req.params["aid"], str(b.get("subset") or "") or None, "window", version))
         return {**r, **app_view(req.params["aid"]), **studio.state()}
 
     # what is booked for a role: a test, 一面, 二面…

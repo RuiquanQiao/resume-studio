@@ -8,7 +8,10 @@
 A posting is matched across scans by its link (or, without one, its title and location), after career-ops'
 listing-fingerprint idea: a posting seen for the first time is new, one no longer listed is closed, a changed
 deadline is kept as `changed`. Postings are not applications: "Apply" turns one into an application of its
-company (and links them), so a company listing dozens of roles doesn't flood the progress table.
+company (and links them), so a company listing dozens of roles doesn't flood the progress table. A role added
+another way is linked to its posting by its link, or by its name. A linked role follows its posting: closed on the
+site, a role not applied to yet becomes "posting closed" (one further on gets a timeline line); back on the site,
+it is "want to apply" again (jobhunt/store.py).
 
 `keywords` are the roles the user looks for (career-ops' title filter): postings whose title has none of them
 are kept but folded away in the window, and don't count as news.
@@ -165,7 +168,7 @@ class Postings:
             for key, p in mine.items():
                 if key.startswith("t:"):
                     linkless.setdefault(_key(p["title"]), []).append(key)
-            new, changed, reopened, keys = [], [], 0, set()
+            new, changed, reopened, keys = [], [], [], set()
             for r in rows:
                 k = fingerprint(r)
                 if k in keys:
@@ -191,7 +194,8 @@ class Postings:
                     new.append(p)
                     continue
                 if p.get("closed"):
-                    p["closed"], reopened = "", reopened + 1
+                    p["closed"] = ""
+                    reopened.append(p)
                 for f in ("title", "location", "category", "batch", "posted"):
                     if r[f]:
                         p[f] = r[f]
@@ -203,22 +207,61 @@ class Postings:
                 if r["url"]:
                     p["url"] = r["url"]
                 p["last_seen"], p["source"] = seen_now, how
-            # a posting the user already applies to (added by hand, by the same name) is linked to that application
-            apps = {_key(a["role"]): a["id"] for a in self.hunt.applications(c["id"])}
-            for p in data["postings"]:
-                if p["company"] == c["id"] and not p.get("app") and _key(p["title"]) in apps:
-                    p["app"] = apps[_key(p["title"])]
+            # a posting the user already applies to (added by hand or by Claude) is linked to that application:
+            # by its link, else by the same name
+            mine_apps = self.hunt.applications(c["id"])
+            by_url = {_norm_url(a["url"]): a["id"] for a in mine_apps if re.match(r"https?://", a.get("url") or "", re.I)}
+            by_name = {_key(a["role"]): a["id"] for a in mine_apps}
             closed = []
             if complete:
                 for k, p in mine.items():
                     if k not in keys and not p.get("closed"):
                         p["closed"] = seen_now
                         closed.append(p)
+            linked = {p["app"] for p in data["postings"] if p.get("app")}
+            gone = []   # linked only now to a posting this read found gone: the role follows it too
+            for p in data["postings"]:
+                if p["company"] != c["id"] or p.get("app"):
+                    continue
+                aid = by_url.get(p["key"]) or by_name.get(_key(p["title"]))
+                if aid and aid not in linked:
+                    p["app"] = aid
+                    linked.add(aid)
+                    if complete and p.get("closed") and p not in closed:
+                        gone.append(p)
             self.hunt._write("postings.json", data)
         st = self.set_scan_state(c["id"], at=seen_now, ok=True, error="", signed_out=False, how=how, found=len(keys),
                                  new=[p["id"] for p in new], closed=[p["id"] for p in closed], changed=[p["id"] for p in changed])
+        follow = self._follow(c, closed + gone, reopened)
         self.hunt._changed()
-        return {"found": len(keys), "new": new, "closed": closed, "changed": changed, "reopened": reopened, "scan": st}
+        return {"found": len(keys), "new": new, "closed": closed, "changed": changed, "reopened": len(reopened),
+                "roles_closed": follow, "scan": st}
+
+    def _follow(self, c: dict, closed: list[dict], reopened: list[dict]) -> list[str]:
+        """The roles linked to postings that just closed or came back follow them. Returns the roles set to closed."""
+        out = []
+        for p in closed:
+            try:
+                a = self.hunt.application(p["app"]) if p.get("app") else None
+            except KeyError:
+                a = None
+            if not a or a["status"] in ("closed", "withdrawn", "rejected", "hired", "offer"):
+                continue
+            if a["status"] == "saved":
+                self.hunt.set_status(a["id"], "closed", source="scan",
+                                     note=t("The posting is no longer on {company}'s site", company=c["name"]))
+                out.append(a["id"])
+            else:   # applied or further: a posting taken down once it has enough applicants says nothing about this one
+                self.hunt.add_note(a["id"], t("The posting is no longer on {company}'s site", company=c["name"]), source="scan")
+        for p in reopened:
+            try:
+                a = self.hunt.application(p["app"]) if p.get("app") else None
+            except KeyError:
+                a = None
+            if a and a["status"] == "closed":
+                self.hunt.set_status(a["id"], "saved", source="scan",
+                                     note=t("The posting is back on {company}'s site", company=c["name"]))
+        return out
 
     def failed(self, company: str, error: str, *, how: str, signed_out: bool = False) -> dict:
         c = self.hunt.company(company)

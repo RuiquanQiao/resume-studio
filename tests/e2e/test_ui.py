@@ -1632,15 +1632,34 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.click(".hunt-back")
     server.req("PUT", f"/api/hunt/apps/{a2}", {"apply_by": ""})
     pg.wait_for_function(f"() => document.querySelector(`{row(a2)} td[data-key=events]`).innerText.trim() === ''")
-    pg.wait_for_selector(f"{row(a1)} td[data-key=batch]")
-    # the batch: the user's own options, a new one typed, an old one picked
-    pg.click(f"{row(a1)} td[data-key=batch]")
-    pg.fill(".float .dbv-optinput", "27秋招")
-    pg.press(".float .dbv-optinput", "Enter")
-    wait_until(lambda: app(a1)["batch"] == "27秋招", msg="batch made")
-    pg.click(f"{row(a2)} td[data-key=batch]")
-    pg.click(".float .lb-opt[data-value='27秋招']")
-    wait_until(lambda: app(a2)["batch"] == "27秋招", msg="batch picked")
+    # no batch (docs/JOB_HUNT.md, 2026-10-30); the resume that went out is picked over its cell, not on the role's
+    # page: the subset, then its version (as it is now, or one kept before), saved only by Mark as sent
+    assert pg.locator(".dbv-view th[data-key=batch]").count() == 0
+    corner = {"x": 6, "y": 6}                                                # the cell, not its Resume button
+    pg.click(f"{row(a1)} td[data-key=sent]", position=corner)
+    pg.wait_for_selector(".float.sentpop #sentpop-subsets .lb-opt")
+    assert pg.locator(".hunt-back").count() == 0                             # still the table
+    assert pg.locator("#sentpop-send").is_disabled()                          # no subset yet: nothing to send
+    pg.locator("#sentpop-subsets .lb-opt").first.click()
+    pg.wait_for_selector("#sentpop-versions .lb-opt.on:has-text('当前内容')")
+    time.sleep(0.3)
+    assert not app(a1)["sent"]                                               # a pick saves nothing
+    fits = "() => { const p = document.querySelector('.float.sentpop'); return p.scrollWidth <= p.clientWidth && [...p.querySelectorAll('*')].every((x) => x.getBoundingClientRect().right <= p.getBoundingClientRect().right + 1); }"
+    assert pg.evaluate(fits)
+    pg.screenshot(path=str(ART / "hunt-sent-pop-light.png"))
+    pg.click("#sentpop-send")
+    wait_until(lambda: len(app(a1)["sent"]) == 1, msg="sent as it is now")
+    sid, n = app(a1)["sent"][0]["subset"], app(a1)["sent"][0]["n"]
+    assert app(a1)["subset"] == sid and app(a1)["status"] == "interview"     # it goes out with that subset from now on
+    kept = server.req("GET", "/api/state")[1]["subset_versions"][sid]["count"]
+    pg.wait_for_selector(".float", state="detached")
+    pg.click(f"{row(a1)} td[data-key=sent]", position=corner)
+    pg.wait_for_selector(f"#sentpop-subsets .lb-opt.on")                     # the role's own subset, picked already
+    pg.click(f"#sentpop-versions .lb-opt:has-text('v{n}') >> nth=-1")      # the version kept before
+    pg.wait_for_selector(".float .sentpop-row")                              # and what went out so far
+    pg.click("#sentpop-send")
+    wait_until(lambda: [s["n"] for s in app(a1)["sent"]] == [n, n], msg="sent as the older version")
+    assert server.req("GET", "/api/state")[1]["subset_versions"][sid]["count"] == kept   # no new version made
     # places (docs/JOB_HUNT.md, 2026-10-27): picked from a list as you type, in the window's language; several
     # written at once are each found in it; remote must say its region; saved when the panel closes
     server.req("PUT", f"/api/hunt/apps/{a1}", {"places": ["杭州"]})   # another role's, offered as a suggestion below

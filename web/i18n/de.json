@@ -568,7 +568,6 @@
  "Is a course worth it?": "Lohnt sich ein Kurs?",
  "Is a project worth it?": "Lohnt sich ein Projekt?",
  "Issued by": "Verliehen von",
- "It goes out with the sign-up on {company}'s site: mark that as sent on the company's page.": "Sie geht mit der Anmeldung auf der Seite von {company} raus: markiere das auf der Seite des Unternehmens als gesendet.",
  "It helps you see where you stand, the easiest way forward and how you're doing, and writes what you work out into the plan on the right, so it lasts beyond this chat.": "Es hilft dir zu sehen, wo du stehst, welcher Weg am leichtesten ist und wie du vorankommst, und schreibt, was ihr klärt, in den Plan rechts, damit es über diesen Chat hinaus bleibt.",
  "It is removed from the library and every subset. You can get it back from resume-studio-data/history if needed.": "Er wird aus der Bibliothek und allen Teilmengen entfernt. Bei Bedarf lässt er sich aus resume-studio-data/history wiederherstellen.",
  "It uses {name}'s own updater: your evaluations, tracker and profile are not touched, and you can go back afterwards.": "Nutzt das eigene Update-Werkzeug von {name}: Ihre Bewertungen, Ihr Tracker und Ihr Profil bleiben unberührt, und Sie können danach zurück.",
@@ -1868,10 +1867,8 @@
  "…and {n} more": "…und {n} weitere",
  "Apply by": "Bewerbungsschluss",
  "Rolling: until filled": "Laufend, bis besetzt",
- "Batch": "Runde",
  "Find or type a new one": "Suchen oder neu eingeben",
  "Add “{name}”": "„{name}“ hinzufügen",
- "27秋招, 2027 Graduate Program…": "27秋招, 2027 Graduate Program…",
  "{what} booked": "{what} vereinbart",
  "Status moved to {status}": "Status auf {status} gesetzt",
  "Add a careers site: paste its address and press Enter": "Karriereseite hinzufügen: Adresse einfügen und Enter drücken",
@@ -2043,5 +2040,18 @@
   "{n} Änderung",
   "{n} Änderungen"
  ],
- "This conversation is open in the Codex app. Close it there, then try again.": "Dieses Gespräch ist in der Codex-App geöffnet. Schließe es dort und versuche es erneut."
+ "This conversation is open in the Codex app. Close it there, then try again.": "Dieses Gespräch ist in der Codex-App geöffnet. Schließe es dort und versuche es erneut.",
+ "As it is now": "So wie jetzt",
+ "No subsets yet: make one in Resume first.": "Noch keine Teilmengen: lege zuerst eine im Lebenslauf an.",
+ "Open in Resume": "Im Lebenslauf öffnen",
+ "Posting closed": "Ausschreibung beendet",
+ "Sent so far": "Bisher gesendet",
+ "The posting is back on {company}'s site": "Die Ausschreibung ist wieder auf der Seite von {company}",
+ "The posting is no longer on {company}'s site": "Die Ausschreibung ist nicht mehr auf der Seite von {company}",
+ "The version must be a number": "Die Version muss eine Zahl sein",
+ "To mark every role on {company}'s site at once, use the company's page.": "Um alle Stellen auf der Seite von {company} auf einmal zu markieren, nutze die Seite des Unternehmens.",
+ "Version": "Version",
+ "kept as v{n}": "wird v{n}",
+ "the company's": "die des Unternehmens",
+ "{subset} has no v{n}": "{subset} hat kein v{n}"
 }

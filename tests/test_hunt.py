@@ -257,12 +257,10 @@ def test_the_apply_events_made_for_every_role_go_once(hunt):
     assert got[ids[0]] == [(e["id"], e.get("kind"), e["title"]) for e in hunt.application(ids[0])["schedule"]]
 
 
-def test_a_role_is_in_the_batch_the_user_names(hunt):
+def test_a_role_has_no_batch_any_more(hunt):
     hunt.add_company({"name": "Xinghe"})
-    a = hunt.add_application("Xinghe", {"role": "后端", "batch": " 27秋招 "})
-    assert a["batch"] == "27秋招"
-    assert hunt.update_application(a["id"], {"batch": "2027 Graduate Program"})["batch"] == "2027 Graduate Program"
-    assert hunt.update_application(a["id"], {"batch": ""})["batch"] == ""
+    a = hunt.add_application("Xinghe", {"role": "后端", "batch": "27秋招"})
+    assert "batch" not in a and "batch" not in hunt.update_application(a["id"], {"batch": "2027 Graduate Program"})
 
 
 def test_the_calendar_file_imports_anywhere(hunt):
@@ -596,6 +594,21 @@ def test_booked_from_the_window_and_from_claude_end_in_one_calendar_file(live, d
     assert Path(r["path"]).name == "applying-A1-E2.ics" and t("2nd interview") in Path(r["path"]).read_text(encoding="utf-8")
     assert live.req("DELETE", "/api/hunt/apps/A1/schedule/E1")[1]["application"]["schedule"][0]["id"] == "E2"
     assert cli(data_file, "unbook", "星河科技/服务端", "E1")[0] != 0   # gone already
+
+
+def test_a_role_goes_out_with_the_subset_and_version_the_user_picks(live, data_file):
+    cli(data_file, "add-company", "星河科技")
+    cli(data_file, "add-role", "星河科技", "服务端")                      # on the company's own site, the default
+    assert live.req("GET", "/api/hunt/apps/A1")[1]["application"]["channel"] == "site"
+    # as it is now: kept as v1, and the role goes out with that subset from now on
+    code, r = live.req("POST", "/api/hunt/apps/A1/sent", {"subset": "RES-TECH-ZH"})
+    assert code == 200 and r["n"] == 1 and r["application"]["subset"] == "RES-TECH-ZH" and r["application"]["status"] == "applied"
+    # an older version, sent before it was marked here: no new version is made
+    code, r = live.req("POST", "/api/hunt/apps/A1/sent", {"subset": "RES-TECH-ZH", "n": 1})
+    assert code == 200 and r["n"] == 1 and [s["n"] for s in r["application"]["sent"]] == [1, 1]
+    assert live.req("GET", "/api/state")[1]["subset_versions"]["RES-TECH-ZH"]["count"] == 1
+    assert live.req("POST", "/api/hunt/apps/A1/sent", {"subset": "RES-TECH-ZH", "n": 7})[0] == 404
+    assert live.req("POST", "/api/hunt/apps/A1/sent", {"subset": "RES-TECH-ZH", "n": "x"})[0] == 400
 
 
 def test_the_sign_up_goes_out_with_a_kept_version(live, data_file):

@@ -568,7 +568,6 @@
  "Is a course worth it?": "Une formation vaut-elle le coup ?",
  "Is a project worth it?": "Un projet vaut-il le coup ?",
  "Issued by": "Décerné par",
- "It goes out with the sign-up on {company}'s site: mark that as sent on the company's page.": "Elle part avec l'inscription sur le site de {company} : marquez-la comme envoyée sur la page de l'entreprise.",
  "It helps you see where you stand, the easiest way forward and how you're doing, and writes what you work out into the plan on the right, so it lasts beyond this chat.": "Il vous aide à voir où vous en êtes, le chemin le plus simple et comment vous avancez, et écrit ce que vous clarifiez dans le plan à droite, pour que cela reste après cette discussion.",
  "It is removed from the library and every subset. You can get it back from resume-studio-data/history if needed.": "Elle est retirée de la bibliothèque et de tous les sous-ensembles. Vous pouvez la récupérer dans resume-studio-data/history si besoin.",
  "It uses {name}'s own updater: your evaluations, tracker and profile are not touched, and you can go back afterwards.": "Utilise l'outil de mise à jour de {name} : vos évaluations, votre suivi et votre profil ne sont pas modifiés, et vous pourrez revenir en arrière.",
@@ -1868,10 +1867,8 @@
  "…and {n} more": "…et {n} de plus",
  "Apply by": "Date limite de candidature",
  "Rolling: until filled": "En continu, jusqu’à pourvu",
- "Batch": "Campagne",
  "Find or type a new one": "Chercher ou en saisir un nouveau",
  "Add “{name}”": "Ajouter « {name} »",
- "27秋招, 2027 Graduate Program…": "27秋招, 2027 Graduate Program…",
  "{what} booked": "{what} prévu",
  "Status moved to {status}": "Statut passé à {status}",
  "Add a careers site: paste its address and press Enter": "Ajouter un site carrières : collez son adresse et appuyez sur Entrée",
@@ -2043,5 +2040,18 @@
   "{n} modification",
   "{n} modifications"
  ],
- "This conversation is open in the Codex app. Close it there, then try again.": "Cette conversation est ouverte dans l'application Codex. Fermez-la là-bas, puis réessayez."
+ "This conversation is open in the Codex app. Close it there, then try again.": "Cette conversation est ouverte dans l'application Codex. Fermez-la là-bas, puis réessayez.",
+ "As it is now": "Tel qu’il est",
+ "No subsets yet: make one in Resume first.": "Aucun sous-ensemble : créez-en un d’abord dans CV.",
+ "Open in Resume": "Ouvrir dans CV",
+ "Posting closed": "Offre retirée",
+ "Sent so far": "Envois jusqu’ici",
+ "The posting is back on {company}'s site": "L’offre est de nouveau sur le site de {company}",
+ "The posting is no longer on {company}'s site": "L’offre n’est plus sur le site de {company}",
+ "The version must be a number": "La version doit être un nombre",
+ "To mark every role on {company}'s site at once, use the company's page.": "Pour marquer d’un coup tous les postes du site de {company}, passez par la page de l’entreprise.",
+ "Version": "Version",
+ "kept as v{n}": "gardé en v{n}",
+ "the company's": "celui de l’entreprise",
+ "{subset} has no v{n}": "{subset} n’a pas de v{n}"
 }

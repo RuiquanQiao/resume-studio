@@ -7,9 +7,9 @@
     python scripts/hunt.py edit-company 星河科技 --subset SUB-002 --industry 电商
     python scripts/hunt.py fill 星河科技 --stdin <<'JSON'   # Claude's research, every field at once (see `fill --help`)
     python scripts/hunt.py add-role 星河科技 "服务端研发工程师" [--url ...] [--channel site|platform|referral|other]
-                                       [--platform boss] [--order 2] [--status saved] [--apply-by 2026-10-31] [--batch 27秋招]
+                                       [--platform boss] [--order 2] [--status saved] [--apply-by 2026-10-31]
                                        [--place 南京 --place 上海 --place "remote: 中国大陆" --place "hybrid: 悉尼"]
-    python scripts/hunt.py edit-role 星河科技/服务端 [--role ...] [--url ...] [--referral <内推码>] [--order 1] [--note ...] [--apply-by ...] [--batch ...]
+    python scripts/hunt.py edit-role 星河科技/服务端 [--role ...] [--url ...] [--referral <内推码>] [--order 1] [--note ...] [--apply-by ...]
                                        [--place ... (the whole list, again) | --no-places]
     python scripts/hunt.py status 星河科技/服务端 interview --note "一面 周三 14:00" [--on 2026-10-18]
     python scripts/hunt.py note 星河科技/服务端 "笔试已交" [--on 2026-10-18]
@@ -33,11 +33,10 @@
 
 When to apply by is an event of the role, not a field, and only what the posting says: --apply-by 2026-10-31
 gives the date it closes, --apply-by rolling says it closes once filled (招满即止, only when the posting says so),
-and --apply-by "" drops it. No date known is no event: never guess one. --batch is the user's own name for the
-hiring round.
+and --apply-by "" drops it. No date known is no event: never guess one.
 
 Statuses: saved (want to apply), applied, assessment (测评/笔试), interview (rounds are booked: `book`), offer, hired,
-rejected, withdrawn; Chinese words work too (一面 → interview, 笔试 → assessment, 挂 → rejected).
+rejected, withdrawn, closed (the posting left the site before it was applied to: scans set it); Chinese words work too (一面 → interview, 笔试 → assessment, 挂 → rejected).
 Every command prints what is there now. Options: --data PATH (default: $RESUME_STUDIO_DATA, else the
 file the window last opened). Standard library only, no venv needed.
 """
@@ -142,8 +141,6 @@ def app_line(a: dict, company: str = "") -> str:
         parts.append(f"sent {s['at'][:10]}: {s['subset']} v{s['n']}")
     if a.get("places"):
         parts.append("in " + "; ".join(place_text(x) for x in a["places"]))
-    if a.get("batch"):
-        parts.append(f"batch {a['batch']}")
     due = next((e for e in a.get("schedule") or [] if e.get("kind") == "apply"), None)
     if due and a.get("status") == "saved":
         parts.append(f"apply by {apply_when(due)}")
@@ -276,7 +273,7 @@ def main() -> int:
             p.add_argument("company"); p.add_argument("role")
         else:
             p.add_argument("ref"); p.add_argument("--role")
-        for opt in ("url", "referral", "channel", "platform", "order", "note", "subset", "apply-by", "batch") + (("status",) if name == "add-role" else ()):
+        for opt in ("url", "referral", "channel", "platform", "order", "note", "subset", "apply-by") + (("status",) if name == "add-role" else ()):
             p.add_argument("--" + opt)
         p.add_argument("--place", action="append", help='where it is: a city, "remote: <region it is open to>" or "hybrid: <city>" '
                        "(repeat for each; on edit-role the list replaces the old one)")
@@ -352,7 +349,7 @@ def main() -> int:
         show_company(r["company"])
         return 0
     if c in ("add-role", "edit-role"):
-        a = pick("url", "referral", "channel", "platform", "order", "note", "subset", "status", "batch")
+        a = pick("url", "referral", "channel", "platform", "order", "note", "subset", "status")
         if args.apply_by is not None:   # a date, "rolling" (招满即止), or "" to drop it: not known
             a["apply_by"] = args.apply_by
         if args.place or getattr(args, "no_places", False):

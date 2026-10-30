@@ -332,8 +332,7 @@ python scripts/hunt.py apply P12                          # the user goes for po
   at one already there. A logo is the company's real picture: never draw one, never write into
   `resume-studio-data/hunt/logos/` yourself, and never leave a company without one: if every source fails, say which you tried.
   When to apply by is an event of the role (every role starts with its 投递 event), never a field and never the
-  company's: `--apply-by 2026-10-31` when the posting gives a date; no date means 招满即止. `--batch` is the round
-  in the user's own words (27秋招…); what each country's rounds mean and when they run is in
+  company's: `--apply-by 2026-10-31` when the posting gives a date; no date means 招满即止. What each country's rounds (27秋招…) mean and when they run is in
   [references/hiring-calendars.md](references/hiring-calendars.md) (27秋招 runs in 2026: the year is the graduation
   year; a 2027 Graduate Program starts in 2027). A posting's link: read it, add or fill the company, add the role with its
   apply-by date.
