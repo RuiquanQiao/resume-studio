@@ -231,9 +231,12 @@ function shortDate(v) {
   const m = s.match(/^(\d{4})-(\d{1,2})/);
   return m ? `${m[1]}.${String(m[2]).padStart(2, "0")}` : s;
 }
+const isPresent = (v) => /^(present|now|current|至今)$/i.test(String(v ?? "").trim());
 function entryMeta(e) {
-  if (e.date) return display(e.date);
-  const a = shortDate(e.start), b = shortDate(e.end);
+  const a = shortDate(e.start);
+  let b = shortDate(e.end);
+  if (b && e.expected && !isPresent(e.end)) b = t("{date} (expected)", { date: b });
+  if (a && b && isPresent(e.end)) return t("{start} – now", { start: a });   // Chinese: "2026.09至今", no dash
   return a && b ? `${a} – ${b}` : a || b || "";
 }
 
@@ -931,6 +934,62 @@ function card(title, sub, body, { cls = "", actions = null, fold = "", count = n
 }
 
 // a text field bound to obj[key]; i18n fields store per-language values
+// a month picked from a panel, never typed. The end also has two ticks under it (LinkedIn's way, so the state shows
+// without opening anything): "present", and "expected" for an end month not reached yet; ticking one clears the other.
+function monthField(label, e, key) {
+  const isEnd = key === "end";
+  const btn = h("button", { type: "button", class: "select month-pick", "data-key": key, "aria-haspopup": "dialog", "aria-expanded": "false", "aria-label": label });
+  const opts = isEnd ? h("div", { class: "month-opts" }) : null;
+  const tick = (on, text, onClick, id) => h("button", { type: "button", class: "check-row", role: "checkbox", "aria-checked": String(on), id, onclick: onClick },
+    h("span", { class: "check" + (on ? " on" : "") }), text);
+  const paint = () => {
+    const v = String(e[key] ?? "").trim(), now = isEnd && isPresent(v);
+    const text = now ? t("Present") : v ? shortDate(v) : t("Pick a month");
+    btn.replaceChildren(icon("calendar"), h("span", { class: "sel-label" + (v && !now ? "" : " ph") }, text), icon("chev"));
+    if (!isEnd) return;
+    opts.replaceChildren(
+      tick(now, t("Present"), () => { if (now) e.end = ""; else { e.end = "present"; delete e.expected; } touch(); paint(); }, "end-present"),
+      tick(!!e.expected, t("Expected"), () => { if (e.expected) delete e.expected; else { e.expected = true; if (now) e.end = ""; } touch(); paint(); }, "end-expected"));
+    setTip(opts.lastChild, t("The end month isn't reached yet; the resume adds “(expected)”"));
+  };
+  paint();
+  btn.onclick = () => (Float.cur && Float.cur.anchor === btn ? closeFloat()
+    : openMonthPicker(btn, label, String(e[key] ?? ""), (v) => { e[key] = v; touch(); paint(); }));
+  return h("div", { class: "field" }, h("label", null, label), btn, opts);
+}
+
+function openMonthPicker(anchor, label, value, pick) {
+  const cur = value.match(/^(\d{4})-(\d{1,2})/);
+  let year = cur ? +cur[1] : new Date().getFullYear();
+  const fmt = new Intl.DateTimeFormat(document.documentElement.lang || "en", { month: "short" });
+  const names = Array.from({ length: 12 }, (_, i) => fmt.format(new Date(2000, i, 1)));
+  const choose = (v) => { pick(v); closeFloat(); anchor.focus({ preventScroll: true }); };   // the keyboard goes on from the field
+  const panel = h("div", { class: "month-pop", role: "dialog", "aria-label": label });
+  const draw = (focusSel) => {
+    const months = names.map((n, i) => h("button", { type: "button", class: "mp-m" + (cur && +cur[1] === year && +cur[2] === i + 1 ? " on" : ""), "data-m": i,
+      onclick: () => choose(`${year}-${String(i + 1).padStart(2, "0")}`) }, n));
+    const grid = h("div", { class: "mp-grid" }, months);
+    grid.onkeydown = (ev) => {   // arrows move between months; Enter picks (a button)
+      const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -4, ArrowDown: 4 }[ev.key];
+      const i = months.indexOf(document.activeElement);
+      if (step === undefined || i < 0) return;
+      ev.preventDefault();
+      months[Math.max(0, Math.min(11, i + step))].focus();
+    };
+    const turn = (d) => { year += d; draw(d < 0 ? ".mp-prev" : ".mp-next"); };
+    panel.replaceChildren(
+      h("div", { class: "mp-head" },
+        h("button", { type: "button", class: "btn icon sm ghost mp-prev", "aria-label": t("Previous year"), onclick: () => turn(-1) }, icon("chevLeft")),
+        h("span", { class: "mp-year" }, String(year)),
+        h("button", { type: "button", class: "btn icon sm ghost mp-next", "aria-label": t("Next year"), onclick: () => turn(1) }, icon("chevRight"))),
+      grid,
+      cur ? h("div", { class: "mp-foot" }, h("button", { type: "button", class: "btn sm ghost", onclick: () => choose("") }, t("Clear"))) : null);
+    if (focusSel) { const f = panel.querySelector(focusSel); if (f) f.focus({ preventScroll: true }); }
+  };
+  draw();
+  openFloat(anchor, panel, { focus: panel.querySelector(".mp-m.on") || panel.querySelector(".mp-m") });
+}
+
 function tfield(label, obj, key, { i18n = false, multiline = false, placeholder = "", rows = 2, hint = "", link = false } = {}) {
   const val = i18n ? getT(obj[key], ui.editLang) : (obj[key] ?? "");
   const onInput = (ev) => { obj[key] = i18n ? setT(obj[key], ui.editLang, ev.target.value) : ev.target.value; touch(); };
@@ -974,8 +1033,7 @@ function entryForm(e = ui.draft, { out = false } = {}) {
   if (!isList) {
     basics.push(
       h("div", { class: "grid2" }, tfield(t("Subtitle"), e, "subtitle", { i18n: true, placeholder: t("Position / degree / role") }), tfield(t("Location"), e, "location", { i18n: true })),
-      h("div", { class: "grid3" }, tfield(t("Start"), e, "start", { placeholder: "2025-07" }), tfield(t("End"), e, "end", { placeholder: t("2026-02 or present") }),
-        tfield(t("Custom date"), e, "date", { i18n: true, hint: t("optional, overrides start and end") })),
+      h("div", { class: "grid2 month-dates" }, monthField(t("Start"), e, "start"), monthField(t("End"), e, "end")),
       tfield(t("Link"), e, "link", { placeholder: "https://…", link: true }));
   }
   basics.push(h("div", { class: "field" }, h("label", null, isList ? t("Items") : t("Tech / keywords"), h("span", { class: "hint" }, t("comma-separated"))),
@@ -2092,7 +2150,7 @@ function lacks(v, lang, bullet = false) {
   return false;
 }
 function missingIn(e, lang) {
-  return ["title", "subtitle", "location", "date"].some((k) => lacks(e[k], lang)) || (e.bullets || []).some((b) => lacks(b, lang, true));
+  return ["title", "subtitle", "location"].some((k) => lacks(e[k], lang)) || (e.bullets || []).some((b) => lacks(b, lang, true));
 }
 
 // ---- line measurement ----

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from core.store import YamlStore, fingerprint, merge_into, to_plain
-from resume import model
+from resume import langs as L, model
 from resume.service import Conflict, Studio
 
 import pytest
@@ -70,7 +70,16 @@ def test_text_helpers():
     assert model.fmt_date("2025-07", "zh") == "2025.07"
     assert model.fmt_date("present", "zh") == "至今"
     assert model.date_range({"start": "2025-01", "end": "present"}, "en") == "Jan 2025 – Present"
-    assert model.date_range({"start": "2025-01", "date": "Summer 2025"}, "en") == "Summer 2025"
+    # 2026-10-31: no free-text date any more; Chinese "至今" follows the start with no dash; an end not reached
+    # yet says so in each language
+    assert model.date_range({"start": "2026-09", "end": "present"}, "zh") == "2026.09至今"
+    assert model.date_range({"start": "2026-09", "end": "至今"}, "zh-TW") == "2026.09至今"
+    assert model.date_range({"start": "2026-09", "end": "present"}, "ja") == "2026.09 – 現在"
+    assert model.date_range({"start": "2025-07", "end": "2027-06", "expected": True}, "zh") == "2025.07 – 2027.06（预计）"
+    assert model.date_range({"start": "2025-07", "end": "2027-06", "expected": True}, "en") == "Jul 2025 – Jun 2027 (expected)"
+    assert model.date_range({"start": "2025-07", "end": "present", "expected": True}, "en") == "Jul 2025 – Present"
+    assert model.date_range({"start": "2025-01", "date": "Summer 2025"}, "en") == "Jan 2025"   # an old free-text date is ignored
+    assert set(L.EXPECTED) == set(L.LANGS)
 
 
 def test_view_never_contains_fact_layer(data_file):

@@ -719,6 +719,53 @@ def test_tooltips_are_the_apps_own(page):
     page.wait_for_selector(".tip.show", state="detached", timeout=2000) if page.locator(".tip.show").count() else None
 
 
+def test_start_and_end_are_months_picked_from_a_panel(page, server):
+    """2026-10-31: no free-text "Custom date"; start / end are picked, the end can be now or expected."""
+    entry = lambda: next(e for e in server.req("GET", "/api/state")[1]["doc"]["entries"] if e["id"] == "EXP-002")
+    open_entry(page, "EXP-002")
+    assert not page.locator("#active [data-key=date]").count()
+    assert not page.locator("#active input[data-key=start], #active input[data-key=end]").count()
+    end, present, expected = "#active .month-pick[data-key=end]", "#active #end-present", "#active #end-expected"
+    tick = lambda sel: page.get_attribute(sel, "aria-checked") == "true"
+    assert page.inner_text(end) == "至今" and tick(present) and not tick(expected)   # the sample's end is "present"
+    # the end: a month two years on, by clicking; picking a month clears "present"
+    page.click(end)
+    page.wait_for_selector(".float.month-pop .mp-m")
+    assert not page.locator(".month-pop .mp-foot").count()                      # nothing to clear yet
+    page.click(".month-pop .mp-next")
+    page.click(".month-pop .mp-next")
+    page.click(".month-pop .mp-m >> nth=5")
+    page.wait_for_selector(".float.month-pop", state="detached")
+    year = page.evaluate("() => new Date().getFullYear()") + 2
+    wait_until(lambda: entry().get("end") == f"{year}-06", msg="end picked")
+    assert page.inner_text(end) == f"{year}.06" and not tick(present)
+    assert page.evaluate("() => document.activeElement.dataset.key") == "end"   # the keyboard goes on from the field
+    # not reached yet: ticked under the field, no panel needed
+    page.click(expected)
+    wait_until(lambda: entry().get("expected") is True, msg="expected saved")
+    assert tick(expected)
+    assert f"{year}.06（预计）" in page.inner_text("#library .entry[data-id='EXP-002'] .e-meta")
+    # present again: expected goes, and the other way round
+    page.click(present)
+    wait_until(lambda: entry().get("end") == "present" and "expected" not in entry(), msg="back to present")
+    assert tick(present) and not tick(expected) and page.inner_text(end) == "至今"
+    page.click(expected)
+    wait_until(lambda: entry().get("expected") is True and not entry().get("end"), msg="expected clears present")
+    assert not tick(present)
+    # the start by keyboard: the panel opens on its month; left, down (four to a row), Enter
+    page.click("#active .month-pick[data-key=start]")
+    assert page.evaluate("() => document.activeElement.textContent") == "8月"   # the sample starts 2025-08
+    page.keyboard.press("ArrowLeft")
+    page.keyboard.press("ArrowDown")
+    page.keyboard.press("Enter")
+    wait_until(lambda: entry().get("start") == "2025-11", msg="start by keyboard")
+    # cleared
+    page.click("#active .month-pick[data-key=start]")
+    page.click(".month-pop .mp-foot .btn:text('清除')")
+    wait_until(lambda: not entry().get("start"), msg="start cleared")
+    assert page.inner_text("#active .month-pick[data-key=start]") == "选择月份"
+
+
 def test_text_cut_to_an_ellipsis_shows_in_full_on_hover(page):
     """2026-10-31: a label cut short (the outline's titles, a table cell, a chip) can always be read in full."""
     long = "A very long project title that the narrow outline can never show on one line, end"

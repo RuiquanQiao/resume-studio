@@ -13,7 +13,6 @@
   "+{n} pasos más"
  ],
  ", ": ", ",
- "2026-02 or present": "2026-02 o present",
  "21 × 29.7 cm, used in most of the world": "21 × 29,7 cm, el estándar en casi todo el mundo",
  "8.5 × 11 in, used in North America": "8,5 × 11 in, el estándar en Norteamérica",
  "<name>": "<nombre>",
@@ -315,7 +314,6 @@
  "Created the subset “{name}”; tick its entries on the left": "Se creó el subconjunto «{name}»; marca sus entradas a la izquierda",
  "Critical": "Crítico",
  "Custom": "Personalizada",
- "Custom date": "Fecha personalizada",
  "Custom font": "Fuente personalizada",
  "Custom…": "Personalizada…",
  "Cut": "Cortar",
@@ -1587,7 +1585,6 @@
  "open a web page": "abrir una página web",
  "open for you to sign in, without remote control": "abierto para que inicies sesión, sin control remoto",
  "optional": "opcional",
- "optional, overrides start and end": "opcional, sustituye a inicio y fin",
  "optional: the AI finds it": "opcional: la IA lo busca",
  "or any other site": "o cualquier otro sitio",
  "over one page": "más de una página",
@@ -2053,5 +2050,14 @@
  "Version": "Versión",
  "kept as v{n}": "se guarda como v{n}",
  "the company's": "el de la empresa",
- "{subset} has no v{n}": "{subset} no tiene v{n}"
+ "{subset} has no v{n}": "{subset} no tiene v{n}",
+ "End: expected": "Fin: prevista",
+ "Next year": "Año siguiente",
+ "Pick a month": "Elegir un mes",
+ "Previous year": "Año anterior",
+ "{date} (expected)": "{date} (previsto)",
+ "{start} – now": "{start} – actualidad",
+ "Expected": "Previsto",
+ "Present": "Actualidad",
+ "The end month isn't reached yet; the resume adds “(expected)”": "El mes de fin aún no ha llegado; el CV añade «(previsto)»"
 }

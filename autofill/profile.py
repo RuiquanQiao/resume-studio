@@ -69,8 +69,6 @@ def item_fields(section: str, entry: Any, lang: str, bullet: str) -> dict:
     lines = [plain(model.bullet_text(b, lang)) for b in entry.get("bullets") or []]
     desc = "\n".join(bullet + x for x in lines if x)
     start, end = _date(entry.get("start"), lang), _date(entry.get("end"), lang)
-    if entry.get("date") and not start:
-        start = plain(model.tr(entry.get("date"), lang))
     loc = plain(model.tr(entry.get("location"), lang))
     if section == "experience":
         return {"title": sub, "org": title, "location": loc, "start": start, "end": end, "description": desc}

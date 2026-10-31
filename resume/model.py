@@ -187,7 +187,7 @@ def _lacks(value: Any, lang: str, bullet: bool = False) -> bool:
 
 def missing_text(entry: Any, lang: str) -> dict:
     """What this entry still lacks in `lang` (it would fall back to another language)."""
-    fields = [k for k in ("title", "subtitle", "location", "date") if _lacks(entry.get(k), lang)]
+    fields = [k for k in ("title", "subtitle", "location") if _lacks(entry.get(k), lang)]
     bullets = [i for i, b in enumerate(entry.get("bullets") or []) if _lacks(b, lang, bullet=True)]
     return {"fields": fields, "bullets": bullets} if fields or bullets else {}
 
@@ -209,12 +209,18 @@ def fmt_date(value: Any, lang: str) -> str:
     return s
 
 
+def is_present(value: Any) -> bool:
+    return str(value or "").strip().lower() in _PRESENT
+
+
 def date_range(entry: dict, lang: str) -> str:
-    if entry.get("date"):
-        return tr(entry["date"], lang)
+    """"2025.07 – 2027.06（预计）", "2026.09至今", "Sep 2026 – Present"."""
     start, end = fmt_date(entry.get("start"), lang), fmt_date(entry.get("end"), lang)
+    now = is_present(entry.get("end"))
+    if end and entry.get("expected") and not now:
+        end = L.expected(end, lang)
     if start and end:
-        return f"{start} – {end}"
+        return f"{start}{end}" if now and lang in L.PRESENT_JOINS else f"{start} – {end}"
     return start or end
 
 

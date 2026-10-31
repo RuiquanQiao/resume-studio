@@ -78,7 +78,7 @@ def test_a_new_file_starts_in_the_computers_language(tmp_path, monkeypatch):
 def test_dates_follow_each_resume_language():
     e = {"start": "2025-08", "end": "present"}
     assert model.date_range(e, "en") == "Aug 2025 – Present"
-    assert model.date_range(e, "zh") == "2025.08 – 至今"
+    assert model.date_range(e, "zh") == "2025.08至今"          # Chinese: "至今" already means "until now", no dash
     assert model.date_range(e, "de") == "08/2025 – heute"
     assert model.date_range(e, "ja") == "2025.08 – 現在"
     assert model.date_range({"start": "2024-01", "end": "heute"}, "fr") == "01/2024 – aujourd'hui"

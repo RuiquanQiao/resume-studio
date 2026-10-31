@@ -569,6 +569,21 @@ textarea::-webkit-resizer {
   opacity: 0; transform: translateY(-4px); transition: opacity .1s ease-out, transform .12s ease-out; }
 .float[data-side="top"] { transform: translateY(4px); }
 .float.in { opacity: 1; transform: none; }
+/* a month picked from a panel (entry start / end); the end's two ticks sit under its field */
+.month-pick { width: 100%; height: 32px; }
+.month-pick > svg.i:first-child { width: 14px; height: 14px; color: var(--text-3); }
+.month-dates > .field { justify-content: flex-start; }   /* the fields line up at the top; only the end has ticks under it */
+.month-opts { display: flex; flex-wrap: wrap; gap: 2px 16px; }
+.month-opts .check-row { width: auto; color: var(--text-2); }
+.month-pop { width: 248px; padding: 8px; }
+.mp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.mp-year { font-weight: 600; font-variant-numeric: tabular-nums; }
+.mp-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; }
+.mp-m { height: 30px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; font-size: 12.5px; cursor: pointer; }
+.mp-m:hover { background: var(--hover); }
+.mp-m:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+.mp-m.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.mp-foot { display: flex; justify-content: flex-end; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
 .listbox, .menu { display: flex; flex-direction: column; gap: 1px; }
 .lb-group, .menu-head { padding: 8px 10px 3px 10px; font-size: 11.5px; font-weight: 600; color: var(--text-3); }
 .lb-opt, .menu-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px 6px 6px; border: 0; border-radius: 6px;

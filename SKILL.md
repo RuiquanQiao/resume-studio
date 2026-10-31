@@ -109,9 +109,9 @@ entries:                     # the library: every real experience, never limited
     title: ...               # company / school / project; in a list section, the category
     subtitle: ...            # position / degree / role
     location: ...
-    start: 2025-08           # YYYY-MM; the end may be "present"
+    start: 2025-08           # YYYY-MM; the end may be "present" (Chinese renders "2025.08至今", no dash)
     end: present
-    date: ...                # optional free text, overrides start/end
+    expected: true           # optional: the end month isn't reached yet ("2027.06（预计）", "Jun 2027 (expected)")
     link: https://...
     tech: [Next.js, Prisma]  # in a list section, the items
     bullets:

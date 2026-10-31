@@ -13,7 +13,6 @@
   "+{n} weitere Schritte"
  ],
  ", ": ", ",
- "2026-02 or present": "2026-02 oder present",
  "21 × 29.7 cm, used in most of the world": "21 × 29,7 cm, fast überall Standard",
  "8.5 × 11 in, used in North America": "8,5 × 11 in, Standard in Nordamerika",
  "<name>": "<Name>",
@@ -315,7 +314,6 @@
  "Created the subset “{name}”; tick its entries on the left": "Teilmenge „{name}“ erstellt; kreuze links ihre Einträge an",
  "Critical": "Entscheidend",
  "Custom": "Benutzerdefiniert",
- "Custom date": "Eigenes Datum",
  "Custom font": "Eigene Schrift",
  "Custom…": "Benutzerdefiniert…",
  "Cut": "Ausschneiden",
@@ -1587,7 +1585,6 @@
  "open a web page": "eine Webseite öffnen",
  "open for you to sign in, without remote control": "zum Anmelden geöffnet, ohne Fernsteuerung",
  "optional": "optional",
- "optional, overrides start and end": "optional, ersetzt Beginn und Ende",
  "optional: the AI finds it": "optional: die KI findet sie",
  "or any other site": "oder eine andere Website",
  "over one page": "über eine Seite",
@@ -2053,5 +2050,14 @@
  "Version": "Version",
  "kept as v{n}": "wird v{n}",
  "the company's": "die des Unternehmens",
- "{subset} has no v{n}": "{subset} hat kein v{n}"
+ "{subset} has no v{n}": "{subset} hat kein v{n}",
+ "End: expected": "Ende: voraussichtlich",
+ "Next year": "Nächstes Jahr",
+ "Pick a month": "Monat wählen",
+ "Previous year": "Vorjahr",
+ "{date} (expected)": "{date} (voraussichtlich)",
+ "{start} – now": "{start} – heute",
+ "Expected": "Voraussichtlich",
+ "Present": "Heute",
+ "The end month isn't reached yet; the resume adds “(expected)”": "Der Endmonat ist noch nicht erreicht; im Lebenslauf steht „(voraussichtlich)“"
 }

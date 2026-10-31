@@ -170,8 +170,10 @@ def _lines(label: str, value: Any) -> list[str]:
 def entry_text(e: dict) -> str:
     out: list[str] = []
     for key, label in (("title", t("Name")), ("subtitle", t("Subtitle")), ("location", t("Location")),
-                       ("start", t("Start")), ("end", t("End")), ("date", t("Date")), ("link", t("Link"))):
+                       ("start", t("Start")), ("end", t("End")), ("link", t("Link"))):
         out += _lines(label, e.get(key))
+        if key == "end" and e.get("expected"):
+            out.append(t("End: expected"))
     if e.get("tech"):
         out.append(f"{t('Tech')}: " + ", ".join(model.tr(x, "en") for x in e["tech"]))
     for b in e.get("bullets") or []:

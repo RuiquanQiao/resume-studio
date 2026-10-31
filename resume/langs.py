@@ -44,6 +44,20 @@ LANGS: dict[str, dict] = {
 
 CJK_SCRIPTS = {"zh", "zh-tw", "ja", "ko"}
 
+# an end date not reached yet (an expected graduation): "{}" is the formatted month
+EXPECTED: dict[str, str] = {
+    "en": "{} (expected)", "zh": "{}（预计）", "zh-TW": "{}（預計）", "ja": "{}（予定）", "ko": "{} (예정)",
+    "es": "{} (previsto)", "fr": "{} (prévu)", "de": "{} (voraussichtlich)", "it": "{} (previsto)", "pt": "{} (previsto)",
+    "nl": "{} (verwacht)", "sv": "{} (beräknat)", "nb": "{} (forventet)", "da": "{} (forventet)", "fi": "{} (arvio)",
+    "pl": "{} (planowane)", "cs": "{} (předpoklad)", "sk": "{} (predpoklad)", "hu": "{} (várható)", "ro": "{} (estimat)",
+    "hr": "{} (očekivano)", "tr": "{} (beklenen)", "id": "{} (perkiraan)", "ms": "{} (jangkaan)", "vi": "{} (dự kiến)",
+    "el": "{} (αναμενόμενο)", "ru": "{} (ожидается)", "uk": "{} (очікується)", "bg": "{} (очаквано)",
+}
+
+# languages whose word for "present" already means "until now", so it follows the start with no dash
+# ("2026.09至今", not "2026.09 – 至今")
+PRESENT_JOINS = {"zh", "zh-TW"}
+
 # default section titles in each language (ids from model.DEFAULT_SECTIONS)
 SECTION_TITLES: dict[str, dict[str, str]] = {
     "en": {"education": "Education", "experience": "Experience", "projects": "Projects", "skills": "Skills", "awards": "Awards"},
@@ -117,6 +131,10 @@ def format_month(year: int, month: int, code: str) -> str:
 
 def present(code: str) -> str:
     return info(code)["present"]
+
+
+def expected(formatted: str, code: str) -> str:
+    return EXPECTED.get(code, EXPECTED["en"]).format(formatted)
 
 
 def catalog() -> list[dict]:
