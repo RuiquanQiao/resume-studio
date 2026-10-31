@@ -298,9 +298,10 @@ function syncCard(v) {
   const c = v.checking;
   const lc = v.last_check || {};
   const r = v.route;
-  const status = c ? h("span", { class: "fs-status" }, h("span", { class: "spin" }),
-    c.pages ? t("Reading {site}: page {n} of {total}…", { site: site.name, n: Math.max(1, c.page), total: c.pages }) : t("Reading {site}…", { site: site.name }))
-    : reading ? h("span", { class: "fs-status" }, h("span", { class: "spin" }), t("The AI is reading…"))
+  // while it reads, "Check for updates" spins and says how far it got: one spinner for one piece of work
+  const busyText = c ? (c.pages ? t("Reading {site}: page {n} of {total}…", { site: site.name, n: Math.max(1, c.page), total: c.pages }) : t("Reading {site}…", { site: site.name }))
+    : reading ? t("The AI is reading…") : null;
+  const status = busyText ? null
     : lc.error ? h("span", { class: "fs-status bad" }, icon("alert"), lc.signed_out ? t("{site} wants you to sign in.", { site: site.name }) : t("The last check didn't finish."))
     : h("span", { class: "fs-status" }, icon("check"),
       (lc.mode === "claude" || !lc.at) && !lc.synced ? t("The AI read {site}", { site: site.name })   // no check yet: the copy is Claude's first read
@@ -318,14 +319,15 @@ function syncCard(v) {
       status,
       h("span", { class: "spacer" }),
       h("button", { class: "btn", id: "fill-check", "aria-busy": (!!c || reading) && "true", disabled: !!c || reading || (!r.recorded && !ui.chat.available), onclick: checkSite },
-        icon("refresh"), t("Check for updates")),
+        icon("refresh"), busyText || t("Check for updates")),
       h("button", { class: "btn icon ghost", title: t("More"), "aria-label": t("More"), onclick: menu }, icon("more"))),
     h("div", { class: "fsy-route muted" }, r.recorded
       ? t("Reads {site} by the recorded route ({n} page), without AI.", { site: site.name, n: r.pages }, "Reads {site} by the recorded route ({n} pages), without AI.")
       : t("No read route yet: “Check for updates” lets the AI read {site} and record one.", { site: site.name })),
     r.broken && h("div", { class: "fill-banner warn" }, icon("alert"),
       h("span", { class: "nb-text" }, t("The route no longer reads {site} ({error}). The site has probably changed; the AI can read it again and record the route anew.", { site: site.name, error: r.broken })),
-      h("button", { class: "btn sm primary", "aria-busy": reading && "true", disabled: !ui.chat.available || reading, onclick: learnRoute }, icon("sparkle"), t("Record the route anew"))),
+      // while the AI reads, "Check for updates" above already spins for it
+      !reading && h("button", { class: "btn sm primary", disabled: !ui.chat.available, onclick: learnRoute }, icon("sparkle"), t("Record the route anew"))),
     (lc.notes || []).map((n) => h("div", { class: "fill-banner" }, icon("alert"), h("span", { class: "nb-text" },
       n.kind === "removed_there_changed_here"
         ? t("“{item}” is gone from {site}, but you had edited it here: it stays in your copy and goes up again if you push it.", { item: n.label, site: site.name })

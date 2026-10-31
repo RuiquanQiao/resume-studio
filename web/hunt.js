@@ -868,8 +868,8 @@ function postingsCard(v) {
   const limit = H.plimit || 120;
   const busy = scanning(c.id) || sc.running;
   const waiting = !busy && (sc.queued || scanQueued(c.id));
-  const status = busy ? h("span", { class: "fs-status" }, h("span", { class: "spin" }), t("Scanning…"))
-    : waiting ? null   // the Scan button says it, spinning
+  // running or waiting, the Scan button says it, spinning: a second "Scanning…" beside it would say it twice
+  const status = busy || waiting ? null
     // a scan that stopped because it can't read the site records no time: say why, not "not scanned yet"
     : !sc.at && sc.needs === "claude" ? h("span", { class: "fs-status warn" }, icon("alert"), t("A plain scan can't read its site"))
     : !sc.at && sc.needs === "sites" ? h("span", { class: "fs-status warn" }, icon("alert"), t("No careers site to scan"))

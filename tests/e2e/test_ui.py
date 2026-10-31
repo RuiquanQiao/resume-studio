@@ -2390,6 +2390,25 @@ def test_scan_learning_button_starts_and_releases(page_all):
     pg.wait_for_function("() => !document.querySelector('#learn-test button[data-ai]').disabled")
 
 
+def test_one_piece_of_work_shows_one_spinner(page_all):
+    """A scan or a read going on spins in its button only: no second "Scanning…" or "Reading…" beside it."""
+    pg = page_all
+    counts = pg.evaluate("""() => {
+      const busy = (el) => el.querySelectorAll('.spin, [aria-busy="true"]').length;
+      const say = (el, word) => (el.textContent.match(new RegExp(word, 'g')) || []).length;
+      const scan = postingsCard({company: {id: 'C82', name: 'Test Company'}, scan: {running: true, at: '2026-10-30T00:00:00Z', ok: true}, postings: []});
+      F.site = 'linkedin';
+      const route = {recorded: true, pages: 2, broken: 'gone'};
+      const checking = syncCard({synced: true, synced_at: '2026-10-30T00:00:00Z', checking: {page: 1, pages: 2}, route, last_check: {}});
+      const reading = syncCard({synced: true, synced_at: '2026-10-30T00:00:00Z', reading: true, route, last_check: {}});
+      return {scan: [busy(scan), say(scan, '…')], checking: [busy(checking), say(checking, '…')], reading: [busy(reading), say(reading, '…')]};
+    }""")
+    assert counts == {"scan": [1, 1], "checking": [1, 1], "reading": [1, 1]}, counts
+    pg.evaluate("""() => { const card = postingsCard({company: {id: 'C82', name: 'Test Company'}, scan: {running: true}, postings: []});
+      card.id = 'one-spinner'; card.style.cssText = 'position: fixed; top: 16px; left: 16px; width: 900px; z-index: 9999'; document.body.append(card); }""")
+    pg.locator("#one-spinner").screenshot(path=str(ART / "hunt-scan-one-spinner.png"))
+
+
 def test_working_timer_restarts_for_each_reply(page_all):
     pg = page_all
     result = pg.evaluate("""async () => {
