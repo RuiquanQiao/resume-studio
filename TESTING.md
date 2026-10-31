@@ -7,9 +7,17 @@ report which ran and what they caught.
 
 ```bash
 .venv/Scripts/python -m pip install -r requirements-dev.txt   # once
-.venv/Scripts/python -m pytest                                 # everything (~3 min)
-.venv/Scripts/python -m pytest tests/e2e                       # only the UI
+.venv/Scripts/python scripts/check.py                          # everything, one line per group
+.venv/Scripts/python scripts/check.py ui layout                # some groups
 ```
+
+**One command** (added 2026-10-31). `scripts/check.py` runs each group (`unit`, then each `tests/e2e/test_*.py`)
+in its own pytest process, one after another: one pytest run over everything breaks the Playwright files, and
+the e2e servers share a port. It prints one line per group (counts and time), then each failure; full output is
+in `.cache/check/<group>.log`. A failed test is run again on its own: passing then, it is listed as
+`INTERMITTENT`, not `FAILED`. Run it after every change, in the background, and read only its summary; open a
+log only for a failure. An intermittent test is still a bug to fix: each one costs a look every time it turns red.
+For one test while working, `pytest <file> -k <name>` as usual.
 
 | Layer | File | Covers |
 | --- | --- | --- |
