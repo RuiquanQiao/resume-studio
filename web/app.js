@@ -2003,7 +2003,7 @@ function aiDiff(id) {
       h("button", { class: "btn sm", onclick: close }, icon("check"), changes.length ? t("Keep") : t("Got it")),
       changes.length && h("button", { class: "btn sm danger-soft", onclick: () => undoAi(id) }, icon("undo"), t("Undo, back to before")),
       h("button", { class: "btn sm ghost", onclick: () => showChat() }, icon("chat"), t("Open the chat"))),
-  ], { cls: "ai-review" });
+  ], { cls: "diff ai-review" });   // diff: sits flush in its doc card (style.css)
 }
 
 async function undoAi(id) {

@@ -45,7 +45,13 @@ function sentNote(note) {
 
 // the applications that got version n of a subset, oldest send first (null while the tracker hasn't loaded)
 function sentWith(subsetId, n) {
-  if (!H.data) { if (!H.loading) loadHunt({ quiet: true }).then(() => { if (ui.sel.kind === "versions") paintEditor({ keepScroll: true }); }); return null; }
+  if (!H.data) {   // not loaded yet: wait for the load (this one, or one already under way), then paint the page once
+    if (!H.sentWait) H.sentWait = (H.loading || loadHunt({ quiet: true })).then(() => {
+      H.sentWait = null;
+      if (H.data && ui.sel.kind === "versions") paintEditor({ keepScroll: true });
+    });
+    return null;
+  }
   const out = [];
   for (const a of H.data.applications) {
     const s = (a.sent || []).find((x) => x.subset === subsetId && Number(x.n) === Number(n));

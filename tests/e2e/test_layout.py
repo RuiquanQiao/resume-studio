@@ -411,18 +411,19 @@ STATES = [
     State("chat, proposes a plan", then(say("PLAN 改一下"), wait(".ask.ask-plan.pending")), [".ask.ask-plan"]),
     State("chat, tasks and a queue", then(say("TASKS SLOW"), wait("#chat-tasks:not(.hidden)"), say("排队的一条"),
                                           wait("#chat-queue:not(.hidden)")), ["#chat-tasks", "#chat-queue"]),
-    # the agent picker with one agent not installed (its npm command) and one signed out (how to sign in)
-    State("chat, the agent picker", then(wait("#chat-agent-btn .lbl"), js("""() => {
+    # the agent picker (in Settings since 2026-10-28) with one agent not installed (its npm command) and one
+    # signed out (how to sign in)
+    State("settings, the agent picker", then(js("""() => {
             ui.claude.agents = ui.claude.agents.map((a) => a.id === "pi" ? { ...a, installed: false } : a.id === "qwen" ? { ...a, signed_in: false } : a);
-            openAgentMenu(); }"""), wait(".float.in .pk-note")),
-          [".picker .pk-note", ".picker .pk-tag", ".picker .pk-item.off"]),
-    # a chat on Codex whose sign-in ran out: the header's chip warns, the reply says how to sign in again
-    State("chat, another agent signed out", then(wait("#chat-agent-btn .lbl"), js("""async () => {
+            openSettings(); }"""), click(".modal .agent-provider-select"), wait(".listbox .lb-hint.warn")),
+          [".listbox .lb-hint.warn", ".listbox .lb-desc"]),
+    # a chat on Codex whose sign-in ran out: the reply says how to sign in again
+    State("chat, another agent signed out", then(wait("#chat-input"), js("""async () => {
             await pickAgent(agentOf("codex"));
             ui.claude.agents = ui.claude.agents.map((a) => a.id === "codex" ? { ...a, signed_in: false } : a);
             ui.chat.messages = [{ role: "user", text: "你好", files: [] }, { role: "assistant", blocks: [], error: "Not logged in. Run codex login." }];
             renderChat(); renderPickers(); }"""), wait(".msg-help")),
-          ["#chat-agent-btn.warn", "#chat-log .msg-help"]),
+          ["#chat-log .msg-help"]),
     # every kind of step a reply shows, opened, with names and output too long for the pane (a URL as a tool's
     # name, four browser actions in one card): each stays inside the pane and reads top to bottom
     State("chat, long steps opened", then(wait("#chat-log"), js("""() => {

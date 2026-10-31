@@ -563,7 +563,9 @@ def test_mock_interview_predicts_hides_answers_and_follows_up(page, server, data
     page.click("#active .mock-run")
     page.wait_for_selector(".msg-user:has-text('字节后端')")
     page.wait_for_selector("#active .card.diff", timeout=15000)
-    assert "1. 为什么拆成多阶段？" in page.inner_text("#active .card.diff")       # the diff lists the questions
+    review = page.inner_text("#active .card.diff")                              # the review lists each question and answer
+    assert "模拟面试 · 1 · 问题" in review and "为什么拆成多阶段？" in review
+    assert "模拟面试 · 1 · 追问 · 1 · 问题" in review and "怎么发现跑偏的？" in review
     page.wait_for_selector("#active .mq[data-path='[0]'] .mq-q")
     assert page.input_value("#active .mq[data-path='[0]'] > .mq-q") == "为什么拆成多阶段？"
     assert page.input_value("#active .mq[data-path='[0,0]'] .mq-ans") == "【待补充：一个具体例子】"
@@ -1473,6 +1475,17 @@ def test_a_company_with_several_roles_goes_out_with_a_pinned_version(page, serve
     pg.click(".htable .hunt-resume >> nth=0")
     pg.wait_for_selector("body[data-ws=resume]")
     assert value_of(pg, "#subset-select") == "RES-TECH-EN"
+
+
+def test_versions_show_where_they_went_while_the_roles_still_load(page, server):
+    """2026-10-31: opened while another part of the window was loading the roles, the versions page never
+    said which roles a version went to (sentWith only repainted after a load it had started itself)."""
+    co = server.req("POST", "/api/hunt/companies", {"name": "Atlassian", "site": "careers.example.com/campus", "subset": "RES-TECH-EN"})[1]
+    cid = (co.get("company") or co)["id"]
+    server.req("POST", f"/api/hunt/companies/{cid}/roles", {"role": "Graduate Software Engineer"})
+    server.req("POST", f"/api/hunt/companies/{cid}/sent")
+    page.evaluate("async () => { H.data = null; loadHunt({ quiet: true }); await select('versions', 'RES-TECH-EN'); }")
+    page.wait_for_selector(".vrow[data-n='1'] .vsent .role-chip:has-text('Graduate Software Engineer')", timeout=5000)
 
 
 def test_a_search_box_takes_chinese_typed_through_an_ime(page_all, server):
