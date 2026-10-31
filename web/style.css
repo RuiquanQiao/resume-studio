@@ -81,7 +81,10 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 .badge.bad { background: var(--bad-soft); color: var(--bad); }
 .badge.busy::before { content: ""; width: 10px; height: 10px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.chip { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 11.5px; background: var(--hover); color: var(--text-2); }
+/* a chip is one line: it never wraps or gets squeezed by its row; a long name in it ends in an ellipsis */
+.chip { display: inline-block; height: 22px; line-height: 22px; padding: 0 8px; border-radius: 999px; font-size: 11.5px; background: var(--hover); color: var(--text-2);
+  white-space: nowrap; flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.chip.chip-name { flex: 0 1 auto; min-width: 5em; }   /* holds a name the user chose: it gives way in its row, the full text on hover */
 kbd { font: 11px var(--mono); padding: 1px 5px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; color: var(--text-2); }
 
 /* ---------- top bar ---------- */
@@ -298,6 +301,10 @@ body[data-outline="strip"] #library { display: none; }
 :is(.fact-fold, .mock-fold) > summary svg.i { width: 14px; height: 14px; transition: transform .15s; color: var(--text-3); }
 :is(.fact-fold, .mock-fold)[open] > summary svg.i { transform: rotate(90deg); }
 .fact-fold .ff-t { font-weight: 600; color: var(--fact-title); }
+/* one line: the note gives way first, then the title (with an ellipsis); the flag never shrinks */
+:is(.fact-fold, .mock-fold) > summary > .ff-t { flex: 0 1 auto; min-width: 3em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(.fact-fold, .mock-fold) .ff-sub { flex: 0 1000 auto; }
+.fact-fold .ff-flag { flex: none; display: inline-flex; }
 :is(.fact-fold, .mock-fold) .ff-sub { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .fact-fold .ff-flag .chip.new { background: var(--accent-soft); color: var(--accent); }
 .fact-fold .ff-flag .chip.bad { background: var(--bad-soft); color: var(--bad); }
@@ -1208,7 +1215,7 @@ mark.w-add { background: color-mix(in srgb, var(--ok) 30%, transparent); }
 .app-row.in-group .e-title { font-weight: 450; font-size: 12.5px; color: var(--text-2); }
 .app-row.pending .e-title { color: var(--text-3); }
 .su-order { font-size: 11px; color: var(--text-3); white-space: nowrap; }
-.app-row .e-meta .chip, .sent-chip { height: 17px; padding: 0 6px; margin-left: 6px; font-size: 10.5px; vertical-align: 1px; }
+.app-row .e-meta .chip, .sent-chip { height: 17px; line-height: 17px; padding: 0 6px; margin-left: 6px; font-size: 10.5px; vertical-align: 1px; }
 .sent-chip { background: var(--ok-soft); color: var(--ok); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; line-height: 17px; }
 .su-subset { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .su-subset .select { width: 240px; max-width: 100%; }

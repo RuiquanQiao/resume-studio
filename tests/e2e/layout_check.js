@@ -99,7 +99,11 @@
     }
 
     // wrapped: a button or chip label over two lines
-    const isControl = el.matches(".btn, [role=tab], .chip, [class*='-chip'], .seg > button");   // compact controls; a card or row may wrap
+    // compact controls by name, and by look: any inline box with its own fill or outline (a badge, a pill, a
+    // tab) whatever its class is called; a card or row may wrap
+    const boxed = s.backgroundColor !== "rgba(0, 0, 0, 0)" || px(s.borderTopWidth) > 0 || s.boxShadow !== "none";
+    const isControl = el.matches(".btn, [role=tab], .chip, [class*='-chip'], .seg > button")
+      || (/^inline-(flex|block|grid)$/.test(s.display) && boxed);
     if (isControl && text && s.whiteSpace !== "nowrap" && lineCount(el) >= 2 && !el.matches("[data-wrap]"))
       report("wrapped", el, `label on ${lineCount(el)} lines`);
 

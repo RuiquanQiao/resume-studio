@@ -184,6 +184,15 @@ def broken_subset(c):
     c.server.req("PUT", "/api/item", {"kind": "subset", "id": v["id"], "data": v, "base": s["hashes"]["subset"][v["id"]]})
 
 
+def long_subset_name(c):
+    """A subset whose name runs long: the chips that quote it ("not in …") must stay on one line."""
+    v = next(x for x in state(c.server)["doc"]["subsets"] if x["id"] == "RES-TECH-EN")
+    v["label"] = "Graduate software engineering roles at Sydney and Melbourne fintechs, second round"
+    v["entries"] = v.get("entries", [])[1:]   # one entry left out, so its card can be unfolded
+    s = state(c.server)
+    c.server.req("PUT", "/api/item", {"kind": "subset", "id": v["id"], "data": v, "base": s["hashes"]["subset"][v["id"]]})
+
+
 def keep_version(c):
     c.server.req("POST", "/api/subsets/RES-TECH-EN/versions", {"note": "Sent to the first round of applications"})
 
@@ -361,6 +370,17 @@ STATES = [
     State("resume, progress in one project, a folder gone", evidence({"EXP-002": "changed", "EXP-003": "missing"}),
           ["#library .lib-update .btn", "#library .e-dot.bad"]),
     State("resume, a card with its facts open", lambda pg, c: (open_entry(pg, "EXP-002"), open_facts(pg)), ["#evidence .ev-empty"]),
+    # the card's own flag on its folded facts (2026-10-31: "new progress" broke onto two lines there)
+    State("resume, a card whose project has new progress",
+          lambda pg, c: (open_entry(pg, "EXP-002"), evidence({"EXP-002": "changed"})(pg, c), js("() => paintEvidence()")(pg, c)),
+          ["#active .ff-flag .chip.new"]),
+    State("resume, a card whose project folder is gone",
+          lambda pg, c: (open_entry(pg, "EXP-002"), evidence({"EXP-002": "missing"})(pg, c), js("() => paintEvidence()")(pg, c)),
+          ["#active .ff-flag .chip.bad"]),
+    State("resume, a subset with a long name, a card that isn't in it, unfolded",
+          then(lambda pg, c: choose(pg, "#subset-select", "RES-TECH-EN"), click(".doc-fold .df-title >> nth=0"),
+               wait(".doc-card .ed-head .chip"), js("() => document.querySelector('.ed-head .chip').scrollIntoView({block: 'center'})")),
+          [".doc-card .ed-head .chip"], prepare=long_subset_name),
     State("resume, a card's mock interview, empty", lambda pg, c: (open_entry(pg, "EXP-002"), open_mock(pg)), ["#active .mock-empty"]),
     State("resume, a card's mock interview, answers hidden",
           lambda pg, c: (open_entry(pg, "EXP-002"), open_mock(pg), pg.click("#active .mock-hide"), pg.wait_for_selector("#active .mq-show")),

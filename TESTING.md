@@ -86,6 +86,11 @@ Rules for every change to the window:
   `min()` or a container query (as the layout panel does) rather than a fixed column width.
 - **Never hide the important part to save room.** When something must be shortened, shorten the
   repeated or secondary part (a role's page wraps its heading rather than cutting the role).
+- **A chip is one line.** `.chip` never wraps and never shrinks in its row; a chip that quotes a name the
+  user chose adds `.chip-name`, which gives way with an ellipsis and carries the full text as its title.
+  Added 2026-10-31, after "new progress" broke onto two lines on a card's folded facts: the states only
+  set the progress in the outline and never opened a card, and the checker only knew chips by class name.
+  It now also treats any inline box with its own fill or outline as a compact control.
 - **Skipping is the last resort.** `SKIP` in `test_layout.py` lists places the checker can't judge (the
   preview's page images, career-ops' own interface), each with its reason. Fix the layout first; only a
   piece that breaks a rule on purpose goes there.

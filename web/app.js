@@ -958,7 +958,7 @@ function entryForm(e = ui.draft, { out = false } = {}) {
     out && { label: t("Fold it again"), icon: "up", onClick: () => { ui.docOpen.delete(e.id); paintDocument(); } },
     { label: t("Delete this entry"), icon: "trash", danger: true, onClick: () => deleteEntry(e.id) }], { align: "end" }) }, icon("more"));
   parts.push(h("div", { class: "ed-head" }, h("h2", null, display(e.title) || t("(untitled)")), h("span", { class: "id" }, entryLabel(entryById(e.id) || e)),
-    out && h("span", { class: "chip" }, t("not in “{name}”", { name: subsetName(subset()) })),
+    out && h("span", { class: "chip chip-name", title: t("not in “{name}”", { name: subsetName(subset()) }) }, t("not in “{name}”", { name: subsetName(subset()) })),
     h("span", { class: "spacer" }), more));
 
   const secSel = uiSelect({
