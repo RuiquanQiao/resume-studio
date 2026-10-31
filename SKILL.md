@@ -117,7 +117,7 @@ entries:                     # the library: every real experience, never limited
     bullets:
       - {en: 'Built a **multi-stage** pipeline ...', de: 'Mehrstufige Pipeline **aufgebaut** ...'}
       - {en: 'Wrote the onboarding docs', de: ''}    # '' = left off the German resume
-    notes: |                 # fact layer: what really happened, never rendered
+    notes: |                 # fact layer: what really happened, never rendered; first person, the user's voice
       ...
     evidence: [E:/Forge/QuizLoom]   # fact layer: local paths to read (the user adds them with "Choose project folder")
     interview:               # mock interview, private like notes: never rendered, never in a version
@@ -183,7 +183,12 @@ subsets:
    conservatively, and tell the user what information is missing. The notes are what the user would tell
    their lawyer: present them well, never invent.
 3. **Don't edit the fact layer**: leave `notes` and `evidence` alone unless the user asks, and never copy
-   notes verbatim into bullets. `interview` changes only when the user asks for mock-interview questions,
+   notes verbatim into bullets. When the user does ask you to write into `notes`, write them as the user's
+   own notebook: first person, in the user's words and language ("后端是我一个人写的",
+   "I led the backend"), never as a third-party record ("用户指定：…", "用户自述：…", "本人…", "The user
+   says…"). Write the fact itself, not an instruction to the resume ("按 … 计算"), and
+   keep what it means exact: an end date the user picks for the resume is the date the resume shows, not
+   when the work stops ("简历上结束时间写 2026 年 11 月；实际的发布、优化和推广还会继续"). `interview` changes only when the user asks for mock-interview questions,
    and then keep the questions already there and the user's own answers.
 4. **Stable IDs**: never change an existing entry's `id`, not even when it moves section. New entries take
    the next global `EXP-xxx`. When deleting, update every subset's `entries`. IDs are for references only and
