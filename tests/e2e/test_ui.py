@@ -719,6 +719,21 @@ def test_tooltips_are_the_apps_own(page):
     page.wait_for_selector(".tip.show", state="detached", timeout=2000) if page.locator(".tip.show").count() else None
 
 
+def test_text_cut_to_an_ellipsis_shows_in_full_on_hover(page):
+    """2026-10-31: a label cut short (the outline's titles, a table cell, a chip) can always be read in full."""
+    long = "A very long project title that the narrow outline can never show on one line, end"
+    page.evaluate("(t) => { const el = document.querySelector('#library .entry .e-title'); el.textContent = t; el.id = 'cut-title'; }", long)
+    assert page.evaluate("() => { const el = document.querySelector('#cut-title'); return el.scrollWidth > el.clientWidth; }")
+    page.hover("#cut-title")
+    page.wait_for_selector(f".tip.show:text('{long}')")
+    page.mouse.move(700, 600)
+    short = page.locator("#library .entry .e-title").nth(1)                     # one that fits gets no tip
+    assert page.evaluate("(el) => el.scrollWidth <= el.clientWidth", short.element_handle())
+    short.hover()
+    page.wait_for_timeout(700)
+    assert not page.locator(".tip.show").count()
+
+
 def test_right_click_menu_in_text_fields(page):
     open_entry(page, "EXP-002")
     field = page.locator("#active input[data-key=subtitle]")

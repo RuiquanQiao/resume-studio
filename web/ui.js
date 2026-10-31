@@ -292,8 +292,17 @@ function hideTip() {
   Tip.target = null;
   if (Tip.el) Tip.el.classList.remove("show");
 }
+// text cut to an ellipsis shows in full on hover, like a tip: the nearest such box under the pointer,
+// unless a tip of its own (data-tip) is closer
+function cutBox(el) {
+  for (let n = el, i = 0; n && n !== document.body && i < 4; n = n.parentElement, i++) {
+    if (n.hasAttribute("data-tip")) return null;
+    if (n.scrollWidth > n.clientWidth + 1 && getComputedStyle(n).textOverflow === "ellipsis" && n.innerText.trim()) return n;
+  }
+  return null;
+}
 function showTip(t) {
-  const text = t.getAttribute("data-tip");
+  const text = t.getAttribute("data-tip") || (t.hasAttribute("data-tip") ? "" : t.innerText.trim());
   if (!text || !t.isConnected || Float.cur && Float.cur.anchor === t) return;
   if (!Tip.el) { Tip.el = h("div", { class: "tip", role: "tooltip" }); document.body.append(Tip.el); }
   const el = Tip.el;
@@ -317,7 +326,7 @@ function initTips() {
   // disabled buttons get no pointer events in Chromium, so track the pointer position instead
   document.addEventListener("pointermove", (e) => {
     const under = document.elementFromPoint(e.clientX, e.clientY);
-    const t = under && under.closest("[data-tip]");
+    const t = under && (cutBox(under) || under.closest("[data-tip]"));
     if (t === Tip.target) return;
     hideTip();
     if (!t) return;

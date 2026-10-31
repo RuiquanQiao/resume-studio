@@ -3,6 +3,7 @@
 //
 //   squeezed  text pushed into a column a few letters wide (one word per line)
 //   wrapped   a compact button, tab or chip whose label broke over two lines
+//   hidden    a heading or note cut to an ellipsis (they wrap; a compact label may be cut, its hover shows the rest)
 //   cut       an element cut off by a container that hides its overflow
 //   sticks    an element painting outside the box it belongs to, over its neighbours
 //   spills    text running past its own box (nothing clips it), over its neighbours
@@ -106,6 +107,13 @@
       || (/^inline-(flex|block|grid)$/.test(s.display) && boxed);
     if (isControl && text && s.whiteSpace !== "nowrap" && lineCount(el) >= 2 && !el.matches("[data-wrap]"))
       report("wrapped", el, `label on ${lineCount(el)} lines`);
+
+    // hidden: a heading or a note (hint, subtitle, a version's note) cut to an ellipsis. Those are read, so they
+    // wrap; a compact label (a rail's titles, a table cell, a chip) may end in an ellipsis, since hovering it shows
+    // the rest (ui.js cutBox). Added 2026-10-31 after a fold's note could never be read in full.
+    if (s.textOverflow === "ellipsis" && el.scrollWidth > el.clientWidth + 1 && (el.innerText || "").trim()
+        && el.matches("h1, h2, h3, h4, .hint, [class*='-sub'], [class$='sub'], .vtext, [class*='-note'], [class*='desc']"))
+      report("hidden", el, `${el.scrollWidth - el.clientWidth}px of a heading or note behind an ellipsis`);
 
     // cut: content hidden by its own box, with no ellipsis to say so
     if ((s.overflowX === "hidden" || s.overflowX === "clip") && el.scrollWidth > el.clientWidth + 1

@@ -99,6 +99,11 @@ Rules for every change to the window:
   Added 2026-10-31, after "new progress" broke onto two lines on a card's folded facts: the states only
   set the progress in the outline and never opened a card, and the checker only knew chips by class name.
   It now also treats any inline box with its own fill or outline as a compact control.
+- **Text is never cut where it can't be read.** Headings and notes (hints, a fold's note, a version's note)
+  wrap: what sits beside them moves to the next line, the way `.ed-head`, `.field > label` and the folds'
+  summaries do. A compact label (the outline's titles, a table cell, a chip) may end in an ellipsis: hovering
+  any cut text shows it in full (`cutBox` in `web/ui.js`). The checker reports a heading or note behind an
+  ellipsis as `hidden`. Added 2026-10-31, after a fold's title and note were cut with no way to read them.
 - **Skipping is the last resort.** `SKIP` in `test_layout.py` lists places the checker can't judge (the
   preview's page images, career-ops' own interface), each with its reason. Fix the layout first; only a
   piece that breaks a rule on purpose goes there.
