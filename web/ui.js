@@ -133,6 +133,7 @@ const ICONS = {
   down: '<path d="m6 9 6 6 6-6"/>',
   chev: '<path d="m7 10 5 5 5-5"/>',
   x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  quote: '<path d="M6 17c2-1 3-3 3-6V7H5v4h4M15 17c2-1 3-3 3-6V7h-4v4h4"/>',
   send: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   stop: '<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/>',
   sparkle: '<path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9z"/><path d="M19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z"/>',

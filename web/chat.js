@@ -660,14 +660,19 @@ function screenLine() {
 // ---------------------------------------------------------------- transcript
 function renderChat() {
   const log = $("#chat-log");
-  // redrawing the chat on screen (a reply ended, a chat event): rows the user opened stay open, and a user who
-  // scrolled up to read stays where they were; another chat starts at its end
+  // redrawing the chat on screen (a reply ended, a chat event): it is built aside and only what changed is put in,
+  // so rows the user opened stay open, selected text stays selected, and a user who scrolled up to read stays where
+  // they were; another chat starts at its end
   const same = log.dataset.chat === String(ui.chat.id);
   const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80, top = log.scrollTop;
-  const before = h("div");
-  before.append(...log.childNodes);
+  const next = h("div");
+  buildChat(next);
+  if (same) { keepOpened(log, next); patchKids(log, next); } else log.replaceChildren(...next.childNodes);
   log.dataset.chat = String(ui.chat.id);
-  ui.chat.liveEl = null;
+  ui.chat.liveEl = ui.chat.running ? log.lastElementChild : null;   // the reply under way is always last
+  log.scrollTop = same && !nearBottom ? top : log.scrollHeight;
+}
+function buildChat(log) {
   if (!ui.chat.messages.length && !ui.chat.running && W.ws === "fill") { log.append(fillWelcome()); return; }
   if (!ui.chat.messages.length && !ui.chat.running && W.ws === "plan") { log.append(planWelcome()); return; }
   if (!ui.chat.messages.length && !ui.chat.running && W.ws === "jobs" && jobsReady() && (!ui.chat.id || inToolFolder(ui.chat.meta))) {
@@ -697,9 +702,36 @@ function renderChat() {
     return;
   }
   ui.chat.messages.forEach((m, i) => log.append(messageEl(m, i)));
-  if (ui.chat.running) { ui.chat.liveEl = messageEl({ role: "assistant", blocks: (ui.chat.live || {}).blocks || [], live: true }); log.append(ui.chat.liveEl); }
-  if (same) keepOpened(before, log);
-  log.scrollTop = same && !nearBottom ? top : log.scrollHeight;
+  if (ui.chat.running) log.append(messageEl({ role: "assistant", blocks: (ui.chat.live || {}).blocks || [], live: true }));
+}
+
+// Put a freshly built tree into the one on screen, changing only what differs. Text that only grew is appended to,
+// so a selection in it (or anywhere unchanged) survives the stream. Controls that differ are swapped whole, since
+// their click handlers belong to the new build.
+const SWAP_WHOLE = new Set(["BUTTON", "INPUT", "TEXTAREA", "SELECT", "A", "IMG", "svg"]);
+function patchNode(a, b) {
+  if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) { a.replaceWith(b); return; }
+  if (a.nodeType === Node.TEXT_NODE) {
+    if (a.data === b.data) return;
+    if (b.data.startsWith(a.data)) a.appendData(b.data.slice(a.data.length)); else a.data = b.data;
+    return;
+  }
+  if (a.nodeType !== Node.ELEMENT_NODE) { if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue; return; }
+  if (a.isEqualNode(b)) return;
+  // a card (permission, question, plan) is one unit: the same card in the same state stays as the user left it
+  if (a.dataset.ask || b.dataset.ask) {
+    if (a.dataset.ask !== b.dataset.ask || a._status !== b._status) a.replaceWith(b);
+    return;
+  }
+  if (SWAP_WHOLE.has(a.nodeName)) { a.replaceWith(b); return; }
+  for (const { name } of [...a.attributes]) if (!b.hasAttribute(name)) a.removeAttribute(name);
+  for (const { name, value } of [...b.attributes]) if (a.getAttribute(name) !== value) a.setAttribute(name, value);
+  patchKids(a, b);
+}
+function patchKids(a, b) {
+  const [olds, news] = [[...a.childNodes], [...b.childNodes]];
+  news.forEach((n, i) => { if (olds[i]) patchNode(olds[i], n); else a.append(n); });
+  olds.slice(news.length).forEach((o) => o.remove());
 }
 
 function filesEl(files) {
@@ -1042,10 +1074,11 @@ async function rewindAt(index) {
 // ---------------------------------------------------------------- cards: permission / question / plan
 function askEl(a) {
   const cached = askEls.get(a.id);
-  if (cached && cached._status === a.status) return cached;
+  // the card on screen is kept whole by patchNode (with what the user picked or typed); one built for a redraw stands in for it
+  if (cached && cached._status === a.status && !cached.isConnected) return cached;
   const el = a.kind === "question" ? questionCard(a) : a.kind === "plan" ? planCard(a) : permissionCard(a);
   el._status = a.status;
-  askEls.set(a.id, el);
+  if (!(cached && cached._status === a.status)) askEls.set(a.id, el);
   return el;
 }
 
@@ -1222,8 +1255,8 @@ function renderLive(now = false) {
     if (!chatShown() || !ui.chat.running || !ui.chat.live) return;
     const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
     const el = messageEl({ role: "assistant", blocks: ui.chat.live.blocks, live: true });
-    if (ui.chat.liveEl && ui.chat.liveEl.isConnected) { keepOpened(ui.chat.liveEl, el); ui.chat.liveEl.replaceWith(el); } else log.append(el);
-    ui.chat.liveEl = el;
+    if (ui.chat.liveEl && ui.chat.liveEl.isConnected) { keepOpened(ui.chat.liveEl, el); patchNode(ui.chat.liveEl, el); }
+    else { log.append(el); ui.chat.liveEl = el; }
     if (nearBottom) log.scrollTop = log.scrollHeight;
   };
   if (now) { cancelAnimationFrame(liveFrame); paint(); } else liveFrame = requestAnimationFrame(paint);
@@ -1581,6 +1614,40 @@ function listenChat(es) {
 }
 
 // ---------------------------------------------------------------- wiring
+// Select text in the chat and a "Quote" button appears by it, as in the Claude app: it puts the text in the
+// box as a quote ("> …") to reply to, after anything already typed
+let quoteBtn = null;
+function quoteSelection() {
+  const sel = getSelection();
+  const log = $("#chat-log");
+  const text = sel && !sel.isCollapsed ? sel.toString().trim() : "";
+  if (!text || !log.contains(sel.anchorNode) || !log.contains(sel.focusNode) || $("#chat-input").disabled) { hideQuote(); return; }
+  const r = sel.getRangeAt(0).getBoundingClientRect(), box = log.getBoundingClientRect();
+  if (!quoteBtn) {
+    quoteBtn = h("button", { type: "button", class: "btn sm chat-quote", onpointerdown: (e) => e.preventDefault(), onclick: () => quoteInto(quoteBtn.dataset.text) },
+      icon("quote"), t("Quote"));
+    document.body.append(quoteBtn);
+  }
+  quoteBtn.dataset.text = text;
+  quoteBtn.classList.remove("hidden");
+  const w = quoteBtn.offsetWidth, hgt = quoteBtn.offsetHeight;
+  const above = r.top - hgt - 6 >= box.top;   // above the selection, or below it at the top of the log
+  quoteBtn.style.left = Math.round(Math.min(Math.max(r.left + r.width / 2 - w / 2, box.left + 4), box.right - w - 4)) + "px";
+  quoteBtn.style.top = Math.round(above ? r.top - hgt - 6 : Math.min(r.bottom + 6, box.bottom - hgt - 4)) + "px";
+}
+function hideQuote() { if (quoteBtn) quoteBtn.classList.add("hidden"); }
+function quoteInto(text) {
+  const ta = $("#chat-input");
+  const quote = text.split("\n").map((l) => (l.trim() ? "> " + l : ">")).join("\n") + "\n\n";
+  const before = ta.value.replace(/\s+$/, "");
+  ta.value = (before ? before + "\n\n" : "") + quote;
+  getSelection().removeAllRanges();
+  hideQuote();
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 function wireChat() {
   ui.w.chat = uiSelect({ id: "chat-select", cls: "grow", label: t("Chats"), placeholder: t("No chats yet"), menuWidth: 300, marks: true, onChange: (id) => openChat(id) });
   $("#chat-select-slot").replaceWith(ui.w.chat.el);
@@ -1605,6 +1672,8 @@ function wireChat() {
   $("#chat-stop").onclick = () => ui.chat.id && api("POST", `/api/chats/${ui.chat.id}/cancel`);
   const input = $("#chat-input");
   input.addEventListener("input", updateSlash);
+  document.addEventListener("selectionchange", () => requestAnimationFrame(quoteSelection));
+  $("#chat-log").addEventListener("scroll", hideQuote, { passive: true });
   input.addEventListener("keydown", (e) => {
     if (slash.open) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); moveSlash(e.key === "ArrowDown" ? 1 : -1); return; }

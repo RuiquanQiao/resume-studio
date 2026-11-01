@@ -206,6 +206,10 @@ textarea.ask-input { height: auto; line-height: 1.45; }
 .tool-group > summary .trow-stat .del { color: var(--bad); }
 .tg-now { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11.5px var(--mono); color: var(--text-3); }
 .tg-list { margin: 2px 0 4px 8px; padding-left: 10px; border-left: 1.5px solid var(--line); }
+/* the Quote button by text selected in the chat (see quoteSelection) */
+.chat-quote { position: fixed; z-index: 110; height: 26px; padding: 0 9px; gap: 5px; font-size: 12px; box-shadow: var(--shadow-lg); }
+.chat-quote svg.i { width: 13px; height: 13px; }
+.chat-quote.hidden { display: none; }
 /* under a finished reply: time taken · copy */
 .msg-ai { position: relative; }
 .ai-tools { margin: 4px 0 -4px; }

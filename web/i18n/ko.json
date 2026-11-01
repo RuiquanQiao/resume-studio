@@ -1935,5 +1935,6 @@
  "looked at {n} web page": "웹 페이지 {n}개 확인",
  "ran {n} subtask": "하위 작업 {n}개 실행",
  "{n} other step": "기타 {n}단계",
- "{n} failed": "{n}개 실패"
+ "{n} failed": "{n}개 실패",
+ "Quote": "인용"
 }

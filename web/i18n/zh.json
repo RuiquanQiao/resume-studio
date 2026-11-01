@@ -1935,5 +1935,6 @@
  "looked at {n} web page": "查看了 {n} 个网页",
  "ran {n} subtask": "跑了 {n} 个子任务",
  "{n} other step": "另外 {n} 步",
- "{n} failed": "{n} 步失败"
+ "{n} failed": "{n} 步失败",
+ "Quote": "引用"
 }

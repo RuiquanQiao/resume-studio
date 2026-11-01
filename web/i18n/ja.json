@@ -1935,5 +1935,6 @@
  "looked at {n} web page": "{n} 件のウェブページを見た",
  "ran {n} subtask": "{n} 件のサブタスクを実行",
  "{n} other step": "ほか {n} ステップ",
- "{n} failed": "{n} 件失敗"
+ "{n} failed": "{n} 件失敗",
+ "Quote": "引用"
 }

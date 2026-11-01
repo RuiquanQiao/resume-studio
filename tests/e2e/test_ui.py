@@ -589,6 +589,36 @@ def test_chat_rows_show_what_claude_code_shows_and_stay_open(page, server, fake_
     assert page.evaluate("document.querySelector('#chat-log').scrollTop") == 40
 
 
+def test_selected_text_survives_the_stream_and_can_be_quoted(page, server, fake_claude):
+    """Text selected in a reply stays selected while it streams on (in the paragraph that grows, too), through a new
+    step and the reply's end; a Quote button by the selection puts it in the box as "> …" after what is typed."""
+    page.wait_for_selector(".chat-welcome")
+    page.evaluate("""() => {
+        ui.chat.running = true;
+        ui.chat.live = { started_at: Date.now() / 1000, blocks: [{ type: "text", text: "开头一句。正在输出的这一段" }] };
+        renderChat();
+        const t = ui.chat.liveEl.querySelector('.md p').firstChild, r = document.createRange();
+        r.setStart(t, 5); r.setEnd(t, 9);
+        getSelection().removeAllRanges(); getSelection().addRange(r); }""")
+    for piece in ["继续", "，还有 **加粗**", "。"]:
+        page.evaluate("(p) => { ui.chat.live.blocks[0].text += p; renderLive(true); }", piece)
+        assert page.evaluate("getSelection().toString()") == "正在输出"
+    page.evaluate("""() => { ui.chat.live.blocks.push({ type: "tool", id: "q1", name: "Bash", hint: "ls", status: "running", result: "", input: { command: "ls" } });
+        renderLive(true); }""")
+    assert page.evaluate("getSelection().toString()") == "正在输出"
+    page.evaluate("""() => { ui.chat.messages.push({ role: "assistant", blocks: ui.chat.live.blocks, took: 2 });
+        ui.chat.running = false; ui.chat.live = null; renderChat(); }""")
+    assert page.evaluate("getSelection().toString()") == "正在输出"
+    page.fill("#chat-input", "我的看法")
+    page.evaluate("""() => { const t = document.querySelector('.msg-ai .md p').firstChild, r = document.createRange();
+        r.setStart(t, 5); r.setEnd(t, 9); getSelection().removeAllRanges(); getSelection().addRange(r); }""")
+    page.wait_for_selector(".chat-quote:not(.hidden):text('引用')")
+    page.click(".chat-quote")
+    assert page.input_value("#chat-input") == "我的看法\n\n> 正在输出\n\n"
+    page.wait_for_selector(".chat-quote", state="hidden")
+    assert page.evaluate("document.activeElement.id") == "chat-input"
+
+
 def test_polish_shows_diff_and_undo_restores(page, server, data_file, fake_claude, monkeypatch):
     original = data_file.read_text(encoding="utf-8")
     monkeypatch.setenv("FAKE_CLAUDE_EDIT", json.dumps({"file": str(data_file), "from": "Solo developer", "to": "Solo developer (polished)"}))
@@ -1111,6 +1141,10 @@ def test_question_and_plan_cards_in_the_chat(page, server, fake_claude):
     card = page.locator(".ask.ask-q.pending")
     card.wait_for()
     assert card.locator("button:has-text('提交回答')").is_disabled()          # nothing picked yet
+    card.locator(".ask-input").fill("绿色")
+    page.evaluate("() => { renderLive(true); renderChat(); }")              # redraws keep what is typed in the card
+    assert card.locator(".ask-input").input_value() == "绿色"
+    card.locator(".ask-input").fill("")
     card.locator(".q-opt:has-text('Blue')").click()
     card.locator("button:has-text('提交回答')").click()
     page.wait_for_selector(".msg-ai .md:has-text('你选了 Blue。')", timeout=10000)
@@ -1525,7 +1559,7 @@ def test_a_company_with_several_roles_goes_out_with_a_pinned_version(page, serve
     pg = page
     pg.keyboard.press("Control+3")
     pg.wait_for_selector(".hunt-tab.on[data-tab=apps]")
-    assert "还没有投递" in pg.inner_text("#fillspace")
+    pg.wait_for_selector("#fillspace :text('还没有投递')")   # once loaded (it says "loading" first)
     pg.click(".hunt-tab[data-tab=companies]")
     pg.click("#hunt-new-company")
     pg.fill("#fm-name", "星河科技")
@@ -1968,6 +2002,7 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.click(".dbv-calbar .btn:has-text('今天')")
     pg.click(f".dbv-calday[data-day='{day}'] .dbv-item.k-event")
     pg.wait_for_selector(".bk-item:has-text('一面')")
+    pg.wait_for_timeout(600)   # the role page's own repaints land before the form is filled
     # on the role's page: a common one picked, a date and time, Add
     pg.click(".bk-new .bk-chip:has-text('二面')")
     pg.fill(".bk-new .bk-day", "2030-01-15")
@@ -2104,7 +2139,10 @@ def test_a_long_table_scrolls_with_its_page_under_a_heading_row_that_stays(page_
 
     # down the page: the heading row stays at the top of it
     pg.mouse.move(600, 500)
-    pg.mouse.wheel(0, 900)
+    for _ in range(5):   # a wheel turn can land on a repaint from the roles just added; turn again
+        pg.mouse.wheel(0, 900)
+        if pg.evaluate("() => new Promise((ok) => setTimeout(() => ok(document.querySelector('.hunt-scroll').scrollTop >= 600), 800))"):
+            break
     pg.wait_for_function("() => document.querySelector('.hunt-scroll').scrollTop >= 600")
     g = pg.evaluate(geom)
     assert abs(g["head"]["top"] - g["sc"]["top"]) <= 1
