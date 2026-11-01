@@ -1927,5 +1927,13 @@
  "Time this reply took": "이 답변에 걸린 시간",
  "Took {time}": "{time} 걸림",
  "{n} step": "{n}단계",
- "… {n} earlier step": "… 이전 {n}단계"
+ "… {n} earlier step": "… 이전 {n}단계",
+ "read {n} file": "파일 {n}개 읽음",
+ "edited {n} file": "파일 {n}개 수정",
+ "ran {n} command": "명령 {n}개 실행",
+ "searched {n} time": "{n}번 검색",
+ "looked at {n} web page": "웹 페이지 {n}개 확인",
+ "ran {n} subtask": "하위 작업 {n}개 실행",
+ "{n} other step": "기타 {n}단계",
+ "{n} failed": "{n}개 실패"
 }

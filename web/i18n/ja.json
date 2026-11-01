@@ -1927,5 +1927,13 @@
  "Time this reply took": "この返信にかかった時間",
  "Took {time}": "{time} かかりました",
  "{n} step": "{n} ステップ",
- "… {n} earlier step": "… それ以前の {n} ステップ"
+ "… {n} earlier step": "… それ以前の {n} ステップ",
+ "read {n} file": "{n} 件のファイルを読んだ",
+ "edited {n} file": "{n} 件のファイルを編集",
+ "ran {n} command": "{n} 件のコマンドを実行",
+ "searched {n} time": "{n} 回検索",
+ "looked at {n} web page": "{n} 件のウェブページを見た",
+ "ran {n} subtask": "{n} 件のサブタスクを実行",
+ "{n} other step": "ほか {n} ステップ",
+ "{n} failed": "{n} 件失敗"
 }

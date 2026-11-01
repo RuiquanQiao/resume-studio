@@ -2071,5 +2071,37 @@
  "… {n} earlier step": [
   "… {n} früherer Schritt",
   "… {n} frühere Schritte"
+ ],
+ "read {n} file": [
+  "{n} Datei gelesen",
+  "{n} Dateien gelesen"
+ ],
+ "edited {n} file": [
+  "{n} Datei bearbeitet",
+  "{n} Dateien bearbeitet"
+ ],
+ "ran {n} command": [
+  "{n} Befehl ausgeführt",
+  "{n} Befehle ausgeführt"
+ ],
+ "searched {n} time": [
+  "{n}-mal gesucht",
+  "{n}-mal gesucht"
+ ],
+ "looked at {n} web page": [
+  "{n} Webseite angesehen",
+  "{n} Webseiten angesehen"
+ ],
+ "ran {n} subtask": [
+  "{n} Teilaufgabe ausgeführt",
+  "{n} Teilaufgaben ausgeführt"
+ ],
+ "{n} other step": [
+  "{n} weiterer Schritt",
+  "{n} weitere Schritte"
+ ],
+ "{n} failed": [
+  "{n} fehlgeschlagen",
+  "{n} fehlgeschlagen"
  ]
 }

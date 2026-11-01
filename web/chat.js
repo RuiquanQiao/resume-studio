@@ -734,8 +734,16 @@ function messageEl(m, index) {
       tools);
   }
   const el = h("div", { class: "msg-ai" });
-  (m.blocks || []).forEach((b) => {
-    if (b.type === "text") el.append(h("div", { class: "md", html: md(b.text) }));
+  // two or more steps in a row fold into one summary line, like Claude Code (opened, each step is its own row)
+  const runs = [];
+  for (const b of m.blocks || []) {
+    const last = runs[runs.length - 1];
+    if (groupable(b) && Array.isArray(last)) last.push(b);
+    else runs.push(groupable(b) ? [b] : b);
+  }
+  runs.forEach((b) => {
+    if (Array.isArray(b)) el.append(...(b.length > 1 ? [toolGroupEl(b)] : b.map(toolEl)));
+    else if (b.type === "text") el.append(h("div", { class: "md", html: md(b.text) }));
     else if (b.type === "thinking") el.append(h("details", { class: "thought", "data-key": "thought:" + String(b.text || "").slice(0, 60) }, h("summary", null, t("Thinking")), h("div", { class: "md", html: md(b.text) })));
     else if (b.type === "tool") el.append(toolEl(b));
     else if (b.type === "ask") el.append(askEl(b));
@@ -857,6 +865,44 @@ function toolBody(tool) {
   if (tool.result && !quiet) out.push(h("pre", { class: inp.command ? "trow-out" : null }, tool.result));
   return out;
 }
+// a step that folds into a group: browser steps (what Claude did on a site for you) stay one by one
+const groupable = (b) => b.type === "tool" && !(b.input && b.input.browser);
+
+// what a group of steps did, in words: "Read 2 files, edited 1 file, ran 3 commands"
+const GROUP_KINDS = [
+  [["Read", "NotebookRead"], (n) => t("read {n} file", { n }, "read {n} files")],
+  [["Edit", "MultiEdit", "Write", "NotebookEdit"], (n) => t("edited {n} file", { n }, "edited {n} files")],
+  [["Bash", "PowerShell"], (n) => t("ran {n} command", { n }, "ran {n} commands")],
+  [["Grep", "Glob"], (n) => t("searched {n} time", { n }, "searched {n} times")],
+  [["WebFetch", "WebSearch"], (n) => t("looked at {n} web page", { n }, "looked at {n} web pages")],
+  [["Task", "Agent"], (n) => t("ran {n} subtask", { n }, "ran {n} subtasks")],
+];
+function groupSummary(tools) {
+  const parts = [];
+  let rest = tools.length;
+  for (const [names, say] of GROUP_KINDS) {
+    const n = tools.filter((x) => names.includes(x.name)).length;
+    if (n) { parts.push(say(n)); rest -= n; }
+  }
+  if (rest) parts.push(parts.length ? t("{n} other step", { n: rest }, "{n} other steps") : t("{n} step", { n: rest }, "{n} steps"));
+  const text = parts.join(t(", "));
+  return text.charAt(0).toLocaleUpperCase() + text.slice(1);
+}
+function toolGroupEl(tools) {
+  const running = tools.find((x) => x.status === "running");
+  const failed = tools.filter((x) => x.status === "error").length;
+  const stats = tools.map((x) => editStats(x.input || {})).filter(Boolean).reduce((a, s) => [a[0] + s[0], a[1] + s[1]], [0, 0]);
+  return h("details", { class: "tool-group", "data-key": "group:" + tools[0].id },
+    h("summary", null, statusEl(running ? "running" : failed ? "error" : "done"),
+      h("span", { class: "tg-main" },
+        h("span", { class: "tg-t" }, groupSummary(tools)),
+        failed ? h("span", { class: "tg-fail" }, t("{n} failed", { n: failed }, "{n} failed")) : null,
+        (stats[0] || stats[1]) ? h("span", { class: "trow-stat" }, stats[0] ? h("span", { class: "add" }, "+" + stats[0]) : null, stats[1] ? h("span", { class: "del" }, "−" + stats[1]) : null) : null,
+        // while it runs, the step under way, on its own line
+        running ? h("span", { class: "tg-now", title: running.hint || "" }, `${TOOL_NAMES[running.name] || running.name} ${shortHint(running.hint)}`) : null)),
+    h("div", { class: "tg-list" }, tools.map(toolEl)));
+}
+
 function toolEl(tool) {
   const st = statusEl(tool.status);
   const step = tool.input && tool.input.browser;

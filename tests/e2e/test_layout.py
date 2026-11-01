@@ -414,6 +414,17 @@ STATES = [
     State("chat, every block opened", then(say("SHOWCASE"), wait(".msg-ai .code-block"), js("() => new Promise((ok) => { const t = setInterval(() => { if (!ui.chat.running) { clearInterval(t); setTimeout(ok, 300); } }, 50); })"),
                                          js("() => document.querySelectorAll('#chat-log details').forEach((d) => { d.open = true; })")),
           ["#chat-log .trow-diff", "#chat-log .trow-cmd", "#chat-log .trow-steps", "#chat-log .code-block", "#chat-log .ai-tools"]),
+    # steps folding into a group while the reply runs: the summary wraps, the step under way sits on its own line
+    State("chat, a group of steps running", then(wait("#chat-log"), js("""() => {
+            const long = "E:/Forge/resume-studio/.cache/a-very-long-folder-name-for-testing/another-very-long-folder-name/file.yaml";
+            ui.chat.running = true;
+            ui.chat.live = { started_at: Date.now() / 1000, blocks: [
+              { type: "tool", id: "g1", name: "Read", hint: long, status: "done", result: "x", input: {} },
+              { type: "tool", id: "g2", name: "Edit", hint: long, status: "error", result: "no match", input: { edits: [{ old: "a", new: "b" + String.fromCharCode(10) + "c"}] } },
+              { type: "tool", id: "g3", name: "WebFetch", hint: "https://www.example.com/" + "a".repeat(120), status: "done", result: "y", input: {} },
+              { type: "tool", id: "g4", name: "Bash", hint: "python scripts/check.py " + "--flag ".repeat(30), status: "running", result: "", input: { command: "python" } }] };
+            renderChat(); }""")),
+          ["#chat-log .tool-group .tg-now"]),
     State("chat, tasks and a queue", then(say("TASKS SLOW"), wait("#chat-tasks:not(.hidden)"), say("排队的一条"),
                                           wait("#chat-queue:not(.hidden)")), ["#chat-tasks", "#chat-queue"]),
     # the agent picker (in Settings since 2026-10-28) with one agent not installed (its npm command) and one
@@ -444,6 +455,8 @@ STATES = [
     # ---- Job search
     State("job search, not connected", key("Control+2"), ["#jobspace .connect"]),
     State("job search, git and Node missing", then(key("Control+2"), wait("#jobspace .connect"),
+                                                    # the status the page loads on its own lands first, then is overridden
+                                                    lambda pg, c: pg.wait_for_timeout(800),
                                                     js("() => { J.data.status.git = false; J.data.status.node = false; renderJobs(); }")),
           ["#jobspace .note-bar.warn"]),
     State("job search, its interface with warnings", then(lambda pg, c: open_job_search(pg), JOBS_TROUBLE),

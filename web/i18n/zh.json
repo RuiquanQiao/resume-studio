@@ -1927,5 +1927,13 @@
  "Time this reply took": "这次回复用了多长时间",
  "Took {time}": "用时 {time}",
  "{n} step": "{n} 步",
- "… {n} earlier step": "… 之前还有 {n} 步"
+ "… {n} earlier step": "… 之前还有 {n} 步",
+ "read {n} file": "读了 {n} 个文件",
+ "edited {n} file": "改了 {n} 个文件",
+ "ran {n} command": "运行了 {n} 条命令",
+ "searched {n} time": "搜索了 {n} 次",
+ "looked at {n} web page": "查看了 {n} 个网页",
+ "ran {n} subtask": "跑了 {n} 个子任务",
+ "{n} other step": "另外 {n} 步",
+ "{n} failed": "{n} 步失败"
 }

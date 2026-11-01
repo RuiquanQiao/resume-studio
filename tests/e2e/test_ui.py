@@ -543,7 +543,14 @@ def test_chat_rows_show_what_claude_code_shows_and_stay_open(page, server, fake_
     page.fill("#chat-input", "SHOWCASE")
     page.keyboard.press("Enter")
     page.wait_for_selector(".msg-ai .ai-tools .mt-time", timeout=15000)
-    rows = page.locator(".msg-ai .tool")
+    # eight steps in a row fold into one line saying what they did; opened, each step is its own row
+    group = page.locator(".msg-ai .tool-group")
+    assert group.count() == 1 and group.get_attribute("open") is None
+    assert group.locator(":scope > summary .tg-t").inner_text() == "读了 1 个文件，改了 2 个文件，运行了 2 条命令，搜索了 1 次，查看了 1 个网页，跑了 1 个子任务"
+    assert group.locator(":scope > summary .tg-fail").inner_text() == "1 步失败" and group.locator(":scope > summary .trow-stat").inner_text().split() == ["+33", "−2"]
+    group.locator(":scope > summary").click()
+    rows = group.locator(".tool")
+    assert rows.count() == 8
     edit = rows.filter(has_text="修改").first
     assert edit.locator(".trow-stat").inner_text().split() == ["+2", "−2"]
     edit.locator("summary").click()
@@ -578,6 +585,7 @@ def test_chat_rows_show_what_claude_code_shows_and_stay_open(page, server, fake_
     page.evaluate("""() => { ui.chat.messages.push({ role: "assistant", blocks: ui.chat.live.blocks, took: 3 });
         ui.chat.running = false; ui.chat.live = null; renderChat(); }""")
     assert page.locator(".tool[data-key='tool:live-1']").get_attribute("open") is not None
+    assert page.locator(".msg-ai .tool-group").first.get_attribute("open") is not None   # the opened group too
     assert page.evaluate("document.querySelector('#chat-log').scrollTop") == 40
 
 
@@ -1636,6 +1644,7 @@ def test_a_search_box_takes_chinese_typed_through_an_ime(page_all, server):
     pg.keyboard.press("Control+3")
     pg.click(".hunt-tab[data-tab=companies]")
     pg.wait_for_selector(".dbv-view tbody:has-text('腾讯 IME')")
+    pg.wait_for_timeout(600)   # the repaints the two new companies cause land first (rebuilding an idle box is fine)
     pg.click("#table-search")
     pg.evaluate("() => { document.querySelector('#table-search').dataset.mark = '1'; }")
     cdp = pg.context.new_cdp_session(pg)
