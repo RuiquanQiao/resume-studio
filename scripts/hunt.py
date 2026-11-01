@@ -453,6 +453,9 @@ def main() -> int:
             elif "found" in x:
                 print(f"{x['company']}: {x['found']} open, {x['new']} new, {x['closed']} closed, {x['changed']} changed"
                       + (f"; still needs: {x['needs']}" if x.get("needs") else ""))
+                if c == "postings" and x.get("needs") == "claude":
+                    print("  not done: these postings were read by hand, so the next scan can't read the site. Record its "
+                          "route with `scan-route` now; if no script can read it, tell the user which step failed and why")
             else:
                 print(f"{x['company']}: needs {x.get('needs') or 'claude'} (no site could be read without you)")
         if r.get("company"):

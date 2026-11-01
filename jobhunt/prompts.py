@@ -131,8 +131,15 @@ How to work it:
   posting of every list the site has (campus, intern), not only the first page. Each page's script has 2 minutes
   and some sites answer slowly: time one request first, and split a long list into several pages of the route
   (one request each, at most 20 pages in all) rather than one script that pages through all of it; a page that doesn't read is reported and
-  the others are kept. Give every posting its own `url` and its closing date when the site has them. When no script can do it, read
-  the postings yourself and send them with `postings`.
+  the others are kept. Give every posting its own `url` and its closing date when the site has them. The route is the
+  job, not the postings: a task to learn a site is done only once `scan-route` has run. A plain HTML list (links
+  with dates, pages like `index1.htm`, `?page=2`) always gets a route: `fetch` each list page and parse it with
+  `DOMParser`. A site that lists announcements (公告) rather than roles, as universities and state employers do:
+  each announcement is one posting (its title, its link, `posted` = its date); read only the last few pages and
+  leave out results (公示, 名单, 结果, 面试); take the closing date from the announcement's own page when it says one,
+  else leave it empty. Several roles in one announcement, history going back years, or several lists (one per
+  school or department, one route page each) are never reasons to skip the route. Send postings you read by hand
+  with `postings` only after a route really failed, and then tell the user which step failed and the error you got.
 - **A posting's link** (pasted in the chat, or "Read this posting and add it: <link>"): read the page (web fetch;
   when it needs scripts or a sign-in, open it in Resume Studio's browser with the browser commands). Find the
   company: `list` / `show` first; when it isn't there, `add-company`, fill it in as above, and `scan` it once its

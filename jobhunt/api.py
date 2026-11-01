@@ -768,9 +768,11 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             if cmd == "postings":
                 c = hunt.company(str(a.get("ref") or ""))
                 res = posts.merge(c["id"], a.get("postings") or [], how="claude", complete=not a.get("partial"))
-                posts.set_scan_state(c["id"], needs="")
+                # postings read by hand don't teach the scan anything: a site with no route still needs one
+                needs = "claude" if any(s["how"] == "claude" for s in scanner.plan(c)) else ""
+                posts.set_scan_state(c["id"], needs=needs)
                 return {"scanned": [{"company": c["id"], "found": res["found"], "new": len(res["new"]), "closed": len(res["closed"]),
-                                     "changed": len(res["changed"])}], "company": company_view(c["id"]), "text": "postings saved"}
+                                     "changed": len(res["changed"]), "needs": needs}], "company": company_view(c["id"]), "text": "postings saved"}
             if cmd == "apply":
                 x = read_if_new(posts.apply(str(a.get("ref") or ""), source=src))
                 return {"app": app_view(x["id"]), "text": "added"}

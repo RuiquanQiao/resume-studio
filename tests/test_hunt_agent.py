@@ -431,6 +431,21 @@ def test_adding_by_link_finds_the_role_or_the_scanned_posting(live, data_file):
     assert len(live.req("GET", "/api/hunt")[1]["applications"]) == 2
 
 
+def test_postings_read_by_hand_leave_the_site_still_needing_a_route(live, data_file):
+    do = lambda cmd, **a: live.req("POST", "/api/hunt/do", {"cmd": cmd, "args": a})
+    page = "https://hr.daxue.example/rczp/index.htm"
+    do("add-company", name="某大学", site=page)
+    code, out = cli(data_file, "postings", "某大学", "--partial", "--stdin",
+                    stdin=json.dumps({"postings": [{"title": "2027年度应届毕业生招聘公告", "url": page + "/1"}]}))
+    assert code == 0 and "1 open" in out and "still needs: claude" in out and "Record its route with `scan-route`" in out
+    c = live.req("GET", "/api/hunt")[1]["companies"][0]
+    assert c["postings"]["open"] == 1 and c["postings"]["needs"] == "claude"   # the window still offers "Let AI learn its site"
+    # once its route is recorded, postings sent by hand no longer bring the flag back
+    live.inst.hunt.scanner.save_route("某大学", {"pages": [{"url": page, "script": "async (h) => ({postings: []})"}]})
+    r = do("postings", ref="某大学", postings=[{"title": "2027年度应届毕业生招聘公告", "url": page + "/1"}])[1]
+    assert r["scanned"][0]["needs"] == "" and live.req("GET", "/api/hunt")[1]["companies"][0]["postings"]["needs"] == ""
+
+
 def test_a_site_is_scanned_by_its_recorded_route(hunt):
     ps = Postings(hunt)
     hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
@@ -704,3 +719,6 @@ def test_claude_is_told_to_fill_scan_and_read_links():
     note = prompts.tools_note("E:/data/resume.yaml")
     assert "fill <company> --stdin" in note and "Never stop at the About" in note
     assert "scan-route" in note and "A posting's link" in note and "never to the company" in note
+    # learning a site ends with a route; reading postings by hand is only for a route that failed, said why
+    assert "done only once `scan-route` has run" in note and "always gets a route" in note
+    assert "only after a route really failed" in note and "When no script can do it" not in note
