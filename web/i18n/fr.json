@@ -137,7 +137,7 @@
  "Ask AI to fill it in": "Demander à l’IA de la remplir",
  "Ask AI to fill it in again": "Demander à l’IA de la remplir à nouveau",
  "Ask AI to find them": "Demander à l’IA de les trouver",
- "Ask AI to record it again": "Demander à l’IA de l’enregistrer à nouveau",
+ "Ask AI to record the scan route again": "Demander à l'IA de réenregistrer le parcours de scan",
  "Ask AI to rewrite them": "Demander à l’IA de les réécrire",
  "Ask AI to write it in {lang}": "Demander à l’IA de l'écrire en {lang}",
  "Ask AI which fits": "Demander à l’IA laquelle convient",
@@ -926,7 +926,7 @@
  "Reading {site} by the recorded route stopped working. Read it again in the browser and record the route anew. Don't change anything on {site}.": "La lecture de {site} par l’itinéraire enregistré ne marche plus. Relis-le dans le navigateur et réenregistre l’itinéraire. Ne change rien sur {site}.",
  "Reading {site}: page {n} of {total}…": "Lecture de {site} : page {n} sur {total}…",
  "Reading {site}…": "Lecture de {site}…",
- "Reads every company's careers sites for open roles": "Lit les sites carrières de chaque entreprise à la recherche de postes ouverts",
+ "Reads every company's careers sites for open roles; a site with no scan route yet needs the AI to learn it first": "Lit les postes ouverts sur les sites carrières de chaque entreprise ; un site sans parcours de scan doit d'abord être appris par l'IA",
  "Reads {site} by the recorded route ({n} page), without AI.": [
   "Lit {site} par l’itinéraire enregistré ({n} page), sans l’IA.",
   "Lit {site} par l’itinéraire enregistré ({n} pages), sans l’IA."
@@ -1482,7 +1482,7 @@
  "applied {date}": "envoyée le {date}",
  "bullet {n} ({lines} lines, the text fills {pct}% of a line): {text}": "point {n} ({lines} lignes, le texte occupe {pct} % d'une ligne) : {text}",
  "by AI": "par l’IA",
- "by their providers and recorded routes; never AI": "par leurs API et les parcours enregistrés ; jamais par l’IA",
+ "by their providers and recorded routes; never AI, so a site with no scan route is left out": "via leurs fournisseurs et les parcours enregistrés, jamais par l'IA : un site sans parcours de scan est donc ignoré",
  "can be empty": "peut rester vide",
  "career-ops couldn't add the rows to its tracker:": "career-ops n’a pas pu ajouter les lignes à son suivi :",
  "career-ops couldn't change the status:": "career-ops n'a pas pu changer le statut :",
@@ -1572,7 +1572,7 @@
  ],
  "{names}: the last scan didn't work; their pages say why.": "{names} : la dernière analyse n'a pas fonctionné ; leurs pages disent pourquoi.",
  "Its page didn't read": "Sa page n'a pas pu être lue",
- "A plain scan can't read its site": "Une analyse simple ne peut pas lire son site",
+ "No scan route yet: the AI has to learn its site first": "Pas encore de parcours de scan : l'IA doit d'abord apprendre son site",
  "No careers site to scan": "Aucun site carrières à analyser",
  "not yet": "pas encore",
  "nothing new from the last day's scans": "rien de nouveau dans les analyses du dernier jour",
@@ -2104,5 +2104,8 @@
   "{n} a échoué",
   "{n} ont échoué"
  ],
- "Quote": "Citer"
+ "Quote": "Citer",
+ "read by hand by the AI {when} · no scan route yet, so a scan can't update these roles": "lu à la main par l'IA {when} · pas encore de parcours de scan, un scan ne peut pas mettre ces postes à jour",
+ "scanned {when} · a site has no scan route yet, so a scan can't read it": "scanné {when} · un site n'a pas encore de parcours de scan, un scan ne peut pas le lire",
+ "The AI reads its site once and records a scan route; after that, scans read it without AI": "L'IA lit le site une fois et enregistre un parcours de scan ; ensuite, les scans le lisent sans IA"
 }

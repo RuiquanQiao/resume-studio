@@ -137,7 +137,7 @@
  "Ask AI to fill it in": "Von der KI ausfüllen lassen",
  "Ask AI to fill it in again": "Von der KI neu ausfüllen lassen",
  "Ask AI to find them": "Von der KI suchen lassen",
- "Ask AI to record it again": "Von der KI neu aufzeichnen lassen",
+ "Ask AI to record the scan route again": "KI die Scan-Route neu aufzeichnen lassen",
  "Ask AI to rewrite them": "Die KI bitten, sie neu zu schreiben",
  "Ask AI to write it in {lang}": "Die KI bitten, es auf {lang} zu schreiben",
  "Ask AI which fits": "Die KI fragen, welche passt",
@@ -926,7 +926,7 @@
  "Reading {site} by the recorded route stopped working. Read it again in the browser and record the route anew. Don't change anything on {site}.": "Das Lesen von {site} über die aufgezeichnete Route funktioniert nicht mehr. Lies es im Browser neu und zeichne die Route neu auf. Ändere nichts auf {site}.",
  "Reading {site}: page {n} of {total}…": "Lese {site}: Seite {n} von {total}…",
  "Reading {site}…": "Lese {site}…",
- "Reads every company's careers sites for open roles": "Liest die Karriereseiten aller Firmen nach offenen Stellen",
+ "Reads every company's careers sites for open roles; a site with no scan route yet needs the AI to learn it first": "Liest die offenen Stellen auf den Karriereseiten aller Firmen; eine Seite ohne Scan-Route muss die KI zuerst lernen",
  "Reads {site} by the recorded route ({n} page), without AI.": [
   "Liest {site} über die aufgezeichnete Route ({n} Seite), ohne KI.",
   "Liest {site} über die aufgezeichnete Route ({n} Seiten), ohne KI."
@@ -1482,7 +1482,7 @@
  "applied {date}": "beworben am {date}",
  "bullet {n} ({lines} lines, the text fills {pct}% of a line): {text}": "Punkt {n} ({lines} Zeilen, der Text füllt {pct} % einer Zeile): {text}",
  "by AI": "von der KI",
- "by their providers and recorded routes; never AI": "über ihre APIs und aufgezeichnete Lesewege; nie mit der KI",
+ "by their providers and recorded routes; never AI, so a site with no scan route is left out": "über ihre Anbieter und aufgezeichnete Routen, nie mit KI; Seiten ohne Scan-Route werden daher übersprungen",
  "can be empty": "darf leer bleiben",
  "career-ops couldn't add the rows to its tracker:": "career-ops konnte die Zeilen nicht in seinen Tracker eintragen:",
  "career-ops couldn't change the status:": "career-ops konnte den Status nicht ändern:",
@@ -1572,7 +1572,7 @@
  ],
  "{names}: the last scan didn't work; their pages say why.": "{names}: Der letzte Scan hat nicht geklappt; ihre Seiten sagen, warum.",
  "Its page didn't read": "Die Seite ließ sich nicht lesen",
- "A plain scan can't read its site": "Ein normaler Scan kann die Seite nicht lesen",
+ "No scan route yet: the AI has to learn its site first": "Noch keine Scan-Route: Die KI muss die Seite zuerst lernen",
  "No careers site to scan": "Keine Karriereseite zum Scannen",
  "not yet": "noch nicht",
  "nothing new from the last day's scans": "nichts Neues aus den Scans des letzten Tages",
@@ -2104,5 +2104,8 @@
   "{n} fehlgeschlagen",
   "{n} fehlgeschlagen"
  ],
- "Quote": "Zitieren"
+ "Quote": "Zitieren",
+ "read by hand by the AI {when} · no scan route yet, so a scan can't update these roles": "{when} von der KI von Hand gelesen · noch keine Scan-Route, ein Scan kann diese Stellen nicht aktualisieren",
+ "scanned {when} · a site has no scan route yet, so a scan can't read it": "gescannt {when} · eine Seite hat noch keine Scan-Route, ein Scan kann sie nicht lesen",
+ "The AI reads its site once and records a scan route; after that, scans read it without AI": "Die KI liest die Seite einmal und zeichnet eine Scan-Route auf; danach lesen Scans sie ohne KI"
 }

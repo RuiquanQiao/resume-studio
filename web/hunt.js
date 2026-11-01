@@ -763,7 +763,7 @@ const kwMatch = (title) => { const kw = scanInfo().keywords || []; return !kw.le
 function scanTrouble(c) {
   const ps = c.postings || {}, sc = ps.scan || {};
   const say = sc.at && sc.ok === false ? (sc.signed_out ? t("The site asks to sign in") : t("The last scan didn't work"))
-    : ps.needs === "claude" ? t("A plain scan can't read its site")
+    : ps.needs === "claude" ? t("No scan route yet: the AI has to learn its site first")
     : ps.needs === "sites" ? t("No careers site to scan") : "";
   return say && h("span", { class: "fs-status warn" }, icon("alert"), say);
 }
@@ -808,7 +808,7 @@ function scanAllButton() {
   const busy = !!b || H.starting === "all" || Object.keys(sc.running || {}).length > 0;
   const now = H.data.companies.filter((c) => (sc.running || {})[c.id]).map((c) => c.name);
   return h("button", { class: "btn sm", id: "hunt-scan-all", "aria-busy": busy && "true", disabled: busy,
-    title: now.length ? t("Reading {names}", { names: now.join(", ") }) : sc.last_all ? t("Last scanned {when}", { when: huntWhen(sc.last_all) }) : t("Reads every company's careers sites for open roles"),
+    title: now.length ? t("Reading {names}", { names: now.join(", ") }) : sc.last_all ? t("Last scanned {when}", { when: huntWhen(sc.last_all) }) : t("Reads every company's careers sites for open roles; a site with no scan route yet needs the AI to learn it first"),
     onclick: () => scanCompanies() }, icon("refresh"),
   !busy ? t("Scan all") : b && b.total > 1 ? t("Scanning {n} of {total}…", { n: Math.min(b.done + 1, b.total), total: b.total }) : t("Scanning…"));
 }
@@ -877,12 +877,16 @@ function postingsCard(v) {
   // running or waiting, the Scan button says it, spinning: a second "Scanning…" beside it would say it twice
   const status = busy || waiting ? null
     // a scan that stopped because it can't read the site records no time: say why, not "not scanned yet"
-    : !sc.at && sc.needs === "claude" ? h("span", { class: "fs-status warn" }, icon("alert"), t("A plain scan can't read its site"))
+    : !sc.at && sc.needs === "claude" ? h("span", { class: "fs-status warn" }, icon("alert"), t("No scan route yet: the AI has to learn its site first"))
     : !sc.at && sc.needs === "sites" ? h("span", { class: "fs-status warn" }, icon("alert"), t("No careers site to scan"))
     : !sc.at ? h("span", { class: "muted" }, t("not scanned yet"))
     // read in part (a slow page timed out): what it read is kept, and the bar below says which page didn't
     : sc.ok && sc.error ? h("span", { class: "fs-status warn" }, icon("alert"), t("scanned {when} · some pages didn't read", { when: huntWhen(sc.at) }))
-    : sc.ok ? h("span", { class: "muted" }, t("scanned {when} · {how}", { when: huntWhen(sc.at), how: howName(sc.how) }))
+    // read, but a site still has no route: the next scan can't read it again, so "scanned" alone would read as set up
+    : sc.ok && sc.needs === "claude" ? h("span", { class: "fs-status warn", id: "company-no-route" }, icon("alert"), sc.how === "claude"
+      ? t("read by hand by the AI {when} · no scan route yet, so a scan can't update these roles", { when: huntWhen(sc.at) })
+      : t("scanned {when} · a site has no scan route yet, so a scan can't read it", { when: huntWhen(sc.at) }))
+    : sc.ok ?h("span", { class: "muted" }, t("scanned {when} · {how}", { when: huntWhen(sc.at), how: howName(sc.how) }))
     : h("span", { class: "fs-status bad" }, icon("alert"), sc.signed_out ? t("The site asks to sign in") : t("The last scan didn't work"));
   const row = (p) => h("div", { class: "post-row" + (p.closed ? " closed" : ""), "data-id": p.id },
     h("div", { class: "pr-main" },
@@ -900,8 +904,9 @@ function postingsCard(v) {
   const search = searchBox("posting-search", H.pq || "", t("Search these roles"), (v) => { H.pq = v; });
   // the head carries the count, when it was read and Scan: all still at hand with the list folded away
   const acts = [status,
-    sc.needs === "claude" && h("button", { class: "btn sm", "data-ai": aiKey("learn", [c]), disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Let AI learn its site")),
-    !sc.ok && sc.at && sc.how === "route" && h("button", { class: "btn sm", "data-ai": aiKey("learn", [c]), disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Ask AI to record it again")),
+    sc.needs === "claude" && h("button", { class: "btn sm", "data-ai": aiKey("learn", [c]), disabled: !ui.chat.available, onclick: () => askLearn([c]),
+      title: t("The AI reads its site once and records a scan route; after that, scans read it without AI") }, icon("sparkle"), t("Let AI learn its site")),
+    !sc.ok && sc.at && sc.how === "route" && h("button", { class: "btn sm", "data-ai": aiKey("learn", [c]), disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Ask AI to record the scan route again")),
     h("button", { class: "btn sm", id: "company-scan", "aria-busy": (busy || waiting) && "true", disabled: !!busy || waiting || sc.needs === "sites",
       title: sc.needs === "sites" ? t("Add a careers site below first") : waiting ? t("Waiting for the companies before it…") : null,
       onclick: () => scanCompanies([c.id]) }, icon("refresh"), busy ? t("Scanning…") : waiting ? t("Waiting…") : t("Scan"))];
@@ -1620,7 +1625,7 @@ function trackerField() {
       (() => { const on = pendingDaily ?? ((d.scan || {}).daily !== false);
         return h("button", { type: "button", class: "check-row", id: "daily-scan", role: "checkbox", "aria-checked": String(on),
           onclick: () => { pendingDaily = !on; paint(); } }, h("span", { class: "check" + (on ? " on" : "") }),
-        h("span", null, t("Scan the companies' sites once a day, when the window opens"), h("span", { class: "hint" }, t("by their providers and recorded routes; never AI")))); })());
+        h("span", null, t("Scan the companies' sites once a day, when the window opens"), h("span", { class: "hint" }, t("by their providers and recorded routes; never AI, so a site with no scan route is left out")))); })());
   };
   paint();
   if (!H.data) loadHunt({ quiet: true }).then(paint);

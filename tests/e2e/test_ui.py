@@ -2590,6 +2590,26 @@ def test_scan_learning_button_starts_and_releases(page_all):
     pg.wait_for_function("() => !document.querySelector('#learn-test button[data-ai]').disabled")
 
 
+def test_postings_read_by_hand_say_the_site_has_no_scan_route(page_all):
+    """Postings the AI read by hand, with no route recorded: the card says the next scan can't update them,
+    never a plain "scanned · read by AI" that looks set up."""
+    pg = page_all
+    out = pg.evaluate("""() => {
+      const at = new Date(Date.now() - 30 * 60e3).toISOString();
+      const say = (scan) => {
+        const card = postingsCard({company: {id: 'C83', name: 'Test Company'}, scan, postings: []});
+        const s = card.querySelector('#company-no-route');
+        return {warn: s ? s.textContent : null, learn: !!card.querySelector('button[data-ai="learn:C83"]')};
+      };
+      return {hand: say({at, ok: true, how: 'claude', needs: 'claude', found: 11}),
+              part: say({at, ok: true, how: 'route', needs: 'claude', found: 3}),
+              route: say({at, ok: true, how: 'route', needs: '', found: 3})};
+    }""")
+    assert "AI 手动读的" in out["hand"]["warn"] and "还没有扫描路线" in out["hand"]["warn"] and out["hand"]["learn"]
+    assert "还有官网没有扫描路线" in out["part"]["warn"] and out["part"]["learn"]
+    assert out["route"] == {"warn": None, "learn": False}
+
+
 def test_one_piece_of_work_shows_one_spinner(page_all):
     """A scan or a read going on spins in its button only: no second "Scanning…" or "Reading…" beside it."""
     pg = page_all
