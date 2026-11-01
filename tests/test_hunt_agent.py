@@ -446,6 +446,29 @@ def test_postings_read_by_hand_leave_the_site_still_needing_a_route(live, data_f
     assert r["scanned"][0]["needs"] == "" and live.req("GET", "/api/hunt")[1]["companies"][0]["postings"]["needs"] == ""
 
 
+def test_an_archive_of_announcements_keeps_old_ones_out_of_the_open_roles(hunt):
+    """A university's list keeps every announcement: one past its closing date, or with none and posted over a year
+    ago, is kept but never counted as open, and never news."""
+    from jobhunt.postings import stale
+    assert stale({"deadline": "2026-11-01"}, "2026-11-02") == "deadline"
+    assert stale({"deadline": "2026-11-02"}, "2026-11-02") == ""                   # closes today: still open
+    assert stale({"posted": "2025-11-01"}, "2026-11-02") == "old"
+    assert stale({"posted": "2025-11-02"}, "2026-11-02") == ""                     # a year to the day: still counts
+    assert stale({"posted": "2020-02-03", "deadline": "2030-01-01"}, "2026-11-02") == ""   # an old one that says it is open
+    assert stale({"title": "no dates at all"}, "2026-11-02") == ""
+    ps = Postings(hunt)
+    hunt.add_company({"name": "某大学", "site": "https://hr.daxue.example/rczp/index.htm"})
+    page = "https://hr.daxue.example/rczp/"
+    ps.merge("某大学", [{"title": "2022年度研究技术系列人员招聘启事", "url": page + "1", "posted": "2022-05-30"},
+                       {"title": "已截止的招聘公告", "url": page + "2", "posted": "2026-10-01", "deadline": "2026-10-15"},
+                       {"title": "2026年教学科研岗位招聘启事", "url": page + "3", "posted": "2026-02-10"},
+                       {"title": "行政管理岗", "url": page + "4", "posted": "2026-10-28", "deadline": "2030-11-15"}], how="route")
+    s = ps.summary()["C1"]
+    assert (s["open"], s["stale"], s["news"]["new"]) == (2, 2, 2)
+    assert [r["title"] for r in ps.changes()[0]["new"]] == ["2026年教学科研岗位招聘启事", "行政管理岗"]
+    assert not any(p["closed"] for p in ps.all())                                  # kept, only folded away
+
+
 def test_a_site_is_scanned_by_its_recorded_route(hunt):
     ps = Postings(hunt)
     hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
@@ -653,14 +676,14 @@ def test_the_window_and_claude_scan_and_apply(live, data_file, monkeypatch):
     cli(data_file, "add-company", "星河科技", "--site", "https://careers.xinghe.example/campus")
     page = "https://careers.xinghe.example/campus/jobs"
     fake = FakeBrowser({page: {"postings": [{"title": "服务端研发工程师", "url": page + "/1"},
-                                            {"title": "算法工程师", "url": page + "/2", "deadline": "2026-10-31"}]},
+                                            {"title": "算法工程师", "url": page + "/2", "deadline": "2030-10-31"}]},
                         page + "/2": {"jd": "岗位职责\n1、训练模型", "text": "工作地点\n工作地点\n杭州/上海\n截止日期：2026-11-30"}})
     monkeypatch.setattr(live.inst.hunt.scanner, "browser", fake)
     code, out = cli(data_file, "scan")
     assert "C1: needs claude" in out
     route = {"pages": [{"url": page, "script": "async (h) => ({postings: []})"}]}
     code, out = cli(data_file, "scan-route", "星河科技", "--stdin", stdin=json.dumps(route))
-    assert code == 0 and "C1: 2 open, 2 new, 0 closed, 0 changed" in out and "P2" in out and "closes 2026-10-31" in out
+    assert code == 0 and "C1: 2 open, 2 new, 0 closed, 0 changed" in out and "P2" in out and "closes 2030-10-31" in out
     tab = live.req("GET", "/api/hunt")[1]
     c = tab["companies"][0]
     assert c["postings"]["open"] == 2 and c["postings"]["news"]["new"] == 2 and c["postings"]["needs"] == ""
@@ -668,7 +691,7 @@ def test_the_window_and_claude_scan_and_apply(live, data_file, monkeypatch):
     v = live.req("GET", "/api/hunt/companies/C1")[1]
     assert len(v["postings"]) == 2 and v["scan"]["recorded"] and v["scan"]["how"] == "route"
     code, r = live.req("POST", "/api/hunt/postings/P2/apply")
-    assert code == 200 and r["application"]["role"] == "算法工程师" and r["application"]["schedule"][0]["at"] == "2026-10-31"
+    assert code == 200 and r["application"]["role"] == "算法工程师" and r["application"]["schedule"][0]["at"] == "2030-10-31"
     # going for it reads its page: the description and the cities; the scanned deadline stays
     aid = r["application"]["id"]
     end = time.time() + 10
@@ -677,7 +700,7 @@ def test_the_window_and_claude_scan_and_apply(live, data_file, monkeypatch):
         r = live.req("GET", f"/api/hunt/apps/{aid}")[1]
     a = r["application"]
     assert a["jd"] == "岗位职责\n1、训练模型" and [p["area"] for p in a["places"]] == ["Hangzhou", "Shanghai"] and a["jd_read"]
-    assert a["schedule"][0]["at"] == "2026-10-31" and not r["reading"]
+    assert a["schedule"][0]["at"] == "2030-10-31" and not r["reading"]
     # reading it again on request replaces the description; a page with none says so
     fake.pages[page + "/2"]["jd"] = "岗位职责\n2、部署模型"
     live.req("POST", f"/api/hunt/apps/{aid}/read", {})
@@ -722,3 +745,4 @@ def test_claude_is_told_to_fill_scan_and_read_links():
     # learning a site ends with a route; reading postings by hand is only for a route that failed, said why
     assert "done only once `scan-route` has run" in note and "always gets a route" in note
     assert "only after a route really failed" in note and "When no script can do it" not in note
+    assert "posted in the last 12 months" in note

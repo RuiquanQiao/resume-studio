@@ -1939,5 +1939,8 @@
  "Quote": "引用",
  "read by hand by the AI {when} · no scan route yet, so a scan can't update these roles": "{when}に AI が手作業で読み取り · スキャン経路がまだないため、スキャンではこれらの職種を更新できません",
  "scanned {when} · a site has no scan route yet, so a scan can't read it": "{when}にスキャン · スキャン経路がまだないサイトがあり、スキャンでは読めません",
- "The AI reads its site once and records a scan route; after that, scans read it without AI": "AI がサイトを一度読んでスキャン経路を記録します。以後のスキャンは AI なしで読めます"
+ "The AI reads its site once and records a scan route; after that, scans read it without AI": "AI がサイトを一度読んでスキャン経路を記録します。以後のスキャンは AI なしで読めます",
+ "posted {date}": "{date} 掲載",
+ "{n} probably over": "{n} 件は終了済みの可能性",
+ "Still on its site, but the closing date has passed, or there is none and it was posted over a year ago": "サイトにはまだ載っていますが、締切が過ぎているか、締切がなく掲載から1年以上経っています"
 }

@@ -864,7 +864,9 @@ function postingsCard(v) {
   const c = v.company;
   const sc = v.scan || {};
   const all = v.postings || [];
-  const open = all.filter((p) => !p.closed);
+  // still listed but probably over (a university's announcement archive keeps every one): folded away, never counted
+  const open = all.filter((p) => !p.closed && !p.stale);
+  const stale = all.filter((p) => !p.closed && p.stale);
   const closed = all.filter((p) => p.closed);
   const fresh = new Set(sc.new || []);
   const q = (H.pq || "").trim().toLowerCase();
@@ -891,11 +893,12 @@ function postingsCard(v) {
   const row = (p) => h("div", { class: "post-row" + (p.closed ? " closed" : ""), "data-id": p.id },
     h("div", { class: "pr-main" },
       h("a", { class: "pr-title", href: p.url || null, "data-ext": p.url ? "" : null }, p.title),
-      fresh.has(p.id) && h("span", { class: "chip new-chip" }, t("new")),
+      fresh.has(p.id) && !p.stale && h("span", { class: "chip new-chip" }, t("new")),
       p.changed && p.changed.deadline && h("span", { class: "chip", title: p.changed.deadline.join(" → ") }, t("deadline changed")),
       // one line, one separator: the deadline is a part like the others, only coloured when it has passed
       h("span", { class: "pr-meta" }, [p.location, p.category, p.batch && t(BATCH_NAMES[p.batch] || p.batch),
-        p.deadline && h("span", { class: "c-due" + (p.deadline < today() ? " late" : "") }, t("closes {date}", { date: p.deadline }))]
+        p.posted && t("posted {date}", { date: p.posted }),
+        p.deadline &&h("span", { class: "c-due" + (p.deadline < today() ? " late" : "") }, t("closes {date}", { date: p.deadline }))]
         .filter(Boolean).flatMap((x, i) => (i ? [" · ", x] : [x])))),
     // added already: a tick and where it stands, so it never reads like the "+ Want to apply" next to it
     p.app ? h("button", { class: "btn sm ghost pr-added", title: t("In your applications: open it"), "aria-label": t("In your applications: open it"), onclick: () => openHunt("app", p.app) },
@@ -922,6 +925,10 @@ function postingsCard(v) {
     shown.length ? h("div", { class: "post-list" }, shown.slice(0, limit).map(row),
       shown.length > limit && h("button", { class: "btn sm ghost", onclick: () => { H.plimit = limit + 200; paintHunt(); } }, t("Show {n} more", { n: Math.min(200, shown.length - limit) })))
       : open.length > 0 && h("p", { class: "muted card-p" }, t("Nothing here matches. Change the roles you look for on the Companies tab, or show all.")),
+    stale.length > 0 && h("details", { class: "post-closed", id: "company-stale" },
+      h("summary", { title: t("Still on its site, but the closing date has passed, or there is none and it was posted over a year ago") },
+        icon("down"), t("{n} probably over", { n: stale.length })),
+      h("div", { class: "post-list" }, stale.slice(0, 200).map(row))),
     closed.length > 0 && h("details", { class: "post-closed" }, h("summary", null, icon("down"), t("{n} closed", { n: closed.length })), h("div", { class: "post-list" }, closed.slice(0, 200).map(row))),
   ], { fold: "company-postings", count: open.length || null, actions: acts });
 }

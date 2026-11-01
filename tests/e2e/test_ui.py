@@ -2610,6 +2610,25 @@ def test_postings_read_by_hand_say_the_site_has_no_scan_route(page_all):
     assert out["route"] == {"warn": None, "learn": False}
 
 
+def test_postings_probably_over_are_folded_away_with_their_dates(page_all):
+    pg = page_all
+    out = pg.evaluate("""() => {
+      const card = postingsCard({company: {id: 'C84', name: 'Test University'}, scan: {at: new Date().toISOString(), ok: true, how: 'route', new: ['P1', 'P2']},
+        postings: [{id: 'P1', title: '2022年度招聘启事', posted: '2022-05-30', stale: 'old'},
+                   {id: 'P2', title: '行政管理岗', posted: '2026-10-28', deadline: '2030-11-15', stale: ''}]});
+      const shown = [...card.querySelectorAll('.post-list .post-row')].filter((r) => !r.closest('details')).map((r) => r.querySelector('.pr-title').textContent);
+      const stale = card.querySelector('#company-stale');
+      return {shown, staleSay: stale && stale.querySelector('summary').textContent,
+              staleRows: stale ? [...stale.querySelectorAll('.pr-title')].map((a) => a.textContent) : [],
+              newChips: [...card.querySelectorAll('.post-row')].filter((r) => r.querySelector('.new-chip')).map((r) => r.dataset.id),
+              meta: card.querySelector('.post-row[data-id="P2"] .pr-meta').textContent};
+    }""")
+    assert out["shown"] == ["行政管理岗"]
+    assert "1 个可能已过期" in out["staleSay"] and out["staleRows"] == ["2022年度招聘启事"]
+    assert "2026-10-28 发布" in out["meta"] and "2030-11-15 截止" in out["meta"]
+    assert out["newChips"] == ["P2"]                                                # a stale one is never "new"
+
+
 def test_one_piece_of_work_shows_one_spinner(page_all):
     """A scan or a read going on spins in its button only: no second "Scanning…" or "Reading…" beside it."""
     pg = page_all

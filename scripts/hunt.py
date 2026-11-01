@@ -207,7 +207,8 @@ def show_company(v: dict) -> None:
         for e in v["events"][-12:]:
             print("  " + event_line(e))
     sc = v.get("scan") or {}
-    ps = [p for p in v.get("postings") or [] if not p.get("closed")]
+    listed = [p for p in v.get("postings") or [] if not p.get("closed")]
+    ps = [p for p in listed if not p.get("stale")]
     kw = v.get("keywords") or []
     if sc.get("at"):
         print(f"  last scan {sc['at'][:16].replace('T', ' ')} by {sc.get('how') or '?'}: "
@@ -222,10 +223,14 @@ def show_company(v: dict) -> None:
         print(f"  open postings: {len(ps)}" + (f", {len(mine)} matching the user's keywords ({', '.join(kw)})" if kw else "") + ":")
         for p in mine[:60]:
             print(f"    {p['id']:<6} {p['title']}" + (f" · {p['location']}" if p.get("location") else "")
-                  + (f" · {p['batch']}" if p.get("batch") else "") + (f" · closes {p['deadline']}" if p.get("deadline") else "")
+                  + (f" · {p['batch']}" if p.get("batch") else "") + (f" · posted {p['posted']}" if p.get("posted") else "")
+                  + (f" · closes {p['deadline']}" if p.get("deadline") else "")
                   + (f" · applied as {p['app']}" if p.get("app") else ""))
         if len(mine) > 60:
             print(f"    … and {len(mine) - 60} more")
+    if len(listed) > len(ps):
+        print(f"  probably over, still listed (closing date passed, or no date and posted over a year ago): "
+              f"{len(listed) - len(ps)}, folded away in the window")
 
 
 def show_app(v: dict) -> None:

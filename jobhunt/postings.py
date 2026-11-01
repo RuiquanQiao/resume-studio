@@ -15,6 +15,10 @@ it is "want to apply" again (jobhunt/store.py).
 
 `keywords` are the roles the user looks for (career-ops' title filter): postings whose title has none of them
 are kept but folded away in the window, and don't count as news.
+
+Still listed is not always still open: a company's job system takes a filled role down, but a university's or a
+state employer's announcement list is an archive that keeps every one. So a posting whose closing date has passed,
+or that has none and was posted over a year ago, is `stale`: kept and shown folded away, never counted as open.
 """
 from __future__ import annotations
 
@@ -91,6 +95,18 @@ def _guess_batch(text: str) -> str:
         return "intern"
     if re.search(r"校招|校园|应届|graduate|campus|new grad|管培", s):
         return "campus"
+    return ""
+
+
+def stale(p: dict, today: str = "") -> str:
+    """Why a posting the site still lists is probably over: "deadline" (its closing date has passed) or "old" (no
+    closing date, posted more than a year ago); "" while it looks open."""
+    today = today or time.strftime("%Y-%m-%d")
+    if p.get("deadline") and p["deadline"] < today:
+        return "deadline"
+    year_ago = f"{int(today[:4]) - 1}{today[4:10]}"
+    if not p.get("deadline") and p.get("posted") and p["posted"] < year_ago:
+        return "old"
     return ""
 
 
@@ -336,23 +352,30 @@ class Postings:
         return a
 
     def summary(self) -> dict:
-        """Per company: open postings, how many match the keywords, what the last scan brought (for the table)."""
+        """Per company: open postings, how many match the keywords, what the last scan brought (for the table).
+        Stale ones (still listed, probably over) count apart, never as open."""
         d = self.scans()
         kw = d["keywords"]
         out: dict[str, dict] = {}
+        today = time.strftime("%Y-%m-%d")
         for p in self._data()["postings"]:
-            s = out.setdefault(p["company"], {"open": 0, "matching": 0})
-            if not p.get("closed"):
-                s["open"] += 1
-                if matches(p["title"], kw):
-                    s["matching"] += 1
-        titles = {p["id"]: p["title"] for p in self._data()["postings"]}
+            s = out.setdefault(p["company"], {"open": 0, "matching": 0, "stale": 0})
+            if p.get("closed"):
+                continue
+            if stale(p, today):
+                s["stale"] += 1
+                continue
+            s["open"] += 1
+            if matches(p["title"], kw):
+                s["matching"] += 1
+        news = {p["id"]: p for p in self._data()["postings"]}
         for cid, st in d["companies"].items():
-            s = out.setdefault(cid, {"open": 0, "matching": 0})
+            s = out.setdefault(cid, {"open": 0, "matching": 0, "stale": 0})
             s["scan"] = {k: st.get(k) for k in ("at", "ok", "error", "signed_out", "how", "found")}
             s["scan"]["recorded"] = bool(st.get("route"))
-            # news counts like the open roles beside it: only the ones the user looks for
-            s["news"] = {k: sum(1 for i in st.get(k) or [] if i in titles and matches(titles[i], kw)) for k in ("new", "closed", "changed")}
+            # news counts like the open roles beside it: only the ones the user looks for, and a stale one isn't new
+            s["news"] = {k: sum(1 for i in st.get(k) or [] if i in news and matches(news[i]["title"], kw)
+                                and not (k == "new" and stale(news[i], today))) for k in ("new", "closed", "changed")}
         return out
 
     def changes(self, since_hours: float = 24) -> list[dict]:
@@ -367,7 +390,8 @@ class Postings:
                 continue
             row = {"company": cid, "at": st["at"]}
             for k in ("new", "closed", "changed"):
-                row[k] = [by_id[i] for i in st.get(k) or [] if i in by_id and matches(by_id[i]["title"], kw)]
+                row[k] = [by_id[i] for i in st.get(k) or [] if i in by_id and matches(by_id[i]["title"], kw)
+                          and not (k == "new" and stale(by_id[i]))]
             if any(row[k] for k in ("new", "closed", "changed")):
                 out.append(row)
         return out

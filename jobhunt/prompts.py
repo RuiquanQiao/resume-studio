@@ -135,9 +135,10 @@ How to work it:
   job, not the postings: a task to learn a site is done only once `scan-route` has run. A plain HTML list (links
   with dates, pages like `index1.htm`, `?page=2`) always gets a route: `fetch` each list page and parse it with
   `DOMParser`. A site that lists announcements (公告) rather than roles, as universities and state employers do:
-  each announcement is one posting (its title, its link, `posted` = its date); read only the last few pages and
-  leave out results (公示, 名单, 结果, 面试); take the closing date from the announcement's own page when it says one,
-  else leave it empty. Several roles in one announcement, history going back years, or several lists (one per
+  each announcement is one posting (its title, its link, `posted` = its date, always); such a list is an archive
+  that keeps every announcement, so return only the ones posted in the last 12 months, and leave out results
+  (公示, 名单, 结果, 面试) and ones whose closing date has passed; take the closing date from the announcement's own
+  page when it says one, else leave it empty (the window folds away one with no date posted over a year ago). Several roles in one announcement, history going back years, or several lists (one per
   school or department, one route page each) are never reasons to skip the route. Send postings you read by hand
   with `postings` only after a route really failed, and then tell the user which step failed and the error you got.
 - **A posting's link** (pasted in the chat, or "Read this posting and add it: <link>"): read the page (web fetch;

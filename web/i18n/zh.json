@@ -1939,5 +1939,8 @@
  "Quote": "引用",
  "read by hand by the AI {when} · no scan route yet, so a scan can't update these roles": "{when}由 AI 手动读的 · 还没有扫描路线，扫描不会更新这些岗位",
  "scanned {when} · a site has no scan route yet, so a scan can't read it": "{when}扫描 · 还有官网没有扫描路线，扫描读不了它",
- "The AI reads its site once and records a scan route; after that, scans read it without AI": "AI 读一次它的官网并录下扫描路线；以后扫描不用 AI 就能读"
+ "The AI reads its site once and records a scan route; after that, scans read it without AI": "AI 读一次它的官网并录下扫描路线；以后扫描不用 AI 就能读",
+ "posted {date}": "{date} 发布",
+ "{n} probably over": "{n} 个可能已过期",
+ "Still on its site, but the closing date has passed, or there is none and it was posted over a year ago": "官网上还挂着，但截止日期已过；或者没写截止日期、而且发布已超过一年"
 }

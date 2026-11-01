@@ -233,7 +233,7 @@ def filled_companies(c):
     roles = ["服务端研发工程师（上海）", "算法工程师 — 推荐与广告方向", "AI Agent 研发工程师（新设岗位）", "数据分析师", "客户端研发工程师 iOS / Android",
              "前端研发工程师", "产品经理培训生", "安全工程师", "运营管培生", "视觉设计师"]
     posts.merge("C1", [{"title": r, "url": f"https://careers.xinghe.example/campus/job/{i}", "location": "上海", "category": "研发" if i < 7 else "产品",
-                        "batch": "campus", "deadline": "2026-10-31" if i % 3 == 0 else ""} for i, r in enumerate(roles)], how="route")
+                        "batch": "campus", "deadline": "2030-10-31" if i % 3 == 0 else ""} for i, r in enumerate(roles)], how="route")
     posts.set_scan_state("C1", route={"pages": [{"url": "https://careers.xinghe.example/campus/jobs", "script": "async () => ({postings: []})"}]})
     posts.merge("C2", [{"title": "Graduate Software Engineer", "url": "https://jobs.lever.co/atlassian/1", "location": "Sydney, Australia"}], how="lever")
     posts.set_scan_state("C3", needs="claude", at="")

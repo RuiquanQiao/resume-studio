@@ -24,7 +24,7 @@ from . import geo as place_list
 from . import ics, logos, reader, writing
 from .geo import Geo
 from .logos import fetch_logo
-from .postings import Postings, same_link
+from .postings import Postings, same_link, stale
 from .scan import Scanner
 from .store import LOGO_TYPES, STATE_IDS, Hunt, SameCompany
 from .views import Views
@@ -286,7 +286,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                             "research": research(c, apps, resume_langs(doc)),
                             "subset_exists": bool(c.get("subset")) and model.get_item(doc, "subset", c["subset"]) is not None},
                 "applications": apps, "events": evs,
-                "postings": sorted(posts.all(c["id"]), key=lambda p: (bool(p.get("closed")), p.get("category") or "", p["title"])),
+                "postings": sorted(({**p, "stale": stale(p)} for p in posts.all(c["id"])),
+                                   key=lambda p: (bool(p.get("closed")), p.get("category") or "", p["title"])),
                 "scan": {k: v for k, v in st.items() if k != "route"} | {"recorded": bool(st.get("route")),
                                                                        "running": scanner.running.get(c["id"]),
                                                                        "queued": c["id"] in scanner.queue},
@@ -427,8 +428,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         b = body(req)
         if b.get("auto"):
             sc = posts.scans()
-            stale = not sc["last_all"] or sc["last_all"] < time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - 86400))
-            if not sc["daily"] or not stale or not hunt.companies():
+            due = not sc["last_all"] or sc["last_all"] < time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - 86400))
+            if not sc["daily"] or not due or not hunt.companies():
                 return {"started": [], "skipped": True}
         ids = guard(lambda: scan_ids(b))
         scanner.start(ids, auto=bool(b.get("auto")))
