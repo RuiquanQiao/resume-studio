@@ -1139,8 +1139,16 @@ async function addFromLink() {
   if (!f) return;
   let url = f.url.trim();
   if (!/^https?:\/\//i.test(url)) url = "https://" + url;
-  const same = ((H.data && H.data.applications) || []).find((a) => a.url && a.url.replace(/\/$/, "") === url.replace(/\/$/, ""));
-  if (same) { toast(t("That posting is already on the list")); openHunt("app", same.id); return; }
+  // a link is one posting: a role on the list, or one a scan found (it becomes a role to apply to, no AI needed)
+  let known;
+  try { known = await api("POST", "/api/hunt/link", { url }); } catch (e) { toast(e.message); return; }
+  if (known.found) {
+    toast(known.found === "app" ? t("That posting is already on the list")
+      : t("The scan had found {role}: it is on the list now, as Want to apply", { role: known.application.role }));
+    await loadHunt({ quiet: true });
+    openHunt("app", known.application.id);
+    return;
+  }
   aiRun("add-link", () => sendChat(t("Read this posting and add it: {url}", { url })));
 }
 

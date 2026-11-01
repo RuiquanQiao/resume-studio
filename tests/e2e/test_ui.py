@@ -1421,6 +1421,38 @@ def test_a_scan_started_in_the_window_says_when_it_is_done(page, server, monkeyp
     pg.emulate_media(color_scheme="light")
 
 
+def test_a_link_the_scan_found_is_added_without_the_ai(page, server):
+    """User, 2026-11-01: a posting's link is unique. Add from a link with the link of a posting a scan found:
+    it becomes a role the user wants to apply to, linked to the posting, and the chat gets nothing."""
+    pg = page
+    hunt = server.inst.hunt
+    hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
+    jobs = "https://careers.xinghe.example/campus/jobs"
+    hunt.scanner.postings.merge("C1", [{"title": "服务端研发工程师", "url": jobs + "/1"}], how="moka")
+    pg.keyboard.press("Control+3")
+    pg.wait_for_selector(".hunt-tab.on[data-tab=apps]")
+    sent = pg.locator(".msg-user").count()
+    pg.click("#hunt-from-link")
+    pg.fill("#fm-url", jobs + "/1?utm_source=boss")
+    pg.click(".modal .btn.primary")
+    pg.wait_for_selector("#toast.show:has-text('想投')")
+    pg.wait_for_selector(".hunt-wrap.is-page .ed-head h1:has-text('服务端研发工程师')")
+    a = hunt.applications()
+    assert [(x["role"], x["status"]) for x in a] == [("服务端研发工程师", "saved")]
+    assert hunt.scanner.postings.get("P1")["app"] == a[0]["id"]
+    assert pg.locator(".msg-user").count() == sent                       # no AI was asked
+    pg.screenshot(path=str(ART / "hunt-link-found.png"))
+    # the same link again: the role on the list, no second one
+    pg.click(".hunt-tab[data-tab=apps]")
+    pg.click("#hunt-from-link")
+    pg.fill("#fm-url", jobs + "/1")
+    pg.click(".modal .btn.primary")
+    pg.wait_for_selector("#toast.show:has-text('已经在列表里')")
+    assert len(hunt.applications()) == 1
+    pg.click(".hunt-tab[data-tab=apps]")                                  # off the role's page: the next test has no A1
+    pg.wait_for_selector(".hunt-wrap:not(.is-page)")
+
+
 def test_a_browser_about_to_close_itself_can_be_kept_open(page, server):
     """A browser work started says so a few seconds before it closes itself; Keep it open makes it the user's."""
     b = server.inst.browser

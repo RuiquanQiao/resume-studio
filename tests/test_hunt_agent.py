@@ -381,6 +381,56 @@ def test_a_role_follows_its_posting_off_the_site_and_back(hunt):
     assert r["roles_closed"] == [late["id"]] and hunt.application(late["id"])["status"] == "closed"
 
 
+def test_a_role_with_a_scanned_postings_link_is_linked_at_once(hunt):
+    """User, 2026-11-01: a posting's link is unique; a role given it is that posting now, not at the next scan."""
+    ps = Postings(hunt)
+    hunt.add_company({"name": "Tencent"})
+    hunt.add_company({"name": "星河科技"})
+    url = "https://careers.tencent.com/jobdesc.html?postId="
+    ps.merge("Tencent", [{"title": "后台开发工程师", "url": url + "1"}], how="tencent")
+    assert ps.by_url("HTTPS://Careers.Tencent.com/jobdesc.html?postId=1")["id"] == "P1"   # compared as a scan compares
+    assert ps.by_url(url + "1&utm_source=wechat&spm=a.b#top")["id"] == "P1"               # tracking from sharing left out
+    assert ps.by_url(url + "2") is None and ps.by_url("") is None and ps.by_url("careers.tencent.com") is None
+    other = hunt.add_application("星河科技", {"role": "后台开发", "url": url + "1"})   # another company's role: not it
+    ps.link(other)
+    assert ps.get("P1")["app"] is None
+    a = hunt.add_application("Tencent", {"role": "后台开发（深圳）", "url": url + "1"})
+    ps.link(a)
+    assert ps.get("P1")["app"] == a["id"]
+    b = hunt.add_application("Tencent", {"role": "后台开发（北京）", "url": url + "1"})   # taken: the first one keeps it
+    ps.link(b)
+    assert ps.get("P1")["app"] == a["id"]
+
+
+def test_adding_by_link_finds_the_role_or_the_scanned_posting(live, data_file):
+    do = lambda cmd, **a: live.req("POST", "/api/hunt/do", {"cmd": cmd, "args": a})
+    page = "https://careers.xinghe.example/campus/job"
+    do("add-company", name="星河科技")
+    do("postings", ref="星河科技", postings=[{"title": "服务端研发工程师", "url": page + "/1", "location": "北京", "deadline": "2030-11-30"},
+                                         {"title": "算法工程师", "url": page + "/2"}])
+    # a link no posting and no role has: the AI reads it
+    assert live.req("POST", "/api/hunt/link", {"url": page + "/9"})[1] == {"found": None}
+    # a scanned posting's link: it becomes a role the user wants to apply to, linked to it, with no AI
+    code, r = live.req("POST", "/api/hunt/link", {"url": "HTTPS://Careers.Xinghe.example/campus/job/1/"})
+    assert code == 200 and r["found"] == "posting"
+    a = r["application"]
+    assert (a["role"], a["status"], a["url"]) == ("服务端研发工程师", "saved", page + "/1")
+    ps = live.req("GET", "/api/hunt/companies/C1")[1]["postings"]
+    assert next(p for p in ps if p["url"] == page + "/1")["app"] == a["id"]
+    # the same link again: the role on the list, not a second one
+    r = live.req("POST", "/api/hunt/link", {"url": page + "/1"})[1]
+    assert r["found"] == "app" and r["application"]["id"] == a["id"]
+    assert len(live.req("GET", "/api/hunt")[1]["applications"]) == 1
+    # the AI adding a role by a posting's link links it at once; by a role's link adds nothing
+    r = do("add-role", company="星河科技", role="算法（北京）", url=page + "/2")[1]
+    assert r["text"] == "added"
+    ps = live.req("GET", "/api/hunt/companies/C1")[1]["postings"]
+    assert next(p for p in ps if p["url"] == page + "/2")["app"] == r["app"]["application"]["id"]
+    r = do("add-role", company="星河科技", role="后端", url=page + "/1/")[1]
+    assert r["text"] == "already on the list" and r["app"]["application"]["id"] == a["id"]
+    assert len(live.req("GET", "/api/hunt")[1]["applications"]) == 2
+
+
 def test_a_site_is_scanned_by_its_recorded_route(hunt):
     ps = Postings(hunt)
     hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})

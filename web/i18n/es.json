@@ -1204,6 +1204,7 @@
  "Text shown": "Texto visible",
  "That isn't a picture Resume Studio can show ({type})": "No es una imagen que Resume Studio pueda mostrar ({type})",
  "That posting is already on the list": "Esa oferta ya está en la lista",
+ "The scan had found {role}: it is on the list now, as Want to apply": "El escaneo ya había encontrado {role}: ahora está en la lista, como «Por enviar»",
  "That question isn't there any more": "Esa pregunta ya no está",
  "That screenshot is gone": "Esa captura ya no existe",
  "That subset is gone; its versions are kept in resume-studio-data/subsets": "Ese subconjunto ya no existe; sus versiones están en resume-studio-data/subsets",

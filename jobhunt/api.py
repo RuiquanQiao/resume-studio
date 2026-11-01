@@ -24,7 +24,7 @@ from . import geo as place_list
 from . import ics, logos, reader, writing
 from .geo import Geo
 from .logos import fetch_logo
-from .postings import Postings
+from .postings import Postings, same_link
 from .scan import Scanner
 from .store import LOGO_TYPES, STATE_IDS, Hunt, SameCompany
 from .views import Views
@@ -559,10 +559,36 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         guard(lambda: hunt.delete_company(cid))
         return {"ok": True}
 
+    def app_at(url: str) -> dict | None:
+        """The role already on the list at this link (links compared as a scan compares them)."""
+        k = same_link(url)
+        if not re.match(r"https?://", k, re.I):
+            return None
+        return next((a for a in hunt.applications() if a.get("url") and same_link(a["url"]) == k), None)
+
+    def add_role(company: str, fields: dict, source: str) -> dict:
+        a = hunt.add_application(company, fields, source=source)
+        posts.link(a)
+        return read_if_new(a)
+
     @app.route("POST", "/api/hunt/companies/{cid}/roles")
     def new_role(req: Request):
-        a = read_if_new(guard(lambda: hunt.add_application(req.params["cid"], body(req))))
+        a = guard(lambda: add_role(req.params["cid"], body(req), "window"))
         return app_view(a["id"])
+
+    @app.route("POST", "/api/hunt/link")
+    def from_link(req: Request):
+        """A posting's link, before the AI reads it: a role on the list already, or a posting a scan found (it becomes
+        a role the user wants to apply to, no AI needed), or neither ({found: null})."""
+        url = str(body(req).get("url") or "").strip()
+        a = app_at(url)
+        if a:
+            return {"found": "app", **app_view(a["id"])}
+        p = posts.by_url(url)
+        if p:
+            a = read_if_new(guard(lambda: posts.apply(p["id"])))
+            return {"found": "posting", **app_view(a["id"])}
+        return {"found": None}
 
     @app.route("POST", "/api/hunt/companies/{cid}/sent")
     def company_sent(req: Request):
@@ -579,6 +605,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         b = body(req)
         a = guard(lambda: hunt.update_application(req.params["aid"], b))
         if "url" in b:
+            posts.link(a)
             read_if_new(a)
         return guard(lambda: app_view(req.params["aid"]))
 
@@ -683,10 +710,15 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 return {"company": company_view(cid), "text": "changed"}
             if cmd == "add-role":
                 ref = str(a.pop("company", "") or "")
-                return {"app": app_view(read_if_new(hunt.add_application(ref, a, source=src))["id"]), "text": "added"}
+                same = app_at(str(a.get("url") or ""))
+                if same:   # a link is one posting: never a second role for it
+                    return {"app": app_view(same["id"]), "text": "already on the list"}
+                return {"app": app_view(add_role(ref, a, src)["id"]), "text": "added"}
             if cmd == "edit-role":
                 ref = str(a.pop("ref", "") or "")
                 x = hunt.update_application(ref, a)
+                if "url" in a:
+                    posts.link(x)
                 return {"app": app_view((read_if_new(x) if "url" in a else x)["id"]), "text": "changed"}
             if cmd == "status":
                 x = hunt.set_status(str(a.get("ref") or ""), a.get("status"), note=str(a.get("note") or ""), source=src,

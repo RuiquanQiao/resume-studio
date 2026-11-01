@@ -1189,6 +1189,7 @@
  "Text shown": "显示的文字",
  "That isn't a picture Resume Studio can show ({type})": "这不是 Resume Studio 能显示的图片（{type}）",
  "That posting is already on the list": "这个岗位已经在列表里了",
+ "The scan had found {role}: it is on the list now, as Want to apply": "扫描时已找到「{role}」：现已加入列表，状态为「想投」",
  "That question isn't there any more": "这个问题已经不在了",
  "That screenshot is gone": "这张截图已经没了",
  "That subset is gone; its versions are kept in resume-studio-data/subsets": "那个子集已经删除；它的版本保存在 resume-studio-data/subsets",

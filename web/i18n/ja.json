@@ -1189,6 +1189,7 @@
  "Text shown": "表示する文字",
  "That isn't a picture Resume Studio can show ({type})": "Resume Studio で表示できる画像ではありません（{type}）",
  "That posting is already on the list": "この求人はすでに一覧にあります",
+ "The scan had found {role}: it is on the list now, as Want to apply": "スキャンで「{role}」が見つかっていました。「応募予定」として一覧に追加しました",
  "That question isn't there any more": "その質問はもうありません",
  "That screenshot is gone": "このスクリーンショットはもうありません",
  "That subset is gone; its versions are kept in resume-studio-data/subsets": "そのサブセットは削除されました。バージョンは resume-studio-data/subsets にあります",

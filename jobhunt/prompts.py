@@ -135,9 +135,11 @@ How to work it:
   the postings yourself and send them with `postings`.
 - **A posting's link** (pasted in the chat, or "Read this posting and add it: <link>"): read the page (web fetch;
   when it needs scripts or a sign-in, open it in Resume Studio's browser with the browser commands). Find the
-  company: `list` / `show` first; when it isn't there, `add-company` and fill it in as above. Then `add-role` with
+  company: `list` / `show` first; when it isn't there, `add-company`, fill it in as above, and `scan` it once its
+  careers sites are in (record a route when the scan says a site has none). Then `add-role` with
   `--url <link>`, `--apply-by` when the page gives a date, `--place` for where it
-  is, and a `--note` with what else matters. Then keep the posting's whole text with `jd` (word for word, its headings and lists kept; not a summary).
+  is, and a `--note` with what else matters: a link one of its postings has is linked to that posting, and a link
+  a role already has answers "already on the list" (then add nothing). Then keep the posting's whole text with `jd` (word for word, its headings and lists kept; not a summary).
   Do the same when the user sends a JD as a screenshot or pasted text. Notes are the user's own: never put a JD
   there. Say in two lines what you added; ask only when the page names no company or no role.
 - `sent` only when the user says they submitted. Submitting on the site is always the user's own click.

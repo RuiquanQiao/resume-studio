@@ -9,7 +9,7 @@ A posting is matched across scans by its link (or, without one, its title and lo
 listing-fingerprint idea: a posting seen for the first time is new, one no longer listed is closed, a changed
 deadline is kept as `changed`. Postings are not applications: "Apply" turns one into an application of its
 company (and links them), so a company listing dozens of roles doesn't flood the progress table. A role added
-another way is linked to its posting by its link, or by its name. A linked role follows its posting: closed on the
+another way is linked to its posting by its link (at once), or by its name (at the next scan). A linked role follows its posting: closed on the
 site, a role not applied to yet becomes "posting closed" (one further on gets a timeline line); back on the site,
 it is "want to apply" again (jobhunt/store.py).
 
@@ -39,6 +39,21 @@ def _norm_url(url: str) -> str:
     # a hash router's route is the posting itself (Moka: …/10001#/job/<id>); any other fragment is not
     route = p.fragment.rstrip("/") if p.fragment.startswith("/") else ""
     return urlunsplit((p.scheme.lower(), p.netloc.lower(), p.path.rstrip("/"), p.query, route))
+
+
+_TRACKING = re.compile(r"^(utm_\w*|spm|from|source|share\w*|fbclid|gclid)$", re.I)
+
+
+def same_link(url: str) -> str:
+    """A link as two links to the same posting compare: tracking added when it was shared left out. Only for
+    comparing; a posting's key keeps the whole link, so earlier scans still match."""
+    k = _norm_url(url or "")
+    try:
+        p = urlsplit(k)
+    except ValueError:
+        return k
+    q = "&".join(x for x in p.query.split("&") if x and not _TRACKING.match(x.split("=", 1)[0]))
+    return urlunsplit((p.scheme, p.netloc, p.path, q, p.fragment))
 
 
 def fingerprint(p: dict) -> str:
@@ -268,6 +283,27 @@ class Postings:
         st = self.set_scan_state(c["id"], at=_now(), ok=False, error=_text(error, 400), signed_out=signed_out, how=how)
         self.hunt._changed()
         return st
+
+    def by_url(self, url: str) -> dict | None:
+        """The posting at this link, of any company: a posting's link is its identity (user, 2026-11-01)."""
+        k = same_link(url)
+        if not re.match(r"https?://", k, re.I):
+            return None
+        return next((p for p in self._data()["postings"] if not p["key"].startswith("t:") and same_link(p["key"]) == k), None)
+
+    def link(self, a: dict) -> None:
+        """A role just given a link that a scan already found is linked to that posting now, not at the next scan."""
+        p = self.by_url(a.get("url") or "")
+        if not p or p["company"] != a["company"] or p.get("app"):
+            return
+        with self.hunt.lock:
+            data = self._data()
+            if any(x.get("app") == a["id"] for x in data["postings"]):
+                return
+            me = next(x for x in data["postings"] if x["id"] == p["id"])
+            me["app"] = a["id"]
+            self.hunt._write("postings.json", data)
+        self.hunt._changed()
 
     def apply(self, ref: str, *, source: str = "window") -> dict:
         """The user goes for this posting: it becomes an application of its company, linked to it."""

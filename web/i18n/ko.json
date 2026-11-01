@@ -1189,6 +1189,7 @@
  "Text shown": "표시할 텍스트",
  "That isn't a picture Resume Studio can show ({type})": "Resume Studio가 표시할 수 있는 그림이 아닙니다 ({type})",
  "That posting is already on the list": "이 공고는 이미 목록에 있습니다",
+ "The scan had found {role}: it is on the list now, as Want to apply": "스캔에서 이미 「{role}」을(를) 찾았습니다. 「지원 예정」으로 목록에 추가했습니다",
  "That question isn't there any more": "그 질문은 더 이상 없습니다",
  "That screenshot is gone": "이 스크린샷은 더 이상 없습니다",
  "That subset is gone; its versions are kept in resume-studio-data/subsets": "그 서브셋은 삭제되었습니다. 버전은 resume-studio-data/subsets에 있습니다",
