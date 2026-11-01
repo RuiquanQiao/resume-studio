@@ -78,7 +78,9 @@ function mdInline(s) {
   s = esc(s).replace(/`([^`\n]+)`/g, (_, c) => { codes.push(c); return `\u0000${codes.length - 1}\u0000`; });
   s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^*\w])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" data-ext>$1</a>');
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" data-ext>$1</a>')
+    // a bare web address is a link too (not one already inside a link: those follow `"` or `>`)
+    .replace(/(^|[^"'>=\w/])(https?:\/\/[^\s<"'）)\]]*[^\s<"'）)\].,;:!?。，；：！？])/g, '$1<a href="$2" data-ext>$2</a>');
   return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[i]}</code>`);
 }
 function mdBlocks(text) {
@@ -139,9 +141,22 @@ function md(src) {
   return parts.map((p, i) => {
     if (i % 2 === 0) return mdBlocks(p);
     const nl = p.indexOf("\n");
-    return `<pre><code>${esc((nl >= 0 ? p.slice(nl + 1) : p).replace(/\n$/, ""))}</code></pre>`;
+    const lang = (nl >= 0 ? p.slice(0, nl) : "").trim();
+    // a code block as Claude Code shows it: its language and a copy button above the code
+    return `<div class="code-block"><div class="cb-head"><span class="cb-lang">${esc(lang)}</span>`
+      + `<button type="button" class="btn sm ghost cb-copy" data-copy-code>${esc(t("Copy"))}</button></div>`
+      + `<pre><code>${esc((nl >= 0 ? p.slice(nl + 1) : p).replace(/\n$/, ""))}</code></pre></div>`;
   }).join("");
 }
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest("[data-copy-code]");
+  if (!b) return;
+  const code = b.closest(".code-block").querySelector("code").textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    b.textContent = t("Copied");
+    setTimeout(() => { b.textContent = t("Copy"); }, 1500);
+  }, () => toast(t("Copy failed")));
+});
 
 // ================================================================ state
 let S = null; // last server state

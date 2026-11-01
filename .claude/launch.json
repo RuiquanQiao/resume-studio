@@ -16,6 +16,15 @@
       "port": 8791,
       "autoPort": true,
       "env": { "RESUME_STUDIO_PREFS": ".cache/review/local", "STUDIO_NO_SHELL": "1" }
+    },
+    {
+      "name": "chat-audit",
+      "runtimeExecutable": ".venv/Scripts/python",
+      "runtimeArgs": ["scripts/studio.py", "--data", ".cache/chat-audit/resume.yaml", "--no-browser", "--port", "8792"],
+      "port": 8792,
+      "autoPort": true,
+      "env": { "RESUME_STUDIO_PREFS": ".cache/chat-audit/local", "STUDIO_NO_SHELL": "1",
+               "STUDIO_CLAUDE_CMD": "[\"E:/Forge/resume-studio/.venv/Scripts/python.exe\", \"E:/Forge/resume-studio/tests/fake_claude.py\"]" }
     }
   ]
 }

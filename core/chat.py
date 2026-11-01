@@ -459,7 +459,8 @@ class ChatRunner:
                 a["status"] = "cancelled"
         self.store.append(turn.chat_id, {"role": "assistant", "blocks": turn.blocks, "at": _now(),
                                          "error": None if turn.cancelled else error, "cancelled": turn.cancelled,
-                                         "uuid": turn.last_uuid, "cost": cost})
+                                         "uuid": turn.last_uuid, "cost": cost,
+                                         "took": round(_now() - turn.started_at, 1) if turn.started_at else None})
         turn.error = turn.error or error
         turn.flushed_any = True
         turn.blocks, turn.tools, turn.asks = [], {}, {}
@@ -517,7 +518,24 @@ def _small_input(name: str | None, inp: dict) -> dict:
         step = _browser_step(str(inp["command"]))   # Resume Studio's browser command: shown as a step, not a command line
         if step:
             keep["browser"] = step
+        else:   # the whole command, shown above its output when the row is opened (the hint is cut at 160)
+            keep["command"] = str(inp["command"])[:CAP]
+            if inp.get("description"):
+                keep["description"] = str(inp["description"])[:300]
+    # what a file edit changed, drawn as a diff when the row is opened (Claude Code's Edit / MultiEdit / Write)
+    if name in ("Edit", "MultiEdit"):
+        edits = inp.get("edits") if name == "MultiEdit" else [inp]
+        keep["edits"] = [{"old": str(e.get("old_string") or "")[:CAP], "new": str(e.get("new_string") or "")[:CAP]}
+                         for e in (edits or [])[:8] if isinstance(e, dict)]
+    if name == "Write" and isinstance(inp.get("content"), str):
+        keep["content"] = inp["content"][:CAP]
+        keep["lines"] = inp["content"].count("\n") + 1
+    if isinstance(inp.get("diff"), str):   # Codex: a unified diff
+        keep["diff"] = inp["diff"][:CAP * 2]
     return keep
+
+
+CAP = 3000   # characters of a tool's input or output kept for the transcript
 
 
 def _browser_step(command: str) -> list[dict] | None:
@@ -529,4 +547,7 @@ def _result_preview(content: Any) -> str:
     if isinstance(content, list):
         content = "\n".join(str(c.get("text", "")) for c in content if isinstance(c, dict))
     text = str(content or "").strip()
-    return text[:400] + ("…" if len(text) > 400 else "")
+    if len(text) <= CAP:
+        return text
+    # the start and the end: a command's last lines (its summary, its error) matter most
+    return text[:CAP // 3].rstrip() + "\n…\n" + text[-(CAP - CAP // 3):].lstrip()

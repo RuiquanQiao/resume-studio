@@ -104,6 +104,28 @@ def test_chat_is_a_real_resumed_session(server, data_file, fake_claude):
     assert first["stdin"] == "你好，帮我看看简历"                        # user's words untouched, no language forcing
 
 
+def test_tool_rows_keep_what_claude_code_shows(server, fake_claude):
+    """An edit keeps its old and new text (drawn as a diff), a command its whole text, a subagent its own
+    steps, and a reply how long it took; output is kept well past the old 400 characters."""
+    cid = server.req("POST", "/api/chats")[1]["id"]
+    _send(server, cid, "SHOWCASE")
+    server.wait_idle(cid)
+    msg = server.req("GET", f"/api/chats/{cid}")[1]["messages"][1]
+    tools = {b["id"]: b for b in msg["blocks"] if b["type"] == "tool"}
+    edit = tools["toolu_s3"]["input"]["edits"][0]
+    assert edit["old"].startswith("  - Built a tool") and "multi-stage AI agent" in edit["new"]
+    assert tools["toolu_s4"]["input"]["lines"] == 31 and tools["toolu_s4"]["input"]["content"].startswith("# Notes")
+    bash = tools["toolu_s5"]
+    assert bash["input"]["command"].endswith("/report.xml") and len(bash["hint"]) == 160 < len(bash["input"]["command"])
+    assert len(bash["result"]) > 400 and bash["result"].count("PASSED") > 30
+    assert bash["result"].startswith("tests/e2e/test_ui.py::test_case_1 PASSED") and bash["result"].endswith("119 passed in 42.0s")
+    agent = tools["toolu_s7"]
+    assert agent["step_count"] == 3 and [s["name"] for s in agent["steps"]] == ["Glob", "Grep", "Read"]
+    assert all(s["status"] == "done" for s in agent["steps"])
+    assert not {"toolu_c1", "toolu_c2", "toolu_c3"} & set(tools)        # the subagent's steps stay under its row
+    assert isinstance(msg["took"], (int, float)) and msg["took"] >= 0
+
+
 def test_one_chat_knows_every_workspace_and_what_is_on_screen(server, data_file, fake_claude):
     """docs/LAYOUT.md: a chat started anywhere can update the tracker and drive the browser, and is told what the window shows."""
     code, chat = server.req("POST", "/api/chats")

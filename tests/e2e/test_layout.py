@@ -409,6 +409,11 @@ STATES = [
     State("chat, asks permission", then(say("PERM 写个文件"), wait(".ask.ask-perm.pending")), [".ask.ask-perm"]),
     State("chat, asks a question", then(say("QUESTION 颜色"), wait(".ask.ask-q.pending")), [".ask.ask-q"]),
     State("chat, proposes a plan", then(say("PLAN 改一下"), wait(".ask.ask-plan.pending")), [".ask.ask-plan"]),
+    # every block kind with over-long content, every row opened: diffs, a long command and its output, a subagent's
+    # steps, a table, a code block with its copy bar, a long bare link
+    State("chat, every block opened", then(say("SHOWCASE"), wait(".msg-ai .code-block"), js("() => new Promise((ok) => { const t = setInterval(() => { if (!ui.chat.running) { clearInterval(t); setTimeout(ok, 300); } }, 50); })"),
+                                         js("() => document.querySelectorAll('#chat-log details').forEach((d) => { d.open = true; })")),
+          ["#chat-log .trow-diff", "#chat-log .trow-cmd", "#chat-log .trow-steps", "#chat-log .code-block", "#chat-log .ai-tools"]),
     State("chat, tasks and a queue", then(say("TASKS SLOW"), wait("#chat-tasks:not(.hidden)"), say("排队的一条"),
                                           wait("#chat-queue:not(.hidden)")), ["#chat-tasks", "#chat-queue"]),
     # the agent picker (in Settings since 2026-10-28) with one agent not installed (its npm command) and one

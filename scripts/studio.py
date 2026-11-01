@@ -129,6 +129,28 @@ def main() -> None:
 
     inst.focus["fn"] = bring_to_front
 
+    def flash() -> None:
+        # like other Windows apps that finish work in the background: the taskbar button flashes until the window is in front
+        if os.name != "nt":
+            return
+        import ctypes
+        from ctypes import wintypes
+
+        class FLASHWINFO(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.UINT), ("hwnd", wintypes.HWND), ("dwFlags", wintypes.DWORD),
+                        ("uCount", wintypes.UINT), ("dwTimeout", wintypes.DWORD)]
+        try:
+            hwnd = window.native.Handle.ToInt64()
+        except Exception:   # the form's handle is read off its own thread; the title finds it otherwise
+            hwnd = ctypes.windll.user32.FindWindowW(None, "Resume Studio")
+        if not hwnd:
+            return
+        FLASHW_ALL, FLASHW_TIMERNOFG = 0x3, 0xC
+        info = FLASHWINFO(ctypes.sizeof(FLASHWINFO), hwnd, FLASHW_ALL | FLASHW_TIMERNOFG, 0, 0)
+        ctypes.windll.user32.FlashWindowEx(ctypes.byref(info))
+
+    inst.attention["fn"] = flash
+
     def pick(kind: str, start: str, name: str = ""):
         # Windows uses `directory` only until the user has picked once; then it reopens at the last folder
         yaml = ("YAML (*.yaml;*.yml)",)

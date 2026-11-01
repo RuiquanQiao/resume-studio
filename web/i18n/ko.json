@@ -1922,5 +1922,10 @@
  "{start} – now": "{start} – 현재",
  "Expected": "예정",
  "Present": "현재",
- "The end month isn't reached yet; the resume adds “(expected)”": "종료 월이 아직 오지 않았습니다. 이력서에는 “(예정)”이 붙습니다"
+ "The end month isn't reached yet; the resume adds “(expected)”": "종료 월이 아직 오지 않았습니다. 이력서에는 “(예정)”이 붙습니다",
+ "Copy reply": "답변 복사",
+ "Time this reply took": "이 답변에 걸린 시간",
+ "Took {time}": "{time} 걸림",
+ "{n} step": "{n}단계",
+ "… {n} earlier step": "… 이전 {n}단계"
 }

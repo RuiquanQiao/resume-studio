@@ -2060,5 +2060,16 @@
  "{start} – now": "{start} – heute",
  "Expected": "Voraussichtlich",
  "Present": "Heute",
- "The end month isn't reached yet; the resume adds “(expected)”": "Der Endmonat ist noch nicht erreicht; im Lebenslauf steht „(voraussichtlich)“"
+ "The end month isn't reached yet; the resume adds “(expected)”": "Der Endmonat ist noch nicht erreicht; im Lebenslauf steht „(voraussichtlich)“",
+ "Copy reply": "Antwort kopieren",
+ "Time this reply took": "So lange hat diese Antwort gedauert",
+ "Took {time}": "Dauer: {time}",
+ "{n} step": [
+  "{n} Schritt",
+  "{n} Schritte"
+ ],
+ "… {n} earlier step": [
+  "… {n} früherer Schritt",
+  "… {n} frühere Schritte"
+ ]
 }

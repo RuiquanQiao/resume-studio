@@ -1922,5 +1922,10 @@
  "{start} – now": "{start}至今",
  "Expected": "预计",
  "Present": "至今",
- "The end month isn't reached yet; the resume adds “(expected)”": "结束月份还没到，简历上会写成「（预计）」"
+ "The end month isn't reached yet; the resume adds “(expected)”": "结束月份还没到，简历上会写成「（预计）」",
+ "Copy reply": "复制回复",
+ "Time this reply took": "这次回复用了多长时间",
+ "Took {time}": "用时 {time}",
+ "{n} step": "{n} 步",
+ "… {n} earlier step": "… 之前还有 {n} 步"
 }

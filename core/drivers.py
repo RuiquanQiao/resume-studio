@@ -299,6 +299,30 @@ class ClaudeDriver(Driver):
             return
         _set_tasks(runner, turn, tasks)
 
+    def _sub_steps(self, runner, turn, msg):
+        """A subagent's tool calls and their results, kept on the Agent row that started it (newest last)."""
+        parent = turn.tools.get(msg.get("parent_tool_use_id"))
+        if not parent:
+            return
+        steps = parent.setdefault("steps", [])
+        changed = False
+        for block in (msg.get("message") or {}).get("content") or []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use":
+                name, inp = block.get("name"), block.get("input") or {}
+                steps.append({"id": block.get("id"), "name": name, "hint": _tool_hint(name, inp), "status": "running"})
+                parent["step_count"] = parent.get("step_count", 0) + 1
+                del steps[:-30]   # the row lists the last 30; the count says how many there were
+                changed = True
+            elif block.get("type") == "tool_result":
+                for s in steps:
+                    if s["id"] == block.get("tool_use_id"):
+                        s["status"] = "error" if block.get("is_error") else "done"
+                        changed = True
+        if changed:
+            runner._emit("chat.tool", turn.chat_id, tool=parent)
+
     def handle(self, runner, turn, msg):
         mtype = msg.get("type")
         if mtype == "system":
@@ -337,7 +361,8 @@ class ClaudeDriver(Driver):
                 elif delta.get("type") == "thinking_delta" and delta.get("thinking"):
                     runner._text(turn, delta["thinking"], "thinking")
         elif mtype == "assistant":
-            if msg.get("parent_tool_use_id"):
+            if msg.get("parent_tool_use_id"):   # a subagent's step: listed under its Agent row, like Claude Code
+                self._sub_steps(runner, turn, msg)
                 return None
             message = msg.get("message") or {}
             if msg.get("uuid"):
@@ -358,6 +383,9 @@ class ClaudeDriver(Driver):
                 if block.get("name") in ("TodoWrite", "TaskUpdate"):
                     self._tasks(runner, turn, block["name"], inp)
         elif mtype == "user":
+            if msg.get("parent_tool_use_id"):
+                self._sub_steps(runner, turn, msg)
+                return None
             for block in (msg.get("message") or {}).get("content") or []:
                 if not isinstance(block, dict) or block.get("type") != "tool_result":
                     continue
@@ -691,8 +719,10 @@ def codex_tool_input(item: dict) -> tuple[dict, str]:
         shown = actions[0].get("command") if len(actions) == 1 and actions[0].get("command") else item.get("command") or ""
         return {"command": shown}, shown
     if kind == "fileChange":
-        paths = [str(c.get("path") or "") for c in item.get("changes") or []]
-        return {"file_path": paths[0] if paths else ""}, ", ".join(paths)
+        changes = [c for c in item.get("changes") or [] if isinstance(c, dict)]
+        paths = [str(c.get("path") or "") for c in changes]
+        diff = "\n".join(str(c.get("diff") or "") for c in changes if c.get("diff"))
+        return {"file_path": paths[0] if paths else "", **({"diff": diff} if diff else {})}, ", ".join(paths)
     if kind == "webSearch":
         return {"query": item.get("query") or ""}, item.get("query") or ""
     if kind == "imageView":

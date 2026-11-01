@@ -141,6 +141,64 @@ def reply(text):
          "modelUsage": {model: {"contextWindow": 200000}}})
 
 
+def tool_call(tid, name, inp, result, is_error=False, parent=None):
+    out({"type": "assistant", "parent_tool_use_id": parent, "session_id": sid,
+         "message": {"model": model, "content": [{"type": "tool_use", "id": tid, "name": name, "input": inp}]}})
+    out({"type": "user", "parent_tool_use_id": parent, "session_id": sid,
+         "message": {"content": [{"type": "tool_result", "tool_use_id": tid, "content": result, "is_error": is_error}]}})
+
+
+SHOWCASE_MD = """## 改动总结
+
+我改了 `resume.yaml` 里的三处，并查了一个很长的网址：https://www.example.com/careers/engineering/software-engineer-graduate-program-2027-sydney-melbourne-canberra?utm_source=linkedin&utm_medium=social
+
+| 位置 | 之前 | 之后 |
+| --- | --- | --- |
+| 第一条要点 | Built a tool | Built a multi-stage AI agent pipeline |
+| 技能 | Python | Python, TypeScript, PyTorch |
+
+```python
+def fit_one_page(doc, max_lines=60):
+    # a deliberately long line to see whether the code block scrolls sideways instead of pushing the pane wider than it is
+    return [b for b in doc.bullets if b.lines <= max_lines]
+```
+
+没有空格的长串：aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+1. 第一步
+2. 第二步
+   - 子项"""
+
+
+def showcase():
+    """Every block kind the chat draws, with over-long content (the pane audit's data)."""
+    thought = "先读一下文件，再决定怎么改。"
+    for i in range(0, len(thought), 3):
+        out({"type": "stream_event", "parent_tool_use_id": None, "session_id": sid,
+             "event": {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": thought[i:i + 3]}}})
+    long_path = "E:/Forge/resume-studio/.cache/a-very-long-folder-name-for-testing/another-very-long-folder-name/resume-with-a-long-name.yaml"
+    tool_call("toolu_s1", "Read", {"file_path": long_path}, "\n".join(f"{n:>4}  line {n} of the file" for n in range(1, 80)))
+    tool_call("toolu_s2", "Grep", {"pattern": "headline|summary", "path": "E:/Forge/resume-studio"}, "resume.yaml:12: headline: x\nresume.yaml:40: summary: y")
+    tool_call("toolu_s3", "Edit", {"file_path": long_path, "old_string": "  - Built a tool\n  - Used Python",
+                                   "new_string": "  - Built a multi-stage AI agent pipeline that turns papers into reading exams\n  - Used Python, TypeScript and PyTorch"},
+              f"The file {long_path} has been updated successfully.")
+    tool_call("toolu_s4", "Write", {"file_path": "E:/data/notes.md", "content": "# Notes\n\n" + "\n".join(f"- point {n}" for n in range(1, 30))}, "File created successfully at: E:/data/notes.md")
+    cmd = ".venv/Scripts/python scripts/check.py ui layout --verbose --with-a-very-long-flag-name=value --and-another-one=E:/Forge/resume-studio/.cache/check --junit-xml=E:/Forge/resume-studio/.cache/check/report.xml"
+    tool_call("toolu_s5", "Bash", {"command": cmd, "description": "Run the UI and layout checks"},
+              "\n".join(f"tests/e2e/test_ui.py::test_case_{n} PASSED" for n in range(1, 120)) + "\n119 passed in 42.0s")
+    tool_call("toolu_s6", "Bash", {"command": "git push origin main"}, "error: failed to push some refs to 'github.com:x/y.git'", is_error=True)
+    out({"type": "assistant", "parent_tool_use_id": None, "session_id": sid,
+         "message": {"model": model, "content": [{"type": "tool_use", "id": "toolu_s7", "name": "Agent",
+                                                  "input": {"description": "Find every place the headline is used", "prompt": "…", "subagent_type": "Explore"}}]}})
+    tool_call("toolu_c1", "Glob", {"pattern": "**/*.js"}, "web/app.js\nweb/chat.js", parent="toolu_s7")
+    tool_call("toolu_c2", "Grep", {"pattern": "headline"}, "web/app.js:10", parent="toolu_s7")
+    tool_call("toolu_c3", "Read", {"file_path": "web/app.js"}, "…", parent="toolu_s7")
+    out({"type": "user", "parent_tool_use_id": None, "session_id": sid,
+         "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_s7", "content": [{"type": "text", "text": "The headline is used in web/app.js and core/render.py."}]}]}})
+    tool_call("toolu_s8", "WebFetch", {"url": "https://www.example.com/careers/engineering/software-engineer-graduate-program-2027-sydney?utm_source=x", "prompt": "summarise"}, "A graduate program.")
+    reply(SHOWCASE_MD)
+
+
 def handle(prompt, content):
     if prompt.strip() == "/context":
         text = "## Context Usage\n\n**Tokens:** 40k / 200k (20%)"
@@ -198,6 +256,9 @@ def handle(prompt, content):
         answers = (ans.get("updatedInput") or {}).get("answers") or {}
         tool_result("toolu_q", f"answers: {answers}", is_error=ans.get("behavior") != "allow")
         reply(f"你选了 {answers.get('你喜欢哪个颜色？', '（没回答）')}。")
+        return True
+    if "SHOWCASE" in prompt:
+        showcase()
         return True
     if "PLAN" in prompt:
         ans = ask("ExitPlanMode", {"plan": "## 计划\n\n1. 读 resume.yaml\n2. 改第一条要点"}, "toolu_p")

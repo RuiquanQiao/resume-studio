@@ -43,6 +43,7 @@ class Instance:
     identity: dict
     watcher: FileWatcher
     focus: dict = field(default_factory=dict)   # {"fn": callable} — how to bring the UI to front
+    attention: dict = field(default_factory=dict)   # {"fn": callable} — flash the window's taskbar button
     url: dict = field(default_factory=dict)     # {"url": str} once bound
     dialog: dict = field(default_factory=dict)  # {"fn": callable(kind, start)} — the window's own picker
     agents: AgentHub | None = None
@@ -253,6 +254,14 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
         if fn:
             fn()
         return {"ok": True}
+
+    @app.route("POST", "/api/attention")
+    def attention(req):
+        """A reply ended or waits for the user while the window is in the background: its taskbar button flashes."""
+        fn: Callable | None = inst.attention.get("fn")
+        if fn:
+            fn()
+        return {"ok": bool(fn)}
 
     @app.route("POST", "/api/reveal")
     def reveal(req):

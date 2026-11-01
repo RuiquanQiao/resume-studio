@@ -2060,5 +2060,16 @@
  "{start} – now": "{start} – actualidad",
  "Expected": "Previsto",
  "Present": "Actualidad",
- "The end month isn't reached yet; the resume adds “(expected)”": "El mes de fin aún no ha llegado; el CV añade «(previsto)»"
+ "The end month isn't reached yet; the resume adds “(expected)”": "El mes de fin aún no ha llegado; el CV añade «(previsto)»",
+ "Copy reply": "Copiar respuesta",
+ "Time this reply took": "Lo que tardó esta respuesta",
+ "Took {time}": "Tardó {time}",
+ "{n} step": [
+  "{n} paso",
+  "{n} pasos"
+ ],
+ "… {n} earlier step": [
+  "… {n} paso anterior",
+  "… {n} pasos anteriores"
+ ]
 }

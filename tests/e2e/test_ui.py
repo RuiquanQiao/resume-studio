@@ -208,7 +208,7 @@ def test_the_document_edits_every_card_in_place(page, server, data_file):
 def test_include_toggle_and_reorder(page, server):
     page.click(".entry[data-id='EXP-003'] .check")
     wait_until(lambda: "EXP-003" not in subset(server)["entries"], msg="removed from subset")
-    assert "out" in page.get_attribute(".entry[data-id='EXP-003']", "class")
+    page.wait_for_selector(".entry[data-id='EXP-003'].out")   # the page repaints just after the save lands
     page.click(".entry[data-id='EXP-003'] .check")
     wait_until(lambda: subset(server)["entries"][-1] == "EXP-003", msg="re-added at the end")
     page.hover(".entry[data-id='EXP-003']")
@@ -533,6 +533,52 @@ def test_chat_streams_markdown_tools_and_resumes(page, server, fake_claude):
     second = calls(fake_claude)[1]["argv"]
     assert "--resume" in second
     assert "Claude 知道你正在看" in page.inner_text("#chat-context")
+
+
+def test_chat_rows_show_what_claude_code_shows_and_stay_open(page, server, fake_claude):
+    """Like the Claude Code app: an edit opens to its diff, a command to its whole text and output, a subagent to its
+    steps; a bare address is a link; a code block copies; a finished reply says how long it took. A row opened while
+    the reply streams stays open through the next pieces and the reply's end, and reading higher up stays put."""
+    page.wait_for_selector(".chat-welcome")
+    page.fill("#chat-input", "SHOWCASE")
+    page.keyboard.press("Enter")
+    page.wait_for_selector(".msg-ai .ai-tools .mt-time", timeout=15000)
+    rows = page.locator(".msg-ai .tool")
+    edit = rows.filter(has_text="修改").first
+    assert edit.locator(".trow-stat").inner_text().split() == ["+2", "−2"]
+    edit.locator("summary").click()
+    assert "multi-stage AI agent" in edit.locator(".trow-diff .add").first.inner_text()
+    assert edit.locator("pre:not(.trow-diff)").count() == 0                  # "file updated" says nothing the diff doesn't
+    cmd = rows.filter(has_text="check.py").first
+    cmd.locator("summary").click()
+    assert cmd.locator(".trow-cmd").inner_text().endswith("report.xml") and "119 passed" in cmd.locator(".trow-out").inner_text()
+    sub = rows.filter(has_text="子任务").first
+    assert "3 步" in sub.locator("summary").inner_text()
+    sub.locator("summary").click()
+    assert sub.locator(".trow-step").count() == 3
+    assert page.locator(".msg-ai .md a[href^='https://www.example.com/careers/engineering/software-engineer-graduate-program-2027-sydney-melbourne-canberra?utm_source=linkedin&utm_medium=social']").count() == 1
+    page.evaluate("() => { window.__copied = []; Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (s) => { window.__copied.push(s); } } }); }")
+    page.click(".msg-ai .code-block .cb-copy")
+    copied = page.evaluate("() => window.__copied")
+    assert copied and copied[0].startswith("def fit_one_page(doc, max_lines=60):"), copied
+    page.wait_for_selector(".code-block .cb-copy:text('已复制')")
+    assert page.locator(".msg-ai .ai-tools .mt-time").inner_text().startswith("用时")
+
+    # a reply still streaming: open a row, more arrives, the reply ends, and the user reading higher up stays there
+    page.evaluate("""() => {
+        ui.chat.running = true;
+        ui.chat.live = { started_at: Date.now() / 1000, blocks: [
+          { type: "tool", id: "live-1", name: "Bash", hint: "ls", status: "done", result: "a\\nb", input: { command: "ls" } },
+          { type: "text", text: "第一段" }] };
+        renderChat(); }""")
+    page.click(".msg-ai .tool[data-key='tool:live-1'] summary")
+    page.evaluate("() => { ui.chat.live.blocks[1].text += '，第二段'; renderLive(true); }")
+    assert page.locator(".tool[data-key='tool:live-1']").get_attribute("open") is not None
+    page.evaluate("() => { const l = document.querySelector('#chat-log'); l.scrollTop = 40; }")
+    page.evaluate("""() => { ui.chat.messages.push({ role: "assistant", blocks: ui.chat.live.blocks, took: 3 });
+        ui.chat.running = false; ui.chat.live = null; renderChat(); }""")
+    assert page.locator(".tool[data-key='tool:live-1']").get_attribute("open") is not None
+    assert page.evaluate("document.querySelector('#chat-log').scrollTop") == 40
 
 
 def test_polish_shows_diff_and_undo_restores(page, server, data_file, fake_claude, monkeypatch):

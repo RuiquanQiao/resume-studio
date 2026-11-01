@@ -660,7 +660,13 @@ function screenLine() {
 // ---------------------------------------------------------------- transcript
 function renderChat() {
   const log = $("#chat-log");
-  log.replaceChildren();
+  // redrawing the chat on screen (a reply ended, a chat event): rows the user opened stay open, and a user who
+  // scrolled up to read stays where they were; another chat starts at its end
+  const same = log.dataset.chat === String(ui.chat.id);
+  const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80, top = log.scrollTop;
+  const before = h("div");
+  before.append(...log.childNodes);
+  log.dataset.chat = String(ui.chat.id);
   ui.chat.liveEl = null;
   if (!ui.chat.messages.length && !ui.chat.running && W.ws === "fill") { log.append(fillWelcome()); return; }
   if (!ui.chat.messages.length && !ui.chat.running && W.ws === "plan") { log.append(planWelcome()); return; }
@@ -692,7 +698,8 @@ function renderChat() {
   }
   ui.chat.messages.forEach((m, i) => log.append(messageEl(m, i)));
   if (ui.chat.running) { ui.chat.liveEl = messageEl({ role: "assistant", blocks: (ui.chat.live || {}).blocks || [], live: true }); log.append(ui.chat.liveEl); }
-  log.scrollTop = log.scrollHeight;
+  if (same) keepOpened(before, log);
+  log.scrollTop = same && !nearBottom ? top : log.scrollHeight;
 }
 
 function filesEl(files) {
@@ -727,13 +734,13 @@ function messageEl(m, index) {
       tools);
   }
   const el = h("div", { class: "msg-ai" });
-  for (const b of m.blocks || []) {
+  (m.blocks || []).forEach((b) => {
     if (b.type === "text") el.append(h("div", { class: "md", html: md(b.text) }));
-    else if (b.type === "thinking") el.append(h("details", { class: "thought" }, h("summary", null, t("Thinking")), h("div", { class: "md", html: md(b.text) })));
+    else if (b.type === "thinking") el.append(h("details", { class: "thought", "data-key": "thought:" + String(b.text || "").slice(0, 60) }, h("summary", null, t("Thinking")), h("div", { class: "md", html: md(b.text) })));
     else if (b.type === "tool") el.append(toolEl(b));
     else if (b.type === "ask") el.append(askEl(b));
     else if (b.type === "note") el.append(h("div", { class: "msg-divider" }, h("span", null, b.text)));
-  }
+  });
   const blocks = m.blocks || [];
   const waitingOnUser = blocks.some((b) => b.type === "ask" && b.status === "pending");
   if (m.live && !waitingOnUser && (!blocks.length || blocks[blocks.length - 1].type !== "text")) {
@@ -742,8 +749,20 @@ function messageEl(m, index) {
   if (m.error) el.append(h("div", { class: "msg-error" }, m.error));
   if (m.error && isLoginError(m.error)) el.append(loginHelpEl());
   if (m.cancelled) el.append(h("div", { class: "msg-note" }, t("Stopped")));
+  // under a finished reply, like Claude Code: how long it took · copy the reply
+  const text = blocks.filter((b) => b.type === "text").map((b) => b.text).join("\n\n").trim();
+  if (!m.live && (text || m.took)) {
+    el.append(h("div", { class: "msg-tools ai-tools" },
+      m.took ? h("span", { class: "mt-time", title: t("Time this reply took") }, t("Took {time}", { time: fmtDuration(m.took) })) : null,
+      text ? h("button", { type: "button", class: "btn icon sm ghost", title: t("Copy reply"), onclick: () => copyText(text) }, icon("copy")) : null));
+  }
   return el;
 }
+const fmtDuration = (secs) => {
+  const s = Math.max(0, Math.floor(secs));
+  return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`
+    : `${Math.floor(s / 3600)}h ${String(Math.floor(s / 60) % 60).padStart(2, "0")}m`;
+};
 
 // a reply still going, like Claude Code: a glyph that keeps changing and the time so far, so a long step
 // never looks stuck. Both change from script, so they go on with Windows' animations off (which stops CSS ones)
@@ -771,9 +790,7 @@ function workStart() {
   return live.started_at * 1000;
 }
 function paintWorking(el) {
-  const now = Date.now(), s = Math.max(0, Math.floor((now - workStart()) / 1000));
-  const time = s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`
-    : `${Math.floor(s / 3600)}h ${String(Math.floor(s / 60) % 60).padStart(2, "0")}m`;
+  const now = Date.now(), time = fmtDuration((now - workStart()) / 1000);
   const text = ui.chat.thinking ? t("Thinking… ({time} · {n} tokens)", { time, n: fmtK(ui.chat.thinking) }) : t("Working… ({time})", { time });
   const g = WORK_GLYPHS[Math.floor(now / 120) % WORK_GLYPHS.length];
   const [ge, te] = el.children;
@@ -807,13 +824,53 @@ function loginHelpEl() {
     h("div", { class: "md", html: md(t("To fix it: open a terminal, run `claude`, type `/login` and finish signing in in the browser. Then send your message here again.")) }));
 }
 
+const statusEl = (status) => status === "running" ? h("span", { class: "st running" }) : status === "error" ? h("span", { class: "st error" }, icon("x")) : h("span", { class: "st done" }, icon("check"));
+
+// a file edit as Claude Code shows it: removed lines in red, added in green
+const diffLines = (text, cls, mark, max) => {
+  const lines = String(text || "").replace(/\n$/, "").split("\n");
+  return [...lines.slice(0, max).map((l) => h("span", { class: cls }, mark + l + "\n")),
+    lines.length > max ? h("span", { class: "more" }, t("… {n} more line", { n: lines.length - max }, "… {n} more lines") + "\n") : null];
+};
+const lineCount = (s) => (s ? String(s).replace(/\n$/, "").split("\n").length : 0);
+function editStats(inp) {
+  if (inp.edits) return inp.edits.reduce((a, e) => [a[0] + lineCount(e.new), a[1] + lineCount(e.old)], [0, 0]);
+  if (inp.content !== undefined) return [inp.lines || lineCount(inp.content), 0];
+  if (inp.diff) { const ls = inp.diff.split("\n"); return [ls.filter((l) => /^\+(?!\+\+)/.test(l)).length, ls.filter((l) => /^-(?!--)/.test(l)).length]; }
+  return null;
+}
+function toolBody(tool) {
+  const inp = tool.input || {};
+  const out = [];
+  if (inp.command) out.push(h("pre", { class: "trow-cmd" }, h("span", { class: "trow-io" }, "$ "), inp.command));
+  if (inp.edits) out.push(h("pre", { class: "ask-diff trow-diff" }, inp.edits.map((e) => [diffLines(e.old, "del", "− ", 40), diffLines(e.new, "add", "+ ", 40)])));
+  else if (inp.content !== undefined) out.push(h("pre", { class: "ask-diff trow-diff" }, diffLines(inp.content, "add", "+ ", 60)));
+  else if (inp.diff) out.push(h("pre", { class: "ask-diff trow-diff" }, inp.diff.split("\n").slice(0, 200).map((l) =>
+    h("span", { class: /^\+(?!\+\+)/.test(l) ? "add" : /^-(?!--)/.test(l) ? "del" : /^@@/.test(l) ? "more" : "" }, l + "\n"))));
+  if (tool.steps && tool.steps.length) {
+    const hidden = (tool.step_count || 0) - tool.steps.length;
+    out.push(h("div", { class: "trow-steps" }, hidden > 0 && h("div", { class: "trow-step more" }, t("… {n} earlier step", { n: hidden }, "… {n} earlier steps")),
+      tool.steps.map((s) => h("div", { class: "trow-step" }, statusEl(s.status), h("span", { class: "tn" }, TOOL_NAMES[s.name] || s.name), h("span", { class: "th", title: s.hint || "" }, shortHint(s.hint))))));
+  }
+  // a successful edit's "file updated" line says nothing the diff doesn't; its errors still show
+  const quiet = (inp.edits || inp.content !== undefined || inp.diff) && tool.status !== "error";
+  if (tool.result && !quiet) out.push(h("pre", { class: inp.command ? "trow-out" : null }, tool.result));
+  return out;
+}
 function toolEl(tool) {
-  const st = tool.status === "running" ? h("span", { class: "st running" }) : tool.status === "error" ? h("span", { class: "st error" }, icon("x")) : h("span", { class: "st done" }, icon("check"));
+  const st = statusEl(tool.status);
   const step = tool.input && tool.input.browser;
   if (step) return browserStepEl(tool, step, st);
-  return h("details", { class: "tool" },
-    h("summary", null, st, h("span", { class: "tn", title: TOOL_NAMES[tool.name] || tool.name }, TOOL_NAMES[tool.name] || tool.name), h("span", { class: "th", title: tool.hint || "" }, shortHint(tool.hint))),
-    tool.result && h("pre", null, tool.result));
+  const stats = editStats(tool.input || {});
+  const steps = tool.step_count || 0;
+  const last = tool.status === "running" && tool.steps && tool.steps[tool.steps.length - 1];
+  const body = toolBody(tool);
+  return h("details", { class: "tool", "data-key": "tool:" + tool.id },
+    h("summary", null, st, h("span", { class: "tn", title: TOOL_NAMES[tool.name] || tool.name }, TOOL_NAMES[tool.name] || tool.name),
+      h("span", { class: "th", title: tool.hint || "" }, last ? `${TOOL_NAMES[last.name] || last.name} ${shortHint(last.hint)}` : shortHint(tool.hint)),
+      stats && h("span", { class: "trow-stat" }, stats[0] ? h("span", { class: "add" }, "+" + stats[0]) : null, stats[1] ? h("span", { class: "del" }, "−" + stats[1]) : null),
+      steps > 0 && h("span", { class: "trow-stat" }, t("{n} step", { n: steps }, "{n} steps"))),
+    ...body);
 }
 
 // ---- Resume Studio's browser (scripts/browser.py): each command as the step a person would describe
@@ -1100,6 +1157,17 @@ function updateWaiting(chatId, pending) {
 
 // ---------------------------------------------------------------- live updates
 let liveFrame = 0;
+// The live reply is redrawn on every streamed piece: rows the user opened stay open, and their output keeps its scroll
+function keepOpened(from, to) {
+  for (const d of from.querySelectorAll("details[data-key]")) {
+    const n = to.querySelector(`details[data-key="${CSS.escape(d.dataset.key)}"]`);
+    if (!n) continue;
+    n.open = d.open;
+    const [a, b] = [d.querySelectorAll("pre"), n.querySelectorAll("pre")];
+    a.forEach((p, i) => { if (b[i] && p.scrollTop) b[i].scrollTop = p.scrollTop; });
+  }
+}
+
 function renderLive(now = false) {
   if (liveFrame && !now) return;
   const paint = () => {
@@ -1108,7 +1176,7 @@ function renderLive(now = false) {
     if (!chatShown() || !ui.chat.running || !ui.chat.live) return;
     const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
     const el = messageEl({ role: "assistant", blocks: ui.chat.live.blocks, live: true });
-    if (ui.chat.liveEl && ui.chat.liveEl.isConnected) ui.chat.liveEl.replaceWith(el); else log.append(el);
+    if (ui.chat.liveEl && ui.chat.liveEl.isConnected) { keepOpened(ui.chat.liveEl, el); ui.chat.liveEl.replaceWith(el); } else log.append(el);
     ui.chat.liveEl = el;
     if (nearBottom) log.scrollTop = log.scrollHeight;
   };
@@ -1371,6 +1439,11 @@ async function submitComposer() {
   }
 }
 
+// a reply ended or waits for the user while they are in another app: the window's taskbar button flashes
+function askAttention() {
+  if (!document.hasFocus()) api("POST", "/api/attention").catch(() => {});
+}
+
 // ---------------------------------------------------------------- server events
 async function onChatEvent(type, ev) {
   if (type === "claude.info") { if (!ev.agent || ev.agent === chatAgentId()) loadClaudeInfo(); else if (ui.agentInfo) delete ui.agentInfo[ev.agent]; return; }
@@ -1392,6 +1465,7 @@ async function onChatEvent(type, ev) {
       renderLive(true);
     }
     updateWaiting(ev.chat, here ? undefined : ev.ask.status === "pending");
+    if (ev.ask.status === "pending") askAttention();
     if (ev.ask.status === "pending" && (ev.chat !== ui.chat.id || !chatShown() || document.hidden)) {
       const agent = agentShortOf(ev.chat);
       const what = ev.ask.kind === "question" ? t("{agent} has a question", { agent }) : ev.ask.kind === "plan" ? t("{agent}'s plan is waiting for your approval", { agent }) : t("{agent} wants to {action}", { agent, action: toolAction(ev.ask.tool) });
@@ -1400,7 +1474,7 @@ async function onChatEvent(type, ev) {
     return;
   }
   if (type === "chat.done" && ev.chat !== ui.chat.id) setUnread(ev.chat, true);   // ended while the user was elsewhere
-  if (type === "chat.done") { paintChatDot((ui.chat.busy || []).filter((id) => id !== ev.chat)); aiRunDone(ev.chat, ev.error); }
+  if (type === "chat.done") { paintChatDot((ui.chat.busy || []).filter((id) => id !== ev.chat)); aiRunDone(ev.chat, ev.error); askAttention(); }
   if (ev.chat !== ui.chat.id) {
     if (type === "chat.done") {
       const r = await api("GET", "/api/chats");

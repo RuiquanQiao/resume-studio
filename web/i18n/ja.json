@@ -1922,5 +1922,10 @@
  "{start} – now": "{start} – 現在",
  "Expected": "予定",
  "Present": "現在",
- "The end month isn't reached yet; the resume adds “(expected)”": "終了月はまだ先です。履歴書には「（予定）」と書かれます"
+ "The end month isn't reached yet; the resume adds “(expected)”": "終了月はまだ先です。履歴書には「（予定）」と書かれます",
+ "Copy reply": "返信をコピー",
+ "Time this reply took": "この返信にかかった時間",
+ "Took {time}": "{time} かかりました",
+ "{n} step": "{n} ステップ",
+ "… {n} earlier step": "… それ以前の {n} ステップ"
 }
