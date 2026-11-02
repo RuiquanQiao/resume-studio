@@ -827,19 +827,30 @@ function scanNews() {
     if (!c) return null;
     const parts = [ch.new.length && t("{n} new", { n: ch.new.length }), ch.closed.length && t("{n} closed", { n: ch.closed.length }),
       ch.changed.length && t("{n} changed", { n: ch.changed.length })].filter(Boolean);
+    // a role opens its company's page at that role; "and N more" at the list of them
     return h("div", { class: "news-row" },
       h("button", { class: "linkish news-co", onclick: () => openHunt("company", c.id) }, companyLogo(c), c.name),
       h("span", { class: "muted" }, parts.join(" · ")),
-      h("span", { class: "news-items" }, ch.new.slice(0, 4).map((p) => h("span", { class: "news-item" }, p.title)),
-        ch.new.length > 4 && h("span", { class: "muted" }, t("and {n} more", { n: ch.new.length - 4 }))));
+      h("span", { class: "news-items" }, ch.new.slice(0, 4).map((p) => h("button", { type: "button", class: "news-item", "data-id": p.id, onclick: () => openCompanyAt(c.id, p.id) }, p.title)),
+        ch.new.length > 4 && h("button", { type: "button", class: "linkish news-more", onclick: () => openCompanyAt(c.id) }, t("and {n} more", { n: ch.new.length - 4 }))));
   }).filter(Boolean);
+  const folded = store("fold:hunt-today") === "1";
   const kw = scanInfo().keywords || [];
   const kwInput = h("input", { class: "kw-input", id: "hunt-keywords", value: kw.join(", "), spellcheck: "false",
     placeholder: t("e.g. 算法, AI, Agent, 后端"), "aria-label": t("Roles you look for"),
     onchange: async (e) => { try { await api("PUT", "/api/hunt/scan-settings", { keywords: e.target.value }); await loadHunt({ quiet: true }); } catch (err) { toast(err.message); } } });
-  return h("div", { class: "scan-news" },
+  // folds from its title like a card, and stays folded; the roles you look for stay in the head either way
+  const box = h("div", { class: "scan-news" + (folded ? " folded" : ""), id: "hunt-today" },
     // "nothing new" only after a scan that read a site; with none read, the bars below say why
-    h("div", { class: "sn-head" }, h("b", null, t("Today")), h("span", { class: "muted" }, rows.length || !readToday ? "" : t("nothing new from the last day's scans")),
+    h("div", { class: "sn-head" },
+      h("button", { type: "button", class: "sn-fold", "aria-expanded": String(!folded), title: folded ? t("Show") : t("Hide"),
+        onclick: (e) => {
+          const now = box.classList.toggle("folded");
+          e.currentTarget.setAttribute("aria-expanded", String(!now));
+          e.currentTarget.title = now ? t("Show") : t("Hide");
+          store("fold:hunt-today", now ? "1" : null);
+        } }, icon("down"), h("b", null, t("Today")), rows.length > 0 && h("span", { class: "card-n" }, String(rows.length))),
+      h("span", { class: "muted sn-none" }, rows.length || !readToday ? "" : t("nothing new from the last day's scans")),
       h("span", { class: "spacer" }), h("label", { class: "kw-label", for: "hunt-keywords" }, t("Roles you look for")), kwInput),
     rows,
     learn.length > 0 && h("div", { class: "note-bar" }, icon("sparkle"), h("span", { class: "nb-text" },
@@ -850,6 +861,34 @@ function scanNews() {
       h("button", { class: "btn sm", "data-ai": aiKey("fill", noSites), disabled: !ui.chat.available, onclick: () => askFill(noSites) }, icon("sparkle"), t("Ask AI to find them"))),
     broke.length > 0 && h("div", { class: "note-bar warn" }, icon("alert"), h("span", { class: "nb-text" },
       t("{names}: the last scan didn't work; their pages say why.", { names: broke.map((c) => c.name).join(", ") }))));
+  return box;
+}
+
+// a company's page, scrolled to one of its roles (or to its open roles): the role is made visible first,
+// whatever hides it there (the folded card, the search, the keyword filter, the "show more" limit, a folded group)
+async function openCompanyAt(cid, pid = null) {
+  await openHunt("company", cid);
+  const v = H.view;
+  if (!v || !v.company || v.company.id !== cid) return;
+  const p = pid && (v.postings || []).find((x) => x.id === pid);
+  if (pid && !p) { toast(t("This role is no longer listed")); }
+  store("fold:company-postings", null);
+  if (p && !p.closed && !p.stale) {
+    const q = (H.pq || "").trim().toLowerCase();
+    if (q && ![p.title, p.location, p.category].join(" ").toLowerCase().includes(q)) H.pq = "";
+    if (!kwMatch(p.title)) H.pall = true;
+    const shown = (v.postings || []).filter((x) => !x.closed && !x.stale && (H.pall || kwMatch(x.title)));
+    const i = shown.findIndex((x) => x.id === pid);
+    if (i >= (H.plimit || 120)) H.plimit = i + 1 + 40;
+  }
+  paintHunt();
+  const sc = $("#fillspace .hunt-scroll");
+  const el = (p && sc && sc.querySelector(`.post-row[data-id="${CSS.escape(p.id)}"]`)) || (sc && sc.querySelector(".postings-card"));
+  if (!el) return;
+  const fold = el.closest("details");
+  if (fold) fold.open = true;
+  el.scrollIntoView({ block: p ? "center" : "start" });
+  el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
 }
 
 // a button's key for asking the AI about these companies: one company's buttons share it, wherever they are
@@ -933,7 +972,7 @@ function postingsCard(v) {
         icon("down"), t("{n} probably over", { n: stale.length })),
       h("div", { class: "post-list" }, stale.slice(0, 200).map(row))),
     closed.length > 0 && h("details", { class: "post-closed" }, h("summary", null, icon("down"), t("{n} closed", { n: closed.length })), h("div", { class: "post-list" }, closed.slice(0, 200).map(row))),
-  ], { fold: "company-postings", count: open.length || null, actions: acts });
+  ], { cls: "postings-card", fold: "company-postings", count: open.length || null, actions: acts });
 }
 
 const BATCH_NAMES = { campus: "Campus", intern: "Internship", social: "Experienced", other: "Other" };

@@ -1944,5 +1944,6 @@
  "The AI reads its site once and records a scan route; after that, scans read it without AI": "AI がサイトを一度読んでスキャン経路を記録します。以後のスキャンは AI なしで読めます",
  "posted {date}": "{date} 掲載",
  "{n} probably over": "{n} 件は終了済みの可能性",
- "Still on its site, but the closing date has passed, or there is none and it was posted over a year ago": "サイトにはまだ載っていますが、締切が過ぎているか、締切がなく掲載から1年以上経っています"
+ "Still on its site, but the closing date has passed, or there is none and it was posted over a year ago": "サイトにはまだ載っていますが、締切が過ぎているか、締切がなく掲載から1年以上経っています",
+ "This role is no longer listed": "この求人はもう掲載されていません"
 }

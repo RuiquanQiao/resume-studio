@@ -1541,6 +1541,60 @@ def test_a_link_the_scan_found_is_added_without_the_ai(page, server):
     pg.wait_for_selector(".hunt-wrap:not(.is-page)")
 
 
+def test_today_folds_and_its_roles_open_the_company_at_that_role(page, server):
+    """User, 2026-11-02: "Today" folds away (and stays folded), and a role listed there opens the company's page
+    scrolled to that role, even when the page would hide it (folded card, a search typed there, past "show more")."""
+    pg = page
+    hunt = server.inst.hunt
+    hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
+    posts = hunt.scanner.postings
+    posts.settings(keywords="研发")
+    posts.merge("C1", [{"title": f"研发工程师 {i:03d}", "url": f"https://careers.xinghe.example/campus/job/{i}"} for i in range(150)], how="route")
+    pg.keyboard.press("Control+3")
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.wait_for_selector("#hunt-today .news-item")
+    first = pg.locator("#hunt-today .news-item").first
+    pid, title = first.get_attribute("data-id"), first.inner_text()
+
+    pg.screenshot(path=str(ART / "hunt-today-open.png"), clip=pg.locator("#hunt-today").bounding_box())   # by place: a quiet repaint may swap the box
+    # folded: only the head stays, and it stays folded after a reload
+    pg.click("#hunt-today .sn-fold")
+    assert not pg.is_visible("#hunt-today .news-row") and pg.is_visible("#hunt-keywords")
+    pg.mouse.move(0, 0)
+    pg.wait_for_timeout(250)                                                    # past the chevron's turn
+    pg.screenshot(path=str(ART / "hunt-today-folded.png"), clip=pg.locator("#hunt-today").bounding_box())   # by place: a quiet repaint may swap the box
+    pg.reload()
+    pg.keyboard.press("Control+3")
+    pg.wait_for_selector("#hunt-today.folded")
+    assert not pg.is_visible("#hunt-today .news-row")
+    pg.click("#hunt-today .sn-fold")
+    pg.wait_for_selector("#hunt-today .news-item")
+
+    # what would hide the role on its page: the open-roles card folded, and a search that doesn't match it
+    pg.evaluate("() => { localStorage.setItem('fold:company-postings', '1'); H.pq = 'nothing like it'; }")
+    pg.click(f"#hunt-today .news-item[data-id='{pid}']")
+    row = f".postings-card .post-row[data-id='{pid}']"
+    pg.wait_for_selector(row)
+    assert pg.locator(row + " .pr-title").inner_text() == title
+    assert pg.evaluate(f"""() => {{ const r = document.querySelector("{row}").getBoundingClientRect();
+        const s = document.querySelector('#fillspace .hunt-scroll').getBoundingClientRect();
+        return r.top >= s.top && r.bottom <= s.bottom; }}""")                       # scrolled into view
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"hunt-today-to-role-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+
+    # a role past the first 120 shown is still reached; "and N more" opens the list of them
+    far = pg.evaluate("() => H.view.postings.filter((p) => !p.closed && !p.stale)[140].id")
+    pg.evaluate(f"() => openCompanyAt('C1', '{far}')")
+    pg.wait_for_selector(f".postings-card .post-row[data-id='{far}']")
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.click("#hunt-today .news-more")
+    pg.wait_for_selector(".hunt-wrap.is-page .postings-card")
+    pg.click(".hunt-tab[data-tab=companies]")                                   # off the company's page for the next test
+    pg.wait_for_selector(".hunt-wrap:not(.is-page)")
+
+
 def test_a_browser_about_to_close_itself_can_be_kept_open(page, server):
     """A browser work started says so a few seconds before it closes itself; Keep it open makes it the user's."""
     b = server.inst.browser

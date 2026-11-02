@@ -1944,5 +1944,6 @@
  "The AI reads its site once and records a scan route; after that, scans read it without AI": "AI 读一次它的官网并录下扫描路线；以后扫描不用 AI 就能读",
  "posted {date}": "{date} 发布",
  "{n} probably over": "{n} 个可能已过期",
- "Still on its site, but the closing date has passed, or there is none and it was posted over a year ago": "官网上还挂着，但截止日期已过；或者没写截止日期、而且发布已超过一年"
+ "Still on its site, but the closing date has passed, or there is none and it was posted over a year ago": "官网上还挂着，但截止日期已过；或者没写截止日期、而且发布已超过一年",
+ "This role is no longer listed": "这个岗位已经不在列表里了"
 }

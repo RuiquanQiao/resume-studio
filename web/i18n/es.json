@@ -2112,5 +2112,6 @@
  "The AI reads its site once and records a scan route; after that, scans read it without AI": "La IA lee el sitio una vez y graba una ruta de escaneo; después, los escaneos lo leen sin IA",
  "posted {date}": "publicado el {date}",
  "{n} probably over": "{n} probablemente cerrados",
- "Still on its site, but the closing date has passed, or there is none and it was posted over a year ago": "Sigue en su sitio, pero la fecha límite ya pasó, o no tiene y se publicó hace más de un año"
+ "Still on its site, but the closing date has passed, or there is none and it was posted over a year ago": "Sigue en su sitio, pero la fecha límite ya pasó, o no tiene y se publicó hace más de un año",
+ "This role is no longer listed": "Este puesto ya no aparece"
 }

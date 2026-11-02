@@ -1944,5 +1944,6 @@
  "The AI reads its site once and records a scan route; after that, scans read it without AI": "AI가 사이트를 한 번 읽고 스캔 경로를 기록합니다. 이후 스캔은 AI 없이 읽습니다",
  "posted {date}": "{date} 게시",
  "{n} probably over": "{n}개는 마감됐을 가능성",
- "Still on its site, but the closing date has passed, or there is none and it was posted over a year ago": "사이트에는 아직 있지만 마감일이 지났거나, 마감일 없이 게시된 지 1년이 넘었습니다"
+ "Still on its site, but the closing date has passed, or there is none and it was posted over a year ago": "사이트에는 아직 있지만 마감일이 지났거나, 마감일 없이 게시된 지 1년이 넘었습니다",
+ "This role is no longer listed": "이 공고는 더 이상 목록에 없습니다"
 }
