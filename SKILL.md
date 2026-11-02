@@ -296,7 +296,8 @@ calendars to check today's date against (China's 校招 rounds and 届, Australi
 programs and work rights). When the user doesn't know what to aim for, or is torn between paths, read
 `skills/direction/SKILL.md` first: it weighs their evidence against the market, from dated sources, and ends in
 a direction, a fallback and checkpoints. To find the companies and roles to go for, read
-`skills/openings/SKILL.md`.
+`skills/openings/SKILL.md`. To check a posting, a company or an offer for traps (scams, outsourcing under a
+brand, trial periods and penalties beyond the law, 三方), read `skills/risks/SKILL.md`.
 
 ## The job-hunt tracker (the Applying workspace, Ctrl+3)
 

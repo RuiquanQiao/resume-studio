@@ -63,7 +63,7 @@ An employer only goes into the tracker once you have checked, with sources:
 - it hires **in a city the user can work in** (or remote within their region);
 - nothing about it is plainly wrong: it asks applicants to pay (training fees, deposits, "materials"), the
   "graduate role" is commission-only sales, or it can't be found outside its own ads. Leave such ones out and
-  tell the user why.
+  tell the user why. The risk skill (`../risks/SKILL.md`) has the full checks and the evidence to cite.
 
 Then add it with `hunt.py add-company` and `fill` as the tracker's note says (its careers sites, logo, where it
 hires, the About), so scans keep its roles current from then on. Say in the chat which ones you added, which

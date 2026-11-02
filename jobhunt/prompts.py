@@ -6,6 +6,7 @@ from resume import prompts as rp
 HUNT = rp.SKILL_ROOT / "scripts" / "hunt.py"
 CALENDARS = rp.SKILL_ROOT / "references" / "hiring-calendars.md"   # what batch names mean, country by country
 OPENINGS = rp.SKILL_ROOT / "skills" / "openings" / "SKILL.md"         # where to find employers worth adding
+RISKS = rp.SKILL_ROOT / "skills" / "risks" / "SKILL.md"               # the traps in a posting, a company, an offer
 
 
 def cli(data_path: str) -> str:
@@ -123,6 +124,10 @@ How to work it:
 - **When the user asks where to find roles or which companies to apply to**, or few companies in the tracker match
   their direction, read `{OPENINGS}` first: the channels per market, finding employers they don't know, referrals,
   and what to check before a company goes in.
+- **Check for traps** with `{RISKS}` (read it once per chat): whenever you read or save a JD, research a company, the
+  user asks whether a role, company or offer is OK, an offer or 三方 is to be signed or compared, or anyone asks
+  them for money. Each finding has its evidence, why it matters, what to ask, and how serious it is; a company's
+  go into its About as a "Risks" point, a role's into a `note`.
 - **Recording a site's route** (when `show` or `scan` says a site has none): open the site's job list in Resume
   Studio's browser (the browser commands), signed in if it needs it (the user signs in with the button on the
   company's row; never type a password). Find how the list loads: often the page calls its own JSON API, and the

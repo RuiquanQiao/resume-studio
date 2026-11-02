@@ -11,8 +11,8 @@ or only at the market ("AI is hot") is wrong half the time. **Every judgement he
 the two: this person's evidence, against this market's demand, today.**
 
 This skill decides *where to aim*. Once that is settled, the planning skill (`../planning/SKILL.md`) works out
-*how to get there by when*, and the openings skill (`../openings/SKILL.md`) finds *the actual companies and
-roles*. Results from those two come back here: a direction that produces no interviews, or has no openings
+*how to get there by when*, the openings skill (`../openings/SKILL.md`) finds *the actual companies and
+roles*, and the risk skill (`../risks/SKILL.md`) checks a role, a company or an offer for traps. Results from those two come back here: a direction that produces no interviews, or has no openings
 where the user can work, gets looked at again.
 
 ## 1. Start from what is already known

@@ -129,8 +129,16 @@ plan. Results flow back: no interviews, or no openings the user is eligible for,
   unposted roles; a thin count reopens the direction.
 - Every data-folder chat's plan note points to both (`studyplan/prompts.py`), the tracker's note to the openings
   skill (`jobhunt/prompts.py`), and the planning skill sends a user with no target to the direction skill.
-- Still to come: a skill for the traps in a posting and an offer (outsourcing under a big name, sales sold as a
-  graduate program, pay-to-work, trial periods, 三方 penalties and the like).
+- **`skills/risks/SKILL.md`** (built the same day; check for traps): every finding has a quote or a source, why
+  it matters, what to ask, and one of three levels (stop / ask first / note); signals, never verdicts, and not
+  legal advice. It covers scams and pay-to-work (劳动合同法 第九条, Scamwatch), roles that aren't their title,
+  outsourcing and dispatch under a brand (the employer is whoever signs the contract and pays social insurance;
+  第六十六条), the company's registers and health, and the offer: what in a 年包 is guaranteed, the 五险一金
+  base, the trial period and its pay (第十九、二十条), which penalties are allowed (第二十二、二十三、二十五条),
+  non-competes (第二十四条), the 三方, and Australia's unpaid internships and trials, sham contracting and paid
+  visa sponsorship. Offers are compared in one table of facts, with the direction skill's 3–5-year view. The
+  tracker's note tells Claude to use it whenever a JD is read, a company researched, an offer signed or compared,
+  or money asked for; a company's findings go into its About as a "Risks" point.
 
 ## What stays the user's
 

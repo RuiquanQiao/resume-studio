@@ -798,3 +798,4 @@ def test_claude_is_told_to_fill_scan_and_read_links():
     assert "only after a route really failed" in note and "When no script can do it" not in note
     assert "posted in the last 12 months" in note
     assert str(prompts.OPENINGS) in note and prompts.OPENINGS.is_file()       # where to find employers worth adding
+    assert str(prompts.RISKS) in note and prompts.RISKS.is_file()             # the traps in a posting, a company, an offer
