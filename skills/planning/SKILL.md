@@ -105,6 +105,9 @@ and when it is too late. Use the employers' own pages and cite them.
 
 ## 3. Where they stand: measure it, don't take it on faith
 
+This assumes the user knows what they aim for. When they don't, or the target doesn't fit them or their market,
+choose the direction first with `../direction/SKILL.md`, and come back here to plan it.
+
 Anxious students tend to rate themselves lower than they are, or higher. Neither is a plan.
 
 - Ask only what the plan depends on:

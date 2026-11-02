@@ -126,5 +126,7 @@ def test_the_window_edits_ticks_and_goes_back_through_the_api(server, data_file)
     note = "\n".join(n() for n in server.inst.chats.notes)
     assert "scripts" in note and "plan.py" in note and "no fixed shape" in note and "v3" in note
     assert str(ROOT / "skills" / "planning" / "SKILL.md") in note and (ROOT / "skills" / "planning" / "SKILL.md").is_file()   # the method and the calendars
+    for skill in ("direction", "openings"):                                   # choosing where to aim, finding who to go for
+        assert str(ROOT / "skills" / skill / "SKILL.md") in note and (ROOT / "skills" / skill / "SKILL.md").is_file()
     saved = json.loads((data_file.parent / "resume-studio-data" / "plan" / "versions.json").read_text(encoding="utf-8"))
     assert [v["n"] for v in saved] == [1, 2, 3]

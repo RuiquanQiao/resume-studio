@@ -102,6 +102,36 @@ the easiest path back from the nearest live deadline, small commitments, trackin
 It teaches the method. It doesn't impose a shape on the document. Dates in it are examples with sources;
 Claude checks the employer's own page each cycle.
 
+## Choosing a direction, and finding openings: two more skills (2026-11-03)
+
+The user asked whether Resume Studio had good methods for what new graduates lack most: not only writing a
+resume, but knowing what industries and roles really are, where the good openings are, what the traps are in a
+posting, and judging their own strengths against all of it to pick the best route. It didn't: the skills covered
+the steps after a target is chosen (resume, tracker, interviews, the plan), and nothing helped choose the target.
+career-ops, which has some of this, will be removed once Resume Studio is complete, so Resume Studio must do it
+itself, and better.
+
+The user's point, accepted: judging oneself and judging the market are one analysis, because a route is only
+right at their crossing. A first proposal split "a route map" from "where the openings are" and put the market
+partly in each; that was wrong. What stays separate is finding actual employers, because it runs every week or
+two in a season while a direction is settled once a term or so, and its output goes into the tracker, not the
+plan. Results flow back: no interviews, or no openings the user is eligible for, reopen the direction.
+
+- **`skills/direction/SKILL.md`** (choose where to aim): reads the experience library and its fact layer, the
+  plan and the tracker's outcomes before asking anything; the person by evidence (entry ids, rare combinations,
+  how employers filter, values by forced choice), never self-ratings; each route's work, gate, demand for
+  graduates, pay, trend and 3–5-year exits, from dated primary sources; three to five routes (theirs, one using
+  their rare combination, one safe); one route and a fallback, with numeric, dated checkpoints and cheap tests
+  first; written into the plan as a version with its reason.
+- **`skills/openings/SKILL.md`** (find who to go for): channels per market (China, Australia); finding employers
+  the user doesn't know; 20–40 employers in three bands by fit; each checked (hiring graduates in the direction
+  this cycle, eligibility, city, nothing plainly wrong) before `hunt.py add-company` and `fill`; referrals and
+  unposted roles; a thin count reopens the direction.
+- Every data-folder chat's plan note points to both (`studyplan/prompts.py`), the tracker's note to the openings
+  skill (`jobhunt/prompts.py`), and the planning skill sends a user with no target to the direction skill.
+- Still to come: a skill for the traps in a posting and an offer (outsourcing under a big name, sales sold as a
+  graduate program, pay-to-work, trial periods, 三方 penalties and the like).
+
 ## What stays the user's
 
 - Every word they write stays. Claude rewrites with them, and the old wording stays in the versions.

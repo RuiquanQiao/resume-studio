@@ -797,3 +797,4 @@ def test_claude_is_told_to_fill_scan_and_read_links():
     assert "done only once `scan-route` has run" in note and "always gets a route" in note
     assert "only after a route really failed" in note and "When no script can do it" not in note
     assert "posted in the last 12 months" in note
+    assert str(prompts.OPENINGS) in note and prompts.OPENINGS.is_file()       # where to find employers worth adding

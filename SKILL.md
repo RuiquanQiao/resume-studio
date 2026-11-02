@@ -293,7 +293,10 @@ and put it in the plan, then say in one line what changed. Never delete their wo
 Before working out or reworking a plan, read `skills/planning/SKILL.md`: the method (measure where they stand,
 work back from the nearest live deadline, small checkable commitments, when to replan) and the hiring
 calendars to check today's date against (China's 校招 rounds and 届, Australia's internships, graduate
-programs and work rights).
+programs and work rights). When the user doesn't know what to aim for, or is torn between paths, read
+`skills/direction/SKILL.md` first: it weighs their evidence against the market, from dated sources, and ends in
+a direction, a fallback and checkpoints. To find the companies and roles to go for, read
+`skills/openings/SKILL.md`.
 
 ## The job-hunt tracker (the Applying workspace, Ctrl+3)
 

@@ -7,6 +7,8 @@ from resume import prompts as rp
 
 PLAN = rp.SKILL_ROOT / "scripts" / "plan.py"
 PLANNING = rp.SKILL_ROOT / "skills" / "planning" / "SKILL.md"
+DIRECTION = rp.SKILL_ROOT / "skills" / "direction" / "SKILL.md"
+OPENINGS = rp.SKILL_ROOT / "skills" / "openings" / "SKILL.md"
 
 
 def cli(data_path: str) -> str:
@@ -46,6 +48,12 @@ How to work it:
 - **Before you work out or rework the plan, read `{PLANNING}`** (once per chat): how to plan with a student,
   and the hiring calendars (China's 校招 and 届, Australia's internships, graduate programs and work rights)
   to check today's date against, so the plan never aims at a window that has closed.
+- **When the user doesn't know what to aim for**, is torn between paths, asks what suits them or what a role or
+  industry is really like, or keeps failing at one target, **read `{DIRECTION}`** first: it weighs their
+  evidence against the market (demand for graduates, pay, trend, where each route leads), from dated sources,
+  and ends in a direction, a fallback and checkpoints for the plan.
+- **When they need actual companies and roles to go for**, read `{OPENINGS}`: the channels per market, finding
+  employers they don't know, referrals, and checking each before it goes into the tracker.
 - It has **no fixed shape**. Don't impose a template, a form or a rating scale; let what the user tells you
   decide what goes in and how it is laid out. Three things to help them see clearly:
   - where they stand: how much time they have, which skills and experience they lack, what constrains them;

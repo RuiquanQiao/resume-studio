@@ -5,6 +5,7 @@ from resume import prompts as rp
 
 HUNT = rp.SKILL_ROOT / "scripts" / "hunt.py"
 CALENDARS = rp.SKILL_ROOT / "references" / "hiring-calendars.md"   # what batch names mean, country by country
+OPENINGS = rp.SKILL_ROOT / "skills" / "openings" / "SKILL.md"         # where to find employers worth adding
 
 
 def cli(data_path: str) -> str:
@@ -119,6 +120,9 @@ How to work it:
 - What hiring rounds (27秋招, 27寒假实习, 2027 Graduate Program…) mean and when they run, country by country, is in
   `{CALENDARS}`: read it before you reason about timing. The year counts different things: 27秋招 (China) is for people graduating in 2027 and runs in 2026; a 2027
   Graduate Program (Australia, UK) starts in 2027 and is applied for in 2026.
+- **When the user asks where to find roles or which companies to apply to**, or few companies in the tracker match
+  their direction, read `{OPENINGS}` first: the channels per market, finding employers they don't know, referrals,
+  and what to check before a company goes in.
 - **Recording a site's route** (when `show` or `scan` says a site has none): open the site's job list in Resume
   Studio's browser (the browser commands), signed in if it needs it (the user signs in with the button on the
   company's row; never type a password). Find how the list loads: often the page calls its own JSON API, and the
