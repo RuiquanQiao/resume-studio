@@ -1487,9 +1487,9 @@ def test_a_scan_started_in_the_window_says_when_it_is_done(page, server, monkeyp
         def ensure(self):
             return True
 
-        def read_page(self, url, script, timeout=60.0):
+        def read_pages(self, url, scripts, timeout=60.0, open_timeout=30.0):
             time.sleep(0.5)   # long enough to see the button spin
-            return {"postings": [{"title": "服务端研发工程师", "url": jobs + "/1"}, {"title": "算法工程师", "url": jobs + "/2"}]}
+            return [{"postings": [{"title": "服务端研发工程师", "url": jobs + "/1"}, {"title": "算法工程师", "url": jobs + "/2"}]}] * len(scripts)
 
         def status(self):
             return {"state": "off"}

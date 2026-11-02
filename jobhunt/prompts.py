@@ -131,7 +131,8 @@ How to work it:
   posting of every list the site has (campus, intern), not only the first page. Each page's script has 2 minutes
   and some sites answer slowly: time one request first, and split a long list into several pages of the route
   (one request each, at most 20 pages in all) rather than one script that pages through all of it; a page that doesn't read is reported and
-  the others are kept. Give every posting its own `url` and its closing date when the site has them. The route is the
+  the others are kept. Pages in a row on one address share one opened page, each script after the one before: a
+  script never relies on what an earlier one did to the page (call the API, don't click through). Give every posting its own `url` and its closing date when the site has them. The route is the
   job, not the postings: a task to learn a site is done only once `scan-route` has run. A plain HTML list (links
   with dates, pages like `index1.htm`, `?page=2`) always gets a route: `fetch` each list page and parse it with
   `DOMParser`. A site that lists announcements (公告) rather than roles, as universities and state employers do:

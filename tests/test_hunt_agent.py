@@ -336,6 +336,15 @@ class FakeBrowser:
         self.held_while_reading.append(self.holds > 0)
         return self.pages[url]
 
+    def read_pages(self, url, scripts, timeout=60.0, open_timeout=30.0):
+        out = []
+        for s in scripts:
+            try:
+                out.append(self.read_page(url, s, timeout))
+            except Exception as e:
+                out.append(e)
+        return out
+
 
 class NoTool:
     def installed(self):
@@ -535,6 +544,48 @@ def test_one_page_that_times_out_keeps_what_the_other_pages_read(hunt):
     browser.read_page = lambda url, script, timeout=60.0: (_ for _ in ()).throw(BrowserError("Runtime.evaluate timed out"))
     res = sc.scan("星河科技")
     assert res["route_broken"] and "timed out" in res["error"] and not ps.scan_state("C1")["ok"]
+
+
+def test_a_slow_network_gets_time_and_more_tries_before_a_page_counts_as_unread(hunt):
+    """User, 2026-11-02: a student in Europe reading a company's site in China waits long for an answer, and 30 s
+    then nothing more threw away 100 of 长鑫's roles. A scan gives a page 90 s to open, opens it twice more after
+    a pause before giving up, and opens an address the route reads 17 times only once."""
+    from core.browser import PageNotOpened
+    ps = Postings(hunt)
+    hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
+    campus, social = "https://careers.xinghe.example/campus/jobs", "https://careers.xinghe.example/social/jobs"
+
+    class FarAway(FakeBrowser):
+        def read_pages(self, url, scripts, timeout=60.0, open_timeout=30.0):
+            self.calls.append((url, len(scripts), open_timeout))
+            if self.fails.get(url, 0) > 0:
+                self.fails[url] -= 1
+                return [PageNotOpened(f"{url} didn't open: Page.navigate timed out")] * len(scripts)
+            return [{"postings": [{"title": f"{url.split('/')[3]} {s[-2:]}", "url": f"{url}/{s[-2:].strip()}"}]} for s in scripts]
+    browser = FarAway({})
+    browser.calls, browser.fails = [], {}
+    sc = Scanner(hunt, ps, NoTool(), browser, lambda: None)
+    sc.retry_waits = (0, 0)
+    pages = [{"url": campus, "script": "() => 1"}] + [{"url": social, "script": f"() => {n}"} for n in range(2, 19)]
+    assert not sc.save_route("星河科技", {"pages": pages})[1]
+    assert sc.scan("星河科技")["found"] == 18
+    assert [(u, n) for u, n, _ in browser.calls] == [(campus, 1), (social, 17)] and {w for *_, w in browser.calls} == {90}
+    # opening twice in a row too slowly is a slow network, not a page that didn't read
+    browser.calls, browser.fails = [], {social: 2}
+    res = sc.scan("星河科技")
+    assert res["found"] == 18 and not res["errors"] and len(browser.calls) == 4
+    st = ps.scan_state("C1")
+    assert st["ok"] and not st["error"] and not st.get("unread")
+    # three times: those pages didn't read, said once for the address, and how many of the route's pages they were
+    browser.fails = {social: 3}
+    res = sc.scan("星河科技")
+    assert res["found"] == 1 and len(res["errors"]) == 1 and social in res["errors"][0] and "3" in res["errors"][0]
+    st = ps.scan_state("C1")
+    assert st["ok"] and st["unread"] == [17, 18] and len(ps.all()) == 18 and not any(p["closed"] for p in ps.all())
+    # the next scan that reads them all clears it
+    browser.fails = {}
+    sc.scan("星河科技")
+    assert not ps.scan_state("C1").get("unread") and not ps.scan_state("C1")["error"]
 
 
 def test_postings_kept_without_a_link_are_the_same_ones_once_a_scan_gives_links(hunt):

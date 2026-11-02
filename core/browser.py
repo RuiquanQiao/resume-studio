@@ -37,6 +37,11 @@ class BrowserError(Exception):
     """Something the caller (and the user) should read."""
 
 
+class PageNotOpened(BrowserError):
+    """The page didn't open at all (no answer in time, the connection failed): the network, not the page, so
+    trying again later can work."""
+
+
 COMMANDS = {"open", "snapshot", "text", "click", "hover", "type", "select", "press", "scroll", "upload", "screenshot", "tabs",
             "tab", "back", "front", "sign-in", "profile", "report", "signed-out", "extract", "route", "sync"}
 
@@ -849,8 +854,35 @@ class ManagedBrowser:
         posting never takes the tab Claude or the user is working in, nor covers the screen. Off the screen,
         not minimized: a minimized window stops painting, and sites drawn by scripts (Feishu) then never
         draw the posting."""
+        out = self.read_pages(url, [script], timeout=timeout)[0]
+        if isinstance(out, Exception):
+            raise out
+        return out
+
+    def _href(self) -> str:
+        try:
+            return str(self._eval_page("location.href", timeout=5))
+        except CdpError:   # mid-navigation, or gone: not the page that was opened
+            return ""
+
+    def _open_here(self, url: str, timeout: float) -> None:
+        try:
+            r = self._send("Page.navigate", {"url": url}, timeout=timeout)
+        except CdpError as e:
+            raise PageNotOpened(f"{url} didn't open: {e}") from e
+        if r.get("errorText"):   # net::ERR_CONNECTION_TIMED_OUT and the like
+            raise PageNotOpened(f"couldn't open {url}: {r['errorText']}")
+        self.wait_loaded()
+
+    def read_pages(self, url: str, scripts: list[str], timeout: float = 60.0, open_timeout: float = 30.0) -> list[Any]:
+        """read_page for several scripts on one address: the page opens once and they run one after another, so a
+        route with 17 pages on one address opens it once, not 17 times. A script that took the page elsewhere
+        gets it opened again for the next one. Each item is that script's answer, or the error it ran into: a
+        script that fails is its trouble alone, and a page that doesn't open is PageNotOpened for each script
+        it was to run."""
         if not url.startswith(("http://", "https://")):
             raise BrowserError("only http(s) addresses can be opened")
+        out: list[Any] = []
         with self.lock:
             self.ensure()
             assert self.conn is not None
@@ -865,11 +897,19 @@ class ManagedBrowser:
                 except CdpError:
                     pass   # headless, or a browser that can't: it reads all the same
                 self.current = tid
-                r = self._send("Page.navigate", {"url": url})
-                if r.get("errorText"):
-                    raise BrowserError(f"couldn't open {url}: {r['errorText']}")
-                self.wait_loaded()
-                return self.run_script(script, timeout=timeout)
+                opened = ""
+                for script in scripts:
+                    try:
+                        if not opened or self._href() != opened:
+                            self._open_here(url, open_timeout)
+                            opened = self._href()
+                        out.append(self.run_script(script, timeout=timeout))
+                    except PageNotOpened as e:
+                        out += [e] * (len(scripts) - len(out))
+                        break
+                    except (BrowserError, CdpError) as e:
+                        out.append(e)
+                return out
             finally:
                 try:
                     self.conn.send("Target.closeTarget", {"targetId": tid})

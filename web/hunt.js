@@ -883,7 +883,10 @@ function postingsCard(v) {
     : !sc.at && sc.needs === "sites" ? h("span", { class: "fs-status warn" }, icon("alert"), t("No careers site to scan"))
     : !sc.at ? h("span", { class: "muted" }, t("not scanned yet"))
     // read in part (a slow page timed out): what it read is kept, and the bar below says which page didn't
-    : sc.ok && sc.error ? h("span", { class: "fs-status warn" }, icon("alert"), t("scanned {when} · some pages didn't read", { when: huntWhen(sc.at) }))
+    // with how it read: a route that timed out on a page is still a route, never "not set up"
+    : sc.ok && sc.error ? h("span", { class: "fs-status warn", id: "company-read-in-part" }, icon("alert"), sc.unread
+      ? t("scanned {when} · {how} · {n} of {all} pages didn't read; the roles they had last time are kept", { when: huntWhen(sc.at), how: howName(sc.how), n: sc.unread[0], all: sc.unread[1] })
+      : t("scanned {when} · {how} · some pages didn't read", { when: huntWhen(sc.at), how: howName(sc.how) }))
     // read, but a site still has no route: the next scan can't read it again, so "scanned" alone would read as set up
     : sc.ok && sc.needs === "claude" ? h("span", { class: "fs-status warn", id: "company-no-route" }, icon("alert"), sc.how === "claude"
       ? t("read by hand by the AI {when} · no scan route yet, so a scan can't update these roles", { when: huntWhen(sc.at) })

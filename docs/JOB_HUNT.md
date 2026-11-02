@@ -126,7 +126,9 @@ the company (creating and filling it when new), adds the posting with its detail
   user signs in with the row's button), and record read-only page scripts; later scans replay them with no
   Claude. A route that stops working asks Claude to record it again. A route has at most 20 pages, each with
   2 minutes; a page that doesn't read (a slow site timing out, 2026-10-29) is named on the company, and what
-  the other pages read is kept, closing nothing.
+  the other pages read is kept, closing nothing. A user abroad reads sites on the far side of the world
+  (2026-11-02): a page gets 90 s to open and two more tries after 5 s and 15 s, pages in a row on one address
+  share one opened page, and the company says how many of the route's pages didn't read.
 - Postings are matched across scans by a fingerprint (company, title, location, link; after career-ops'
   `listing-fingerprint.mjs`): new ones are marked **new**, gone ones **closed**, changed deadlines shown. A
   posting kept without a link that a later scan finds with one stays the same posting.

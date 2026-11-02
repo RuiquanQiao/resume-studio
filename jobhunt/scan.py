@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from core.browser import BrowserError
+from core.browser import BrowserError, PageNotOpened
 from core.cdp import CdpError
 from core.i18n import t
 
@@ -37,6 +37,10 @@ from .store import Hunt
 
 BRIDGE = Path(__file__).resolve().parent.parent / "jobs" / "co_scan.mjs"
 MAX_PAGES = 20   # of a recorded route, each with 2 minutes
+# a scan has no one waiting on it, and a user abroad reads sites on the far side of the world (user, 2026-11-02):
+# a page gets 90 s to open, and two more tries after a pause, before it counts as unread
+OPEN_TIMEOUT = 90
+RETRY_WAITS = (5, 15)
 
 
 def validate_route(data: Any) -> tuple[dict, list[str]]:
@@ -90,6 +94,7 @@ class Scanner:
         # can say "3 of 12" from the click to the end, between one company and the next too
         self.queue: list[str] = []
         self.batch: dict | None = None         # {total, done, auto} while a run goes on
+        self.retry_waits = RETRY_WAITS         # seconds before each new try of a page that didn't open
 
     # ---- which sites, read how ----
     @staticmethod
@@ -145,42 +150,77 @@ class Scanner:
         return self.browser.hold() if hasattr(self.browser, "hold") else contextlib.nullcontext()
 
     # ---- one company ----
-    def run_route(self, route: dict, errors: list[str] | None = None) -> list[dict]:
-        """Each page in a tab of its own, off the screen (core/browser.py read_page): a scan never takes the tab
-        the user or Claude is working in. A browser the scan started closes itself once nothing uses it
+    def run_route(self, route: dict, errors: list[str] | None = None, unread: list[int] | None = None) -> list[dict]:
+        """Each address in a tab of its own, off the screen (core/browser.py read_pages): a scan never takes the
+        tab the user or Claude is working in. A browser the scan started closes itself once nothing uses it
         (core/browser.py close_if_idle); one the user opened stays."""
         with self._hold():
             try:
                 self.browser.ensure()
             except BrowserError as e:
                 raise RouteFailed(str(e))
-            return self._read_route(route, errors)
+            return self._read_route(route, errors, unread)
 
-    def _read_route(self, route: dict, errors: list[str] | None = None) -> list[dict]:
+    def _read_route(self, route: dict, errors: list[str] | None = None, unread: list[int] | None = None) -> list[dict]:
         """One page that doesn't read (a slow site timing out) never throws away the pages that did: its trouble
-        goes into `errors` and the rest is kept. Only a route that read nothing at all fails."""
+        goes into `errors`, how many of the route's pages didn't read into `unread` ([unread, all]), and the rest
+        is kept. Only a route that read nothing at all fails. Pages in a row on one address share one opened page."""
+        pages = route.get("pages") or []
+        groups: list[tuple[str, list[str]]] = []
+        for p in pages:
+            if groups and groups[-1][0] == p["url"]:
+                groups[-1][1].append(p["script"])
+            else:
+                groups.append((p["url"], [p["script"]]))
         found: list[dict] = []
         problems: list[str] = []
-        for p in route.get("pages") or []:
-            try:
-                out = self.browser.read_page(p["url"], p["script"], timeout=120)
-            except (BrowserError, CdpError) as e:   # CdpError: the page didn't even open in time (Page.navigate)
-                problems.append(t("the page {url} didn't read: {error}", url=p["url"], error=str(e)))
-                continue
-            if isinstance(out, dict) and out.get("signed_out"):
-                raise RouteFailed(t("the site asks to sign in"), signed_out=True)
-            rows = out.get("postings") if isinstance(out, dict) else out
-            if not isinstance(rows, list):
-                problems.append(t("the script on {url} gave no list of postings", url=p["url"]))
-                continue
-            found += rows
+        missed = 0
+        for url, scripts in groups:
+            outs: list[Any] = [None] * len(scripts)
+            todo = list(range(len(scripts)))
+            for attempt in range(len(RETRY_WAITS) + 1):
+                if attempt:
+                    time.sleep(self.retry_waits[attempt - 1])
+                got = self._read_pages(url, [scripts[i] for i in todo])
+                for i, out in zip(todo, got):
+                    outs[i] = out
+                todo = [i for i in todo if isinstance(outs[i], PageNotOpened)]
+                if not todo:
+                    break
+            if todo:
+                missed += len(todo)
+                problems.append(t("the page {url} didn't open in {tries} tries: {error}", url=url, tries=len(RETRY_WAITS) + 1,
+                                  error=str(outs[todo[0]])))
+            for i, out in enumerate(outs):
+                if isinstance(out, PageNotOpened):
+                    continue
+                if isinstance(out, Exception):
+                    missed += 1
+                    problems.append(t("the page {url} didn't read: {error}", url=url, error=str(out)))
+                    continue
+                if isinstance(out, dict) and out.get("signed_out"):
+                    raise RouteFailed(t("the site asks to sign in"), signed_out=True)
+                rows = out.get("postings") if isinstance(out, dict) else out
+                if not isinstance(rows, list):
+                    missed += 1
+                    problems.append(t("the script on {url} gave no list of postings", url=url))
+                    continue
+                found += rows
         if not found:
             raise RouteFailed("; ".join(problems) or t("the route found no postings at all: the site has probably changed"))
         if errors is not None:
             errors += problems
         elif problems:
             raise RouteFailed("; ".join(problems))
+        if unread is not None and missed:
+            unread[:] = [missed, len(pages)]
         return found
+
+    def _read_pages(self, url: str, scripts: list[str]) -> list[Any]:
+        try:
+            return self.browser.read_pages(url, scripts, timeout=120, open_timeout=OPEN_TIMEOUT)
+        except (BrowserError, CdpError) as e:   # the tab itself didn't open: every script on it is unread
+            return [e] * len(scripts)
 
     def scan(self, ref: str, *, allow_route: bool = True) -> dict:
         """Read every site of the company that can be read without Claude. Says what needs Claude
@@ -203,7 +243,7 @@ class Scanner:
             if not plan:
                 return {"company": c["id"], "needs": "sites"}
             found: list[dict] = []
-            hows, errors, needs = [], [], []
+            hows, errors, needs, unread = [], [], [], []
             api = [s for s in plan if s["how"] not in ("route", "claude")]
             for r in self._bridge([{"key": s["url"], "name": c["name"], "url": s["url"]} for s in api]):
                 if r.get("error"):
@@ -216,7 +256,7 @@ class Scanner:
                     self.running[c["id"]] = "route"
                     self.publish()
                     try:
-                        found += self.run_route(self.postings.route(c["id"]) or {}, errors)
+                        found += self.run_route(self.postings.route(c["id"]) or {}, errors, unread)
                         hows.append("route")
                     except RouteFailed as e:
                         if not found:
@@ -234,8 +274,8 @@ class Scanner:
                 return {"company": c["id"], "needs": needs[0] if needs else "claude"}
             complete = not errors and not needs
             res = self.postings.merge(c["id"], found, how="+".join(hows), complete=complete)
-            if errors:
-                self.postings.set_scan_state(c["id"], error="; ".join(errors))
+            if errors:   # unread: how many of the route's pages didn't read, of how many ([17, 20]), for the window to say
+                self.postings.set_scan_state(c["id"], error="; ".join(errors), unread=unread or None)
             return {"company": c["id"], "found": res["found"], "new": len(res["new"]), "closed": len(res["closed"]),
                     "changed": len(res["changed"]), "needs": needs[0] if needs else "", "errors": errors}
         finally:

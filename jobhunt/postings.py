@@ -261,7 +261,7 @@ class Postings:
                     if complete and p.get("closed") and p not in closed:
                         gone.append(p)
             self.hunt._write("postings.json", data)
-        st = self.set_scan_state(c["id"], at=seen_now, ok=True, error="", signed_out=False, how=how, found=len(keys),
+        st = self.set_scan_state(c["id"], at=seen_now, ok=True, error="", unread=None, signed_out=False, how=how, found=len(keys),
                                  new=[p["id"] for p in new], closed=[p["id"] for p in closed], changed=[p["id"] for p in changed])
         follow = self._follow(c, closed + gone, reopened)
         self.hunt._changed()
@@ -296,7 +296,7 @@ class Postings:
 
     def failed(self, company: str, error: str, *, how: str, signed_out: bool = False) -> dict:
         c = self.hunt.company(company)
-        st = self.set_scan_state(c["id"], at=_now(), ok=False, error=_text(error, 400), signed_out=signed_out, how=how)
+        st = self.set_scan_state(c["id"], at=_now(), ok=False, error=_text(error, 400), unread=None, signed_out=signed_out, how=how)
         self.hunt._changed()
         return st
 

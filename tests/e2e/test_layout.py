@@ -256,7 +256,8 @@ def scan_read_in_part(c):
     """One page of the route timed out (a slow site): what the others read is kept, and the error is shown."""
     filled_companies(c)
     url = "https://careers.xinghe.example/social/jobs/一个很长的地址/" + "x" * 120
-    c.server.inst.hunt.scanner.postings.set_scan_state("C1", error=f"the page {url} didn't read: Runtime.evaluate timed out")
+    c.server.inst.hunt.scanner.postings.set_scan_state("C1", how="route", unread=[17, 20],
+                                                       error=f"the page {url} didn't open in 3 tries: Page.navigate timed out")
 
 
 def read_failed(c):

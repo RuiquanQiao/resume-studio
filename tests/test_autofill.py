@@ -400,6 +400,47 @@ def test_a_posting_is_read_in_a_tab_of_its_own(live, data_file, fake_site):
     assert live.req("GET", "/api/browser")[1]["url"].endswith("/linkedin/profile.html")
 
 
+def test_scripts_for_one_address_share_one_opened_page(live):
+    """长鑫's route has 17 pages on one address: opened once, not 17 times, each opening a chance for a slow
+    network to time out. A script that leaves the address gets the page opened again for the next one; a script
+    that fails is that script's trouble alone; a page that doesn't open in time says so."""
+    from core.browser import PageNotOpened
+    gets: list[str] = []
+
+    class Site(SimpleHTTPRequestHandler):
+        def do_GET(self):
+            if self.path != "/favicon.ico":   # the browser asks for it on its own
+                gets.append(self.path)
+            if self.path == "/slow":
+                time.sleep(4)   # the far side of the world: no answer before the 1 s the test allows
+            body = b"<html><body><h1>jobs</h1></body></html>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), Site)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_port}"
+    b = live.inst.browser
+    try:
+        got = b.read_pages(base + "/jobs", ["async (h) => 1", "async (h) => { throw new Error('no list'); }", "async (h) => 3"])
+        assert gets == ["/jobs"] and got[0] == 1 and got[2] == 3 and "no list" in str(got[1])
+        # the first script went elsewhere on the site: the second starts from the address again
+        gets.clear()
+        got = b.read_pages(base + "/jobs", ["async (h) => { location.href = '/other'; await new Promise(() => {}); }",
+                                            "async (h) => location.pathname"], timeout=3)
+        assert got[1] == "/jobs" and gets.count("/jobs") == 2
+        got = b.read_pages(base + "/slow", ["async (h) => 1", "async (h) => 2"], open_timeout=1)
+        assert all(isinstance(x, PageNotOpened) for x in got) and "timed out" in str(got[0])
+        assert not any(base in t["url"] for t in b.tabs())   # the reading tabs are gone
+    finally:
+        srv.shutdown()
+
+
 def test_a_browser_work_started_closes_itself_when_the_work_is_done(live, fake_site):
     """A browser a scan, a check or Claude started closes once nothing uses it; one the user opened stays."""
     b = live.inst.browser
