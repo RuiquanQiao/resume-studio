@@ -398,7 +398,9 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             c["logo_url"] = logo_url(c)
             c["research"] = research(c, [a for a in tb["applications"] if a["company"] == c["id"]], langs)
             c["postings"] = summ.get(c["id"]) or {"open": 0, "matching": 0}
-            c["postings"]["needs"] = posts.scan_state(c["id"]).get("needs") or ""
+            st = posts.scan_state(c["id"])
+            c["postings"]["needs"] = st.get("needs") or ""
+            c["postings"]["unrouted"] = st.get("unrouted") or []
         sc = posts.scans()
         return {**tb, "platforms": platforms(), "tracker": tracker(), "career_ops": tool.installed(),
                 "scan": {"keywords": sc["keywords"], "daily": sc["daily"], "last_all": sc["last_all"],
@@ -550,7 +552,14 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         b = body(req)
         if b.get("subset"):
             subset_to_send(studio, str(b["subset"]))
-        want_logos(guard(lambda: hunt.update_company(req.params["cid"], b))["id"])
+        before = {s["url"] for s in guard(lambda: hunt.company(req.params["cid"])).get("sites") or []}
+        c = guard(lambda: hunt.update_company(req.params["cid"], b))
+        want_logos(c["id"])
+        added = [s["url"] for s in c.get("sites") or [] if s["url"] not in before]
+        # a new address: can a scan read it? found out now, not on a scan that quietly skips it; one gone takes
+        # its warning with it
+        if added or before - {s["url"] for s in c.get("sites") or []}:
+            threading.Thread(target=scanner.check_sites, args=(c["id"], added), daemon=True, name="hunt-check-sites").start()
         return guard(lambda: company_view(req.params["cid"]))
 
     @app.route("DELETE", "/api/hunt/companies/{cid}")
@@ -770,8 +779,9 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 c = hunt.company(str(a.get("ref") or ""))
                 res = posts.merge(c["id"], a.get("postings") or [], how="claude", complete=not a.get("partial"))
                 # postings read by hand don't teach the scan anything: a site with no route still needs one
-                needs = "claude" if any(s["how"] == "claude" for s in scanner.plan(c)) else ""
-                posts.set_scan_state(c["id"], needs=needs)
+                missing = scanner.unrouted(scanner.plan(c))
+                needs = "claude" if missing else ""
+                posts.set_scan_state(c["id"], needs=needs, unrouted=missing)
                 return {"scanned": [{"company": c["id"], "found": res["found"], "new": len(res["new"]), "closed": len(res["closed"]),
                                      "changed": len(res["changed"]), "needs": needs}], "company": company_view(c["id"]), "text": "postings saved"}
             if cmd == "apply":

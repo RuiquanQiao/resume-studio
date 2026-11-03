@@ -33,7 +33,7 @@ from core.cdp import CdpError
 from core.i18n import t
 
 from .postings import Postings
-from .store import Hunt
+from .store import Hunt, site_host, site_key
 
 BRIDGE = Path(__file__).resolve().parent.parent / "jobs" / "co_scan.mjs"
 MAX_PAGES = 20   # of a recorded route, each with 2 minutes
@@ -73,7 +73,9 @@ def run_summary(out: list[dict], auto: bool) -> dict:
             "new": sum(int(r.get("new") or 0) for r in out),
             "closed": sum(int(r.get("closed") or 0) for r in out),
             "failed": sum(1 for r in out if r.get("error")),
-            "needs_ai": sum(1 for r in unread if r.get("needs") in ("claude", "browser")),
+            # read in part counts too: a site added after its route was recorded is a site nobody reads
+            "needs_ai": sum(1 for r in out if not r.get("error")
+                            and r.get("needs") in (("claude",) if "found" in r else ("claude", "browser"))),
             "no_site": sum(1 for r in unread if r.get("needs") == "sites")}
 
 class RouteFailed(Exception):
@@ -101,8 +103,19 @@ class Scanner:
     def sites_of(c: dict) -> list[dict]:
         sites = list(c.get("sites") or [])
         if c.get("site") and not any(s["url"] == c["site"] for s in sites):
-            sites.insert(0, {"url": c["site"], "kind": "campus", "system": ""})
+            sites.insert(0, {"url": c["site"], "kind": "", "system": ""})
         return sites
+
+    @staticmethod
+    def covers(route: dict | None, url: str) -> bool:
+        """Whether a recorded route reads this site. A route names the sites it was recorded for; one recorded before
+        it did (2026-11-03) reads the sites its pages are on. A site added after the route was recorded isn't read by
+        it: the route is the company's, but a new address is a list nobody has looked at yet."""
+        if not route:
+            return False
+        if isinstance(route.get("sites"), list):
+            return site_key(url) in {site_key(u) for u in route["sites"]}
+        return site_host(url) in {site_host(p.get("url") or "") for p in route.get("pages") or []}
 
     def providers_ready(self) -> bool:
         try:
@@ -143,8 +156,39 @@ class Scanner:
         out = []
         for s in sites:
             prov = self._providers.get(s["url"])
-            out.append({**s, "how": prov or ("route" if route else "claude")})
+            out.append({**s, "how": prov or ("route" if self.covers(route, s["url"]) else "claude")})
         return out
+
+    @staticmethod
+    def unrouted(plan: list[dict]) -> list[str]:
+        """The sites a scan can't read: no provider, and no recorded route reads them."""
+        return [s["url"] for s in plan if s["how"] == "claude"]
+
+    def check_sites(self, ref: str, urls: list[str]) -> list[str]:
+        """Sites were just added to a company: find out at once whether a scan can read them. One that can (a provider,
+        or the route already reads it) is scanned now; one that can't is marked on the company for the AI to learn,
+        so the window says so instead of the next scan quietly reading only the old ones. Returns those."""
+        c = self.hunt.company(ref)
+        with self.lock:
+            if c["id"] in self.running:
+                return []
+            self.running[c["id"]] = "check"
+            self.started[c["id"]] = time.time()
+        self.publish()
+        try:
+            plan = self.plan(c)
+            missing = self.unrouted(plan)
+            was = self.postings.scan_state(c["id"]).get("needs") or ""   # "browser" still waits for a scan
+            needs = "claude" if missing else "sites" if not plan else "" if was in ("claude", "sites") else was
+            self.postings.set_scan_state(c["id"], needs=needs, unrouted=missing)
+        finally:
+            with self.lock:
+                self.running.pop(c["id"], None)
+                self.started.pop(c["id"], None)
+            self.publish()
+        if any(s["how"] != "claude" for s in plan if s["url"] in urls):
+            self.start([c["id"]])
+        return [u for u in urls if u in missing]
 
     def _hold(self):
         return self.browser.hold() if hasattr(self.browser, "hold") else contextlib.nullcontext()
@@ -227,7 +271,7 @@ class Scanner:
         (`needs`: "sites" when none is known, "claude" when a site has no route yet), and keeps that on the scan."""
         res = self._scan(ref, allow_route=allow_route)
         if not res.get("busy"):
-            self.postings.set_scan_state(res["company"], needs=res.get("needs") or "")
+            self.postings.set_scan_state(res["company"], needs=res.get("needs") or "", unrouted=res.get("unrouted") or [])
         return res
 
     def _scan(self, ref: str, *, allow_route: bool = True) -> dict:
@@ -265,19 +309,21 @@ class Scanner:
                         errors.append(str(e))
                 else:
                     needs.append("browser")
-            if any(s["how"] == "claude" for s in plan):
-                needs.append("claude")
+            missing = self.unrouted(plan)
+            if missing:   # said first: waiting for the browser fixes itself on a scan the user starts, this doesn't
+                needs.insert(0, "claude")
             if not hows:
                 if errors:
                     st = self.postings.failed(c["id"], "; ".join(errors), how=",".join(s["how"] for s in api) or "api")
-                    return {"company": c["id"], "error": "; ".join(errors), "scan": st, "needs": needs[0] if needs else ""}
-                return {"company": c["id"], "needs": needs[0] if needs else "claude"}
+                    return {"company": c["id"], "error": "; ".join(errors), "scan": st, "needs": needs[0] if needs else "",
+                            "unrouted": missing}
+                return {"company": c["id"], "needs": needs[0] if needs else "claude", "unrouted": missing}
             complete = not errors and not needs
             res = self.postings.merge(c["id"], found, how="+".join(hows), complete=complete)
             if errors:   # unread: how many of the route's pages didn't read, of how many ([17, 20]), for the window to say
                 self.postings.set_scan_state(c["id"], error="; ".join(errors), unread=unread or None)
             return {"company": c["id"], "found": res["found"], "new": len(res["new"]), "closed": len(res["closed"]),
-                    "changed": len(res["changed"]), "needs": needs[0] if needs else "", "errors": errors}
+                    "changed": len(res["changed"]), "needs": needs[0] if needs else "", "errors": errors, "unrouted": missing}
         finally:
             with self.lock:
                 self.running.pop(c["id"], None)
@@ -357,9 +403,24 @@ class Scanner:
             self.publish()
 
     def save_route(self, ref: str, data: Any) -> tuple[dict, list[str]]:
+        """The route records the sites it was made for: every site of the company a provider doesn't read, unless it
+        names them (`sites`). With `add`, its pages join the route the company has (a site added later)."""
         r, errs = validate_route(data)
         if errs:
             return {}, errs
         c = self.hunt.company(ref)
+        named = data.get("sites") if isinstance(data.get("sites"), list) else None
+        sites = [str(u) for u in named] if named is not None else [s["url"] for s in self.plan(c) if s["how"] in ("route", "claude")]
+        old = self.postings.route(c["id"]) if data.get("add") else None
+        if old:
+            have = {(p["url"], p["script"]) for p in r["pages"]}
+            r["pages"] = [p for p in old.get("pages") or [] if (p["url"], p["script"]) not in have] + r["pages"]
+            if len(r["pages"]) > MAX_PAGES:
+                return {}, [f"with the {len(old.get('pages') or [])} pages the route has, this makes {len(r['pages'])}; "
+                            f"a route has at most {MAX_PAGES}: read more postings per page"]
+            kept = old["sites"] if isinstance(old.get("sites"), list) else \
+                [s["url"] for s in self.sites_of(c) if self.covers(old, s["url"])]
+            sites = list(dict.fromkeys([*kept, *sites]))
+        r["sites"] = sites
         self.postings.set_scan_state(c["id"], route=r)
         return r, []

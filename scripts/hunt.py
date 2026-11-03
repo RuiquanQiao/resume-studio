@@ -185,7 +185,8 @@ def show_company(v: dict) -> None:
             print(f"  {label}: {value}" + (f" ({c.get('subset_label')})" if k == "subset" and c.get("subset_label") else "")
                   + (f"  [{src[k]}]" if src.get(k) else "") + ("  (the user's: fill leaves it)" if k in kept else ""))
     for x in c.get("sites") or []:
-        print(f"  site ({x['kind']}{', ' + x['system'] if x.get('system') else ''}): {x['url']}")
+        print(f"  site ({x['kind'] or 'kind not set yet: say it with `fill` sites once you have seen the site'}"
+              f"{', ' + x['system'] if x.get('system') else ''}): {x['url']}")
     print("  logo: " + ("saved" if c.get("logo") else "none yet") + ("  (the user's)" if "logo" in kept else ""))
     missing = [k for k in ("industry", "strength", "hq", "site", "logo") if not c.get(k)]
     if missing:
@@ -215,7 +216,11 @@ def show_company(v: dict) -> None:
               + (f"{sc.get('found', 0)} found" if sc.get("ok") else f"failed: {sc.get('error')}")
               + ("; the route is recorded" if sc.get("recorded") else ""))
     if sc.get("needs") == "claude":
-        print("  a careers site has no read route yet: record one with `scan-route` (see the instructions)")
+        missing = sc.get("unrouted") or []
+        print(("  no read route reads " + ", ".join(missing) if missing else "  a careers site has no read route yet")
+              + ": record one with `scan-route` (see the instructions)"
+              + ("; the company has a route for its other sites, so send only the new pages, with \"add\": true"
+                 if sc.get("recorded") else ""))
     elif sc.get("needs") == "sites":
         print("  no careers site known yet: find them and send them with `fill` (sites)")
     if ps:

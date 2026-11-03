@@ -893,6 +893,8 @@ async function openCompanyAt(cid, pid = null) {
 
 // a button's key for asking the AI about these companies: one company's buttons share it, wherever they are
 const aiKey = (what, cs) => what + ":" + cs.map((c) => c.id).join(",");
+// a site as the user knows it: its address without the scheme, www or a trailing slash
+const siteName = (url) => String(url || "").replace(/^https?:\/\/(www\.)?/i, "").replace(/\/$/, "");
 
 function askLearn(cs) {
   aiRun(aiKey("learn", cs), () => sendChat(t("Find the open roles on the careers sites of {names}, and record a scan route for each so later scans need no AI.", { names: cs.map((c) => c.name).join(", ") })));
@@ -929,7 +931,9 @@ function postingsCard(v) {
     // read, but a site still has no route: the next scan can't read it again, so "scanned" alone would read as set up
     : sc.ok && sc.needs === "claude" ? h("span", { class: "fs-status warn", id: "company-no-route" }, icon("alert"), sc.how === "claude"
       ? t("read by hand by the AI {when} · no scan route yet, so a scan can't update these roles", { when: huntWhen(sc.at) })
-      : t("scanned {when} · a site has no scan route yet, so a scan can't read it", { when: huntWhen(sc.at) }))
+      : (sc.unrouted || []).length
+        ? t("scanned {when} · a scan can't read {sites} yet: the AI has to learn it", { when: huntWhen(sc.at), sites: sc.unrouted.map(siteName).join(", ") })
+        : t("scanned {when} · a site has no scan route yet, so a scan can't read it", { when: huntWhen(sc.at) }))
     : sc.ok ?h("span", { class: "muted" }, t("scanned {when} · {how}", { when: huntWhen(sc.at), how: howName(sc.how) }))
     : h("span", { class: "fs-status bad" }, icon("alert"), sc.signed_out ? t("The site asks to sign in") : t("The last scan didn't work"));
   const row = (p) => h("div", { class: "post-row" + (p.closed ? " closed" : ""), "data-id": p.id },
@@ -1362,7 +1366,8 @@ function sitesEditor(c) {
   const save = () => editCompany(c.id, { sites });
   const kinds = Object.entries(SITE_KINDS).map(([value, label]) => ({ value, label: t(label) }));
   const rows = sites.map((x, i) => h("div", { class: "co-site co-site-edit" },
-    uiSelect({ label: t("Kind"), menuWidth: 170, value: x.kind, cls: "sm", options: kinds, onChange: (v) => { x.kind = v; save(); } }).el,
+    uiSelect({ label: t("Kind"), menuWidth: 170, value: x.kind || null, cls: "sm", options: kinds, placeholder: t("Kind not set"),
+      onChange: (v) => { x.kind = v; save(); } }).el,
     h("input", { class: "co-site-input", value: x.url, spellcheck: "false", "aria-label": t("Address"),
       onchange: (e) => { const v = e.target.value.trim(); if (v === x.url) return; if (v) x.url = v; else sites.splice(i, 1); save(); } }),
     x.system && h("span", { class: "muted" }, x.system),
@@ -1373,7 +1378,8 @@ function sitesEditor(c) {
       if (e.key !== "Enter" || e.isComposing) return;
       const url = e.target.value.trim();
       if (!url) return;
-      sites.push({ url, kind: sites.some((x) => x.kind === "campus") ? "other" : "campus", system: "" });
+      // no kind until someone has looked at the site: the user, or the AI when it learns the site
+      sites.push({ url, kind: "", system: "" });
       save().then(() => { const again = $("#company-add-site"); if (again) again.focus(); });
     } });
   return h("div", { class: "co-sites" }, rows, add);

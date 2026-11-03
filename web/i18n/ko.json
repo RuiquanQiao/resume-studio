@@ -1941,9 +1941,11 @@
  "Quote": "인용",
  "read by hand by the AI {when} · no scan route yet, so a scan can't update these roles": "{when} AI가 직접 읽음 · 아직 스캔 경로가 없어 스캔으로는 이 직무들을 업데이트할 수 없습니다",
  "scanned {when} · a site has no scan route yet, so a scan can't read it": "{when} 스캔 · 아직 스캔 경로가 없는 사이트가 있어 스캔으로 읽을 수 없습니다",
+ "scanned {when} · a scan can't read {sites} yet: the AI has to learn it": "{when} 스캔 · {sites}은(는) 아직 스캔으로 읽을 수 없습니다: AI가 먼저 익혀야 합니다",
  "The AI reads its site once and records a scan route; after that, scans read it without AI": "AI가 사이트를 한 번 읽고 스캔 경로를 기록합니다. 이후 스캔은 AI 없이 읽습니다",
  "posted {date}": "{date} 게시",
  "{n} probably over": "{n}개는 마감됐을 가능성",
  "Still on its site, but the closing date has passed, or there is none and it was posted over a year ago": "사이트에는 아직 있지만 마감일이 지났거나, 마감일 없이 게시된 지 1년이 넘었습니다",
- "This role is no longer listed": "이 공고는 더 이상 목록에 없습니다"
+ "This role is no longer listed": "이 공고는 더 이상 목록에 없습니다",
+ "Kind not set": "종류 미지정"
 }

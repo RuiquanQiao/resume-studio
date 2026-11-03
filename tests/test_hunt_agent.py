@@ -504,6 +504,72 @@ def test_a_site_is_scanned_by_its_recorded_route(hunt):
     assert res["route_broken"] and not res["signed_out"] and not ps.all()[0]["closed"]
 
 
+def test_a_site_added_after_the_route_was_recorded_is_checked_and_handed_to_the_ai(hunt):
+    """上海交大 (2026-11-03): a third careers site was pasted in after the route was recorded for the first two.
+    The scan replayed the old route, said "read, nothing missing" and never looked at the new address."""
+    from jobhunt.scan import run_summary
+    ps = Postings(hunt)
+    a, b, new = "https://jobs.sjtu.example/", "https://join.shsmu.example/Home/Index", "https://join.sjtu.example/Default.aspx"
+    hunt.add_company({"name": "上海交通大学", "sites": [{"url": a, "kind": "other"}, {"url": b, "kind": "other"}]})
+    pa, pb = "https://jobs.sjtu.example/recruit/longterm", "https://join.shsmu.example/JobList"
+    browser = FakeBrowser({pa: {"postings": [{"title": "管理岗", "url": pa + "/1"}]},
+                           pb: {"postings": [{"title": "辅导员", "url": pb + "/1"}]},
+                           new + "#jobs": {"postings": [{"title": "博士后", "url": new + "/1"}]}})
+    sc = Scanner(hunt, ps, NoTool(), browser, lambda: None)
+    sc.start = lambda ids, auto=False: started.extend(ids)   # what check_sites would scan, without a thread
+    started: list[str] = []
+    # a route recorded before routes named their sites: it reads the sites its pages are on
+    ps.set_scan_state("C1", route={"pages": [{"url": pa, "script": "async (h) => ({postings: []})"},
+                                             {"url": pb, "script": "async (h) => ({postings: []})"}]})
+    assert sc.scan("C1")["needs"] == ""
+    hunt.update_company("C1", {"sites": [*hunt.company("C1")["sites"], {"url": new}]})
+    assert hunt.company("C1")["sites"][2]["kind"] == ""                       # no kind guessed for it
+    assert [s["how"] for s in sc.plan(hunt.company("C1"))] == ["route", "route", "claude"]
+    # added in the window: found out at once that no scan can read it, nothing scanned for nothing
+    assert sc.check_sites("C1", [new]) == [new] and started == []
+    assert ps.scan_state("C1")["needs"] == "claude" and ps.scan_state("C1")["unrouted"] == [new]
+    res = sc.scan("C1")
+    assert (res["found"], res["needs"], res["unrouted"]) == (2, "claude", [new])
+    assert ps.scan_state("C1")["unrouted"] == [new]
+    assert run_summary([res], auto=False)["needs_ai"] == 1                    # the toast says a site needs the AI
+    # the AI learns only the new site: its pages join the route, and the route names the sites it reads
+    r, errs = sc.save_route("C1", {"add": True, "pages": [{"url": new + "#jobs", "script": "async (h) => ({postings: []})"}]})
+    assert not errs and [p["url"] for p in r["pages"]] == [pa, pb, new + "#jobs"] and set(r["sites"]) == {a, b, new}
+    res = sc.scan("C1")
+    assert (res["found"], res["new"], res["needs"], res["unrouted"]) == (3, 1, "", [])
+    # one more address on a host the route already reads is still a list nobody has looked at
+    other = "https://jobs.sjtu.example/campus"
+    hunt.update_company("C1", {"sites": [*hunt.company("C1")["sites"], {"url": other}]})
+    assert sc.check_sites("C1", [other]) == [other]
+    assert sc.scan("C1")["unrouted"] == [other]
+    # removed again: its warning goes with it, at once
+    hunt.update_company("C1", {"sites": hunt.company("C1")["sites"][:3]})
+    assert sc.check_sites("C1", []) == [] and ps.scan_state("C1")["needs"] == "" and ps.scan_state("C1")["unrouted"] == []
+    assert started == []                        # nothing new a scan can read, so none was started
+    # one a provider reads (Moka, say) is scanned at once
+    moka = "https://app.mokahr.example/campus-recruitment/sjtu/1"
+    sc._providers[moka] = "moka"
+    hunt.update_company("C1", {"sites": [*hunt.company("C1")["sites"], {"url": moka}]})
+    assert sc.check_sites("C1", [moka]) == [] and started == ["C1"]
+
+
+def test_a_site_gets_its_kind_only_from_someone_who_looked(hunt):
+    """A pasted address is not 校招 because the company had no campus site yet (2026-11-03): its kind stays empty
+    until the user picks one or the AI reads the site; the AI never changes a kind the user set."""
+    hunt.add_company({"name": "星河科技", "sites": [{"url": "https://careers.xinghe.example/campus", "kind": "campus"}]})
+    hunt.update_company("C1", {"sites": [*hunt.company("C1")["sites"], {"url": "careers.xinghe.example/x/"},
+                                         {"url": "https://hr.xinghe.example", "kind": "nonsense"}]})
+    assert [s["kind"] for s in hunt.company("C1")["sites"]] == ["campus", "", ""]
+    c, _ = hunt.fill("C1", {"sites": [{"url": "https://careers.xinghe.example/campus", "kind": "social"},
+                                      {"url": "http://www.careers.xinghe.example/x", "kind": "intern", "system": "Moka"},
+                                      {"url": "https://elsewhere.example", "kind": "campus"}]})
+    assert [(s["url"], s["kind"], s["system"]) for s in c["sites"]] == [
+        ("https://careers.xinghe.example/campus", "campus", ""),       # the user's kind stays
+        ("https://careers.xinghe.example/x/", "intern", "Moka"),       # an empty one is the AI's to say
+        ("https://hr.xinghe.example", "", "")]                         # and the user's list keeps its sites
+    assert c["site"] == "https://careers.xinghe.example/campus"
+
+
 def test_one_page_that_times_out_keeps_what_the_other_pages_read(hunt):
     """A slow site (长鑫's social list) timing out on one page of the route: the campus and intern pages it read
     still come in, nothing is closed for the page it couldn't read, and the scan says which page didn't."""

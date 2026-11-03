@@ -2109,9 +2109,11 @@
  "Quote": "Zitieren",
  "read by hand by the AI {when} · no scan route yet, so a scan can't update these roles": "{when} von der KI von Hand gelesen · noch keine Scan-Route, ein Scan kann diese Stellen nicht aktualisieren",
  "scanned {when} · a site has no scan route yet, so a scan can't read it": "gescannt {when} · eine Seite hat noch keine Scan-Route, ein Scan kann sie nicht lesen",
+ "scanned {when} · a scan can't read {sites} yet: the AI has to learn it": "gescannt {when} · ein Scan kann {sites} noch nicht lesen: die KI muss es erst lernen",
  "The AI reads its site once and records a scan route; after that, scans read it without AI": "Die KI liest die Seite einmal und zeichnet eine Scan-Route auf; danach lesen Scans sie ohne KI",
  "posted {date}": "veröffentlicht {date}",
  "{n} probably over": "{n} vermutlich vorbei",
  "Still on its site, but the closing date has passed, or there is none and it was posted over a year ago": "Noch auf der Seite, aber die Frist ist vorbei, oder es gibt keine und die Anzeige ist über ein Jahr alt",
- "This role is no longer listed": "Diese Stelle ist nicht mehr gelistet"
+ "This role is no longer listed": "Diese Stelle ist nicht mehr gelistet",
+ "Kind not set": "Art nicht gesetzt"
 }

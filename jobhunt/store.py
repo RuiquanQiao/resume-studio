@@ -66,6 +66,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 from core.i18n import t
 
@@ -280,6 +281,17 @@ def _now() -> str:
 
 def _key(s: str) -> str:
     return re.sub(r"[\s·・\-_/()（）]+", "", str(s or "")).casefold()
+
+
+def site_host(url: str) -> str:
+    return (urlsplit(url if "//" in url else "https://" + url).hostname or "").lower().removeprefix("www.")
+
+
+def site_key(url: str) -> str:
+    """An address as a site's key: no scheme, no www, no trailing slash, any case."""
+    u = urlsplit(url if "//" in url else "https://" + url)
+    return (site_host(url) + u.path.rstrip("/") + ("?" + u.query if u.query else "")).lower()
+
 
 
 # a company's arm in one country or region is a company of its own, with its own careers site: 麦当劳中国,
@@ -511,7 +523,8 @@ class Hunt:
 
     @staticmethod
     def _sites(v: Any) -> list[dict]:
-        """A company's careers sites: [{url, kind (campus | intern | social | other), system (Moka, 北森, own site…)}]."""
+        """A company's careers sites: [{url, kind (campus | intern | social | other, or "" until someone who has
+        looked at the site says), system (Moka, 北森, own site…)}]."""
         out = []
         for x in v if isinstance(v, list) else []:
             x = x if isinstance(x, dict) else {"url": x}
@@ -521,7 +534,7 @@ class Hunt:
             if not re.match(r"https?://", url):
                 url = "https://" + url
             kind = _text(x.get("kind"), 20).lower()
-            out.append({"url": url, "kind": kind if kind in SITE_KINDS else "other", "system": _text(x.get("system"), 40)})
+            out.append({"url": url, "kind": kind if kind in SITE_KINDS else "", "system": _text(x.get("system"), 40)})
         return out[:8]
 
     @staticmethod
@@ -625,6 +638,12 @@ class Hunt:
                 sites = self._sites(take["sites"])
                 if sites:
                     take["site"] = next((x["url"] for x in sites if x["kind"] == "campus"), sites[0]["url"])
+            if "sites" in kept and "sites" in fields:   # the user's sites stay; only a kind nobody set yet is Claude's
+                said = {site_key(x["url"]): x for x in self._sites(fields["sites"])}
+                mine = [{**x, **{k: said[site_key(x["url"])][k] for k in ("kind", "system")
+                                 if not x.get(k) and site_key(x["url"]) in said}} for x in c.get("sites") or []]
+                if mine != (c.get("sites") or []):
+                    take["sites"] = mine
             c = self.update_company(c["id"], take, source="chat")
         return c, skipped
 

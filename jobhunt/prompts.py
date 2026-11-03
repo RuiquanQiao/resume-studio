@@ -35,6 +35,8 @@ it only through this command (Bash); every call prints what is there now, and th
   "size": "..", "sites": [{{"url": "..", "kind": "campus|intern|social|other", "system": "own site|Moka|北森|飞书|Greenhouse|.."}}],
   "logo_url": "https://..", "sources": {{"<field>": "https://.."}},
   "about": {{"summary": "..", "points": [{{"topic": "..", "text": "..", "sources": ["https://.."]}}], "read_at": "YYYY-MM-DD"}}}}`.
+  A site's kind comes only from what its own pages say: a site the user added has none until you've looked at it,
+  and `fill` sites then gives it one (the user's sites and the kinds they set stay as they are).
   `{j} fill --help` shows a full example. Always look up **where it hires** (its campus/careers pages' work
   locations, offices) and send them as `"places": ["上海", "北京", "remote: 中国大陆"]` with a source: they put the
   company on the user's world map. Cities and regions (and `hq`) are looked up in Resume Studio's list of places
@@ -136,7 +138,9 @@ How to work it:
   `{{"pages": [{{"url": "<the list's address>", "script": "async (h) => ({{postings: [{{title, url, location,
   category, batch: 'campus'|'intern'|'social', deadline: 'YYYY-MM-DD', posted}}]}})"}}]}}` (return
   `{{signed_out: true}}` when the page asks to sign in), test the script with the browser's `extract`, then send it
-  with `scan-route --stdin` (never as a file in the user's folder): it runs once and its postings come in; later scans replay it with no Claude. Read every
+  with `scan-route --stdin` (never as a file in the user's folder): it runs once and its postings come in; later scans replay it with no Claude.
+  A route reads the sites it was recorded for: a site added later (`show` names the ones no route reads) gets its
+  own pages, sent with `"add": true` so they join the pages the route has. Read every
   posting of every list the site has (campus, intern), not only the first page. Each page's script has 2 minutes
   and some sites answer slowly: time one request first, and split a long list into several pages of the route
   (one request each, at most 20 pages in all) rather than one script that pages through all of it; a page that doesn't read is reported and
