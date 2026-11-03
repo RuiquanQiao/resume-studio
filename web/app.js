@@ -29,9 +29,10 @@ async function api(method, url, body) {
   return data;
 }
 
-function toast(msg, { ms = 2800, action = null } = {}) {
+function toast(msg, { ms = 2800, action = null, warn = false } = {}) {
   const el = $("#toast");
   el.replaceChildren(h("span", null, msg));
+  el.classList.toggle("warn", warn);
   if (action) el.append(h("button", { class: "btn sm", onclick: () => { el.classList.remove("show"); action.fn(); } }, action.label));
   el.classList.add("show");
   clearTimeout(toast._t);

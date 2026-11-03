@@ -281,7 +281,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         doc, _ = studio.store.load()
         apps = sorted(hunt.applications(c["id"]), key=lambda a: a.get("order") or 0)
         evs = [e for e in hunt.events() if e["app"] in {a["id"] for a in apps}]
-        st = posts.scan_state(c["id"])
+        st = scanner.live_state(c)
         return {"company": {**c, "logo_url": logo_url(c), "subset_label": subset_label(doc, c.get("subset") or ""),
                             "research": research(c, apps, resume_langs(doc)),
                             "subset_exists": bool(c.get("subset")) and model.get_item(doc, "subset", c["subset"]) is not None},
@@ -290,13 +290,18 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                                    key=lambda p: (bool(p.get("closed")), p.get("category") or "", p["title"])),
                 "scan": {k: v for k, v in st.items() if k != "route"} | {"recorded": bool(st.get("route")),
                                                                        "running": scanner.running.get(c["id"]),
-                                                                       "queued": c["id"] in scanner.queue},
+                                                                       "queued": c["id"] in scanner.queue,
+                                                                       "sites": scanner.site_status(c)},
                 "keywords": posts.scans()["keywords"]}
 
     def app_view(ref: str) -> dict:
         a = hunt.application(ref)
         c = hunt.company(a["company"])
-        return {"application": a, "company": c, "events": hunt.events(a["id"]), "reading": reading.get(a["id"]) or {}}
+        r = reading.get(a["id"]) or {}
+        if r.get("error") and (a.get("jd") or "") != r.get("jd", ""):   # the JD came in since (the AI, the user): the failure is over
+            reading.pop(a["id"], None)
+            r = {}
+        return {"application": a, "company": c, "events": hunt.events(a["id"]), "reading": r}
 
     # ---- reading a role's own page: its description, where and until when (jobhunt/reader.py), no Claude ----
     reading: dict[str, dict] = {}   # application id -> {"running": True} while it reads, {"error": ...} after it failed
@@ -323,7 +328,11 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             hunt.update_application(aid, fields)
             reading.pop(aid, None)
         except Exception as e:  # noqa: BLE001  (the browser, the page, a role deleted meanwhile)
-            reading[aid] = {"error": str(e)}
+            try:
+                jd = hunt.application(aid).get("jd") or ""
+            except Exception:  # noqa: BLE001 - deleted meanwhile
+                jd = ""
+            reading[aid] = {"error": str(e), "jd": jd}   # the JD it failed on: a new one ends the failure (app_view)
         app.bus.publish("hunt", {})
 
     def start_read(aid: str, replace: bool = False) -> None:
@@ -398,7 +407,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             c["logo_url"] = logo_url(c)
             c["research"] = research(c, [a for a in tb["applications"] if a["company"] == c["id"]], langs)
             c["postings"] = summ.get(c["id"]) or {"open": 0, "matching": 0}
-            st = posts.scan_state(c["id"])
+            st = scanner.live_state(c)
             c["postings"]["needs"] = st.get("needs") or ""
             c["postings"]["unrouted"] = st.get("unrouted") or []
         sc = posts.scans()

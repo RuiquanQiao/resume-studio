@@ -510,6 +510,7 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 /* ---------- toast + modal ---------- */
 .toast { position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 12px); display: flex; align-items: center; gap: 12px; max-width: min(560px, 90vw); padding: 10px 14px; border-radius: var(--r); background: #1f2430; color: #f3f4f6; box-shadow: var(--shadow-lg); opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s; z-index: 100; white-space: pre-wrap; font-size: 13px; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.toast.warn { box-shadow: inset 3px 0 0 #f0a63c, var(--shadow-lg); }
 .toast .btn { height: 26px; background: transparent; color: #c7d2fe; border-color: rgba(255,255,255,.2); }
 .modal-back { position: fixed; inset: 0; background: rgba(15, 18, 25, .38); display: grid; place-items: center; z-index: 90; animation: fade .12s; }
 @keyframes fade { from { opacity: 0; } }
@@ -1502,9 +1503,14 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-sel
 .co-sites { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .co-site { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: 13px; min-width: 0; }
 .co-site-url { min-width: 0; overflow-wrap: anywhere; }
-.co-site-edit { flex-wrap: nowrap; }
+.co-site-edit { flex-wrap: wrap; }   /* narrow: the address takes a line of its own, never squeezed to nothing */
+/* on each careers site's row: whether a scan reads it by itself */
+.site-scan { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.site-scan svg.i { width: 13px; height: 13px; }
+.site-scan.ok svg.i { color: var(--ok); }
+.site-scan.warn { color: var(--warn); }
 .co-site-edit .select { flex: none; width: 128px; }
-.co-site-input { flex: 1; min-width: 0; height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--panel); color: var(--text); font: inherit; font-size: 13px; }
+.co-site-input { flex: 1 1 160px; min-width: 0; height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--panel); color: var(--text); font: inherit; font-size: 13px; }
 .co-site-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 
 /* ---- open postings: the scan's news, the open-roles chip, a company's list ---- */

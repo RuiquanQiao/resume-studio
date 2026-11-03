@@ -1479,9 +1479,11 @@ async function sendChat(text, { action = null, entryId = null, target = null, la
 
 // a button's AI work (ui.js AI_WORK): spinning from the click until the chat it started stops replying. `start`
 // sends the chat (sendChat's true, or jobChat's reply); one that didn't start, or ended already, stops at once.
-async function aiRun(key, start) {
+// `check`, when given, looks at the data once the chat ends and says whether the work is really there
+// (docs/AI_BUTTON_CHECKS.md): async () => ({ ok, say, again }) or null when it can't tell.
+async function aiRun(key, start, check = null) {
   if (AI_WORK.has(key)) return null;
-  AI_WORK.set(key, { chat: null });
+  AI_WORK.set(key, { chat: null, check });
   paintAiWorking();
   let r = null;
   try { r = await start(); } catch (e) { toast(e.message); }
@@ -1497,12 +1499,33 @@ async function aiRun(key, start) {
 
 // a chat stopped replying: its buttons stop spinning, and with the chat out of sight a toast says it is done
 function aiRunDone(chatId, error) {
-  const keys = [...AI_WORK].filter(([, w]) => w.chat === chatId).map(([k]) => k);
-  if (!keys.length) return;
-  keys.forEach((k) => AI_WORK.delete(k));
+  const done = [...AI_WORK].filter(([, w]) => w.chat === chatId);
+  if (!done.length) return;
+  done.forEach(([k]) => AI_WORK.delete(k));
   paintAiWorking();
+  const checks = done.filter(([, w]) => w.check);
+  if (!error && checks.length) { aiCheck(chatId, checks); return; }
   if (!error && (!chatShown() || document.hidden || chatId !== ui.chat.id))
     toast(t("{agent} is done; see the chat", { agent: agentShortOf(chatId) }), { ms: 6000, action: { label: t("Show me"), fn: async () => { if (chatId !== ui.chat.id) await openChat(chatId); showChat(); } } });
+}
+
+// the chat ended: what it was asked to do is looked for in the data, never taken on its word. Done says what
+// was done; not done says what is missing and offers to ask again in the same chat, checked the same way.
+async function aiCheck(chatId, checks) {
+  const results = [];
+  for (const [key, w] of checks) {
+    let r = null;
+    try { r = await w.check(); } catch (e) { r = null; }
+    if (r) results.push({ key, check: w.check, ...r });
+  }
+  if (!results.length) return;
+  const miss = results.find((r) => !r.ok);
+  if (!miss) { toast(results.map((r) => r.say).join(" · "), { ms: 6000 }); return; }
+  toast(miss.say, { ms: 15000, warn: true, action: miss.again && { label: t("Ask again"), fn: async () => {
+    if (chatId !== ui.chat.id) await openChat(chatId);
+    showChat();
+    aiRun(miss.key, () => sendChat(miss.again), miss.check);
+  } } });
 }
 
 async function submitComposer() {

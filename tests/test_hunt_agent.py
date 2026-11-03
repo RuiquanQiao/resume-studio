@@ -504,6 +504,70 @@ def test_a_site_is_scanned_by_its_recorded_route(hunt):
     assert res["route_broken"] and not res["signed_out"] and not ps.all()[0]["closed"]
 
 
+def test_a_list_a_provider_reads_never_goes_through_the_ai(hunt):
+    """星河科技 (2026-11-03): its own pages campus.xinghe.ai and careers.xinghe.ai front Feishu boards. Asked to learn them,
+    the AI recorded a route over both Feishu lists, one of which the Feishu provider already read through the company's
+    Feishu site: 67 roles came in twice (/index/position/<id> and /xinghe/position/<id>)."""
+    from jobhunt.scan import same_once
+    ps = Postings(hunt)
+    feishu, campus, careers = "https://xinghe.jobs.example.cn/", "https://campus.xinghe.example/", "https://careers.xinghe.example/"
+    hunt.add_company({"name": "星河科技", "sites": [{"url": campus, "kind": "campus"}, {"url": feishu, "kind": "social"},
+                                                  {"url": careers, "kind": "social"}]})
+    sc = Scanner(hunt, ps, NoTool(), FakeBrowser({}), lambda: None)
+    board = {feishu: "feishu-jobs", feishu + "xhcampus": "feishu-jobs", feishu + "xinghe": "feishu-jobs",
+             feishu + "xhcampus/?current=1&limit=100": "feishu-jobs", campus: None, careers: None}
+    sc._providers.update(board)
+    # a route page on a list the provider reads is refused, with what to do instead
+    r, errs = sc.save_route("C1", {"pages": [{"url": feishu + "xhcampus/?current=1&limit=100", "script": "async (h) => ({postings: []})"}]})
+    assert not r and "feishu-jobs reads this list with no route" in errs[0] and '"list"' in errs[0]
+    assert ps.route("C1") is None
+    # the AI gives each own page its board instead; a later fill that leaves the list out keeps it
+    hunt.fill("C1", {"sites": [{"url": campus, "kind": "campus", "list": feishu + "xhcampus"}, {"url": feishu, "kind": "social"},
+                               {"url": careers, "kind": "social", "list": feishu + "xinghe"}]})
+    hunt.fill("C1", {"sites": [{"url": campus, "kind": "campus"}, {"url": feishu, "kind": "social"}, {"url": careers, "kind": "social"}]})
+    assert [s.get("list") for s in hunt.company("C1")["sites"]] == [feishu + "xhcampus", None, feishu + "xinghe"]
+    assert [s["how"] for s in sc.plan(hunt.company("C1"))] == ["feishu-jobs"] * 3
+    assert sc.site_status(hunt.company("C1")) == {campus: "api", feishu: "api", careers: "api"}
+    # the provider reads each board once; the same role under two addresses of one board comes in once
+    asked = []
+    job = lambda board, n, t: {"title": t, "url": f"{feishu}{board}/position/77034793430420544{n}/detail"}
+    def bridge(entries, detect=False):
+        asked.extend(e["url"] for e in entries)
+        return [{"url": e["url"], "provider": "feishu-jobs", "jobs": {feishu: [job("index", 1, "地图研发"), job("index", 2, "测试")],
+                 feishu + "xinghe": [job("xinghe", 1, "地图研发"), job("xinghe", 2, "测试")],
+                 feishu + "xhcampus": [job("xhcampus", 3, "实习生")]}[e["url"]]} for e in entries]
+    sc._bridge = bridge
+    res = sc.scan("C1")
+    assert sorted(asked) == sorted([feishu, feishu + "xhcampus", feishu + "xinghe"]) and res["found"] == 3, res
+    assert res["needs"] == "" and res["unrouted"] == []
+    # one role kept once; two roles that only share a title, or have no id, are two
+    same = [{"title": "A", "url": "https://x.example/index/position/12345678901/detail"},
+            {"title": "A", "url": "https://x.example/xinghe/position/12345678901/detail"},
+            {"title": "B", "url": "https://x.example/index/position/12345678901/detail"},
+            {"title": "A", "url": "https://x.example/jobs/2"}, {"title": "A", "url": "https://x.example/jobs/3"}]
+    assert [p["url"][-30:] for p in same_once(same)] == [p["url"][-30:] for p in [same[0], same[2], same[3], same[4]]]
+
+
+def test_a_route_page_on_a_providers_list_is_read_through_the_provider(hunt):
+    """Routes recorded before the refusal (8 companies, 2026-11-03: Moka and Workday boards read by the AI's scripts):
+    the page a provider reads goes through the provider; only the page no provider reads runs its script."""
+    ps = Postings(hunt)
+    own, moka = "https://job.yunfan.example/", "https://app.mokahr.example/campus-recruitment/yunfan/46903#/jobs"
+    social = "https://wecruit.hotjob.example/pb/social.html"
+    hunt.add_company({"name": "云帆通讯", "sites": [{"url": own, "kind": "campus"}]})
+    browser = FakeBrowser({social: {"postings": [{"title": "社招 A", "url": social + "#1"}]}})
+    sc = Scanner(hunt, ps, NoTool(), browser, lambda: None)
+    sc._providers.update({own: None, moka: "mokahr", social: None})
+    ps.set_scan_state("C1", route={"pages": [{"url": moka, "script": "async (h) => ({postings: []})"},
+                                             {"url": social, "script": "async (h) => ({postings: []})"}], "sites": [own]})
+    asked = []
+    sc._bridge = lambda entries, detect=False: asked.extend(e["url"] for e in entries) or [
+        {"url": e["url"], "provider": "mokahr", "jobs": [{"title": "校招 B", "url": "https://app.mokahr.example/job/1"}]} for e in entries]
+    res = sc.scan("C1")
+    assert asked == [moka] and browser.opened == [social], (asked, browser.opened)
+    assert res["found"] == 2 and ps.scan_state("C1")["how"] == "mokahr+route"
+
+
 def test_a_site_added_after_the_route_was_recorded_is_checked_and_handed_to_the_ai(hunt):
     """上海交大 (2026-11-03): a third careers site was pasted in after the route was recorded for the first two.
     The scan replayed the old route, said "read, nothing missing" and never looked at the new address."""
@@ -531,7 +595,14 @@ def test_a_site_added_after_the_route_was_recorded_is_checked_and_handed_to_the_
     res = sc.scan("C1")
     assert (res["found"], res["needs"], res["unrouted"]) == (2, "claude", [new])
     assert ps.scan_state("C1")["unrouted"] == [new]
-    assert run_summary([res], auto=False)["needs_ai"] == 1                    # the toast says a site needs the AI
+    assert run_summary([res], auto=False)["unrouted"] == [new]                # the toast names the site, not "a company"
+    # each site says on its row whether it is scanned automatically
+    assert sc.site_status(hunt.company("C1")) == {a: "route", b: "route", new: "no"}
+    # the site taken off the company outside the window (the AI's set-company): its warning goes with it
+    hunt.update_company("C1", {"sites": [s for s in hunt.company("C1")["sites"] if s["url"] != new]})
+    assert (sc.live_state(hunt.company("C1"))["needs"], sc.live_state(hunt.company("C1"))["unrouted"]) == ("", [])
+    assert ps.scan_state("C1")["unrouted"] == [new]                              # stored as the last scan left it
+    hunt.update_company("C1", {"sites": [*hunt.company("C1")["sites"], {"url": new}]})
     # the AI learns only the new site: its pages join the route, and the route names the sites it reads
     r, errs = sc.save_route("C1", {"add": True, "pages": [{"url": new + "#jobs", "script": "async (h) => ({postings: []})"}]})
     assert not errs and [p["url"] for p in r["pages"]] == [pa, pb, new + "#jobs"] and set(r["sites"]) == {a, b, new}
@@ -831,6 +902,11 @@ def test_the_window_and_claude_scan_and_apply(live, data_file, monkeypatch):
         time.sleep(0.05)
     r = live.req("GET", f"/api/hunt/apps/{aid}")[1]
     assert r["reading"]["error"] and r["application"]["jd"] == "岗位职责\n2、部署模型"
+    # the AI reads it instead (docs/AI_BUTTON_CHECKS.md): the role has its JD, so "its page didn't read" is over
+    code, out = cli(data_file, "jd", "星河科技/算法工程师", "--stdin", stdin="岗位职责\n3、AI 读到的")
+    assert code == 0, out
+    r = live.req("GET", f"/api/hunt/apps/{aid}")[1]
+    assert r["application"]["jd"] == "岗位职责\n3、AI 读到的" and r["reading"] == {}
     code, out = cli(data_file, "keywords", "后端, 服务端")
     assert "keywords: 后端, 服务端" in out
     # Claude's own reading, when no route can be recorded

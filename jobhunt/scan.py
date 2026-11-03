@@ -22,11 +22,13 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import shutil
 import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 from core.browser import BrowserError, PageNotOpened
 from core.cdp import CdpError
@@ -73,10 +75,25 @@ def run_summary(out: list[dict], auto: bool) -> dict:
             "new": sum(int(r.get("new") or 0) for r in out),
             "closed": sum(int(r.get("closed") or 0) for r in out),
             "failed": sum(1 for r in out if r.get("error")),
-            # read in part counts too: a site added after its route was recorded is a site nobody reads
-            "needs_ai": sum(1 for r in out if not r.get("error")
-                            and r.get("needs") in (("claude",) if "found" in r else ("claude", "browser"))),
+            # counted by site, never by company: a company whose API site reads and whose own site doesn't is one
+            # site the AI has to learn, named, not "a company" (user, 2026-11-03)
+            "unrouted": [u for r in out if not r.get("error") for u in r.get("unrouted") or []],
             "no_site": sum(1 for r in unread if r.get("needs") == "sites")}
+
+def same_once(found: list[dict]) -> list[dict]:
+    """One role read twice, through two addresses of the same board (Feishu's /index/position/<id> and
+    /xinghe/position/<id>): kept once. The same title with the same long id in its address is the same role."""
+    seen, out = set(), []
+    for p in found:
+        ids = re.findall(r"\d{8,}", urlsplit(str(p.get("url") or "")).path)
+        k = (str(p.get("title") or "").strip().casefold(), max(ids, key=len)) if ids else None
+        if k and k in seen:
+            continue
+        if k:
+            seen.add(k)
+        out.append(p)
+    return out
+
 
 class RouteFailed(Exception):
     def __init__(self, message: str, signed_out: bool = False):
@@ -105,6 +122,11 @@ class Scanner:
         if c.get("site") and not any(s["url"] == c["site"] for s in sites):
             sites.insert(0, {"url": c["site"], "kind": "", "system": ""})
         return sites
+
+    @staticmethod
+    def list_of(s: dict) -> str:
+        """Where a site's job list is read: its `list` (the Feishu or Moka board its own page fronts), else itself."""
+        return s.get("list") or s["url"]
 
     @staticmethod
     def covers(route: dict | None, url: str) -> bool:
@@ -147,16 +169,50 @@ class Scanner:
     def plan(self, c: dict) -> list[dict]:
         """Each site of the company with how it is read: provider id, "route" or "claude"."""
         sites = self.sites_of(c)
-        unknown = [s for s in sites if s["url"] not in self._providers]
-        if unknown:
-            for r in self._bridge([{"key": s["url"], "name": c["name"], "url": s["url"]} for s in unknown], detect=True):
-                if not r.get("error"):
-                    self._providers[r["url"]] = r.get("provider")
+        self.detect([self.list_of(s) for s in sites], c["name"])
         route = self.postings.route(c["id"])
         out = []
         for s in sites:
-            prov = self._providers.get(s["url"])
+            prov = self._providers.get(self.list_of(s))
             out.append({**s, "how": prov or ("route" if self.covers(route, s["url"]) else "claude")})
+        return out
+
+    def detect(self, urls: list[str], name: str = "") -> None:
+        """Which provider reads each address (None: none does), asked once per address and kept."""
+        unknown = list(dict.fromkeys(u for u in urls if u not in self._providers))
+        for r in self._bridge([{"key": u, "name": name, "url": u} for u in unknown], detect=True):
+            if not r.get("error"):
+                self._providers[r["url"]] = r.get("provider")
+
+    def live_state(self, c: dict) -> dict:
+        """The company's scan state as its sites are now: a site that can't be scanned is warned about only while it
+        is still one of the company's sites (the AI or the user may have replaced it since the last scan), and a
+        company whose unscannable sites are all gone no longer needs the AI."""
+        st = dict(self.postings.scan_state(c["id"]))
+        was = st.get("unrouted") or []
+        if was:
+            now = {s["url"] for s in self.sites_of(c)}
+            st["unrouted"] = [u for u in was if u in now]
+            if not st["unrouted"] and st.get("needs") == "claude":
+                st["needs"] = ""
+        return st
+
+    def site_status(self, c: dict) -> dict[str, str]:
+        """Whether each site is scanned automatically, for the window to say on its row, from what is known without
+        asking anything: "api" (a provider reads it), "route" (a recorded route reads it), "no" (a scan can't read
+        it: the AI has to learn it), "" (not checked yet: no scan has looked at it)."""
+        st = self.live_state(c)
+        route, unrouted = st.get("route"), set(st.get("unrouted") or [])
+        # a route whose every page a provider reads is read through the provider (_scan): its sites say "api"
+        if route and all(self._providers.get(p["url"]) for p in route.get("pages") or [{"url": ""}]):
+            route_how = "api"
+        else:
+            route_how = "route"
+        out = {}
+        for s in self.sites_of(c):
+            url, lst = s["url"], self.list_of(s)
+            out[url] = ("no" if url in unrouted else "api" if self._providers.get(lst) else route_how if self.covers(route, url)
+                        else "" if lst in self._providers or not st.get("at") else "api")
         return out
 
     @staticmethod
@@ -289,18 +345,27 @@ class Scanner:
             found: list[dict] = []
             hows, errors, needs, unread = [], [], [], []
             api = [s for s in plan if s["how"] not in ("route", "claude")]
-            for r in self._bridge([{"key": s["url"], "name": c["name"], "url": s["url"]} for s in api]):
+            # a route page on a list a provider reads (a Moka or Workday board the AI recorded a script for) is read
+            # through the provider: the AI's script only for what no provider reads (8 companies, 2026-11-03)
+            route = self.postings.route(c["id"]) or {}
+            scripts = (route.get("pages") or []) if any(s["how"] == "route" for s in plan) else []
+            self.detect([p["url"] for p in scripts], c["name"])
+            via_api = [p["url"] for p in scripts if self._providers.get(p["url"])]
+            scripts = [p for p in scripts if not self._providers.get(p["url"])]
+            # one list read once: two sites fronting the same board (its own page and the board itself) are one read
+            lists = list(dict.fromkeys([*(self.list_of(s) for s in api), *via_api]))
+            for r in self._bridge([{"key": u, "name": c["name"], "url": u} for u in lists]):
                 if r.get("error"):
                     errors.append(f"{r['url']}: {r['error']}")
                 else:
                     found += r.get("jobs") or []
                     hows.append(str(r.get("provider")))
-            if any(s["how"] == "route" for s in plan):
+            if scripts:
                 if allow_route:
                     self.running[c["id"]] = "route"
                     self.publish()
                     try:
-                        found += self.run_route(self.postings.route(c["id"]) or {}, errors, unread)
+                        found += self.run_route({**route, "pages": scripts}, errors, unread)
                         hows.append("route")
                     except RouteFailed as e:
                         if not found:
@@ -309,6 +374,7 @@ class Scanner:
                         errors.append(str(e))
                 else:
                     needs.append("browser")
+            found = same_once(found)
             missing = self.unrouted(plan)
             if missing:   # said first: waiting for the browser fixes itself on a scan the user starts, this doesn't
                 needs.insert(0, "claude")
@@ -319,7 +385,7 @@ class Scanner:
                             "unrouted": missing}
                 return {"company": c["id"], "needs": needs[0] if needs else "claude", "unrouted": missing}
             complete = not errors and not needs
-            res = self.postings.merge(c["id"], found, how="+".join(hows), complete=complete)
+            res = self.postings.merge(c["id"], found, how="+".join(dict.fromkeys(hows)), complete=complete)
             if errors:   # unread: how many of the route's pages didn't read, of how many ([17, 20]), for the window to say
                 self.postings.set_scan_state(c["id"], error="; ".join(errors), unread=unread or None)
             return {"company": c["id"], "found": res["found"], "new": len(res["new"]), "closed": len(res["closed"]),
@@ -409,6 +475,14 @@ class Scanner:
         if errs:
             return {}, errs
         c = self.hunt.company(ref)
+        # the AI reads only what no provider can: a page a provider reads goes on the site as its list instead, or
+        # the scan reads its roles twice, once each way (星河科技, 2026-11-03: 67 roles listed twice)
+        self.detect([p["url"] for p in r["pages"]], c["name"])
+        api = [(p["url"], self._providers[p["url"]]) for p in r["pages"] if self._providers.get(p["url"])]
+        if api:
+            return {}, [f"{u}: {prov} reads this list with no route. Put it on the company as the list of the site it "
+                        f"belongs to (`fill` with every site, that one as {{\"url\": \"<that site>\", \"list\": \"{u}\"}}) and scan; "
+                        f"record route pages only for lists no provider reads" for u, prov in api]
         named = data.get("sites") if isinstance(data.get("sites"), list) else None
         sites = [str(u) for u in named] if named is not None else [s["url"] for s in self.plan(c) if s["how"] in ("route", "claude")]
         old = self.postings.route(c["id"]) if data.get("add") else None

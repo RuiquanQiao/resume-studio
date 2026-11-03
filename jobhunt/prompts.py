@@ -130,7 +130,14 @@ How to work it:
   user asks whether a role, company or offer is OK, an offer or 三方 is to be signed or compared, or anyone asks
   them for money. Each finding has its evidence, why it matters, what to ask, and how serious it is; a company's
   go into its About as a "Risks" point, a role's into a `note`.
-- **Recording a site's route** (when `show` or `scan` says a site has none): open the site's job list in Resume
+- **Learning a site** (when `show` or `scan` names sites no scan reads): learn **only those sites**; a site a
+  provider reads (`show` says so on its line) is the scan's, never touched, never read again by a route: its roles
+  would come in twice. First find where the site's list really is. An own page that redirects to, embeds or links
+  its list on a recruiting system (Feishu `<x>.jobs.feishu.cn/<portal>`, Moka `app.mokahr.com/..`, Greenhouse,
+  Lever, Workday…) gets that list's address as the site's `list` (`fill` with every site `show` lists, that one as
+  `{{"url": "<the site>", "list": "<the list's address>"}}`: `fill` sites is the whole list), then `scan`: a provider reads it with no route and no AI. A route is only for
+  a list no provider reads; `scan-route` refuses a page a provider reads.
+- **Recording a site's route** (a list no provider reads): open the site's job list in Resume
   Studio's browser (the browser commands), signed in if it needs it (the user signs in with the button on the
   company's row; never type a password). Find how the list loads: often the page calls its own JSON API, and the
   best script calls that same API with `fetch` (same origin, the user's sign-in) and pages through every posting;

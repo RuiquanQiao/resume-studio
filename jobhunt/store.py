@@ -524,7 +524,9 @@ class Hunt:
     @staticmethod
     def _sites(v: Any) -> list[dict]:
         """A company's careers sites: [{url, kind (campus | intern | social | other, or "" until someone who has
-        looked at the site says), system (Moka, 北森, own site…)}]."""
+        looked at the site says), system (Moka, 北森, own site…), list}]. `list`, when there is one, is where the site's
+        job list really is: a company's own page that is a front for its Feishu or Moka board names that board, and
+        the scan reads the board through its provider, no AI (星河科技, 2026-11-03)."""
         out = []
         for x in v if isinstance(v, list) else []:
             x = x if isinstance(x, dict) else {"url": x}
@@ -534,7 +536,11 @@ class Hunt:
             if not re.match(r"https?://", url):
                 url = "https://" + url
             kind = _text(x.get("kind"), 20).lower()
-            out.append({"url": url, "kind": kind if kind in SITE_KINDS else "", "system": _text(x.get("system"), 40)})
+            site = {"url": url, "kind": kind if kind in SITE_KINDS else "", "system": _text(x.get("system"), 40)}
+            lst = _text(x.get("list"), 500)
+            if lst:
+                site["list"] = lst if re.match(r"https?://", lst) else "https://" + lst
+            out.append(site)
         return out[:8]
 
     @staticmethod
@@ -638,10 +644,15 @@ class Hunt:
                 sites = self._sites(take["sites"])
                 if sites:
                     take["site"] = next((x["url"] for x in sites if x["kind"] == "campus"), sites[0]["url"])
+            if "sites" in take:   # a fill that leaves a site's list out doesn't drop the list found before
+                had = {site_key(x["url"]): x.get("list") for x in c.get("sites") or [] if x.get("list")}
+                take["sites"] = [x if x.get("list") or site_key(x["url"]) not in had else {**x, "list": had[site_key(x["url"])]}
+                                 for x in self._sites(take["sites"])]
             if "sites" in kept and "sites" in fields:   # the user's sites stay; only a kind nobody set yet is Claude's
                 said = {site_key(x["url"]): x for x in self._sites(fields["sites"])}
-                mine = [{**x, **{k: said[site_key(x["url"])][k] for k in ("kind", "system")
-                                 if not x.get(k) and site_key(x["url"]) in said}} for x in c.get("sites") or []]
+                mine = [{**x, **{k: said[site_key(x["url"])][k] for k in ("kind", "system", "list")
+                                 if site_key(x["url"]) in said and not x.get(k) and said[site_key(x["url"])].get(k)}}
+                        for x in c.get("sites") or []]
                 if mine != (c.get("sites") or []):
                     take["sites"] = mine
             c = self.update_company(c["id"], take, source="chat")

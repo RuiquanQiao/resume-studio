@@ -2644,6 +2644,80 @@ def test_scan_learning_button_starts_and_releases(page_all):
     pg.wait_for_function("() => !document.querySelector('#learn-test button[data-ai]').disabled")
 
 
+AI_CHECK = """async ({run, data, finish = true}) => {
+  ui.chat.available = true; ui.chat.id = 'check-chat';
+  window.sent = [];
+  sendChat = async (m) => { window.sent.push(m); return true; };
+  chatState = () => 'running';
+  loadHunt = async () => { H.data = window.huntAfter; };
+  window.huntAfter = data;
+  const before = window.sent.length;
+  eval(run);
+  for (let i = 0; i < 100 && window.sent.length === before; i++) await new Promise((r) => setTimeout(r, 30));
+  await new Promise((r) => setTimeout(r, 30));
+  if (finish) aiRunDone('check-chat', null);
+  await new Promise((r) => setTimeout(r, 30));
+  const el = document.querySelector('#toast');
+  return {say: el.querySelector('span').textContent, warn: el.classList.contains('warn'), again: el.querySelector('button') ? el.querySelector('button').textContent : null,
+          sent: window.sent};
+}"""
+
+
+def test_an_ai_button_checks_its_work_when_the_chat_ends(page_all):
+    """docs/AI_BUTTON_CHECKS.md: a chat that ended is not work done. Learning a site counts only once the
+    company has a scan route; until then the window says so and offers to ask again in the same chat."""
+    pg = page_all
+    c = {"id": "C91", "name": "测试大学", "postings": {"needs": "claude", "unrouted": ["https://join.test.example/Default.aspx"]}}
+    out = pg.evaluate(AI_CHECK, {"run": "askLearn([{id: 'C91', name: '测试大学', unrouted: ['https://join.test.example/Default.aspx']}])",
+                                 "data": {"companies": [c], "applications": []}})
+    assert out["warn"] and out["say"] == "还是不能自动扫描：join.test.example/Default.aspx。AI 没有把读法存下来。", out
+    # the AI is handed the sites no scan reads, by name, and told to leave the others alone (星河科技, 2026-11-03)
+    assert "只学这些：测试大学（https://join.test.example/Default.aspx）" in out["sent"][0] and "不要动" in out["sent"][0], out["sent"]
+    assert out["again"] == "再让 AI 做一次"
+    pg.click("#toast button")
+    pg.wait_for_function("() => window.sent.length === 2")
+    assert "scan-route" in pg.evaluate("window.sent[1]") and pg.evaluate("AI_WORK.has('learn:C91')")
+    # recorded: it says what was done
+    pg.evaluate("() => { AI_WORK.clear(); }")
+    c["postings"] = {"needs": "", "unrouted": []}
+    out = pg.evaluate(AI_CHECK, {"run": "askLearn([{id: 'C91', name: '测试大学'}])", "data": {"companies": [c], "applications": []}})
+    assert not out["warn"] and out["say"] == "测试大学 的招聘网址现在都能自动扫描了" and out["again"] is None, out
+
+
+def test_every_hunt_ai_button_checks_its_own_result(page_all):
+    pg = page_all
+    url = "https://jobs.example.com/p/7"
+    co = {"id": "C92", "name": "星河", "kept": ["size"], "industry": "芯片", "sources": {"industry": "https://a.example"},
+          "strength": "估值 10 亿", "hq": None, "places": [], "sites": [{"url": "https://c.example"}], "logo": "", "about": {"summary": "做芯片"}}
+    data = {"companies": [co], "applications": []}
+    # a pasted link with no role added
+    out = pg.evaluate(AI_CHECK, {"run": f"formModal = async () => ({{url: '{url}'}}); addFromLink()", "data": data})
+    assert out["warn"] and out["say"] == "没有加上这个链接的岗位" and url in out["sent"][0], out
+    data["applications"] = [{"id": "A9", "company": "C92", "role": "芯片验证", "url": url + "/", "jd": ""}]
+    pg.evaluate("() => AI_WORK.clear()")
+    out = pg.evaluate(AI_CHECK, {"run": f"formModal = async () => ({{url: '{url}'}}); addFromLink()", "data": data})
+    assert not out["warn"] and out["say"] == "已添加：星河 的 芯片验证", out
+    # fill in: empty fields and a field with no source, never the one the user keeps
+    pg.evaluate("() => AI_WORK.clear()")
+    out = pg.evaluate(AI_CHECK, {"run": "askFill([{id: 'C92', name: '星河'}])", "data": data})
+    assert out["warn"] and "星河：还空着：总部, 招聘城市, Logo" in out["say"] and "星河：没有出处：实力" in out["say"], out
+    assert "规模" not in out["say"]
+    # reading a posting: done only once the role has a description
+    pg.evaluate("() => AI_WORK.clear()")
+    run = "askRead({id: 'A9', role: '芯片验证', url: '" + url + "', jd: ''}, {name: '星河'})"
+    out = pg.evaluate(AI_CHECK, {"run": run, "data": data})
+    assert out["warn"] and out["say"] == "芯片验证 的岗位描述还是空的" and out["again"] == "再让 AI 做一次", out
+    data["applications"][0]["jd"] = "职责：验证"
+    pg.evaluate("() => AI_WORK.clear()")
+    out = pg.evaluate(AI_CHECK, {"run": run, "data": data})
+    assert not out["warn"] and out["say"] == "芯片验证 的岗位描述已填好", out
+    # rewriting in a company's language
+    pg.evaluate("() => AI_WORK.clear()")
+    co["research"] = {"rewrite": "en", "rewrite_name": "英语", "lang_name": "中文"}
+    out = pg.evaluate(AI_CHECK, {"run": "askRewrite([{id: 'C92', name: '星河', research: {lang_name: '中文'}}])", "data": data})
+    assert out["warn"] and "仍然不是它们自己的语言：星河" in out["say"], out
+
+
 def test_postings_read_by_hand_say_the_site_has_no_scan_route(page_all):
     """Postings the AI read by hand, with no route recorded: the card says the next scan can't update them,
     never a plain "scanned · read by AI" that looks set up."""
@@ -2655,13 +2729,39 @@ def test_postings_read_by_hand_say_the_site_has_no_scan_route(page_all):
         const s = card.querySelector('#company-no-route');
         return {warn: s ? s.textContent : null, learn: !!card.querySelector('button[data-ai="learn:C83"]')};
       };
-      return {hand: say({at, ok: true, how: 'claude', needs: 'claude', found: 11}),
-              part: say({at, ok: true, how: 'route', needs: 'claude', found: 3}),
+      const unrouted = ['https://campus.test.example/', 'https://careers.test.example/'];
+      return {hand: say({at, ok: true, how: 'claude', needs: 'claude', found: 11, unrouted}),
+              part: say({at, ok: true, how: 'route', needs: 'claude', found: 3, unrouted}),
               route: say({at, ok: true, how: 'route', needs: '', found: 3})};
     }""")
-    assert "AI 手动读的" in out["hand"]["warn"] and "还没有扫描路线" in out["hand"]["warn"] and out["hand"]["learn"]
-    assert "还有官网没有扫描路线" in out["part"]["warn"] and out["part"]["learn"]
+    assert "AI 手动读的" in out["hand"]["warn"] and "campus.test.example, careers.test.example 还不能自动扫描" in out["hand"]["warn"] and out["hand"]["learn"]
+    assert "campus.test.example, careers.test.example 还不能自动扫描" in out["part"]["warn"] and out["part"]["learn"]
     assert out["route"] == {"warn": None, "learn": False}
+
+
+def test_scan_wording_names_sites_never_a_company(page_all):
+    """User, 2026-11-03: "1 家公司还没有扫描路线" for a company whose Feishu site scans and whose two own sites
+    don't. Every scan message names the sites; every site's row says whether it is scanned automatically."""
+    pg = page_all
+    out = pg.evaluate("""() => {
+      const sites = ['https://campus.xinghe.example/', 'https://xinghe.jobs.feishu.cn/', 'https://careers.xinghe.example/', 'https://new.xinghe.example/'];
+      // the toast at the end of a scan
+      H.lastRun = 1; H.data = {scan: {last_run: {at: 2, read: 1, new: 0, closed: 0, unrouted: [sites[0], sites[2]]}}};
+      scanDone();
+      const toastSay = document.querySelector('#toast span').textContent;
+      // the table's Roles cell
+      const cell = scanTrouble({postings: {needs: 'claude', unrouted: [sites[0], sites[2]]}}).textContent;
+      // each site's row on the company page
+      const ed = sitesEditor({id: 'C95', sites: sites.map((url, i) => ({url, kind: 'campus', system: i ? '' : 'own site'}))},
+        {[sites[0]]: 'no', [sites[1]]: 'api', [sites[2]]: 'route', [sites[3]]: ''});
+      const rows = [...ed.querySelectorAll('.co-site-edit')].map((r) => { const s = r.querySelector('.site-scan'); return [s.textContent, s.className]; });
+      return {toastSay, cell, rows, system: ed.querySelector('.co-site-edit .muted').textContent};
+    }""")
+    assert out["toastSay"] == "扫描完成：0 个新 · 0 个已关闭 · 2 个网址还不能自动扫描：campus.xinghe.example, careers.xinghe.example", out
+    assert out["cell"] == "campus.xinghe.example, careers.xinghe.example 还不能自动扫描：要先让 AI 学会读", out
+    assert out["rows"] == [["还不能自动扫描", "site-scan warn"], ["能自动扫描", "site-scan ok"],
+                           ["能自动扫描", "site-scan ok"], ["还没检查", "site-scan "]], out
+    assert out["system"] == "公司自建"                                       # never the AI's English "own site"
 
 
 def test_postings_probably_over_are_folded_away_with_their_dates(page_all):
