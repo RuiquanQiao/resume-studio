@@ -350,6 +350,114 @@ def test_claude_works_the_tracker_from_its_command(live, data_file):
     assert {p["id"] for p in tab["platforms"]} >= {"linkedin", "boss"}
 
 
+def test_text_whose_chinese_turned_into_question_marks_is_refused_not_saved(live, data_file, tmp_path):
+    # Windows PowerShell 5.1 pipes text into python as ASCII: Codex's research on 智加科技 arrived as "?" and was saved
+    cli(data_file, "add-company", "智加科技")
+    lost = json.dumps({"name": "??????????", "industry": "3C?????????????", "hq": "??"})
+    code, out = cli(data_file, "fill", "智加科技", "--stdin", stdin=lost)
+    assert code != 0 and "nothing was saved" in out and "--file" in out
+    assert "?" not in cli(data_file, "show", "智加科技")[1]
+    # the same research in a UTF-8 file goes in, and so does JSON with \u escapes (pure ASCII, nothing lost)
+    f = tmp_path / "fill.json"
+    f.write_text(json.dumps({"name": "苏州智加科技有限公司", "hq": "苏州"}, ensure_ascii=False), encoding="utf-8")
+    code, out = cli(data_file, "fill", "智加科技", "--file", str(f))
+    assert code == 0 and "(also: 苏州智加科技有限公司)" in out
+    code, out = cli(data_file, "fill", "智加科技", "--stdin", stdin=json.dumps({"industry": "商用车自动驾驶"}))
+    assert code == 0 and "industry: 商用车自动驾驶" in out
+    # a file PowerShell's Out-File wrote (UTF-16) is read; one in the code page (GBK) is refused, not garbled
+    f.write_bytes(json.dumps({"size": "100–299 人"}, ensure_ascii=False).encode("utf-16"))
+    code, out = cli(data_file, "fill", "智加科技", "--file", str(f))
+    assert code == 0 and "size: 100–299 人" in out
+    f.write_bytes(json.dumps({"size": "约 300 人"}, ensure_ascii=False).encode("gbk"))
+    code, out = cli(data_file, "fill", "智加科技", "--file", str(f))
+    assert code != 0 and "isn't UTF-8" in out and "100–299 人" in cli(data_file, "show", "智加科技")[1]
+    # an argument that lost its letters is refused, and so is a request sent to the window by hand
+    code, out = cli(data_file, "edit-company", "智加科技", "--hq", "??")
+    assert code != 0 and "nothing was saved" in out
+    st, body = live.req("POST", "/api/hunt/do", {"cmd": "edit-company", "args": {"ref": "智加科技", "industry": "3C?????"}})
+    assert st == 400 and "nothing was saved" in body["error"]
+    assert "?" not in cli(data_file, "show", "智加科技")[1]
+    # an English question mark is no lost letter
+    assert cli(data_file, "edit-company", "智加科技", "--note", "Is the 2027 batch open? Ask HR?")[0] == 0
+    # a wrong alias is dropped by sending the list without it, or all of them with --no-aliases
+    code, out = cli(data_file, "edit-company", "智加科技", "--alias", "PlusAI", "--alias", "苏州智加科技有限公司")
+    assert code == 0 and "(also: PlusAI, 苏州智加科技有限公司)" in out
+    code, out = cli(data_file, "edit-company", "智加科技", "--no-aliases")
+    assert code == 0 and "(also:" not in out
+
+
+def test_a_change_from_a_chat_names_its_company_exactly(live, data_file):
+    # 2026-11-03: 九牧集团 arrived as "????", a part of 智加科技's alias "??????????", and 九牧's research went onto 智加
+    cli(data_file, "add-company", "智加科技", "--alias", "苏州智加科技有限公司")
+    cli(data_file, "add-company", "九牧集团")
+    code, out = cli(data_file, "edit-company", "智加", "--industry", "卫浴")
+    assert code != 0 and "智加科技 (C1)" in out and "九牧" not in out
+    code, out = cli(data_file, "add-role", "苏州智加", "算法")
+    assert code != 0 and "智加科技 (C1)" in out
+    assert "卫浴" not in cli(data_file, "show", "C1")[1] and "roles: none yet" in cli(data_file, "show", "C1")[1]
+    # its id, its whole name or a whole alias (any case and spacing) is enough; reading takes a part as before
+    assert cli(data_file, "edit-company", "苏州智加科技有限公司", "--industry", "自动驾驶")[0] == 0
+    assert cli(data_file, "add-role", "C1", "算法工程师")[0] == 0
+    code, out = cli(data_file, "status", "智加科技/算法", "applied")   # a role: a unique part, inside the named company
+    assert code == 0 and "[applied]" in out
+    assert cli(data_file, "status", "智加/算法", "interview")[0] != 0
+    assert "自动驾驶" in cli(data_file, "show", "智加")[1]
+
+
+def test_every_change_from_a_chat_is_kept_and_can_be_undone(live, data_file):
+    cli(data_file, "add-company", "智加科技")
+    f = {"industry": "商用车自动驾驶", "hq": "苏州", "aliases": ["苏州智加科技有限公司"]}
+    code, out = cli(data_file, "fill", "智加科技", "--stdin", stdin=json.dumps(f, ensure_ascii=False))
+    assert code == 0 and "kept as change H" in out
+    wrong = {"industry": "智能卫浴", "strength": "约1.45万人", "aliases": ["????"]}   # another company's, the alias lost
+    assert cli(data_file, "fill", "C1", "--stdin", stdin=json.dumps(wrong, ensure_ascii=False))[0] != 0
+    wrong["aliases"] = ["九牧集团有限公司"]
+    code, out = cli(data_file, "fill", "C1", "--stdin", stdin=json.dumps(wrong, ensure_ascii=False))
+    assert code == 0
+    hid = out.split("kept as change ")[1].split()[0]
+    # the user changes one of its fields in the window: that one is theirs now, the undo leaves it
+    assert live.req("PUT", "/api/hunt/companies/C1", {"strength": "我自己写的"})[0] == 200
+    hist = live.req("GET", "/api/hunt/history?target=C1")[1]["history"]
+    assert [e["id"] for e in hist][0] == hid and hist[0]["after"]["industry"] == "智能卫浴" and hist[0]["before"]["industry"] == "商用车自动驾驶"
+    code, out = cli(data_file, "history", "智加科技")
+    assert code == 0 and f"{hid} " in out and "fill 智加科技 (C1): changed " in out
+    code, out = cli(data_file, "undo", hid)
+    assert code == 0 and "put back" in out and "industry" in out and "changed since, so left as they are: strength" in out
+    out = cli(data_file, "show", "C1")[1]
+    assert "industry: 商用车自动驾驶" in out and "(also: 苏州智加科技有限公司)" in out and "我自己写的" in out
+    assert cli(data_file, "undo", hid)[0] != 0                            # once
+    # the window undoes a role a chat added: it goes; a status a chat set goes back, in the ledger too
+    cli(data_file, "add-role", "C1", "算法工程师")
+    hist = live.req("GET", "/api/hunt/history")[1]["history"]
+    made = next(e for e in hist if e["cmd"] == "add-role")
+    code, r = live.req("POST", f"/api/hunt/history/{made['id']}/undo")
+    assert code == 200 and r["restored"] == ["*"] and not live.req("GET", "/api/hunt")[1]["applications"]
+    cli(data_file, "add-role", "C1", "算法工程师")
+    cli(data_file, "status", "C1/算法", "interview")
+    st = next(e for e in live.req("GET", "/api/hunt/history")[1]["history"] if e["cmd"] == "status")
+    assert live.req("POST", f"/api/hunt/history/{st['id']}/undo")[0] == 200
+    out = cli(data_file, "show", "C1/算法")[1]
+    assert "[saved]" in out and "interview → saved" in out.replace("\r\n", "\n")
+    # nothing changed, nothing kept
+    n = len(live.req("GET", "/api/hunt/history")[1]["history"])
+    assert cli(data_file, "edit-company", "C1", "--industry", "商用车自动驾驶")[0] == 0
+    assert len(live.req("GET", "/api/hunt/history")[1]["history"]) == n
+
+
+def test_an_undone_logo_comes_back(hunt):
+    from jobhunt.history import History
+    h = History(hunt)
+    c = hunt.add_company({"name": "智加科技"})
+    old, new = b"\x89PNG\r\n\x1a\n" + b"old" * 40, b"\x89PNG\r\n\x1a\n" + b"new" * 40
+    hunt.save_logo(c["id"], old, "image/png")
+    before = h.snapshot("company", c["id"])
+    hunt.save_logo(c["id"], new, "image/png")
+    e = h.record("company", c["id"], before, h.snapshot("company", c["id"]), cmd="fill")
+    assert list(e["after"]) == ["logo_file"]
+    assert h.undo(e["id"])["restored"] == ["logo_file"]
+    assert hunt.logo_path(c["id"]).read_bytes() == old
+
+
 def test_a_roles_jd_is_kept_apart_from_its_notes(live, data_file):
     cli(data_file, "add-company", "星河科技")
     cli(data_file, "add-role", "星河科技", "服务端", "--note", "学长内推")

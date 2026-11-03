@@ -552,6 +552,35 @@ for a role on the company's own site, the default, had no picker at all).
   page has the same picker for every channel; a role on a company's site can still be marked with all its others
   from the company's page.
 
+## 2026-11-03: what an AI changes is checked on the way in, named exactly, and can be undone
+
+What happened: Codex, on Windows, ran its commands in Windows PowerShell 5.1, which pipes text into a program as
+ASCII (`$OutputEncoding`). Every Chinese letter it sent with `--stdin` arrived as "?": a company's official name was
+saved as the alias "??????????". A later chat researching 九牧集团 sent the company's name as "????" the same way,
+the lookup took a unique part of a name as enough, "????" was part of that alias, and 九牧's research was written
+over 智加科技's. Nothing kept what had been there; it came back only from Codex's own session log.
+
+Industry practice for an agent with write access is: validate input at the boundary, address writes exactly, and
+keep an audit log every change can be reverted from. So:
+
+- **Text whose letters were lost is refused** (core/lost_text.py): pure ASCII with runs of "?" where words were. The
+  scripts check their stdin, `--file` and arguments (scripts/_bootstrap.py `read_input`, `guard_args`; a UTF-16
+  file from PowerShell's Out-File is read, a file in the code page is refused); the window checks every request
+  to `/api/hunt/do` the same way. The refusal tells the agent how to send it: a UTF-8 file with `--file`, or JSON
+  with `\uXXXX`. Agents on Windows are told this up front, and the Python they run speaks UTF-8 (`PYTHONUTF8=1`).
+- **A change names its company exactly**: its id, or its whole name or alias (any case and spacing). A part of a
+  name is still enough to read (`show`), never to change; the refusal lists the companies it could be. A role
+  inside a company named exactly may still be a unique part of its name.
+- **Every change from a chat is kept** (jobhunt/history.py, `hunt/history.json`, the latest 1000): the fields it
+  changed, before and after, which chat, when; a logo picture it replaced is kept by its sha1. **Undo** puts back
+  only the fields that still hold what that change left: one the user or a later chat changed since stays, and the
+  undo says so. A company or role a chat added goes, unless it changed since. The window shows them under **What
+  the AI changed** (the Companies toolbar, and More on a company or a role); the agent sees `kept as change H12`
+  after each change and has `hunt.py history` / `hunt.py undo H12`, to fix its own mistake at once. A scan's
+  postings and a sent resume aren't kept here: scans are read again, sends keep their own versions.
+- **A logo a site won't hand a script** (九牧's site closed the connection) is fetched by Resume Studio's own browser,
+  off the screen. When that fails too, the agent is told where else to look rather than to stop.
+
 
 The Autofill page is organised around **the selected profile site**: LinkedIn and BOSS直聘 are its tabs,
 and every button in the page acts on the selected one. Xinghe is not one of its sites, so nothing on the

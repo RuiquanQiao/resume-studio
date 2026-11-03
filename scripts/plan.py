@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
-from _bootstrap import PREFS_DIR, resolve_data
+from _bootstrap import PREFS_DIR, guard_args, read_input, resolve_data
 
 from core import i18n
 from core.store import data_dirs
@@ -41,6 +40,7 @@ def main() -> int:
     p = sub.add_parser("done"); p.add_argument("words"); p.add_argument("--undo", action="store_true")
     sub.add_parser("versions")
     args = ap.parse_args()
+    guard_args()
     i18n.set_lang(i18n.Prefs(PREFS_DIR).ui_lang())
     data = resolve_data(args.data)
     plan = Plan(data_dirs(data)[0])
@@ -67,7 +67,7 @@ def main() -> int:
             print("\n".join(version_line(v) for v in vs) if vs else "no versions yet")
             return 0
         if args.cmd == "write":
-            raw = sys.stdin.buffer.read().decode("utf-8") if args.stdin else Path(args.file).read_text(encoding="utf-8") if args.file else ""
+            raw = read_input(args)
             if not raw.strip():
                 sys.exit("error: send the whole plan as Markdown (--stdin or --file)")
             r = plan.write(raw, why=args.why, by="claude")

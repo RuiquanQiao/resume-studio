@@ -44,13 +44,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-from _bootstrap import resolve_data, server_state
+from _bootstrap import guard_args, read_input, resolve_data, server_state
 
 CHANNELS = {"site": "its own site", "platform": "via {platform}", "referral": "referral", "other": "other"}
 # built-in events keep no title (they read in the window's language): their names here
@@ -105,12 +106,16 @@ SCAN_WAIT = 3600   # seconds: a route has at most 20 pages of 2 minutes each, an
 
 
 def call(url: str, cmd: str, args: dict, timeout: float = 120) -> dict:
-    data = json.dumps({"cmd": cmd, "args": args}, ensure_ascii=False).encode("utf-8")
+    # the chat's id (the window sets it): the history says which chat changed what
+    data = json.dumps({"cmd": cmd, "args": args, "chat": os.environ.get("RESUME_STUDIO_CHAT", "")}, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url.rstrip("/") + "/api/hunt/do", data=data, method="POST",
                                  headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read().decode("utf-8"))
+            res = json.loads(r.read().decode("utf-8"))
+        if res.get("change"):
+            print(f"kept as change {res['change']} (wrong? `undo {res['change']}` puts back what it replaced)")
+        return res
     except urllib.error.HTTPError as e:
         try:
             msg = json.loads(e.read().decode("utf-8")).get("error")
@@ -280,7 +285,10 @@ def main() -> int:
         for opt in ("site", "industry", "strength", "hq", "size", "account", "subset", "note"):
             p.add_argument("--" + opt, *(["--location"] if opt == "hq" else []),
                            **({"help": "the city of its headquarters"} if opt == "hq" else {}))
-        p.add_argument("--alias", action="append", help="another name it goes by (repeat for more)")
+        p.add_argument("--alias", action="append", help="another name it goes by (repeat for more; on edit-company "
+                       "the flags are the whole list, so leave one out to drop it)")
+        if name == "edit-company":
+            p.add_argument("--no-aliases", action="store_true", help="it goes by no other name")
         p.add_argument("--place", action="append", help='a city it hires in, or "remote: <region>" (repeat; the whole list)')
     for name in ("add-role", "edit-role"):
         p = sub.add_parser(name)
@@ -323,7 +331,12 @@ def main() -> int:
     p.add_argument("--partial", action="store_true", help="you read only some of the lists: nothing missing is closed")
     p = sub.add_parser("apply"); p.add_argument("ref")
     p = sub.add_parser("keywords"); p.add_argument("keywords")
+    p = sub.add_parser("history", description="What chats changed in the tracker, newest first, each with the id to undo it.")
+    p.add_argument("ref", nargs="?", default="", help="one company or application only")
+    p = sub.add_parser("undo", description="Put back what one change replaced (fields changed since stay as they are).")
+    p.add_argument("change", help="its id in `history`, like H12")
     args = ap.parse_args()
+    guard_args()
     url = server_url(resolve_data(args.data))
     c = args.cmd
     pick = lambda *names: {n: getattr(args, n) for n in names if getattr(args, n, None) not in (None, "")}  # noqa: E731
@@ -355,8 +368,8 @@ def main() -> int:
             a.update(name=args.name, different=args.different)
         else:
             a.update(ref=args.ref, **pick("name"))
-        if args.alias:
-            a["aliases"] = args.alias
+        if args.alias or getattr(args, "no_aliases", False):
+            a["aliases"] = args.alias or []
         if args.place:
             a["places"] = args.place
         r = call(url, c, a)
@@ -407,12 +420,12 @@ def main() -> int:
         print(f"written: {r['path']} (opening it imports it into the user's calendar app)")
         return 0
     elif c == "jd":
-        raw = sys.stdin.buffer.read().decode("utf-8-sig") if args.stdin else Path(args.file).read_text(encoding="utf-8-sig") if args.file else ""
+        raw = read_input(args)
         if not raw.strip():
             sys.exit("error: give the JD's text with --stdin or --file")
         r = call(url, "edit-role", {"ref": args.ref, "jd": raw})
     elif c in ("about", "fill"):
-        raw = sys.stdin.buffer.read().decode("utf-8-sig") if args.stdin else Path(args.file).read_text(encoding="utf-8-sig") if args.file else ""
+        raw = read_input(args)
         try:
             got = json.loads(raw)
         except ValueError as e:
@@ -421,7 +434,9 @@ def main() -> int:
         if r.get("kept"):
             print("left as the user set them: " + ", ".join(r["kept"]))
         if r.get("logo_error"):
-            print("logo not saved: " + r["logo_error"])
+            print("logo not saved: " + r["logo_error"] + "\n  not done: find another picture of it and send it as logo_url: its "
+                  "campus or careers page on its hiring system (Moka, 北森…), Wikimedia, 百度百科, its app's store icon, "
+                  "news photos of its sign. Tell the user it is missing only after several of these failed, naming them")
         if r.get("lang_error"):
             print("language: " + r["lang_error"])
         print("saved:")
@@ -449,7 +464,7 @@ def main() -> int:
         if c == "scan":
             r = call(url, "scan", {"companies": args.companies}, timeout=SCAN_WAIT)
         else:
-            raw = sys.stdin.buffer.read().decode("utf-8-sig") if args.stdin else Path(args.file).read_text(encoding="utf-8-sig") if args.file else ""
+            raw = read_input(args)
             try:
                 got = json.loads(raw)
             except ValueError as e:
@@ -481,6 +496,16 @@ def main() -> int:
     elif c == "keywords":
         r = call(url, "keywords", {"keywords": args.keywords})
         print("keywords: " + (", ".join(r["settings"]["keywords"]) or "none (every posting counts)"))
+        return 0
+    elif c == "history":
+        r = call(url, c, {"ref": args.ref})
+        print("\n".join(r["lines"]) if r["lines"] else "no changes from chats yet")
+        return 0
+    elif c == "undo":
+        r = call(url, c, {"change": args.change})
+        e = r["entry"]
+        print(f"undone {e['id']} ({e['cmd']} {e['name']}): " + ("it is gone again" if r["restored"] == ["*"] else
+              "put back " + (", ".join(r["restored"]) or "nothing")) + (f"; changed since, so left as they are: {', '.join(r['kept'])}" if r["kept"] else ""))
         return 0
     else:   # sent
         r = call(url, "sent", {"ref": args.ref, **pick("subset")})["sent"]

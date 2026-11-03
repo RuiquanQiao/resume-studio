@@ -1064,7 +1064,8 @@ function companiesTable() {
     h("div", { class: "hunt-head" }, h("h1", null, t("Companies")),
       h("p", null, t("What each company is and how it is doing, your notes, and its own careers site: one profile there, several roles in your order of preference."))),
     tableTools(h("button", { class: "btn sm primary", id: "hunt-new-company", onclick: () => newCompany() }, icon("plus"), t("Add a company")), linkButton(),
-      d.companies.length > 0 && scanAllButton()),
+      d.companies.length > 0 && scanAllButton(),
+      d.companies.length > 0 && h("button", { class: "btn sm", id: "hunt-history", onclick: () => historyModal() }, icon("history"), t("What the AI changed"))),
     d.companies.length > 0 && scanNews(),
     languagesBar(d.companies),
     dbView({ table: "companies", props: companyProps(), rows: shown, rowId: (c) => c.id, open: (c) => openHunt("company", c.id),
@@ -1210,6 +1211,94 @@ function sameCompany(e, name, m, { label, pick }) {
 }
 
 // a posting's link: Claude reads it and fills in the company (new or known) and the role (docs/JOB_HUNT.md, 2026-10-18)
+// ---- what the AI changed, each undoable (jobhunt/history.py) ----
+const CHANGE_FIELDS = {
+  name: "Name", aliases: "Also called", industry: "Industry", strength: "Strength", hq: "Headquarters", places: "Hires in",
+  size: "Size", site: "Careers site", sites: "Careers sites", logo_file: "Logo", logo: "Logo", about: "What it is",
+  sources: "Sources", note: "Notes", account: "Account", subset: "Subset", role: "Role", url: "Link", status: "Status",
+  referral: "Referral code", schedule: "Interviews and tests", apply_by: "Apply by", order: "Choice", jd: "JD",
+  applied: "Applied on", channel: "How it goes in", platform: "Platform", sent: "Resume sent", batch: "Hiring round",
+};
+const CHANGE_CMDS = {
+  "add-company": "added", "edit-company": "edited", fill: "filled in its details", about: "wrote its description",
+  "add-role": "added the role", "edit-role": "edited the role", status: "changed the status", note: "added a note",
+  book: "booked a date", rebook: "moved a date", unbook: "dropped a date",
+};
+// bookkeeping; "logo" is the file name, logo_file the picture
+const HIDDEN_FIELDS = new Set(["kept", "created", "logo", "id", "company", "co_app", "jd_read"]);
+
+const blank = (v) => v === null || v === undefined || v === "" || (Array.isArray(v) && !v.length);
+
+function changeValue(k, v) {
+  if (blank(v)) return t("(empty)");
+  if (k === "logo_file") return t("a picture");
+  if (k === "hq") return placeName(v);
+  if (k === "places") return v.map(placeText).join(", ");
+  if (k === "aliases") return v.join(", ");
+  if (k === "sites") return v.map((s) => s.url).join("\n");
+  if (k === "about") return v.summary || t("{n} points", { n: (v.points || []).length });
+  if (k === "sources") return Object.entries(v).map(([f, u]) => `${t(CHANGE_FIELDS[f] || f)}: ${u}`).join("\n");
+  if (k === "status") return huntState(v);
+  if (k === "channel") return t(HCHANNELS[v] || v);
+  if (k === "batch") return t(BATCH_NAMES[v] || v);
+  if (k === "sent") return v.map(sentText).join("\n");
+  if (k === "schedule") return v.map((e) => [evTitle(e), e.at ? bookedWhen(e.at, { weekday: false }) : ""].filter(Boolean).join("  ")).join("\n");
+  return typeof v === "string" || typeof v === "number" ? String(v) : JSON.stringify(v);
+}
+
+async function historyModal({ target = "", name = "" } = {}) {
+  const root = $("#modal-root");
+  const close = () => { root.replaceChildren(); document.removeEventListener("keydown", onKey, true); };
+  const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+  document.addEventListener("keydown", onKey, true);
+  const list = h("div", { class: "hist-list" }, h("p", { class: "muted" }, t("Loading…")));
+  root.replaceChildren(h("div", { class: "modal-back", onmousedown: (e) => { if (e.target === e.currentTarget) close(); } },
+    h("div", { class: "modal hist-modal", role: "dialog", "aria-modal": "true", "aria-label": t("What the AI changed") },
+      h("h3", null, name ? t("What the AI changed in {name}", { name }) : t("What the AI changed")),
+      h("p", null, t("Every change a chat made to a company or a role. Undo puts back what that change replaced; a field you or another chat changed since stays as it is.")),
+      list,
+      h("div", { class: "acts" }, h("button", { class: "btn primary", id: "hist-close", onclick: close }, t("Done"))))));
+  setTimeout(() => $("#hist-close")?.focus(), 0);
+  let chats = {};
+  try { chats = Object.fromEntries(((await api("GET", "/api/chats")).chats || []).map((c) => [c.id, c.title])); } catch { /* titles are a nicety */ }
+  const paint = async () => {
+    let rows;
+    try { rows = (await api("GET", "/api/hunt/history" + (target ? "?target=" + encodeURIComponent(target) : ""))).history; }
+    catch (err) { list.replaceChildren(h("p", { class: "muted" }, err.message)); return; }
+    if (!rows.length) { list.replaceChildren(h("p", { class: "muted hist-empty" }, t("No chat has changed anything here yet."))); return; }
+    list.replaceChildren(...rows.map((e) => {
+      const keys = e.before === null ? [] : Object.keys(e.after).filter((k) => !HIDDEN_FIELDS.has(k));
+      const when = e.at.slice(5, 16).replace("T", " ");
+      const undo = e.undone
+        ? h("span", { class: "muted hist-done" }, t("Undone {when}", { when: e.undone.slice(5, 16).replace("T", " ") }))
+        : h("button", { class: "btn sm", "data-hid": e.id, onclick: async (ev) => {
+          ev.currentTarget.disabled = true;
+          try {
+            const r = await api("POST", `/api/hunt/history/${encodeURIComponent(e.id)}/undo`);
+            const back = r.restored.filter((k) => !HIDDEN_FIELDS.has(k)).map((k) => t(CHANGE_FIELDS[k] || k));
+            const kept = r.kept.filter((k) => !HIDDEN_FIELDS.has(k)).map((k) => t(CHANGE_FIELDS[k] || k));
+            toast(r.restored[0] === "*" ? t("Undone: {name} is gone again", { name: e.name })
+              : kept.length ? t("Undone: {back} put back; {kept} changed since, so left as it is", { back: back.join(", ") || "—", kept: kept.join(", ") })
+              : t("Undone: {back} put back", { back: back.join(", ") }));
+            await loadHunt({ quiet: true });
+          } catch (err) { toast(err.message, { warn: true }); }
+          paint();
+        } }, icon("undo"), t("Undo"));
+      return h("div", { class: "hist-row" + (e.undone ? " is-undone" : ""), "data-id": e.id },
+        h("div", { class: "hist-main" },
+          h("div", { class: "hist-what" }, h("b", null, e.name), h("span", { class: "hist-act" }, t(CHANGE_CMDS[e.cmd] || e.cmd))),
+          h("div", { class: "muted hist-meta" }, when, chats[e.chat] ? h("span", { class: "hist-chat", title: chats[e.chat] }, chats[e.chat]) : null),
+          keys.length > 0 && h("details", { class: "hist-diff" },
+            h("summary", null, keys.map((k) => t(CHANGE_FIELDS[k] || k)).join(", ")),
+            keys.map((k) => h("div", { class: "hist-field" }, h("div", { class: "hist-k" }, t(CHANGE_FIELDS[k] || k)),
+              h("div", { class: "hist-before" + (blank(e.before[k]) ? " is-blank" : "") }, changeValue(k, e.before[k])),
+              h("div", { class: "hist-after" + (blank(e.after[k]) ? " is-blank" : "") }, changeValue(k, e.after[k])))))),
+        undo);
+    }));
+  };
+  paint();
+}
+
 function linkButton() {
   return h("button", { class: "btn sm", id: "hunt-from-link", disabled: !ui.chat.available,
     title: ui.chat.available ? t("Paste a posting's link: the AI reads it and fills in the company and the role") : missingAgentText(),
@@ -1343,6 +1432,7 @@ function companyPage(v) {
       c.site && h("button", { class: "btn sm", title: c.site, onclick: () => openInBrowser(c.site) }, icon("external"), t("Open its site")),
       h("button", { class: "btn icon ghost", title: t("More"), "aria-label": t("More"), onclick: (e) => openMenu(e.currentTarget, [
         c.site && { label: t("Open it in Resume Studio's browser"), icon: "globe", onClick: () => openOnSite(c.site) },
+        { label: t("What the AI changed"), icon: "history", onClick: () => historyModal({ target: c.id, name: c.name }) },
         c.site && { label: t("Sign in to it in Resume Studio's browser"), icon: "user", onClick: () => signInMode(c.site) },
         { label: c.logo ? t("Change the logo…") : t("Add a logo…"), icon: "file", onClick: () => pickLogo(c) },
         c.logo && { label: t("Remove the logo"), icon: "x", onClick: () => removeLogo(c) },
@@ -1622,6 +1712,7 @@ function appPage(v) {
       h("button", { class: "btn icon ghost", title: t("More"), "aria-label": t("More"), onclick: (e) => openMenu(e.currentTarget, [
         a.url && { label: t("Open the role's page"), icon: "external", onClick: () => openInBrowser(a.url) },
         a.co_app && { label: t("Its evaluation in {name}", { name: jobsTool().name }), icon: "bolt", onClick: () => openPosting(String(a.co_app)) },
+        { label: t("What the AI changed"), icon: "history", onClick: () => historyModal({ target: a.id, name: `${c.name} / ${a.role}` }) },
         { label: t("Delete this application"), icon: "trash", danger: true, onClick: () => deleteApp(a) }], { align: "end" }) }, icon("more")))),
     bookedCard(a),
     card(t("Progress"), a.applied ? t("applied {date}", { date: a.applied }) : t("not applied yet"), [

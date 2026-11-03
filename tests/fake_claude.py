@@ -314,7 +314,7 @@ while True:
     else:
         prompt, types = str(content or ""), ["text"]
     note("", {"argv": args, "stdin": prompt, "content": types, "cwd": os.getcwd(),
-              "env": {k: os.environ.get(k) for k in ("npm_config_cache", "PLAYWRIGHT_BROWSERS_PATH", "RESUME_STUDIO_CHAT") if os.environ.get(k)}})
+              "env": {k: os.environ.get(k) for k in ("npm_config_cache", "PLAYWRIGHT_BROWSERS_PATH", "RESUME_STUDIO_CHAT", "PYTHONUTF8") if os.environ.get(k)}})
     interrupted.clear()
     if not handle(prompt, content):
         # not sys.exit: shutting the interpreter down while the reader thread sits in stdin can hang on

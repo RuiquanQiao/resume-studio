@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from core.i18n import t
+from core.lost_text import HOW, first_lost, sample
 from core.server import App, BytesResponse, FileResponse, HttpError, Request
 from core.watcher import SignatureWatcher
 from jobs.base import JobTool, ToolError
@@ -23,13 +24,19 @@ from resume.service import Studio
 from . import geo as place_list
 from . import ics, logos, reader, writing
 from .geo import Geo
-from .logos import fetch_logo
+from .history import History, describe
+from .logos import fetch_logo, fetch_logo_in_browser
 from .postings import Postings, same_link, stale
 from .scan import Scanner
 from .store import LOGO_TYPES, STATE_IDS, Hunt, SameCompany
 from .views import Views
 
 TRACKERS = ["studio", "career-ops"]
+# the chat's commands that change a company or an application (scan and apply name theirs by id or list)
+CHANGES = {"edit-company", "fill", "about", "add-role", "edit-role", "status", "note", "book", "rebook", "unbook",
+           "sent", "scan-route", "postings"}
+# the ones kept in the history, each undoable (jobhunt/history.py); a scan's postings and a sent resume aren't
+RECORDED = {"add-company", "edit-company", "fill", "about", "add-role", "edit-role", "status", "note", "book", "rebook", "unbook"}
 
 
 def subset_to_send(studio: Studio, subset_id: str | None) -> str:
@@ -77,6 +84,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     geo = Geo(hunt.dir)
     scanner = Scanner(hunt, posts, tool, browser, lambda: app.bus.publish("hunt", {}))
     hunt.scanner = scanner   # the app (and tests) reach the scanner through the tracker
+    history = History(hunt)
+    hunt.history = history
     studio.on_subset_renamed.append(hunt.rename_subset)
     hunt.migrate()
     # the sign-ups the Applications tab kept before move in, once
@@ -263,7 +272,12 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 kept = sorted({*kept, "logo"})
             else:
                 try:
-                    data, ctype = fetch_logo(str(fields["logo_url"]))
+                    try:
+                        data, ctype = fetch_logo(str(fields["logo_url"]))
+                    except ValueError:
+                        if scanner.browser is None:
+                            raise
+                        data, ctype = fetch_logo_in_browser(scanner.browser, str(fields["logo_url"]))
                     stats = inspect(data, ctype)
                     why = logos.verdict(stats, data, ctype)
                     if why:   # not kept: the logo it had (if any) stays
@@ -552,6 +566,16 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         want_logos(c["id"])
         return company_view(c["id"])
 
+    # ---- what the AI changed, each undoable (jobhunt/history.py) ------------------------
+    @app.route("GET", "/api/hunt/history")
+    def get_history(req: Request):
+        target = (req.query.get("target") or [""])[0]
+        return {"history": history.entries(target=target)[:300]}
+
+    @app.route("POST", "/api/hunt/history/{hid}/undo")
+    def undo_change(req: Request):
+        return guard(lambda: history.undo(req.params["hid"], by="window"))
+
     @app.route("GET", "/api/hunt/companies/{cid}")
     def get_company(req: Request):
         return guard(lambda: company_view(req.params["cid"]))
@@ -704,7 +728,21 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         cmd = str(b.get("cmd") or "")
         a = b.get("args") or {}
         a = a if isinstance(a, dict) else {}
+        lost = first_lost(a)
+        if lost is not None:   # an agent's shell turned its Chinese into "?" on the way: keep nothing of it
+            raise HttpError(400, f"nothing was saved: {sample(lost)!r} came with its non-ASCII letters (Chinese and "
+                                 f"the like) turned into \"?\". {HOW}")
         src = "chat"
+        if cmd in CHANGES:   # what a chat changes it names exactly: a part of a name may be another company's
+            for key in ("ref", "company"):
+                v = str(a.get(key) or "").strip()
+                if v and not (v[:1] == "P" and v[1:].isdigit()):   # P12: a posting, by its id
+                    find = hunt.application if "/" in v or (v[:1] == "A" and v[1:].isdigit()) else hunt.company
+                    a[key] = guard(lambda: find(v, exact=True)["id"])
+        chat = str(b.get("chat") or "")
+        target = str(a.get("ref") or "") if cmd in RECORDED and cmd not in ("add-company", "add-role") else ""
+        kind = "application" if target[:1] == "A" else "company"
+        before = history.snapshot(kind, target) if target else None
 
         def run() -> Any:
             if cmd == "list":
@@ -805,10 +843,27 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 else:
                     r = send_company(ref, src)
                 return {"sent": r, "text": "sent"}
+            if cmd == "history":
+                ref = str(a.get("ref") or "").strip()
+                rid = "" if not ref else (hunt.application(ref) if "/" in ref or (ref[:1] == "A" and ref[1:].isdigit())
+                                          else hunt.company(ref))["id"]
+                return {"lines": [describe(e) for e in history.entries(target=rid)[:int(a.get("limit") or 30)]], "text": "history"}
+            if cmd == "undo":
+                return {**history.undo(str(a.get("change") or ""), by="chat"), "text": "undone"}
             raise HttpError(400, f"unknown command {cmd!r}; one of: list, show, add-company, edit-company, fill, add-role, "
-                                 "edit-role, status, note, book, rebook, unbook, ics, about, sent, scan, scan-route, postings, apply, keywords")
+                                 "edit-role, status, note, book, rebook, unbook, ics, about, sent, scan, scan-route, postings, apply, "
+                                 "keywords, history, undo")
 
         out = guard(run)
+        if cmd in RECORDED:
+            made = out.get("app") or out.get("company") or {}
+            rec = made.get("application") or made.get("company") or {}
+            rid = target or (rec.get("id") if out.get("text") == "added" else "") or ""   # not one already on the list
+            if rid:
+                k = "application" if rid[:1] == "A" else "company"
+                e = history.record(k, rid, before, history.snapshot(k, rid), cmd=cmd, chat=chat)
+                if e:
+                    out["change"] = e["id"]
         if cmd == "sent":
             app.bus.publish("hunt", {"versions": True})   # a version may have been kept: the window reloads its state
         return {**out, "states": STATE_IDS}

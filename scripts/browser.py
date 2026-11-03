@@ -30,7 +30,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from _bootstrap import resolve_data, server_state
+from _bootstrap import guard_args, read_input, resolve_data, server_state
 
 
 def server_url(data: Path) -> str:
@@ -61,10 +61,8 @@ def call(url: str, method: str, path: str, payload: dict | None = None) -> dict:
 
 
 def read_text(args: argparse.Namespace) -> str:
-    if getattr(args, "stdin", False):
-        return sys.stdin.buffer.read().decode("utf-8").rstrip("\n")
-    if getattr(args, "file", None):
-        return Path(args.file).read_text(encoding="utf-8").rstrip("\n")
+    if getattr(args, "stdin", False) or getattr(args, "file", None):
+        return read_input(args).rstrip("\n")
     if getattr(args, "text", None) is not None:
         return args.text
     sys.exit("error: give the text with --text, --stdin or --file")
@@ -134,6 +132,7 @@ def main() -> int:
     p.add_argument("state", choices=["doing", "done", "failed", "skipped"]); p.add_argument("--note", default="")
     p = sub.add_parser("signed-out", help="the site wants the user to sign in"); p.add_argument("site")
     args = ap.parse_args()
+    guard_args()
 
     url = server_url(resolve_data(args.data))
     c = args.cmd

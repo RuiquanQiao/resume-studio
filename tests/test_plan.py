@@ -104,6 +104,13 @@ def test_claude_writes_the_plan_from_its_command_without_the_window(data_file):
     assert code != 0 and "error:" in out
     code, out = cli(data_file, "versions")
     assert out.strip().startswith("v1")
+    # a plan piped through Windows PowerShell arrives with its Chinese as "?": refused, no version made of it
+    lost = DOC.encode("ascii", errors="replace").decode("ascii")
+    code, out = cli(data_file, "write", "--stdin", "--why", "rewrite", stdin=lost)
+    assert code != 0 and "nothing was saved" in out
+    code, out = cli(data_file, "note", "??????")
+    assert code != 0 and "nothing was saved" in out
+    assert cli(data_file, "versions")[1].strip().count("\n") == 0 and "?" not in cli(data_file, "show")[1]
 
 
 def test_the_window_edits_ticks_and_goes_back_through_the_api(server, data_file):

@@ -29,7 +29,13 @@ it only through this command (Bash); every call prints what is there now, and th
 - `{j} add-company "<name>" [--site <careers url>] [--alias Xinghe]` — refused when the name or an alias is on the
   list already (use that company), and when it is close to one (字节 / 字节跳动有限公司): `--different` only when it
   really is another company. A region's arm (麦当劳中国 next to 麦当劳) counts as another company by itself.
-  · `edit-company <company> [--name|--site|--subset SUB-002|--note|--account ..]`
+  · `edit-company <company> [--name|--site|--subset SUB-002|--note|--account ..]`; `--alias A --alias B` sets the
+  whole list of other names (leave one out to drop it), `--no-aliases` clears it.
+  A change names its company or role exactly: its id (C12, A3) or its whole name or alias; a part of one is
+  refused with the names it could be.
+- Every change you make is kept with an id (`kept as change H12`). `{j} history [<company>]` lists them;
+  `{j} undo H12` puts back what one replaced. Changed the wrong company or role? Undo it at once and tell the
+  user, rather than writing over it again.
 - `{j} fill <company> --stdin` with JSON — what you found out about the company, **every field at once**:
   `{{"name": "<official name>", "aliases": [..], "industry": "..", "strength": "..", "hq": "<its headquarters' city>",
   "size": "..", "sites": [{{"url": "..", "kind": "campus|intern|social|other", "system": "own site|Moka|北森|飞书|Greenhouse|.."}}],

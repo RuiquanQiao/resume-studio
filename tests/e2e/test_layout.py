@@ -218,6 +218,21 @@ LOGO = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000
                      "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082")
 
 
+def ai_changes(c):
+    """What a chat changed (jobhunt/history.py): long values, a URL with nothing to break on, a role, a status, one undone."""
+    companies(c)
+    do = lambda cmd, args: c.server.req("POST", "/api/hunt/do", {"cmd": cmd, "args": args, "chat": "layout"})[1]  # noqa: E731
+    do("fill", {"ref": "C1", "fields": {
+        "industry": "智能卫浴及家居制造、商用车自动驾驶、人工智能与物流科技、跨境电商、消费电子配件" * 2,
+        "aliases": ["苏州智加科技有限公司", "九牧集团有限公司", "JOMOO", "Shenzhen Sinexcel Electric Co., Ltd."],
+        "sources": {"industry": "https://www.example.com/front/95fb9a2da3de485698f23b46b101a99f/" + "a" * 120}}})
+    aid = do("add-role", {"company": "C1", "role": "算法工程师（自动驾驶规划控制方向，2027届校园招聘，苏州 / 上海 / 北京）"})["app"]["application"]["id"]
+    do("status", {"ref": aid, "status": "interview"})
+    do("edit-company", {"ref": "C1", "note": "零售岗位先在厦门培训，再分配地区；具体岗位、薪酬和工作地点需向招聘方确认。"})
+    first = c.server.req("GET", "/api/hunt/history")[1]["history"][-1]["id"]   # the fill: oldest last
+    assert c.server.req("POST", f"/api/hunt/history/{first}/undo")[0] == 200
+
+
 def filled_companies(c):
     """Companies the way Claude's fill and a scan leave them: logos, strength, roles, open postings, news."""
     companies(c)
@@ -476,6 +491,13 @@ STATES = [
           [".modal .fm-notice-slot .fm-notice", ".modal .fm-notice-acts"], prepare=companies),
     State("applying, an application's page", then(applying("apps"), click(".dbv-title >> nth=0")), ["#app-status"],
           prepare=companies),
+    State("applying, what the AI changed, nothing yet", then(applying("companies"), click("#hunt-history"), wait(".hist-modal .hist-empty")),
+          [".hist-modal .hist-empty"], prepare=companies),
+    State("applying, what the AI changed, long changes, one undone",
+          then(applying("companies"), click("#hunt-history"), wait(".hist-modal .hist-row"),
+               js("() => document.querySelectorAll('.hist-diff').forEach((d) => { d.open = true; })")),
+          [".hist-row .hist-field .hist-before", ".hist-row .hist-after", ".hist-row.is-undone .hist-done", ".hist-before.is-blank",
+           ".hist-row .hist-act"], prepare=ai_changes),
     State("applying, companies filled in, with today's changes", applying("companies"),
           [".htable .co-logo img", ".htable .role-chip.open-chip", ".scan-news .news-row", ".scan-news .note-bar"], prepare=filled_companies),
     State("applying, a company's open roles", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),

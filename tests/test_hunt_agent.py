@@ -941,3 +941,28 @@ def test_claude_is_told_to_fill_scan_and_read_links():
     assert "posted in the last 12 months" in note
     assert str(prompts.OPENINGS) in note and prompts.OPENINGS.is_file()       # where to find employers worth adding
     assert str(prompts.RISKS) in note and prompts.RISKS.is_file()             # the traps in a posting, a company, an offer
+
+
+def test_a_logo_a_site_wont_hand_a_script_comes_through_the_browser(live, data_file, monkeypatch):
+    # 2026-11-03: 九牧's site closed the connection on the download, and the AI gave up on its logo
+    import base64
+
+    class Browser:
+        def __init__(self):
+            self.read = []
+
+        def read_page(self, url, script, timeout=60):
+            self.read.append(url)
+            return {"type": "image/png", "b64": base64.b64encode(PNG).decode()}
+
+    b = Browser()
+    monkeypatch.setattr(live.inst.hunt.scanner, "browser", b)
+    cli(data_file, "add-company", "九牧集团")
+    url = "http://127.0.0.1:9/logo.png"   # nothing listens: the script's download fails
+    code, out = cli(data_file, "fill", "九牧集团", "--stdin", stdin=json.dumps({"logo_url": url}))
+    assert code == 0 and b.read == [url] and "logo not saved" not in out
+    assert live.inst.hunt.logo_path("九牧集团").read_bytes() == PNG
+    # when the browser can't either, the AI is told where else to look rather than to give up
+    b.read_page = lambda url, script, timeout=60: {"error": "HTTP 403"}
+    code, out = cli(data_file, "fill", "九牧集团", "--stdin", stdin=json.dumps({"logo_url": url}))
+    assert "logo not saved" in out and "Wikimedia" in out and "only after several" in out

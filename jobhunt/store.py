@@ -12,6 +12,7 @@ Plain files next to the data file, in our own schema, so switching trackers lose
                                      where, note}],
                                      co_app, created, updated}]}
     resume-studio-data/hunt/logos/C1.png       a company's logo, downloaded once (docs/JOB_HUNT.md, 2026-10-18)
+    resume-studio-data/hunt/history.json       what chats changed, each undoable (jobhunt/history.py)
 
 A company fills itself: Claude researches it and sends every field at once (`fill`), each with its source.
 A field the user edits in the window goes into `kept`, and Claude's later fills leave it alone. Deadlines
@@ -461,8 +462,10 @@ class Hunt:
     def companies(self) -> list[dict]:
         return self._companies()["companies"]
 
-    def company(self, ref: str) -> dict:
-        """By id ("C2") or by name or alias, any case and spacing."""
+    def company(self, ref: str, exact: bool = False) -> dict:
+        """By id ("C2") or by name or alias, any case and spacing; a unique part of one is enough unless `exact`.
+        A change from a chat is exact: a part of a name once matched another company (a name that arrived as
+        "????" was part of an alias "??????????"), and the first company's research was written over the second's."""
         cs = self.companies()
         r = str(ref or "").strip()
         hit = next((c for c in cs if c["id"] == r), None)
@@ -472,7 +475,10 @@ class Hunt:
         hits = [c for c in cs if k and (k == _key(c["name"]) or k in {_key(a) for a in c.get("aliases") or []})]
         if len(hits) == 1:
             return hits[0]
-        hits = [c for c in cs if k and (k in _key(c["name"]) or any(k in _key(a) for a in c.get("aliases") or []))]
+        hits = hits or [c for c in cs if k and (k in _key(c["name"]) or any(k in _key(a) for a in c.get("aliases") or []))]
+        if exact and hits:
+            raise KeyError(t("No company is called “{ref}”: did you mean {names}? Give its id or its whole name",
+                             ref=r, names=", ".join(f"{c['name']} ({c['id']})" for c in hits[:5])))
         if len(hits) == 1:
             return hits[0]
         if hits:
@@ -877,8 +883,9 @@ class Hunt:
             apps = [a for a in apps if a["company"] == cid]
         return apps
 
-    def application(self, ref: str) -> dict:
-        """By id ("A3"), or "Company/Role" (any case; a unique part of the role is enough)."""
+    def application(self, ref: str, exact: bool = False) -> dict:
+        """By id ("A3"), or "Company/Role" (any case; a unique part of the role is enough, and of the company
+        unless `exact`)."""
         r = str(ref or "").strip()
         apps = self.applications()
         hit = next((a for a in apps if a["id"] == r), None)
@@ -887,7 +894,7 @@ class Hunt:
         if "/" not in r:
             raise KeyError(t("No application “{ref}”: give its id (A3) or Company/Role", ref=r))
         cref, role = r.split("/", 1)
-        c = self.company(cref)
+        c = self.company(cref, exact)
         mine = [a for a in apps if a["company"] == c["id"]]
         k = _key(role)
         hits = [a for a in mine if _key(a["role"]) == k] or [a for a in mine if k and k in _key(a["role"])]

@@ -52,6 +52,18 @@ DEFAULT_TOOLS = [
 MODES = ["default", "acceptEdits", "plan", "auto"]
 IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 
+# Agents on Windows run commands in Windows PowerShell, which pipes text into a program as ASCII: Codex sent a
+# company's Chinese name as ?????????? that way, and it was saved. The scripts refuse such text; this says why first.
+WINDOWS_TEXT_NOTE = """\
+## Sending text with Chinese (or any non-ASCII letter) on Windows
+
+Windows PowerShell hands text piped into a program (`@'...'@ | python ...`, `Get-Content x | python ...`) to it as
+ASCII: every Chinese letter arrives as "?". Where a command takes `--stdin`, run it with a bash heredoc
+(`<<'EOF'`), or write the text to a UTF-8 file in the system's temp folder and pass `--file <path>` instead.
+Arguments (`--why "..."`, `--note "..."`) arrive intact. The scripts refuse text whose letters turned into "?";
+send it again one of these ways.
+"""
+
 
 def valid_model(value: Any) -> bool:
     return value is None or valid_model_id(value)
@@ -358,6 +370,8 @@ class ChatRunner:
                 context = ws.context()
         if ws is None or ws.context is None:
             context = "\n".join([context.rstrip(), *(n() for n in self.notes)]).strip() + "\n"
+            if os.name == "nt":
+                context += "\n" + WINDOWS_TEXT_NOTE
         self.store.append(chat_id, msg)
         if chat.get("title") in (None, "", *UNTITLED, t("New chat")):
             self.store.update_meta(chat_id, title=_title_from(text))
@@ -370,8 +384,9 @@ class ChatRunner:
         spec = {"chat": chat, "prefix": prefix, "prompt": text, "images": images, "context": context,
                 "add_dirs": [str(Path(d)) for d in dict.fromkeys(dirs) if d and Path(d).exists()],
                 "cwd": ws.cwd if ws else self.cwd,
-                # scripts/browser.py sends the chat's id, so the chat drives a browser tab of its own
-                "env": {**os.environ, **(ws.env if ws else {}), "RESUME_STUDIO_CHAT": chat_id},
+                # scripts/browser.py sends the chat's id, so the chat drives a browser tab of its own; Python the
+                # agent runs speaks UTF-8, not the console's code page (GBK), which the agent read back as "��"
+                "env": {"PYTHONUTF8": "1", **os.environ, **(ws.env if ws else {}), "RESUME_STUDIO_CHAT": chat_id},
                 "workspace": ws}
         turn = Turn(chat_id, on_done)
         turn.driver = driver_for(agent)

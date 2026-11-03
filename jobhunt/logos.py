@@ -31,12 +31,45 @@ def fetch_logo(url: str) -> tuple[bytes, str]:
     except (urllib.error.URLError, OSError, ValueError) as e:
         raise ValueError(t("Couldn't download the logo: {error}", error=str(getattr(e, "reason", e))))
     if ctype.startswith(("application/octet-stream", "binary/", "text/plain")) or not ctype:   # some CDNs don't say
-        head = data[:16]
-        ctype = ("image/png" if head.startswith(b"\x89PNG") else "image/jpeg" if head.startswith(b"\xff\xd8")
-                 else "image/gif" if head.startswith(b"GIF8") else "image/webp" if head[8:12] == b"WEBP"
-                 else "image/x-icon" if head.startswith(b"\x00\x00\x01\x00")
-                 else "image/svg+xml" if b"<svg" in data[:400] else ctype)
+        ctype = sniff(data, ctype)
     return data, ctype
+
+
+# the picture, read by the page itself: a site that turns away a script's download (九牧's closed the connection,
+# 2026-11-03) serves a browser that opened it
+_BROWSER_FETCH = """async () => {
+  const r = await fetch(location.href, { credentials: "include" });
+  const b = new Uint8Array(await r.arrayBuffer());
+  if (!r.ok) return { error: "HTTP " + r.status };
+  if (b.length > 2000000) return { error: "over 2 MB" };
+  let s = "";
+  for (let i = 0; i < b.length; i += 32768) s += String.fromCharCode.apply(null, b.subarray(i, i + 32768));
+  return { type: r.headers.get("content-type") || "", b64: btoa(s) };
+}"""
+
+
+def fetch_logo_in_browser(browser, url: str) -> tuple[bytes, str]:
+    """fetch_logo through Resume Studio's own browser, in a tab of its own off the screen."""
+    import base64
+    try:
+        got = browser.read_page(url, _BROWSER_FETCH, timeout=30) or {}
+    except Exception as e:  # noqa: BLE001  (the browser, the page)
+        raise ValueError(t("Couldn't download the logo: {error}", error=str(e)))
+    if got.get("error") or not got.get("b64"):
+        raise ValueError(t("Couldn't download the logo: {error}", error=got.get("error") or "empty"))
+    data = base64.b64decode(got["b64"])
+    ctype = str(got.get("type") or "")
+    if not ctype.startswith("image/"):
+        ctype = sniff(data, ctype)
+    return data, ctype
+
+
+def sniff(data: bytes, ctype: str) -> str:
+    head = data[:16]
+    return ("image/png" if head.startswith(b"\x89PNG") else "image/jpeg" if head.startswith(b"\xff\xd8")
+            else "image/gif" if head.startswith(b"GIF8") else "image/webp" if head[8:12] == b"WEBP"
+            else "image/x-icon" if head.startswith(b"\x00\x00\x01\x00")
+            else "image/svg+xml" if b"<svg" in data[:400] else ctype)
 
 
 class _Icons(HTMLParser):

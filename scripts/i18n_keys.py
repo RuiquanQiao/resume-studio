@@ -28,7 +28,8 @@ _JS_TABLES = {
     "chat.js": ["BUILTIN_DESC", "CHAT_STATES"],
     "jobs.js": ["STATE_NAMES", "DECISIONS", "IMPORTANCE", "VALUE_NAMES", "CHECK_NAMES", "STEP_NAMES", "MODE_NAMES", "WEB_STEPS"],
     "autofill.js": ["OPS", "APPLIED", "SECTION_NAMES", "FIELD_NAMES", "ADD_ONE"],
-    "hunt.js": ["HUNT_TABS", "HSTATES", "HCHANNELS", "SITE_KINDS", "BATCH_NAMES", "PLACE_KINDS", "BOOKED_KINDS"],
+    "hunt.js": ["HUNT_TABS", "HSTATES", "HCHANNELS", "SITE_KINDS", "BATCH_NAMES", "PLACE_KINDS", "BOOKED_KINDS",
+               "CHANGE_FIELDS", "CHANGE_CMDS"],
     "dbview.js": ["FILTER_OPS", "LAYOUT_NAMES", "LAYOUT_AS"],
 }
 _JS_GROUPS = {"jobs.js": ["MODE_GROUPS"]}   # [["Group title", [...]], ...]

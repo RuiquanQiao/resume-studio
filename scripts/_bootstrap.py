@@ -167,3 +167,40 @@ def server_state(data: Path) -> Path:
         if (data.parent / sub / "server.json").is_file():
             return data.parent / sub / "server.json"
     return data.parent / "resume-studio-data" / ".cache" / "server.json"
+
+
+def _lost(where: str, text: str) -> None:
+    from core.lost_text import HOW, sample
+    sys.exit(f"error: nothing was saved: {where} reached this script with its non-ASCII letters (Chinese and the like) "
+             f"turned into \"?\" ({sample(text)!r}). " + HOW)
+
+
+def guard_args(argv: list[str] | None = None) -> None:
+    """Refuse a command whose arguments lost their non-ASCII letters on the way in."""
+    from core.lost_text import lost_letters
+    for arg in sys.argv[1:] if argv is None else argv:
+        if lost_letters(arg):
+            _lost(f"the argument {arg[:40]!r}", arg)
+
+
+def read_input(args) -> str:
+    """The text of --stdin or --file ("" when neither is given), as UTF-8 (a BOM, or UTF-16 from PowerShell's
+    Out-File, is read too), refused when its non-ASCII letters were lost on the way."""
+    if getattr(args, "stdin", False):
+        raw, where = sys.stdin.buffer.read(), "the text on stdin"
+    elif getattr(args, "file", None):
+        try:
+            raw, where = Path(args.file).read_bytes(), f"the text in {args.file}"
+        except OSError as e:
+            sys.exit(f"error: can't read {args.file} ({e.strerror or e})")
+    else:
+        return ""
+    try:
+        text = raw.decode("utf-16") if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        sys.exit(f"error: nothing was saved: {where} isn't UTF-8 (probably the system's code page, such as GBK). "
+                 "Write it as UTF-8 and send it again.")
+    from core.lost_text import lost_letters
+    if lost_letters(text):
+        _lost(where, text)
+    return text

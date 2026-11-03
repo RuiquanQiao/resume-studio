@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import shutil
 import time
 import urllib.parse
@@ -137,6 +138,9 @@ def test_one_chat_knows_every_workspace_and_what_is_on_screen(server, data_file,
     assert "hunt.py" in ctx and "browser.py" in ctx and str(data_file.resolve()) in ctx
     assert "On screen right now: the company 星河科技" in ctx
     assert "The entry being edited" not in ctx   # none was open
+    # on Windows it is told how to send Chinese so it isn't turned into "?", and the Python it runs speaks UTF-8
+    assert ("Windows PowerShell hands text piped into a program" in ctx) == (os.name == "nt")
+    assert calls(fake_claude)[0]["env"].get("PYTHONUTF8") == "1"
 
 
 def _info(server):

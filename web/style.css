@@ -520,6 +520,28 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .modal input { width: 100%; height: 34px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 0 10px; background: var(--panel); margin-bottom: 14px; }
 .modal input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 .modal .acts { display: flex; justify-content: flex-end; gap: 8px; }
+/* what the AI changed (web/hunt.js historyModal): one row per change, undo on the right */
+.modal.hist-modal { width: min(680px, 94vw); }
+.hist-list { max-height: min(60vh, 560px); overflow-y: auto; margin: 0 -20px 14px; padding: 0 20px; border-top: 1px solid var(--line); }
+.hist-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.hist-row.is-undone .hist-what { color: var(--text-3); }
+.hist-main { flex: 1; min-width: 0; }
+.hist-what { overflow-wrap: anywhere; }
+.hist-act { margin-left: 8px; color: var(--text-2); }
+.hist-meta { display: flex; gap: 10px; font-size: 12px; margin-top: 2px; min-width: 0; }
+.hist-chat { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.hist-row > .btn, .hist-done { flex-shrink: 0; }
+.hist-done { font-size: 12px; padding-top: 4px; }
+.hist-diff { margin-top: 6px; font-size: 12.5px; }
+.hist-diff summary { cursor: pointer; color: var(--text-2); overflow-wrap: anywhere; }
+.hist-field { display: grid; grid-template-columns: 96px minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding: 6px 0 0; }
+.hist-k { color: var(--text-3); }
+.hist-before, .hist-after { white-space: pre-wrap; overflow-wrap: anywhere; border-radius: var(--r-sm); padding: 4px 6px; max-height: 160px; overflow-y: auto; }
+.hist-before { background: var(--bad-soft); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+.hist-after { background: var(--ok-soft); }
+.hist-before.is-blank, .hist-after.is-blank { background: var(--panel-2); color: var(--text-3); text-decoration: none; }
+.hist-empty { padding: 14px 0; margin: 0; }
+@media (max-width: 560px) { .hist-field { grid-template-columns: minmax(0, 1fr); } }
 .fm-notice { margin: -4px 0 14px; padding: 10px 12px; border-radius: var(--r); background: var(--warn-soft); font-size: 12.5px; }
 .fm-notice p { margin: 0 0 6px; color: var(--text); font-weight: 600; }
 .fm-same { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 6px; }
