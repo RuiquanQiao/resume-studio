@@ -311,14 +311,35 @@ def _region_names() -> tuple[str, ...]:
     return _regions
 
 
+# a name's words: Latin-script words whole ("Tencent Cloud" is tencent, cloud), every CJK / kana / hangul
+# character a word of its own (字节 is inside 字节跳动; ブリヂストン inside ブリヂストンタイヤ)
+_WIDE = r"\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff"
+_WORD = re.compile(rf"[{_WIDE}]|[^\s·・\-_/()（）,，.。{_WIDE}]+")
+
+
+def _words(name: str) -> tuple[str, set[int]]:
+    """A name's key (as _key makes it) and the places in it where a word starts or ends."""
+    key, edges = "", {0}
+    for w in _WORD.findall(str(name or "").casefold()):
+        key += w
+        edges.add(len(key))
+    return key, edges
+
+
 def _close(a: str, b: str) -> bool:
-    """Two name keys that may be one company: one inside the other (字节 / 字节跳动有限公司), unless what the
-    longer one adds starts or ends with a country or region (麦当劳中国有限公司, McDonald's Australia Pty Ltd,
-    日本マクドナルド next to 麦当劳, McDonald's, マクドナルド); in its middle, a name is a word's part (タイヤ)."""
-    short, long = sorted((a, b), key=len)
-    if not short or short == long or short not in long or len(short) < (2 if re.search(r"[^\x00-\x7f]", short) else 3):
+    """Two names that may be one company: one is whole words of the other (字节 / 字节跳动有限公司, ByteDance /
+    ByteDance Ltd, TCL / TCL实业), never a piece of a word (TCL is not in "Tencent Cloud" nor in Rootcloud),
+    unless what the longer one adds starts or ends with a country or region (麦当劳中国有限公司, McDonald's
+    Australia Pty Ltd, 日本マクドナルド next to 麦当劳, McDonald's, マクドナルド); in its middle, a name is a
+    word's part (タイヤ)."""
+    (short, _), (long, edges) = sorted((_words(a), _words(b)), key=lambda x: len(x[0]))
+    if not short or short == long or len(short) < (2 if re.search(r"[^\x00-\x7f]", short) else 3):
         return False
-    rest = long.replace(short, "", 1)
+    at = [i for i in range(len(long) - len(short) + 1)
+          if long.startswith(short, i) and i in edges and i + len(short) in edges]
+    if not at:
+        return False
+    rest = long[:at[0]] + long[at[0] + len(short):]
     return not any(rest.startswith(r) or rest.endswith(r) for r in _region_names())
 
 
@@ -591,10 +612,10 @@ class Hunt:
         for c in self.companies() if k else []:
             if c["id"] == but:
                 continue
-            keys = [x for x in (_key(n) for n in [c["name"], *(c.get("aliases") or [])]) if x]
-            if k in keys:
+            names = [n for n in [c["name"], *(c.get("aliases") or [])] if _key(n)]
+            if k in [_key(n) for n in names]:
                 return c, []
-            if any(_close(k, x) for x in keys):
+            if any(_close(name, n) for n in names):
                 close.append(c)
         return None, close
 

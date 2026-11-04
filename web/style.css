@@ -546,7 +546,7 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .fm-notice p { margin: 0 0 6px; color: var(--text); font-weight: 600; }
 .fm-same { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 6px; }
 .fm-same li { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.fm-notice-acts { display: flex; }   /* left: where Add was a moment ago, a second click must not land on it */
+.fm-notice .fm-notice-hint { margin: 2px 0 0; font-weight: 400; color: var(--text-2); }
 .fm-same-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }

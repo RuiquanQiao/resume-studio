@@ -327,7 +327,10 @@ function dbvViewMenu(anchor, o, tb, v, repaint) {
       dbvSave(o.table, repaint);
     } },
     "sep",
-    { label: t("Delete this view"), icon: "trash", danger: true, disabled: tb.views.length < 2, onClick: () => {
+    // its filters, sorts and columns go with it: asked first, like every other delete
+    { label: t("Delete this view"), icon: "trash", danger: true, disabled: tb.views.length < 2, onClick: async () => {
+      if (!(await modal({ title: t("Delete the view “{name}”?", { name: v.name }), message: t("Its filters, sorting and columns go with it. The rows themselves are untouched."),
+        ok: t("Delete view"), danger: true }))) return;
       tb.views = tb.views.filter((x) => x !== v);
       tb.active = tb.views[0].id;
       dbvSave(o.table, repaint);

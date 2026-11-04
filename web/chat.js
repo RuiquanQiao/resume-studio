@@ -1084,7 +1084,9 @@ async function rewindAt(index) {
   if (!ui.chat.id) return;
   if (ui.chat.running) { toast(t("{agent} is still replying; stop it before rewinding", { agent: agentOf().short })); return; }
   const later = ui.chat.messages.length - index;
-  const ok = await modal({ title: t("Go back to before this message?"), ok: t("Rewind"),
+  // the messages leave the chat for good (Fork keeps them): a destructive answer, so it looks like one
+  const ok = await modal({ title: t("Go back to before this message?"), danger: true,
+    ok: later > 1 ? t("Remove {n} messages and rewind", { n: later }) : t("Remove it and rewind"),
     message: t("This message and the {n} after it leave this chat, and {agent} forgets them; the message goes back into the input so you can edit and resend it. Resume data is not rolled back (undo {agent}'s changes in each entry). To keep the original chat, use Fork.", { n: later - 1, agent: agentOf().short }) });
   if (!ok) return;
   try {
@@ -1195,11 +1197,25 @@ function questionCard(a) {
   }
   const picked = qs.map(() => new Set());
   const others = [];
-  const submit = h("button", { type: "button", class: "btn sm primary", disabled: true, onclick: () => send() }, t("Submit"));
-  const valid = () => qs.every((q, i) => picked[i].size || others[i].value.trim());
-  const refresh = () => { submit.disabled = !valid(); };
+  // never a dead button: with questions unanswered it says how many, and a click takes you to the first of them
+  const submit = h("button", { type: "button", class: "btn sm primary", onclick: () => send() }, t("Submit"));
+  const left = h("span", { class: "ask-left muted" });
+  const missing = () => qs.map((q, i) => i).filter((i) => !(picked[i].size || others[i].value.trim()));
+  const valid = () => !missing().length;
+  const refresh = () => {
+    const n = missing().length;
+    left.textContent = n && qs.length > 1 ? t("{n} question left", { n }, "{n} questions left") : "";
+    body.querySelectorAll(".q.q-missing").forEach((x, i) => { if (!missing().includes(Number(x.dataset.i))) x.classList.remove("q-missing"); });
+  };
   const send = () => {
-    if (!valid()) return;
+    const miss = missing();
+    if (miss.length) {
+      const q = body.querySelector(`.q[data-i="${miss[0]}"]`);
+      q.classList.add("q-missing");
+      q.scrollIntoView({ block: "nearest" });
+      (q.querySelector(".q-opt") || others[miss[0]]).focus();
+      return;
+    }
     const answers = {};
     qs.forEach((q, i) => { answers[q.question] = [...picked[i], others[i].value.trim()].filter(Boolean).join(", "); });
     answerAsk(a, { answers }, card);
@@ -1223,10 +1239,11 @@ function questionCard(a) {
       refresh();
     });
     other.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); send(); } });
-    body.append(h("div", { class: "q" }, h("div", { class: "q-head" }, q.header && h("span", { class: "q-tag" }, q.header), h("span", null, q.question),
+    body.append(h("div", { class: "q", "data-i": String(i) }, h("div", { class: "q-head" }, q.header && h("span", { class: "q-tag" }, q.header), h("span", null, q.question),
       q.multiSelect && h("span", { class: "q-multi" }, t("pick any"))), h("div", { class: "q-opts" }, opts), other));
   });
-  card.append(body, h("div", { class: "ask-acts" }, submit, h("button", { type: "button", class: "btn sm ghost", onclick: () => answerAsk(a, { skip: true }, card) }, t("Skip"))));
+  refresh();
+  card.append(body, h("div", { class: "ask-acts" }, submit, left, h("button", { type: "button", class: "btn sm ghost", onclick: () => answerAsk(a, { skip: true }, card) }, t("Skip"))));
   return card;
 }
 

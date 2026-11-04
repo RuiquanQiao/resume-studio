@@ -56,18 +56,24 @@ function modal({ title, message = "", input = null, placeholder = "", ok = t("OK
     const field = input !== null ? h("input", { value: input, placeholder, spellcheck: "false", maxlength: optional ? 300 : null }) : null;
     const close = (val) => { root.replaceChildren(); document.removeEventListener("keydown", onKey, true); resolve(val); };
     const done = () => close(field ? (optional ? field.value.trim() : field.value.trim() || null) : true);
+    // a dialog that destroys something opens on Cancel, and Enter answers with the focused button: a stray Enter
+    // never deletes (the destructive one is pressed on purpose, or tabbed to)
     const onKey = (e) => {
       if (e.key === "Escape") { e.stopPropagation(); close(field ? null : false); }
-      if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); done(); }
+      if (e.key === "Enter" && !e.isComposing) {
+        e.preventDefault();
+        if (danger && !field) { if (document.activeElement === okBtn) done(); else close(false); return; }
+        done();
+      }
     };
+    const okBtn = h("button", { class: "btn " + (danger ? "danger-soft" : "primary"), onclick: done }, ok);
+    const cancelBtn = h("button", { class: "btn", onclick: () => close(field ? null : false) }, t("Cancel"));
     document.addEventListener("keydown", onKey, true);
     root.replaceChildren(h("div", { class: "modal-back", onmousedown: (e) => { if (e.target === e.currentTarget) close(field ? null : false); } },
       h("div", { class: "modal", role: "dialog", "aria-modal": "true" },
         h("h3", null, title), message && (message instanceof Node ? message : h("p", null, message)), field,
-        h("div", { class: "acts" },
-          h("button", { class: "btn", onclick: () => close(field ? null : false) }, t("Cancel")),
-          h("button", { class: "btn " + (danger ? "danger-soft" : "primary"), onclick: done }, ok)))));
-    setTimeout(() => (field || $(".modal .btn:last-child", root)).focus(), 0);
+        h("div", { class: "acts" }, cancelBtn, okBtn))));
+    setTimeout(() => (field || (danger ? cancelBtn : okBtn)).focus(), 0);
     if (field) field.select();
   });
 }
@@ -559,7 +565,7 @@ function outlineRows({ pop = false } = {}) {
         : t("{n} project has new progress since the last sync", { n: changed.length }, "{n} projects have new progress since the last sync")),
       changed.length === 1
         ? h("button", { class: "btn sm", onclick: () => select("entry", changed[0].id) }, t("View"))
-        : h("button", { class: "btn sm", "data-ai": "batch", disabled: !ui.chat.available, onclick: () => aiBatch("batch_sync") }, icon("sparkle"), t("Update one by one"))));
+        : h("button", { class: "btn sm", "data-ai": "batch", title: ui.chat.available ? null : missingAgentText(), disabled: !ui.chat.available, onclick: () => aiBatch("batch_sync") }, icon("sparkle"), t("Update one by one"))));
   }
 
   const included = new Set(job ? v.entries || [] : entries().map((e) => e.id));
@@ -694,8 +700,13 @@ function paintEditor({ flash = false, keepScroll = true } = {}) {
 function conflictBanner(ed) {
   return h("div", { class: "banner warn" }, icon("alert"),
     h("span", { class: "nb-text" }, t("The AI or another window just changed this item, and you have unsaved edits here.")),
-    h("button", { class: "btn sm", onclick: () => { resetEd(ed); paintItem(ed, { flash: true }); } }, t("Load the latest")),
-    h("button", { class: "btn sm danger-soft", onclick: () => saveItem(ed, true) }, t("Keep mine")));
+    // either answer drops someone's text: each says whose, and the one that drops the user's own typing asks first
+    h("button", { class: "btn sm", onclick: () => saveItem(ed, true) }, t("Keep mine")),
+    h("button", { class: "btn sm danger-soft", onclick: async () => {
+      if (!(await modal({ title: t("Discard your edits?"), message: t("What you typed here since the change goes, and the latest version loads."),
+        ok: t("Discard mine, load the latest"), danger: true }))) return;
+      resetEd(ed); paintItem(ed, { flash: true });
+    } }, t("Discard mine, load the latest")));
 }
 
 // ---- the document ----
@@ -2075,8 +2086,9 @@ function aiDiff(id) {
     changes.length && h("p", { class: "ai-review-summary" }, t("{n} changed item", { n: changes.length }, "{n} changed items")),
     h("div", { class: "ai-changes" }, rows),
     h("div", { class: "row", style: "margin-top:12px" },
-      h("button", { class: "btn sm", onclick: close }, icon("check"), changes.length ? t("Keep") : t("Got it")),
-      changes.length && h("button", { class: "btn sm danger-soft", onclick: () => undoAi(id) }, icon("undo"), t("Undo, back to before")),
+      // keeping is the expected answer; undo is the safe way back, not a destructive one
+      h("button", { class: "btn sm primary", onclick: close }, icon("check"), changes.length ? t("Keep") : t("Got it")),
+      changes.length && h("button", { class: "btn sm", onclick: () => undoAi(id) }, icon("undo"), t("Undo, back to before")),
       h("button", { class: "btn sm ghost", onclick: () => showChat() }, icon("chat"), t("Open the chat"))),
   ], { cls: "diff ai-review" });   // diff: sits flush in its doc card (style.css)
 }

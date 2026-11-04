@@ -152,6 +152,8 @@ textarea.ask-input { height: auto; line-height: 1.45; }
 .q .ask-input { width: 100%; }
 .plan-md { font-size: 13px; }
 .q + .q { margin-top: 10px; }
+.q.q-missing .q-head { color: var(--warn); }
+.ask-left { align-self: center; font-size: 12px; }
 .q-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; font-weight: 550; }
 .q-tag { padding: 0 6px; border-radius: 4px; font-size: 10.5px; line-height: 17px; color: var(--accent); background: var(--accent-soft); font-weight: 600; }
 .q-multi { font-size: 11px; font-weight: 400; color: var(--text-3); }

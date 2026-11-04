@@ -897,12 +897,12 @@ function scanNews() {
       return h("div", { class: "note-bar" }, icon("sparkle"), h("span", { class: "nb-text" }, [
         first && t("Can't be scanned automatically yet: {sites}. The AI reads each once and records how; after that, scans need no AI.", { sites: first }),
         again && t("The AI tried these and the scan still can't read them: {sites}.", { sites: again })].filter(Boolean).join(" ")),
-        h("button", { class: "btn sm", "data-ai": aiKey("learn", learn), disabled: !ui.chat.available, onclick: () => askLearn(learn) },
+        h("button", { class: "btn sm", "data-ai": aiKey("learn", learn), title: ui.chat.available ? null : missingAgentText(), disabled: !ui.chat.available, onclick: () => askLearn(learn) },
           icon("sparkle"), first ? t("Let AI learn them") : t("Let AI try again")));
     })(),
     noSites.length > 0 && h("div", { class: "note-bar" }, icon("alert"), h("span", { class: "nb-text" },
       t("{names}: no careers site known yet.", { names: noSites.map((c) => c.name).join(", ") })),
-      h("button", { class: "btn sm", "data-ai": aiKey("fill", noSites), disabled: !ui.chat.available, onclick: () => askFill(noSites) }, icon("sparkle"), t("Ask AI to find them"))),
+      h("button", { class: "btn sm", "data-ai": aiKey("fill", noSites), title: ui.chat.available ? null : missingAgentText(), disabled: !ui.chat.available, onclick: () => askFill(noSites) }, icon("sparkle"), t("Ask AI to find them"))),
     broke.length > 0 && h("div", { class: "note-bar warn" }, icon("alert"), h("span", { class: "nb-text" },
       t("{names}: the last scan didn't work; their pages say why.", { names: broke.map((c) => c.name).join(", ") }))));
   return box;
@@ -1143,29 +1143,45 @@ function platformsTable() {
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Platforms")),
       h("p", null, t("Your profiles on job platforms. Resume Studio keeps a copy of each, in step with the site: open one to see it field by field."))),
-    tableTools(h("button", { class: "btn sm primary", id: "hunt-new-platform", onclick: () => siteDialog(null) }, icon("plus"), t("Add a site"))),
+    // with no sites the card below is the start, its known sites one click each: the toolbar doesn't compete with it
+    tableTools(h("button", { class: "btn sm" + (sites.length ? " primary" : ""), id: "hunt-new-platform", onclick: () => siteDialog(null) }, icon("plus"), t("Add a site"))),
     sites.length ? dbView({ table: "platforms", props, rows: sites.filter((s) => matches(s.name, s.home)), rowId: (s) => s.id,
       open: (s) => openHunt("platform", s.id), defaults: [{ id: "v1", name: t("All platforms") }], repaint: paintHunt, empty: t("Nothing matches") }) : noSitesCard(),
   ];
 }
 
 // ================================================================ a small form dialog (several fields, nothing saved before OK)
-// `onOk(values, m)`, when given, saves while the form stays open: m.close(result), m.notice(node) shows something
-// above the buttons (cleared when a field changes), m.retry(extra) runs onOk again with more values
+// `onOk(values, m)`, when given, saves while the form stays open: m.close(result), m.notice(node, next) shows something
+// above the buttons (cleared when a field changes), m.retry(extra) runs onOk again with more values. A notice that
+// stops OK from going through says what OK does now, `next` = {label, run}: the main button takes that label and
+// action, so it is never a button that does nothing (TCL, 2026-11-04: "Add" kept failing, the way on was a small
+// button inside the notice). Changing a field puts OK back.
 function formModal({ title, message = "", fields, ok = t("OK"), onOk = null }) {
   return new Promise((resolve) => {
     const root = $("#modal-root");
     const inputs = {};
     const slot = h("div", { class: "fm-notice-slot" });
     let busy = false;
+    let next = null;
+    let since = 0;
+    const okBtn = h("button", { class: "btn primary", onclick: () => done() }, ok);
+    const notice = (node, nx = null) => {
+      slot.replaceChildren(node);
+      next = nx;
+      since = Date.now();
+      okBtn.textContent = nx ? nx.label : ok;
+    };
+    const reset = () => { if (slot.firstChild || next) { slot.replaceChildren(); next = null; okBtn.textContent = ok; } };
     const close = (val) => { root.replaceChildren(); document.removeEventListener("keydown", onKey, true); resolve(val); };
     const run = async (out) => {
       if (busy) return;
       busy = true;
-      try { await onOk(out, { close, notice: (node) => slot.replaceChildren(node), retry: (extra) => run({ ...out, ...extra }) }); }
+      try { await onOk(out, { close, notice, retry: (extra) => run({ ...out, ...extra }) }); }
       finally { busy = false; }
     };
     const done = () => {
+      // the click that brought the notice is not also its answer: a double-click on Add doesn't add anyway
+      if (next) { if (Date.now() - since > 400) next.run(); return; }
       const out = Object.fromEntries(Object.entries(inputs).map(([k, el]) => [k, el.value.trim()]));
       const missing = fields.find((f) => f.required && !out[f.key]);
       if (missing) { inputs[missing.key].focus(); return; }
@@ -1207,7 +1223,7 @@ function formModal({ title, message = "", fields, ok = t("OK"), onOk = null }) {
     };
     const rows = fields.map((f) => {
       inputs[f.key] = h("input", { id: "fm-" + f.key, value: f.value || "", placeholder: f.placeholder || "", spellcheck: "false", autocomplete: "off",
-        oninput: () => slot.replaceChildren() });
+        oninput: reset });
       return h("div", { class: "field" + (f.list && f.list.length ? " fm-combo" : "") }, h("label", { for: "fm-" + f.key }, f.label, f.hint && h("span", { class: "hint" }, f.hint)), inputs[f.key],
         f.list && f.list.length && suggest(f, inputs[f.key]));
     });
@@ -1215,7 +1231,7 @@ function formModal({ title, message = "", fields, ok = t("OK"), onOk = null }) {
       h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-label": title },
         h("h3", null, title), message && h("p", null, message), rows, slot,
         h("div", { class: "acts" }, h("button", { class: "btn", onclick: () => close(null) }, t("Cancel")),
-          h("button", { class: "btn primary", onclick: done }, ok)))));
+          okBtn))));
     setTimeout(() => (inputs[fields.find((f) => !f.value)?.key || fields[0].key]).focus(), 0);
   });
 }
@@ -1245,10 +1261,12 @@ function sameCompany(e, name, m, { label, pick }) {
   const when = (c) => (c.created ? t("added {date}", { date: c.created.slice(0, 10) }) : "");
   const row = (c) => h("li", null, h("span", { class: "fm-same-name" }, c.name, c.aliases.length ? h("span", { class: "hint" }, " · " + c.aliases.join(", ")) : null),
     h("span", { class: "hint" }, when(c)), h("button", { class: "btn sm", type: "button", onclick: () => pick(c) }, label(c)));
+  // the main button goes on: "Add anyway" when it may be another company; the company itself when it is that one
   m.notice(h("div", { class: "fm-notice", role: "alert" },
     h("p", null, same ? t("“{name}” is already on the list:", { name }) : t("“{name}” may be a company you already added:", { name })),
     h("ul", { class: "fm-same" }, ...(same ? [same] : close).map(row)),
-    !same && h("div", { class: "fm-notice-acts" }, h("button", { class: "btn sm", type: "button", onclick: () => m.retry({ different: true }) }, t("It's another company: add it")))));
+    !same && h("p", { class: "fm-notice-hint" }, t("If it's another company, add it anyway."))),
+    same ? { label: label(same), run: () => pick(same) } : { label: t("Add anyway"), run: () => m.retry({ different: true }) });
   return true;
 }
 
@@ -1469,7 +1487,7 @@ function companyPage(v) {
   return [
     backTo("companies"),
     h("div", { class: "ed-head" }, companyLogo(c, "lg"), h("h1", null, c.name), h("span", { class: "id" }, c.id), h("span", { class: "ed-acts" },
-      h("button", { class: "btn sm", id: "company-fill", "data-ai": aiKey("fill", [c]), disabled: !ui.chat.available, onclick: () => askFill([c]) }, icon("sparkle"),
+      h("button", { class: "btn sm", id: "company-fill", "data-ai": aiKey("fill", [c]), title: ui.chat.available ? null : missingAgentText(), disabled: !ui.chat.available, onclick: () => askFill([c]) }, icon("sparkle"),
         filledSome(c) ? t("Ask AI to fill it in again") : t("Ask AI to fill it in")),
       c.site && h("button", { class: "btn sm", title: c.site, onclick: () => openInBrowser(c.site) }, icon("external"), t("Open its site")),
       h("button", { class: "btn icon ghost", title: t("More"), "aria-label": t("More"), onclick: (e) => openMenu(e.currentTarget, [
@@ -1666,17 +1684,28 @@ function askFill(cs) {
   const check = huntCheck((d) => {
     const gaps = huntOf(d, ids).flatMap((c) => {
       const u = unfilled(c);
+      // its roles are part of the job: a site the scan still can't read, or no site at all, is not done
+      const ps = c.postings || {};
       return [u.empty.length && t("{company}: still empty: {fields}", { company: c.name, fields: u.empty.join(", ") }),
-        u.unsourced.length && t("{company}: no source for {fields}", { company: c.name, fields: u.unsourced.join(", ") })].filter(Boolean);
+        u.unsourced.length && t("{company}: no source for {fields}", { company: c.name, fields: u.unsourced.join(", ") }),
+        ps.needs === "claude" && t("{company}: its roles aren't in: the scan still can't read {sites}",
+          { company: c.name, sites: (ps.unrouted || []).map(siteName).join(", ") || t("a careers site") }),
+        ps.needs === "sites" && t("{company}: no careers site to bring its roles in from", { company: c.name })].filter(Boolean);
     });
-    if (!gaps.length) return { ok: true, say: t("Filled in, each with a source: {names}", { names: huntOf(d, ids).map((c) => c.name).join(", ") }) };
+    if (!gaps.length) return { ok: true, say: t("Filled in, each with a source, and its roles brought in: {names}", { names: huntOf(d, ids).map((c) => c.name).join(", ") }) };
     return { ok: false, say: gaps.join("\n"),
-      again: t("Some fields are still not done. {gaps}. Fill each in with a source, or tell me which ones you couldn't find and why.", { gaps: gaps.join("; ") }) };
+      again: t("Some of it is still not done. {gaps}. Fill each field in with a source and bring its roles in (learn every site the scan can't read), or tell me which step failed and the error you got.", { gaps: gaps.join("; ") }) };
   });
+  // one click does the whole company (user, 2026-11-04: "getting a company's information must never take two
+  // clicks"): its fields, its careers sites, every site the scan can't read learnt, and its roles brought in
   aiRun(aiKey("fill", cs), async () => {
     let ok = false;
     let fresh = true;   // one new chat for them all: the rest queue in it
-    for (const c of cs) { ok = await sendChat(t("Find out about {company} and fill in all its fields: industry, strength, headquarters, the cities it hires in, size, its careers sites, its logo and the About, each with a source.", { company: c.name }), { fresh }) || ok; fresh = false; }
+    for (const c of cs) {
+      ok = await sendChat(t("Find out about {company} and fill in all its fields: industry, strength, headquarters, the cities it hires in, size, its careers sites, its logo and the About, each with a source.", { company: c.name })
+        + " " + t("Then bring its open roles in: scan it, learn every careers site the scan can't read yet, and scan again until its roles are on the list. It is done only when they are, or when you've shown it has no careers site that lists roles."), { fresh }) || ok;
+      fresh = false;
+    }
     return ok;
   }, check);
 }
@@ -1748,7 +1777,9 @@ function appPage(v) {
   // a repaint (a refresh from the server, Claude's edits) rebuilds these, so what is typed lives in H.notes, not only in the box
   const draft = H.notes[a.id] || (H.notes[a.id] = { text: "", on: today() });
   const note = h("textarea", { id: "app-note-new", rows: 2, placeholder: t("What happened? e.g. 笔试已交"), spellcheck: "false",
-    oninput: (e) => { draft.text = e.target.value; } }, draft.text);
+    oninput: (e) => { draft.text = e.target.value; add.disabled = !draft.text.trim(); } }, draft.text);
+  // nothing to add yet: the button says so by being off, never a click that does nothing
+  const add = h("button", { class: "btn sm primary", id: "app-note-add", disabled: !draft.text.trim(), onclick: () => addAppNote(a, note.value, when.value) }, icon("plus"), t("Add"));
   const when = h("input", { type: "date", id: "app-note-on", value: draft.on, "aria-label": t("When"),
     oninput: (e) => { draft.on = e.target.value; }, onchange: (e) => { draft.on = e.target.value; } });
   return [
@@ -1763,7 +1794,7 @@ function appPage(v) {
     bookedCard(a),
     card(t("Progress"), a.applied ? t("applied {date}", { date: a.applied }) : t("not applied yet"), [
       h("div", { class: "field" }, h("label", { for: "app-note-new" }, t("Add to the timeline")), note,
-        h("div", { class: "row" }, when, h("span", { class: "spacer" }), h("button", { class: "btn sm primary", id: "app-note-add", onclick: () => addAppNote(a, note.value, when.value) }, icon("plus"), t("Add")))),
+        h("div", { class: "row" }, when, h("span", { class: "spacer" }), add)),
       timeline(v.events, [a]),
     ], { fold: "app-progress" }),
     card(t("The role"), "", [
@@ -1817,7 +1848,7 @@ function readButton(a, reading) {
 async function readPosting(a) {
   if (a.jd && !(await modal({ title: t("Replace the job description?"),
     message: t("The description here is replaced by the one on its page now. The location and the apply-by date are only filled where they are empty."),
-    ok: t("Replace") }))) return;
+    ok: t("Replace with its page"), danger: true }))) return;   // what was pasted or edited here is gone: no undo
   try {
     H.view = await api("POST", `/api/hunt/apps/${encodeURIComponent(a.id)}/read`, { replace: true });
     paintHunt();

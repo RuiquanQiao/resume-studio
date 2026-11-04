@@ -292,7 +292,8 @@ function syncCard(v) {
         h("li", null, t("From then on “Check for updates” reads {site} by itself in seconds, without AI, and you edit the copy here.", { site: site.name }))),
       h("p", { class: "muted" }, t("Nothing changes on {site} until you press “Make these changes”.", { site: site.name })),
       h("div", { class: "row" },
-        h("button", { class: "btn primary", id: "fill-check", "aria-busy": reading && "true", disabled: !ui.chat.available || reading, onclick: checkSite }, icon("sparkle"),
+        h("button", { class: "btn primary", id: "fill-check", "aria-busy": reading && "true", disabled: !ui.chat.available || reading,
+          title: ui.chat.available ? null : missingAgentText(), onclick: checkSite }, icon("sparkle"),
           reading ? t("The AI is reading…") : t("Read {site}", { site: site.name }))));
   }
   const c = v.checking;
@@ -318,16 +319,19 @@ function syncCard(v) {
         h("span", { class: "muted" }, v.synced_at ? t("synced {when}", { when: relTime(v.synced_at) }) : "")),
       status,
       h("span", { class: "spacer" }),
-      h("button", { class: "btn", id: "fill-check", "aria-busy": (!!c || reading) && "true", disabled: !!c || reading || (!r.recorded && !ui.chat.available), onclick: checkSite },
-        icon("refresh"), busyText || t("Check for updates")),
+      // a broken route can't check: the row's button is the way on, never one that fails the same way again
+      r.broken && !c && !reading
+        ? h("button", { class: "btn primary", id: "fill-check", disabled: !ui.chat.available, title: ui.chat.available ? null : missingAgentText(), onclick: learnRoute },
+          icon("sparkle"), t("Record the route anew"))
+        : h("button", { class: "btn", id: "fill-check", "aria-busy": (!!c || reading) && "true", disabled: !!c || reading || (!r.recorded && !ui.chat.available),
+          title: !r.recorded && !ui.chat.available ? missingAgentText() : null, onclick: checkSite },
+          icon("refresh"), busyText || t("Check for updates")),
       h("button", { class: "btn icon ghost", title: t("More"), "aria-label": t("More"), onclick: menu }, icon("more"))),
     h("div", { class: "fsy-route muted" }, r.recorded
       ? t("Reads {site} by the recorded route ({n} page), without AI.", { site: site.name, n: r.pages }, "Reads {site} by the recorded route ({n} pages), without AI.")
       : t("No read route yet: “Check for updates” lets the AI read {site} and record one.", { site: site.name })),
     r.broken && h("div", { class: "fill-banner warn" }, icon("alert"),
-      h("span", { class: "nb-text" }, t("The route no longer reads {site} ({error}). The site has probably changed; the AI can read it again and record the route anew.", { site: site.name, error: r.broken })),
-      // while the AI reads, "Check for updates" above already spins for it
-      !reading && h("button", { class: "btn sm primary", disabled: !ui.chat.available, onclick: learnRoute }, icon("sparkle"), t("Record the route anew"))),
+      h("span", { class: "nb-text" }, t("The route no longer reads {site} ({error}). The site has probably changed; the AI can read it again and record the route anew.", { site: site.name, error: r.broken }))),
     (lc.notes || []).map((n) => h("div", { class: "fill-banner" }, icon("alert"), h("span", { class: "nb-text" },
       n.kind === "removed_there_changed_here"
         ? t("“{item}” is gone from {site}, but you had edited it here: it stays in your copy and goes up again if you push it.", { item: n.label, site: site.name })
@@ -627,7 +631,8 @@ function noSitesCard() {
     h("p", { class: "muted" }, t("Add the sites whose profile should say what your resume says. Resume Studio knows a few; any other works too: the AI finds its way around the first time it reads it.")),
     h("div", { class: "row wrap" },
       (F.presets || []).map((p) => h("button", { class: "btn", onclick: () => addSite({ preset: p.id }) }, icon("plus"), p.name)),
-      h("button", { class: "btn primary", onclick: () => siteDialog(null) }, icon("plus"), t("Another site…"))));
+      // the sites it knows are one click each; "another" is the less likely path, so it doesn't outshine them
+      h("button", { class: "btn ghost", onclick: () => siteDialog(null) }, icon("plus"), t("Another site…"))));
 }
 
 async function addSite(body) {
@@ -757,6 +762,7 @@ function paintFillFoot() {
   const applying = (v.applying || []).length > 0;
   el.replaceChildren(...[
     h("span", { class: "ff-sum" }, applying ? t("The AI is making the changes in the browser; follow along in the chat.")
+      : F.tab === "push" && v.pending.length && !ui.chat.available ? missingAgentText()
       : nc ? t("Settle the {n} conflict first.", { n: nc }, "Settle the {n} conflicts first.")
       : over ? t("Some text is over {site}'s limit.", { site: site.name })
       : !v.pending.length ? t("Your copy says what {site} says.", { site: site.name })
@@ -764,7 +770,7 @@ function paintFillFoot() {
       : t("{n} change waits to go up", { n: v.pending.length }, "{n} changes wait to go up")),
     h("span", { class: "spacer" }),
     applying && h("button", { class: "btn", onclick: showBrowser }, t("Show the browser")),
-    F.tab !== "push" && v.pending.length > 0 && h("button", { class: "btn", id: "fill-review", onclick: () => setFillTab("push") },
+    F.tab !== "push" && v.pending.length > 0 && h("button", { class: "btn primary", id: "fill-review", onclick: () => setFillTab("push") },
       t("Review and push ({n})", { n: v.pending.length })),
     F.tab === "push" && h("button", { class: "btn primary", id: "fill-apply", disabled: applying || over || nc > 0 || !ticked.length || !ui.chat.available, onclick: applyPlan },
       icon("sparkle"), t("Make these changes on {site}", { site: site.name }))].filter(Boolean));

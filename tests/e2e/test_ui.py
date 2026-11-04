@@ -250,7 +250,8 @@ def test_conflict_banner_when_both_edit(page, server, data_file):
     text = data_file.read_text(encoding="utf-8").replace("Solo developer", "Changed elsewhere")
     data_file.write_text(text, encoding="utf-8")                      # same entry changes on disk
     page.wait_for_selector(".banner.warn", timeout=5000)
-    page.click(".banner.warn button:text('载入最新版本')")
+    page.click(".banner.warn button:text('放弃我的修改，载入最新')")
+    page.click(".modal .btn.danger-soft")                                      # dropping what was typed asks first
     page.wait_for_selector(".banner.warn", state="detached")
     assert page.input_value("#active input[data-key=subtitle]") == "Changed elsewhere"
     assert page.input_value("#active input[data-key=location]") == ""
@@ -644,9 +645,11 @@ def test_an_ai_button_starts_a_new_chat_unless_settings_say_otherwise(page, serv
     open_chat_tab(page)
     page.fill("#chat-input", "你好")
     page.keyboard.press("Enter")
+    page.wait_for_selector(".msg-user:has-text('你好')")
     page.wait_for_function(idle)
+    page.wait_for_function("() => !!ui.chat.id")
     talk = page.evaluate("ui.chat.id")
-    assert len(chats()) == 1
+    assert [c["id"] for c in chats()] == [talk], (talk, chats())
 
     def polish():
         open_entry(page, "EXP-002")
@@ -1188,13 +1191,37 @@ def test_signed_out_claude_explains_how_to_sign_in(page, server, fake_claude):
     assert help_.locator("code:has-text('claude')").count() >= 1
 
 
+def test_a_dialog_that_destroys_opens_on_cancel_and_a_stray_enter_keeps_things(page):
+    """Every danger dialog used to focus its Delete button, and Enter anywhere confirmed it."""
+    page.evaluate("() => { window.got = 'open'; modal({ title: 'Delete it?', ok: 'Delete', danger: true }).then((v) => { window.got = v; }); }")
+    page.wait_for_selector(".modal")
+    assert page.evaluate("() => document.activeElement.textContent") == "取消"
+    page.keyboard.press("Enter")
+    page.wait_for_selector(".modal", state="detached")
+    assert page.evaluate("window.got") is False
+    page.evaluate("() => { window.got = 'open'; modal({ title: 'Delete it?', ok: 'Delete', danger: true }).then((v) => { window.got = v; }); }")
+    page.wait_for_selector(".modal")
+    page.focus(".modal .btn.danger-soft")                                     # pressed on purpose: it deletes
+    page.keyboard.press("Enter")
+    page.wait_for_selector(".modal", state="detached")
+    assert page.evaluate("window.got") is True
+    page.evaluate("() => { window.got = 'open'; modal({ title: 'Save?', ok: 'Save' }).then((v) => { window.got = v; }); }")
+    page.wait_for_selector(".modal")
+    page.keyboard.press("Enter")                                               # a safe one: Enter is its answer
+    page.wait_for_selector(".modal", state="detached")
+    assert page.evaluate("window.got") is True
+
+
 def test_question_and_plan_cards_in_the_chat(page, server, fake_claude):
     open_chat_tab(page)
     page.fill("#chat-input", "QUESTION 颜色")
     page.keyboard.press("Enter")
     card = page.locator(".ask.ask-q.pending")
     card.wait_for()
-    assert card.locator("button:has-text('提交回答')").is_disabled()          # nothing picked yet
+    # nothing picked yet: Submit is never a dead button, a click takes you to the question left
+    card.locator("button:has-text('提交回答')").click()
+    page.wait_for_selector(".ask.ask-q.pending .q.q-missing")
+    assert page.locator(".ask.ask-q.pending").count() == 1                   # nothing was sent
     card.locator(".ask-input").fill("绿色")
     page.evaluate("() => { renderLive(true); renderChat(); }")              # redraws keep what is typed in the card
     assert card.locator(".ask-input").input_value() == "绿色"
@@ -1702,6 +1729,10 @@ def test_a_company_with_several_roles_goes_out_with_a_pinned_version(page, serve
     pg.click(".modal .btn.primary")
     pg.wait_for_selector(".modal .fm-notice li:has-text('星河科技')")
     assert pg.input_value("#fm-site") == "careers.example.com/social"         # nothing typed is lost
+    # the main button says the way on (TCL, 2026-11-04: "Add" did nothing, the way on hid inside the notice)
+    assert pg.inner_text(".modal .acts .btn.primary") == "仍然添加"
+    pg.click(".modal .acts .btn.primary")                                      # the double-click's second half: nothing
+    assert len(server.req("GET", "/api/hunt")[1]["companies"]) == 1
     for scheme in ("light", "dark"):
         pg.emulate_media(color_scheme=scheme)
         pg.wait_for_timeout(200)                                                # past the buttons' color transition
@@ -1711,10 +1742,30 @@ def test_a_company_with_several_roles_goes_out_with_a_pinned_version(page, serve
     pg.wait_for_selector(".modal .fm-notice", state="detached")
     pg.click(".modal .btn.primary")
     pg.wait_for_selector(".modal .fm-notice li")
-    assert "照样添加" not in pg.inner_text(".modal .fm-notice")
-    pg.click(".modal .fm-notice li .btn")
+    assert "仍然添加" not in pg.inner_text(".modal")                          # its very name: the button opens it
+    assert pg.inner_text(".modal .acts .btn.primary") == "打开星河科技"
+    pg.wait_for_timeout(500)                                                   # a click, not the second half of a double-click
+    pg.click(".modal .acts .btn.primary")
     pg.wait_for_selector(".hunt-wrap.is-page .ed-head h1:text('星河科技')")
     assert len(server.req("GET", "/api/hunt")[1]["companies"]) == 1
+    # a close name that is another company: "Add anyway" adds it; changing the name puts "Add" back
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.click("#hunt-new-company")
+    pg.fill("#fm-name", "星河科技控股")
+    pg.click(".modal .btn.primary")
+    pg.wait_for_selector(".modal .acts .btn.primary:text('仍然添加')")
+    pg.fill("#fm-name", "星河科技控股集团")
+    assert pg.inner_text(".modal .acts .btn.primary") == "添加"
+    pg.click(".modal .btn.primary")
+    pg.wait_for_selector(".modal .acts .btn.primary:text('仍然添加')")
+    pg.wait_for_timeout(500)
+    pg.click(".modal .acts .btn.primary")
+    pg.wait_for_selector(".modal", state="detached")
+    pg.wait_for_selector(".hunt-wrap.is-page .ed-head h1:text('星河科技控股集团')")      # added, and opened
+    other = next(c for c in server.req("GET", "/api/hunt")[1]["companies"] if c["name"] == "星河科技控股集团")
+    pg.click(".hunt-tab[data-tab=companies]")                                  # off its page before it goes
+    pg.wait_for_selector(".hunt-wrap:not(.is-page) .htable")
+    server.req("DELETE", f"/api/hunt/companies/{other['id']}")
 
     # the progress table: both roles, in the company's order, with what went out
     pg.click(".hunt-tab[data-tab=apps]")
@@ -2089,6 +2140,7 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.click(".dbv-tab[data-view=v7]")
     pg.click(".dbv-tab.on")
     pg.click(".float .menu-item:has-text('删除这个视图')")
+    pg.click(".modal .btn.danger-soft")                                        # its filters and columns go: asked first
     pg.wait_for_selector(".dbv-tab[data-view=v7]", state="detached")
     no_native(pg)
 
@@ -2648,7 +2700,8 @@ def test_autofill_sites_are_the_users_to_pick(page_all, server):
     pg.wait_for_selector("#fillspace >> text=你在哪些网站上有资料？")
     pg.screenshot(path=str(ART / "autofill-no-sites-light.png"))
     assert "LinkedIn" not in pg.inner_text("#chat .chat-welcome")   # no site to name
-    pg.click("#fillspace .btn.primary")
+    assert pg.locator("#fillspace .btn.primary").count() == 0                 # the known sites lead, "another" doesn't outshine them
+    pg.click("#fillspace .btn:has-text('其他网站')")
     pg.wait_for_selector(".site-dialog >> text=Resume Studio 认识的网站")
     pg.wait_for_timeout(400)   # the dialog's fade-in
     pg.screenshot(path=str(ART / "autofill-add-site-presets-light.png"))
@@ -2792,6 +2845,18 @@ def test_every_hunt_ai_button_checks_its_own_result(page_all):
     out = pg.evaluate(AI_CHECK, {"run": "askFill([{id: 'C92', name: '星河'}])", "data": data})
     assert out["warn"] and "星河：还空着：总部, 招聘城市, Logo" in out["say"] and "星河：没有出处：实力" in out["say"], out
     assert "规模" not in out["say"]
+    # its roles are part of filling it in (user, 2026-11-04): asked for in the same message, and a site the scan
+    # still can't read is not done
+    assert "扫进来" in out["sent"][0] and "学会读" in out["sent"][0], out["sent"]
+    full = {**co, "kept": ["size", "hq", "places", "logo"], "sources": {k: "https://a.example" for k in ("industry", "strength", "hq", "size")},
+            "postings": {"needs": "claude", "unrouted": ["https://campus.example.com/"]}}
+    pg.evaluate("() => AI_WORK.clear()")
+    out = pg.evaluate(AI_CHECK, {"run": "askFill([{id: 'C92', name: '星河'}])", "data": {"companies": [full], "applications": []}})
+    assert out["warn"] and out["say"] == "星河：岗位还没扫进来，扫描仍读不了 campus.example.com", out
+    full["postings"] = {"needs": "", "unrouted": [], "open": 12}
+    pg.evaluate("() => AI_WORK.clear()")
+    out = pg.evaluate(AI_CHECK, {"run": "askFill([{id: 'C92', name: '星河'}])", "data": {"companies": [full], "applications": []}})
+    assert not out["warn"] and out["say"] == "已填好，每项都有出处，岗位也已扫进来：星河", out
     # reading a posting: done only once the role has a description
     pg.evaluate("() => AI_WORK.clear()")
     run = "askRead({id: 'A9', role: '芯片验证', url: '" + url + "', jd: ''}, {name: '星河'})"

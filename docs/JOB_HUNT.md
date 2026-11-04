@@ -447,9 +447,11 @@ official and English names), and never caught 字节 next to 字节跳动有限�
   for another company. The form stays open with what was typed and names the company, with the date it was
   added and a button that opens it.
 - **A close name** (one inside the other: 字节 / 字节跳动有限公司, ByteDance / ByteDance Ltd) asks, never refuses:
-  the company it may be, a button to open (or use) it, and "It's another company: add it". Claude adds such a
-  company with `--different` only when it really is another one. That button sits on the left: the notice opens
-  where the Add button was, and a second click must not land on it.
+  the company it may be with a button to open (or use) it, and the dialog's main button turns into "Add anyway"
+  (for the very same company, into "Open <company>"): the main button always says what it does now, never one
+  that does nothing while the way on hides in the notice. A click within 0.4 s of the notice (a double-click on
+  Add) doesn't count; changing a field puts "Add" back. Claude adds such a company with `--different` only when
+  it really is another one.
 - **A company's arm in a country is another company**: its own careers site, its own hiring. When what the
   longer name adds starts or ends with a country or region (McDonald's Australia Pty Ltd, Siemens Deutschland,
   日本マクドナルド, 麦当劳（中国）有限公司, McDonald's APAC), nothing is asked. The names are every country,

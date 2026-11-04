@@ -86,6 +86,14 @@ def test_a_company_added_again_is_caught_by_its_name_an_alias_or_a_close_name(hu
     with pytest.raises(SameCompany) as e:
         hunt.add_company({"name": "麦当劳（中国）有限公司"})                   # close to the arm, not to 麦当劳
     assert [x["name"] for x in e.value.close] == ["麦当劳中国"]
+    # a short Latin name inside a word of another is no match (TCL in "Tencent Cloud", Rootcloud: 2026-11-04)
+    hunt.add_company({"name": "腾讯云智", "aliases": ["Tencent Cloud Intelligence R&D"]})
+    hunt.add_company({"name": "树根互联", "aliases": ["Rootcloud"]})
+    assert hunt.add_company({"name": "TCL"})["name"] == "TCL"
+    for close in ("TCL实业", "TCL Industries"):                          # whole words of it, in either script: asks
+        with pytest.raises(SameCompany) as e:
+            hunt.add_company({"name": close})
+        assert [x["name"] for x in e.value.close] == ["TCL"]
     hunt.add_company({"name": "美团"})
     with pytest.raises(ValueError, match="C1"):
         hunt.update_company("美团", {"name": "ByteDance"})              # renamed to another company's name

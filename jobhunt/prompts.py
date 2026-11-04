@@ -43,6 +43,11 @@ it only through this command (Bash); every call prints what is there now, and th
   "about": {{"summary": "..", "points": [{{"topic": "..", "text": "..", "sources": ["https://.."]}}], "read_at": "YYYY-MM-DD"}}}}`.
   A site's kind comes only from what its own pages say: a site the user added has none until you've looked at it,
   and `fill` sites then gives it one (the user's sites and the kinds they set stay as they are).
+  **Filling in a company includes its roles.** After `fill`, `show` it: every careers site it names as one no scan
+  reads, learn now (see "Learning a site" below: its list's address on Feishu, Moka and the like, else a route),
+  then `scan` until its roles are in. Never end with "the site can't be scanned yet" as a note for the user to
+  click on later: the user asked once for the whole company. Stop short only when it has no careers site that
+  lists roles, or a step really failed (then say which step and the error).
   `{j} fill --help` shows a full example. Always look up **where it hires** (its campus/careers pages' work
   locations, offices) and send them as `"places": ["上海", "北京", "remote: 中国大陆"]` with a source: they put the
   company on the user's world map. Cities and regions (and `hq`) are looked up in Resume Studio's list of places

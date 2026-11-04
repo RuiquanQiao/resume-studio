@@ -192,7 +192,7 @@ function openEvaluate(anchor) {
   const ta = h("textarea", { id: "posting-input", rows: 3, placeholder: t("Paste a job posting: its link, or the whole text"), spellcheck: "false",
     oninput: (e) => { J.draft = e.target.value; autosize(e.target); go.disabled = !J.draft.trim(); },
     onkeydown: (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); evaluatePosting(); } } }, J.draft);
-  const go = h("button", { class: "btn primary sm", disabled: !J.draft.trim() || !ui.chat.available, onclick: evaluatePosting }, icon("sparkle"), t("Evaluate"));
+  const go = h("button", { class: "btn primary sm", title: ui.chat.available ? null : missingAgentText(), disabled: !J.draft.trim() || !ui.chat.available, onclick: evaluatePosting }, icon("sparkle"), t("Evaluate"));
   const panel = h("div", { class: "eval-box eval-float", role: "dialog", "aria-label": t("Evaluate a posting") }, ta,
     h("div", { class: "eval-bar" },
       h("span", { class: "eval-hint" }, t("The AI runs {name}'s evaluation in a new chat; it takes a few minutes.", { name: jobsTool().name })),
@@ -895,14 +895,15 @@ function renderWsTools() {
   const name = jobsTool().name;
   const out = [];
   if (jobsReady()) out.push(h("button", { class: "btn ghost", id: "evaluate-btn", "aria-haspopup": "dialog", disabled: !ui.chat.available,
-    title: t("The AI runs {name}'s evaluation in a new chat; it takes a few minutes.", { name }), onclick: (e) => openEvaluate(e.currentTarget) },
+    title: ui.chat.available ? t("The AI runs {name}'s evaluation in a new chat; it takes a few minutes.", { name }) : missingAgentText(), onclick: (e) => openEvaluate(e.currentTarget) },
   icon("sparkle"), h("span", { class: "lbl" }, t("Evaluate a posting"))));
   if (jobsReady()) out.push(h("button", { class: "btn ghost", title: t("Every mode of {name}, each one as a chat with the AI", { name }), onclick: (e) => openLauncher(e.currentTarget) }, icon("apps"), h("span", { class: "lbl" }, t("All of {name}", { name }))));
   const a = webUp() ? webApp() : null;
   if (a) {
     const linked = a.subsets || [];
     out.push(h("span", { class: "ws-here" }, h("b", { title: [a.company, a.role].filter(Boolean).join(" — ") }, [a.company, a.role].filter(Boolean).join(" — ")),
-      h("button", { class: "btn sm" + (linked.length ? "" : " primary"), "aria-haspopup": "dialog",
+      // one primary in the bar: while its profile isn't set up, that comes first (scores mean nothing without it)
+      h("button", { class: "btn sm" + (linked.length || (J.data && J.data.status && J.data.status.needs_setup) ? "" : " primary"), "aria-haspopup": "dialog",
         title: t("Which of your resume subsets you send for this posting"), onclick: (e) => openResumePicker(e.currentTarget, a) },
       icon("file"), h("span", { class: "lbl" }, linked.length ? t("Resume: {name}", { name: linked[0].label }) : t("Pick a resume")), icon("chev"))));
   }
@@ -913,7 +914,8 @@ function renderWsTools() {
     out.push(h("button", { class: "btn sm" + (st.needs_setup ? " primary" : ""), disabled: !ui.chat.available,
       title: (st.needs_setup ? t("{name} doesn't know what you're looking for yet (roles, location, salary), so its scores would follow someone else's targets.", { name: st.tool.name }) + " "
         : t("Your fact layer or resume subsets changed since {name}'s profile was filled from them.", { name: st.tool.name }) + " ")
-        + t("The AI fills it from your profile's fact layer and your resume subsets, and asks only for what's missing"),
+        + t("The AI fills it from your profile's fact layer and your resume subsets, and asks only for what's missing")
+        + (ui.chat.available ? "" : " " + missingAgentText()),
       onclick: () => setupProfile(!st.needs_setup) }, icon("user"), st.needs_setup ? t("Fill its profile from my resume") : t("Update its profile")));
   }
   if (jobsReady()) out.push(h("button", { class: "btn icon ghost", title: t("More"), onclick: (e) => webMenu(e.currentTarget) }, icon("more")));
