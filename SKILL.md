@@ -347,7 +347,7 @@ python scripts/hunt.py apply P12                          # the user goes for po
   apply-by date.
 - **Open postings** are scanned, never typed: career-ops' providers (Moka, Feishu/ByteDance, Tencent, Meituan,
   Alibaba, Greenhouse, Lever, Ashby…) read public job APIs; any other site gets a read route Claude records
-  once in the browser (`scan-route`), replayed with no Claude. `keywords` are the roles the user looks for.
+  once in the browser (`scan-route`), replayed with no Claude. `tracks` are the kinds of role the user goes for, each with its own title keywords; a route returns the site's own `total`, so a scan that reads fewer roles is reported as not done.
 
 - **Statuses**: saved (wants to apply), applied, assessment (测评/笔试), interview, offer, hired, rejected,
   withdrawn; the user's own words work (一面 → interview). Interview rounds are notes, not statuses.

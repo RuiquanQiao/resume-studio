@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import unicodedata
 import time
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -112,11 +113,76 @@ def stale(p: dict, today: str = "") -> str:
     return ""
 
 
-def matches(title: str, keywords: list[str]) -> bool:
+# A keyword is matched against a title the way career-ops' title filter matches one (title-keywords.mjs), so the two
+# never disagree: case and accents folded; a 2-3 letter acronym ("AI", "ML") only as a whole word, where a Chinese,
+# Japanese or Korean character next to it is a word's edge ("AI工程师" has AI, "Maintenance" and "Detail" don't);
+# anything else as a part of the title. "AI+产品" asks for both.
+_CJK = "぀-ヿ㐀-鿿가-힯豈-﫿"
+_WORD = "[^\\W" + _CJK + "]"
+
+
+def _fold(s: str) -> str:
+    s = unicodedata.normalize("NFD", str(s or ""))   # split() below takes no-break spaces too
+    return " ".join("".join(ch for ch in s if not unicodedata.combining(ch)).split()).casefold()
+
+
+def _one(word: str, title: str) -> bool:
+    w = _fold(word)
+    if not w:
+        return False
+    if re.fullmatch(r"[a-z]{2,3}", w):
+        return re.search("(?<!" + _WORD + ")" + re.escape(w) + "(?!" + _WORD + ")", title) is not None
+    return w in title
+
+
+def keyword_hits(title: str, keyword: str) -> bool:
+    folded = _fold(title)
+    parts = [x for x in re.split(r"\s*\+\s*", keyword) if x.strip()] or [keyword]
+    return all(_one(x, folded) for x in parts)
+
+
+def matches(title: str, keywords: list[str], exclude: list[str] | None = None) -> bool:
+    """Whether a title is one the user looks for: no keywords is every title; an excluded word rules it out."""
+    if exclude and any(keyword_hits(title, x) for x in exclude if x):
+        return False
     if not keywords:
         return True
-    s = title.casefold()
-    return any(k.casefold() in s for k in keywords if k)
+    return any(keyword_hits(title, k) for k in keywords if k)
+
+
+def _words(v: Any, limit: int = 40) -> list[str]:
+    xs = re.split(r"[,，、;；\n]", v) if isinstance(v, str) else v if isinstance(v, list) else []
+    return [k for k in dict.fromkeys(_text(x, 40) for x in xs) if k][:limit]
+
+
+def clean_tracks(v: Any) -> list[dict]:
+    """The kinds of role the user goes for, each its own filter (2026-11-04: someone may go for an engineering and a
+    product role at once): {id, name, keywords, exclude, subset}. `subset` is the resume that kind of role goes out with."""
+    rows = [x for x in (v if isinstance(v, list) else []) if isinstance(x, dict)]
+    taken = {str(x.get("id")) for x in rows if re.fullmatch(r"T\d+", str(x.get("id") or ""))}
+    out, used = [], set()
+    for x in rows:
+        name, kws = _text(x.get("name"), 60), _words(x.get("keywords"))
+        if not name and not kws:
+            continue
+        tid = str(x.get("id") or "")
+        if not re.fullmatch(r"T\d+", tid) or tid in used:
+            tid = next(f"T{i}" for i in range(1, 999) if f"T{i}" not in used and f"T{i}" not in taken)
+            taken.add(tid)
+        used.add(tid)
+        out.append({"id": tid, "name": name, "keywords": kws, "exclude": _words(x.get("exclude")),
+                    "subset": _text(x.get("subset"), 40)})
+    return out[:12]
+
+
+def tracks_of(title: str, tracks: list[dict]) -> list[str]:
+    """The tracks a title belongs to (their ids); a track with no keywords takes none."""
+    return [tr["id"] for tr in tracks if tr["keywords"] and matches(title, tr["keywords"], tr["exclude"])]
+
+
+def wanted(title: str, tracks: list[dict]) -> bool:
+    """No track has keywords yet: every title counts. Else only those in one."""
+    return not any(tr["keywords"] for tr in tracks) or bool(tracks_of(title, tracks))
 
 
 # A posting's fields that most postings leave empty: written only when they hold something, and the key only when
@@ -199,6 +265,9 @@ class Postings:
         d = d if isinstance(d, dict) else {}
         d.setdefault("companies", {})
         d.setdefault("keywords", [])
+        if "tracks" not in d:   # one list of keywords before tracks (2026-11-04): it becomes the first track
+            d["tracks"] = [{"id": "T1", "keywords": d["keywords"]}] if d["keywords"] else []
+        d["tracks"] = clean_tracks(d["tracks"])
         d.setdefault("daily", True)
         d.setdefault("last_all", "")
         return d
@@ -206,17 +275,26 @@ class Postings:
     def _save_scans(self, d: dict) -> None:
         self.hunt._write("scans.json", d)
 
-    def settings(self, keywords: Any = None, daily: Any = None) -> dict:
+    def settings(self, keywords: Any = None, daily: Any = None, tracks: Any = None) -> dict:
+        """`tracks` sets the whole list; `keywords` (the one list before tracks) the first track's keywords."""
         with self.hunt.lock:
             d = self.scans()
-            if keywords is not None:
-                xs = re.split(r"[,，、;；\n]", keywords) if isinstance(keywords, str) else keywords or []
-                d["keywords"] = [k for k in dict.fromkeys(_text(x, 40) for x in xs) if k][:40]
+            if tracks is not None:
+                d["tracks"] = clean_tracks(tracks)
+            elif keywords is not None:
+                kws = _words(keywords)
+                d["tracks"] = clean_tracks([{**d["tracks"][0], "keywords": kws}, *d["tracks"][1:]] if d["tracks"]
+                                           else [{"keywords": kws}])
+            # every track's keywords together: what older readers of `keywords` (the scan's news) still go by
+            d["keywords"] = list(dict.fromkeys(k for tr in d["tracks"] for k in tr["keywords"]))
             if daily is not None:
                 d["daily"] = bool(daily)
             self._save_scans(d)
         self.hunt._changed()
-        return {"keywords": d["keywords"], "daily": d["daily"]}
+        return {"keywords": d["keywords"], "tracks": d["tracks"], "daily": d["daily"]}
+
+    def tracks(self) -> list[dict]:
+        return self.scans()["tracks"]
 
     def scan_state(self, cid: str) -> dict:
         return self.scans()["companies"].get(cid) or {}
@@ -422,34 +500,37 @@ class Postings:
         """Per company: open postings, how many match the keywords, what the last scan brought (for the table).
         Stale ones (still listed, probably over) count apart, never as open."""
         d = self.scans()
-        kw = d["keywords"]
+        trs = d["tracks"]
         out: dict[str, dict] = {}
         today = time.strftime("%Y-%m-%d")
         ps = self._view()["postings"]
         for p in ps:
-            s = out.setdefault(p["company"], {"open": 0, "matching": 0, "stale": 0})
+            s = out.setdefault(p["company"], {"open": 0, "matching": 0, "stale": 0, "tracks": {}})
             if p.get("closed"):
                 continue
             if stale(p, today):
                 s["stale"] += 1
                 continue
             s["open"] += 1
-            if matches(p["title"], kw):
+            mine = tracks_of(p["title"], trs)
+            for tid in mine:
+                s["tracks"][tid] = s["tracks"].get(tid, 0) + 1
+            if mine or not any(tr["keywords"] for tr in trs):
                 s["matching"] += 1
         news = {p["id"]: p for p in ps}
         for cid, st in d["companies"].items():
-            s = out.setdefault(cid, {"open": 0, "matching": 0, "stale": 0})
-            s["scan"] = {k: st.get(k) for k in ("at", "ok", "error", "signed_out", "how", "found")}
+            s = out.setdefault(cid, {"open": 0, "matching": 0, "stale": 0, "tracks": {}})
+            s["scan"] = {k: st.get(k) for k in ("at", "ok", "error", "signed_out", "how", "found", "short")}
             s["scan"]["recorded"] = bool(st.get("route"))
             # news counts like the open roles beside it: only the ones the user looks for, and a stale one isn't new
-            s["news"] = {k: sum(1 for i in st.get(k) or [] if i in news and matches(news[i]["title"], kw)
+            s["news"] = {k: sum(1 for i in st.get(k) or [] if i in news and wanted(news[i]["title"], trs)
                                 and not (k == "new" and stale(news[i], today))) for k in ("new", "closed", "changed")}
         return out
 
     def changes(self, since_hours: float = 24) -> list[dict]:
         """What the scans of the last day brought, per company: matching new, closed and changed postings."""
         d = self.scans()
-        kw = d["keywords"]
+        trs = d["tracks"]
         by_id = {p["id"]: p for p in self._view()["postings"]}
         cut = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - since_hours * 3600))
         out = []
@@ -458,11 +539,30 @@ class Postings:
                 continue
             row = {"company": cid, "at": st["at"]}
             for k in ("new", "closed", "changed"):
-                row[k] = [dict(by_id[i]) for i in st.get(k) or [] if i in by_id and matches(by_id[i]["title"], kw)
+                row[k] = [dict(by_id[i]) for i in st.get(k) or [] if i in by_id and wanted(by_id[i]["title"], trs)
                           and not (k == "new" and stale(by_id[i]))]
             if any(row[k] for k in ("new", "closed", "changed")):
                 out.append(row)
         return out
+
+    def matched(self, limit: int = 600) -> dict:
+        """The open roles (not closed, not probably over) in the user's tracks, newest first, each with the tracks
+        it is in; how many each track has in all. With no track set up, none: the window asks for tracks instead."""
+        trs = [tr for tr in self.tracks() if tr["keywords"]]
+        today = time.strftime("%Y-%m-%d")
+        names = {c["id"]: c["name"] for c in self.hunt.companies()}
+        out, counts = [], {tr["id"]: 0 for tr in trs}
+        for p in self._view()["postings"]:
+            if p.get("closed") or p["company"] not in names or stale(p, today):
+                continue
+            ts = tracks_of(p["title"], trs)
+            if not ts:
+                continue
+            for x in ts:
+                counts[x] += 1
+            out.append({**p, "changed": dict(p["changed"]), "tracks": ts, "company_name": names[p["company"]]})
+        out.sort(key=lambda p: (p.get("posted") or p.get("first_seen") or "", p.get("first_seen") or ""), reverse=True)
+        return {"tracks": self.tracks(), "counts": counts, "total": len(out), "postings": out[:limit]}
 
     def drop_company(self, cid: str) -> None:
         with self.hunt.lock:

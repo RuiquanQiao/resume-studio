@@ -1640,7 +1640,7 @@ def test_today_folds_and_its_roles_open_the_company_at_that_role(page, server):
     pg.screenshot(path=str(ART / "hunt-today-open.png"), clip=pg.locator("#hunt-today").bounding_box())   # by place: a quiet repaint may swap the box
     # folded: only the head stays, and it stays folded after a reload
     pg.click("#hunt-today .sn-fold")
-    assert not pg.is_visible("#hunt-today .news-row") and pg.is_visible("#hunt-keywords")
+    assert not pg.is_visible("#hunt-today .news-row") and pg.is_visible("#hunt-tracks")
     pg.mouse.move(0, 0)
     pg.wait_for_timeout(250)                                                    # past the chevron's turn
     pg.screenshot(path=str(ART / "hunt-today-folded.png"), clip=pg.locator("#hunt-today").bounding_box())   # by place: a quiet repaint may swap the box
@@ -1729,7 +1729,7 @@ def test_a_company_with_several_roles_goes_out_with_a_pinned_version(page, serve
     pg.click(".modal .btn.primary")
     pg.wait_for_selector(".modal .fm-notice li:has-text('星河科技')")
     assert pg.input_value("#fm-site") == "careers.example.com/social"         # nothing typed is lost
-    # the main button says the way on (TCL, 2026-11-04: "Add" did nothing, the way on hid inside the notice)
+    # the main button says the way on (2026-11-04: "Add" did nothing, the way on hid inside the notice)
     assert pg.inner_text(".modal .acts .btn.primary") == "仍然添加"
     pg.click(".modal .acts .btn.primary")                                      # the double-click's second half: nothing
     assert len(server.req("GET", "/api/hunt")[1]["companies"]) == 1
@@ -2995,3 +2995,34 @@ def test_working_timer_restarts_for_each_reply(page_all):
     assert 0 <= result["fallbackAge"] < 2000
     assert "0s" in result["displayed"]
     pg.screenshot(path=str(ART / "working-timer.png"))
+
+
+def test_tracks_are_set_in_a_dialog_and_pick_roles_from_every_company(page, server):
+    """2026-11-04: scanned roles weren't narrowed to the ones they'd want, for more than one kind of role.
+    Tracks are set in a dialog (saved on Done), and "Picked for you" lists every company's roles in a track."""
+    pg = page
+    hunt = server.inst.hunt
+    posts = hunt.scanner.postings
+    hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
+    posts.merge("C1", [{"title": t, "url": f"https://careers.xinghe.example/job/{i}"} for i, t in
+                       enumerate(["AI 应用工程师", "AI 产品经理", "财务专员", "大模型算法工程师"])], how="route")
+    posts.set_scan_state("C1", short=[4, 9])
+    pg.keyboard.press("Control+3")
+    pg.click(".hunt-tab[data-tab=picked]")
+    pg.wait_for_selector(".trk-empty")
+    pg.click(".trk-empty .btn:not(.primary)")                      # set them up myself
+    pg.fill(".trk-row .trk-name", "AI 应用")
+    pg.fill(".trk-row .trk-kw", "AI, 大模型")
+    pg.fill(".trk-row .trk-ex", "产品")
+    assert "[object" not in pg.inner_text(".trk-modal")             # the resume picker is drawn, not its object
+    pg.click(".trk-more .btn:first-child")                          # a second track
+    pg.locator(".trk-row .trk-name").nth(1).fill("AI 产品")
+    pg.locator(".trk-row .trk-kw").nth(1).fill("AI+产品")
+    pg.click(".trk-modal .btn.primary")
+    pg.wait_for_selector(".picked-row")
+    assert sorted(pg.locator(".picked-row .pr-title").all_inner_texts()) == ["AI 产品经理", "AI 应用工程师", "大模型算法工程师"]
+    assert [t["name"] for t in posts.tracks()] == ["AI 应用", "AI 产品"]
+    pg.click(".trk-seg:has-text('AI 产品')")
+    assert pg.locator(".picked-row .pr-title").all_inner_texts() == ["AI 产品经理"]
+    assert "星河科技" in pg.inner_text(".picked-tools + .note-bar")    # read in part: roles may be missing
+    posts.settings(tracks=[])

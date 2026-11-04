@@ -255,6 +255,26 @@ def filled_companies(c):
     posts.settings(keywords="研发, 算法, Agent, Engineer")
 
 
+def picked_roles(c):
+    """Two tracks, long names, and a company read in part: what "Picked for you" shows at its fullest."""
+    filled_companies(c)
+    posts = c.server.inst.hunt.scanner.postings
+    posts.settings(tracks=[{"name": "研发与算法（包括推荐、广告、搜索和 AI Agent 方向的所有岗位）", "keywords": "研发, 算法, Agent", "exclude": "安全"},
+                           {"name": "Graduate engineering", "keywords": "Engineer"}])
+    posts.set_scan_state("C1", short=[10, 448])
+
+
+def no_tracks(c):
+    filled_companies(c)
+    c.server.inst.hunt.scanner.postings.settings(tracks=[])
+
+
+def picked(pg, c):
+    pg.keyboard.press("Control+3")
+    pg.click(".hunt-tab[data-tab=picked]")
+    pg.wait_for_selector(".picked-row, .trk-empty", timeout=20000)
+
+
 def long_table(c):
     """Enough roles that the progress table scrolls inside its frame."""
     filled_companies(c)
@@ -511,6 +531,11 @@ STATES = [
            ".hist-row .hist-act"], prepare=ai_changes),
     State("applying, companies filled in, with today's changes", applying("companies"),
           [".htable .co-logo img", ".htable .role-chip.open-chip", ".scan-news .news-row", ".scan-news .note-bar"], prepare=filled_companies),
+    State("applying, picked for you, no tracks yet", picked, [".hunt-empty.trk-empty"], prepare=no_tracks),
+    State("applying, picked for you, two tracks, one company read in part", picked,
+          [".picked-row .trk-tag", ".trk-segs .trk-seg.on", ".picked-tools + .note-bar.warn"], prepare=picked_roles),
+    State("applying, editing tracks", then(picked, click("#picked-edit-tracks"), wait(".trk-modal .trk-row")),
+          [".trk-modal .trk-row .trk-kw", ".trk-modal .trk-subset", ".trk-modal .trk-more"], prepare=picked_roles),
     State("applying, a company's open roles", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
           [".post-list .post-row", ".co-sites .co-site-edit .co-site-input", ".post-row .new-chip"], prepare=filled_companies),
     State("applying, a company's open roles, folded", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title"),

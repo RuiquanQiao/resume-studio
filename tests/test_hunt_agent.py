@@ -1070,6 +1070,8 @@ def test_the_window_and_claude_scan_and_apply(live, data_file, monkeypatch):
     route = {"pages": [{"url": page, "script": "async (h) => ({postings: []})"}]}
     code, out = cli(data_file, "scan-route", "星河科技", "--stdin", stdin=json.dumps(route))
     assert code == 0 and "C1: 2 open, 2 new, 0 closed, 0 changed" in out and "P2" in out and "closes 2030-10-31" in out
+    # a route that never says how many roles the site lists can't be checked: the AI is told to add it
+    assert "not checked: no page of the route says how many roles" in out
     tab = live.req("GET", "/api/hunt")[1]
     c = tab["companies"][0]
     assert c["postings"]["open"] == 2 and c["postings"]["news"]["new"] == 2 and c["postings"]["needs"] == ""
@@ -1107,6 +1109,20 @@ def test_the_window_and_claude_scan_and_apply(live, data_file, monkeypatch):
     assert r["application"]["jd"] == "岗位职责\n3、AI 读到的" and r["reading"] == {}
     code, out = cli(data_file, "keywords", "后端, 服务端")
     assert "keywords: 后端, 服务端" in out
+    # tracks: the AI sets the whole list, and reads it back
+    code, out = cli(data_file, "tracks", "--stdin", stdin=json.dumps({"tracks": [
+        {"name": "后端", "keywords": ["后端", "服务端"], "exclude": ["测试"]}, {"name": "AI 产品", "keywords": ["AI+产品"]}]}))
+    assert code == 0 and "T1 后端: 后端, 服务端; not: 测试" in out and "T2 AI 产品: AI+产品" in out, out
+    code, out = cli(data_file, "tracks")
+    assert "T2 AI 产品" in out
+    assert [t["name"] for t in live.req("GET", "/api/hunt/matches")[1]["tracks"]] == ["后端", "AI 产品"]
+    # one that says, and reads fewer: not done, said to the AI in so many words
+    fake.pages[page]["total"] = 9
+    code, out = cli(data_file, "scan-route", "星河科技", "--stdin",
+                    stdin=json.dumps({"pages": [{"url": page, "script": "async (h) => ({total: 9, postings: []})"}]}))
+    assert "not done: the route read 2 different roles and the site says it lists 9" in out and "not checked" not in out, out
+    assert "read in part: the route read 2" in out
+    del fake.pages[page]["total"]
     # Claude's own reading, when no route can be recorded
     code, out = cli(data_file, "postings", "星河科技", "--stdin", stdin=json.dumps({"postings": [{"title": "服务端研发工程师", "url": page + "/1"}]}))
     assert "1 open, 0 new, 1 closed" in out
@@ -1164,3 +1180,81 @@ def test_a_logo_a_site_wont_hand_a_script_comes_through_the_browser(live, data_f
     b.read_page = lambda url, script, timeout=60: {"error": "HTTP 403"}
     code, out = cli(data_file, "fill", "九牧集团", "--stdin", stdin=json.dumps({"logo_url": url}))
     assert "logo not saved" in out and "Wikimedia" in out and "only after several" in out
+
+
+# ---------------------------------------------------------------- a read that stops short (2026-11-04)
+def test_roles_sharing_the_companys_number_in_their_links_are_all_kept(hunt):
+    """2026-11-04: Hotjob puts the company's tenant id (/SU12345678…/) in every posting's address, so same_once took
+    every title that came twice (a trainee role in two cities) for one role read twice: 448 read, 381 kept."""
+    from jobhunt.scan import same_once
+    base = "https://wecruit.hotjob.example/SU12345678abcdef00000000/pb/posDetail.html?postId={}&postType=campus"
+    rows = [{"title": f"岗位 {i % 30}", "url": base.format(f"6a8e{i:020x}")} for i in range(60)]
+    assert len(same_once(rows)) == 60
+    # the same role under two addresses of one board is still kept once
+    feishu = [{"title": "A", "url": "https://x.example/index/position/12345678901/detail"},
+              {"title": "A", "url": "https://x.example/xinghe/position/12345678901/detail"}]
+    assert len(same_once(feishu)) == 1
+
+
+def test_a_route_that_reads_fewer_roles_than_its_site_lists_is_not_done(hunt):
+    """A cheaper model's route stopped early and only the AI's own last line said so (381 of 448). The site's
+    own count (`total`) is checked on every scan: short is said, and the roles not read are never closed."""
+    ps = Postings(hunt)
+    url = "https://careers.example.com/campus/jobs"
+    hunt.add_company({"name": "Example Corp", "site": url})
+    rows = [{"title": f"岗位 {i}", "url": f"{url}/{i}"} for i in range(100)]
+    page = {"total": 100, "postings": rows}
+    browser = FakeBrowser({url: page})
+    sc = Scanner(hunt, ps, NoTool(), browser, lambda: None)
+    sc._providers[url] = None
+    sc.save_route("C1", {"pages": [{"url": url, "script": "async (h) => ({total: 100, postings: []})"}]})
+    res = sc.scan("C1")
+    assert res["found"] == 100 and not res["short"] and not ps.scan_state("C1")["short"]
+    # next time the route stops at 70: short is said, and the 30 it didn't read stay open
+    page["postings"] = rows[:70]
+    res = sc.scan("C1")
+    assert res["short"] == [70, 100] and res["closed"] == 0
+    assert ps.scan_state("C1")["short"] == [70, 100] and ps.summary()["C1"]["scan"]["short"] == [70, 100]
+    assert sum(1 for p in ps.all() if not p["closed"]) == 100
+    # a role or two taken down between pages is no gap
+    page["postings"] = rows[:99]
+    assert not sc.scan("C1")["short"] and not ps.scan_state("C1")["short"]
+    # one list split over three route pages: each says the whole list's count, which is counted once
+    page.update(total=100, postings=rows)
+    pages = [{"url": url, "script": f"async (h) => ({{total: 100, part: {i}}})"} for i in range(3)]
+    sc.save_route("C1", {"pages": pages})
+    parts = iter([{"total": 100, "postings": rows[:40]}, {"total": 100, "postings": rows[40:80]}, {"total": 100, "postings": rows[80:]}])
+    browser.read_page = lambda u, s, timeout=60.0: next(parts)
+    assert sc.scan("C1")["short"] is None
+
+
+def test_tracks_pick_the_roles_for_each_kind_of_role(hunt):
+    """2026-11-04: scanned roles weren't narrowed to the ones they'd want, and they go for more than one kind
+    of role (an engineering and a product role). Tracks: keywords per kind, matched like career-ops' title filter."""
+    from jobhunt.postings import keyword_hits
+    assert keyword_hits("AI全栈工程师", "AI") and keyword_hits("Applied AI Engineer", "ai")
+    assert not keyword_hits("Maintenance Engineer", "AI") and not keyword_hits("Detail Designer", "AI")
+    assert keyword_hits("AI 产品经理", "AI+产品") and not keyword_hits("AI 应用工程师", "AI+产品")
+    assert keyword_hits("Développeur", "developpeur")
+    ps = Postings(hunt)
+    # the one list of keywords there was before becomes the first track
+    hunt._write("scans.json", {"companies": {}, "keywords": ["算法"], "daily": True, "last_all": ""})
+    assert [(t["id"], t["keywords"]) for t in ps.tracks()] == [("T1", ["算法"])]
+    hunt.add_company({"name": "星河科技"})
+    titles = ["AI 应用工程师", "大模型算法工程师", "AI 产品经理", "产品经理（电商）", "AI 售前工程师", "财务专员", "Maintenance Engineer"]
+    ps.merge("C1", [{"title": x, "url": f"https://x.example/{i}"} for i, x in enumerate(titles)], how="route")
+    r = ps.settings(tracks=[{"name": "AI 应用工程师", "keywords": "AI, 大模型, Agent", "exclude": "售前, 产品", "subset": "SUB-001"},
+                            {"name": "AI 产品经理", "keywords": ["AI+产品"]}, {"name": "", "keywords": ""}])
+    assert [t["id"] for t in r["tracks"]] == ["T1", "T2"] and r["tracks"][0]["subset"] == "SUB-001"
+    s = ps.summary()["C1"]
+    assert s["open"] == 7 and s["matching"] == 3 and s["tracks"] == {"T1": 2, "T2": 1}
+    m = ps.matched()
+    assert m["total"] == 3 and m["counts"] == {"T1": 2, "T2": 1}
+    assert {p["title"]: p["tracks"] for p in m["postings"]} == {"AI 应用工程师": ["T1"], "大模型算法工程师": ["T1"], "AI 产品经理": ["T2"]}
+    assert all(p["company_name"] == "星河科技" for p in m["postings"])
+    # no track has keywords: every title counts, and nothing is "picked"
+    ps.settings(tracks=[])
+    assert ps.summary()["C1"]["matching"] == 7 and ps.matched()["total"] == 0
+    # the old `keywords` command still sets the first track
+    ps.settings(keywords="Agent, 算法")
+    assert [t["keywords"] for t in ps.tracks()] == [["Agent", "算法"]]

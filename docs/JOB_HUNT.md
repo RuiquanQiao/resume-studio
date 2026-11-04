@@ -583,6 +583,64 @@ keep an audit log every change can be reverted from. So:
 - **A logo a site won't hand a script** (九牧's site closed the connection) is fetched by Resume Studio's own browser,
   off the screen. When that fails too, the agent is told where else to look rather than to stop.
 
+## 2026-11-04: a read is checked against the site's own count; tracks pick the roles
+
+What happened: a careers site said 448 roles; the scan kept 381, and only the agent's own last sentence said the
+numbers differed. Two causes, one in our code and one in the process:
+
+- **Our code dropped them.** `same_once` (jobhunt/scan.py) treats "same title + same long number in the link" as one
+  role read twice (a Feishu board under two addresses). Hotjob puts the *company's* tenant id in every link, so
+  every title posted twice (the same trainee role in two cities) collapsed into one: 67 real roles gone. A number
+  shared by three or more different titles is now the company's, never a role's id.
+- **Nothing checked the result.** A cheaper model can stop early and say "done". A route now returns
+  `{total, postings}`, `total` read from the site on every run ("共 448 个职位", an API's total_count). Each scan
+  compares it with the different roles read: short by more than 2% (or 2) is `short: [read, total]` on the
+  company, said in the companies table ("381/448 read"), on its page with **Let AI read the rest**, on Picked for
+  you, and to the agent as "not done" by `scan-route` and `show`. A short read closes nothing. A route with no
+  `total` is told it can't be checked.
+
+Then **tracks**: a user goes for several kinds of role at once, and a scan of a big company lists hundreds of roles,
+so "the roles you look for" (one list of keywords) became tracks, after career-ops' `title_filter` (its matching
+rules copied, so the two agree: case and accents folded, 2-3 letter acronyms only as whole words with a CJK letter
+as a word edge, `+` joins words that must all appear, `exclude` rules titles out). Each track has a name, keywords,
+exclusions and the resume subset it goes out with. No AI runs per posting: it is free and instant on every scan.
+
+- **Picked for you** (a tab): every company's open roles in a track, newest first, switched by track, "New this
+  week", "Show added", one click to Want to apply. A company read in part is named above the list.
+- A company's page tags each role with its tracks and folds away the rest; the table counts only those.
+- **Let AI set them up**: the agent builds tracks from the resume subsets (one subset is one kind of role) and the
+  words real titles use, then checks them against a company's titles. The old `keywords` list became track 1.
+
+### What comes next (a flow review, as an agent engineer)
+
+The flow today: add a company → AI fills it → scan → (now) picked roles → Want to apply → JD read → resume subset →
+fill the site → submit → track progress. What still costs the user attention, most valuable first:
+
+1. **Rank inside a track, not just filter.** A title match says "this kind of role", not "a good one for me". After
+   the cheap filter, score each picked role locally against its track's subset (`jobs/fit.py` already counts a
+   JD's keywords in a subset; give it the JD, which `read` fetches) and the user's hard constraints (city, batch,
+   graduation year, deadline). Only the top few per day go to the AI for a written fit/gap note. Filter free, rank
+   cheap, judge with AI only where it changes a decision.
+2. **A daily brief instead of tables to scan.** "Today" becomes: N new roles in your tracks, the 5 best with why,
+   3 deadlines this week, 2 sites that read short or broke, 1 interview tomorrow. One screen, each line one click.
+3. **Every agent task ends with a program check, generalised.** Done here for scans (`total`), before for routes,
+   fills and JDs (docs/AI_BUTTON_CHECKS.md). Remaining: a check per AI button run by the server, not the window, so
+   a chat the user started by typing is checked too; and a retry budget (a second try with "here is what is still
+   missing", then a stronger model when the user allows it), so a weak model's early stop costs no attention.
+4. **Deadlines as the driver.** Many campus postings carry no date on the list but do on the JD page. Read the JD for
+   every picked role (not only applied ones), so the apply-by calendar is complete and the brief can warn in time.
+5. **Learn from what the user does.** Roles the user adds vs. ignores in Picked for you are labels. Suggest a missing
+   keyword ("you added 4 roles with 智能体 that no track caught") or an exclusion, never change tracks silently.
+6. **Batch the 网申 itself.** One sign-up per company covers several roles; once the subset and the choices are
+   known, the agent pre-fills the form from the subset version and stops before Submit, for many companies in a
+   row, each awaiting one click.
+
+## Scan state and tracks in the data
+
+- `scans.json` `tracks: [{id, name, keywords, exclude, subset}]`; `keywords` stays as the union for older readers.
+- `scans.json` `companies.<id>.short: [read, total] | null`.
+- `GET /api/hunt/matches`: the picked roles; `hunt.py tracks [--stdin]` for the agent.
+
 
 The Autofill page is organised around **the selected profile site**: LinkedIn and BOSS直聘 are its tabs,
 and every button in the page acts on the selected one. Xinghe is not one of its sites, so nothing on the

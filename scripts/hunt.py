@@ -30,6 +30,7 @@
     python scripts/hunt.py postings 星河科技 --stdin [--partial]   # the postings you read yourself (no route possible)
     python scripts/hunt.py apply P12                        # the user goes for posting P12: it becomes an application
     python scripts/hunt.py keywords "算法, AI, Agent, 后端"  # the roles the user looks for (others are folded away)
+    python scripts/hunt.py tracks [--stdin]               # the kinds of role the user goes for, each its own keywords
 
 When to apply by is an event of the role, not a field, and only what the posting says: --apply-by 2026-10-31
 gives the date it closes, --apply-by rolling says it closes once filled (招满即止, only when the posting says so),
@@ -65,6 +66,18 @@ def event_name(e: dict) -> str:
 
 def apply_when(e: dict) -> str:
     return e["at"] or ("until filled (招满即止)" if e.get("rolling") else "no date known")
+TRACKS_HELP = """The kinds of role the user goes for (tracks), each with its own keywords; a posting in none of them
+is folded away in the window and isn't news. With no input, prints them. With --stdin, the WHOLE list
+(a track left out is removed; keep its id to keep it):
+
+  {"tracks": [{"id": "T1", "name": "AI 应用工程师", "keywords": ["AI", "Agent", "大模型", "LLM", "算法+应用"],
+               "exclude": ["销售", "售前"], "subset": "SUB-001"},
+              {"name": "AI 产品经理", "keywords": ["AI+产品", "产品经理"], "subset": "SUB-002"}]}
+
+A keyword matches a part of the title, case and accents aside; a 2-3 letter one (AI, ML) only as a whole word
+(AI工程师 yes, Maintenance no); "AI+产品" needs both. `exclude` rules a title out. `subset`: the resume subset
+that kind of role goes out with."""
+
 FILL_HELP = """Claude's research on a company, every field at once, as JSON on stdin:
 
   {"name": "Xinghe Technology Ltd.",                      # its official name (kept as an alias; the user's name stays)
@@ -219,11 +232,14 @@ def show_company(v: dict) -> None:
     sc = v.get("scan") or {}
     listed = [p for p in v.get("postings") or [] if not p.get("closed")]
     ps = [p for p in listed if not p.get("stale")]
-    kw = v.get("keywords") or []
+    trs = [tr for tr in v.get("tracks") or [] if tr.get("keywords")]
     if sc.get("at"):
         print(f"  last scan {sc['at'][:16].replace('T', ' ')} by {sc.get('how') or '?'}: "
               + (f"{sc.get('found', 0)} found" if sc.get("ok") else f"failed: {sc.get('error')}")
               + ("; the route is recorded" if sc.get("recorded") else ""))
+    if sc.get("short"):
+        print(f"  read in part: the route read {sc['short'][0]} different roles and the site says it lists {sc['short'][1]}: "
+              "fix the route (see the instructions) and send it again with `scan-route`")
     if sc.get("needs") == "claude":
         missing = sc.get("unrouted") or []
         print(("  no scan reads " + ", ".join(missing) if missing else "  a careers site has no read route yet")
@@ -234,10 +250,15 @@ def show_company(v: dict) -> None:
     elif sc.get("needs") == "sites":
         print("  no careers site known yet: find them and send them with `fill` (sites)")
     if ps:
-        mine = [p for p in ps if not kw or any(k.casefold() in p["title"].casefold() for k in kw)]
-        print(f"  open postings: {len(ps)}" + (f", {len(mine)} matching the user's keywords ({', '.join(kw)})" if kw else "") + ":")
-        for p in mine[:60]:
-            print(f"    {p['id']:<6} {p['title']}" + (f" · {p['location']}" if p.get("location") else "")
+        from jobhunt.postings import tracks_of
+        name = {tr["id"]: tr.get("name") or ", ".join(tr["keywords"][:2]) for tr in trs}
+        mine = [(p, tracks_of(p["title"], trs)) for p in ps]
+        mine = [(p, ts) for p, ts in mine if ts or not trs]
+        print(f"  open postings: {len(ps)}" + (f", {len(mine)} in the user's tracks ("
+                                                + "; ".join(f"{name[tr['id']]}: {', '.join(tr['keywords'])}" for tr in trs) + ")" if trs else "") + ":")
+        for p, ts in mine[:60]:
+            print(f"    {p['id']:<6} {p['title']}" + (f" [{', '.join(name[x] for x in ts)}]" if ts and len(trs) > 1 else "")
+                  + (f" · {p['location']}" if p.get("location") else "")
                   + (f" · {p['batch']}" if p.get("batch") else "") + (f" · posted {p['posted']}" if p.get("posted") else "")
                   + (f" · closes {p['deadline']}" if p.get("deadline") else "")
                   + (f" · applied as {p['app']}" if p.get("app") else ""))
@@ -331,6 +352,8 @@ def main() -> int:
     p.add_argument("--partial", action="store_true", help="you read only some of the lists: nothing missing is closed")
     p = sub.add_parser("apply"); p.add_argument("ref")
     p = sub.add_parser("keywords"); p.add_argument("keywords")
+    p = sub.add_parser("tracks", description=TRACKS_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("history", description="What chats changed in the tracker, newest first, each with the id to undo it.")
     p.add_argument("ref", nargs="?", default="", help="one company or application only")
     p = sub.add_parser("undo", description="Put back what one change replaced (fields changed since stay as they are).")
@@ -483,6 +506,16 @@ def main() -> int:
             elif "found" in x:
                 print(f"{x['company']}: {x['found']} open, {x['new']} new, {x['closed']} closed, {x['changed']} changed"
                       + (f"; still needs: {x['needs']}" if x.get("needs") else ""))
+                if x.get("short"):
+                    got, want = x["short"]
+                    print(f"  not done: the route read {got} different roles and the site says it lists {want}. Find "
+                          "where the rest go missing (pages it stops before, a filter, two roles kept as one because "
+                          "they share a title, a page that timed out), fix the route and send it again with "
+                          "`scan-route`. Roles not read are not closed meanwhile.")
+                if c == "scan-route" and x.get("no_total"):
+                    print("  not checked: no page of the route says how many roles the site lists. Return "
+                          "`{postings, total}` with the number the site itself gives (its \"448 个职位\", or the "
+                          "API's total_count) so every scan can tell a whole read from a part; send the route again.")
                 if c == "postings" and x.get("needs") == "claude":
                     print("  not done: these postings were read by hand, so the next scan can't read the site. Record its "
                           "route with `scan-route` now; if no script can read it, tell the user which step failed and why")
@@ -493,6 +526,23 @@ def main() -> int:
         return 0
     elif c == "apply":
         r = call(url, "apply", {"ref": args.ref})
+    elif c == "tracks":
+        if args.stdin or args.file:
+            try:
+                got = json.loads(read_input(args))
+            except ValueError as e:
+                sys.exit(f"error: that isn't valid JSON ({e})")
+            r = call(url, "tracks", {"tracks": got.get("tracks") if isinstance(got, dict) else got})
+        else:
+            r = call(url, "show-tracks", {})
+        trs = r["settings"]["tracks"]
+        if not trs:
+            print("tracks: none (every posting counts)")
+        for tr in trs:
+            print(f"{tr['id']} {tr.get('name') or '(no name)'}: {', '.join(tr['keywords']) or '(no keywords)'}"
+                  + (f"; not: {', '.join(tr['exclude'])}" if tr.get("exclude") else "")
+                  + (f"; resume {tr['subset']}" if tr.get("subset") else ""))
+        return 0
     elif c == "keywords":
         r = call(url, "keywords", {"keywords": args.keywords})
         print("keywords: " + (", ".join(r["settings"]["keywords"]) or "none (every posting counts)"))

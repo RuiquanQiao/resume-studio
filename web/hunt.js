@@ -7,7 +7,7 @@
 "use strict";
 
 const H = {
-  tab: "apps",           // "apps" | "companies" | "platforms"
+  tab: "apps",           // "apps" | "picked" | "companies" | "platforms"
   data: null,            // GET /api/hunt: {applications, companies, states, platforms, tracker, career_ops}
   page: null,            // null (the table) | {kind: "company" | "app" | "platform", id}
   view: null,            // the open company's or application's page data
@@ -18,7 +18,7 @@ const H = {
   notes: {},             // a timeline note typed but not added yet, per application: {text, on}; repaints keep it
 };
 
-const HUNT_TABS = { apps: "Progress", companies: "Companies", platforms: "Platforms" };
+const HUNT_TABS = { apps: "Progress", picked: "Picked for you", companies: "Companies", platforms: "Platforms" };
 const HSTATES = { saved: "Want to apply", applied: "Applied", assessment: "Tests", interview: "Interviewing", offer: "Offer",
   hired: "Hired", rejected: "Not successful", withdrawn: "Withdrawn", closed: "Posting closed" };
 const HCHANNELS = { site: "Its own site", platform: "A platform", referral: "Referral", other: "Other" };
@@ -209,7 +209,8 @@ function paintFill() {
 
 function huntBar() {
   const d = H.data;
-  const n = { apps: d ? d.applications.length : null, companies: d ? d.companies.length : null, platforms: F.sites ? F.sites.length : null };
+  const n = { apps: d ? d.applications.length : null, picked: d && anyTracks() ? d.companies.reduce((k, c) => k + ((c.postings || {}).matching || 0), 0) : null,
+    companies: d ? d.companies.length : null, platforms: F.sites ? F.sites.length : null };
   return h("div", { class: "hunt-bar" + (H.page ? " is-page" : "") },
     h("div", { class: "hunt-tabs", role: "tablist", "aria-label": t("Applying") }, Object.entries(HUNT_TABS).map(([id, label]) =>
       h("button", { type: "button", role: "tab", class: "hunt-tab" + (H.tab === id ? " on" : ""), "data-tab": id, "aria-selected": String(H.tab === id),
@@ -229,7 +230,7 @@ function paintHuntNow(el) {
   if (!H.data) body = h("div", { class: "muted" }, t("Loading…"));
   else if (H.page && H.page.kind === "company") body = H.view && H.view.company ? companyPage(H.view) : h("div", { class: "muted" }, t("Loading…"));
   else if (H.page && H.page.kind === "app") body = H.view && H.view.application ? appPage(H.view) : h("div", { class: "muted" }, t("Loading…"));
-  else body = H.tab === "companies" ? companiesTable() : H.tab === "platforms" ? platformsTable() : appsTable();
+  else body = H.tab === "companies" ? companiesTable() : H.tab === "platforms" ? platformsTable() : H.tab === "picked" ? pickedPage() : appsTable();
   const sc = h("div", { class: "hunt-scroll", "data-page": key }, h("div", { class: "hunt-wrap" + (H.page ? " is-page" : "") }, body));
   el.replaceChildren(huntBar(), sc);
   sc.scrollTop = scroll;
@@ -775,7 +776,11 @@ function unscannedSay(urls, tried = {}) {
 // every unreadable site of theirs was tried already: the button offers another try, not a first one
 const allTried = (urls, tried = {}) => (urls || []).length > 0 && urls.every((u) => tried[u]);
 const scanQueued = (cid) => (scanInfo().queued || []).includes(cid);   // in the run, after the companies before it
-const kwMatch = (title) => { const kw = scanInfo().keywords || []; return !kw.length || kw.some((k) => title.toLowerCase().includes(k.toLowerCase())); };
+// the kinds of role the user goes for (jobhunt/postings.py clean_tracks); the server says which a posting is in
+const huntTracks = () => scanInfo().tracks || [];
+const anyTracks = () => huntTracks().some((tr) => (tr.keywords || []).length);
+const trackName = (tr) => tr.name || (tr.keywords || []).slice(0, 2).join(", ") || t("Untitled track");
+const inTracks = (p) => !anyTracks() || (p.tracks || []).length > 0;
 
 // the company's open postings, as one chip in the table (the ones matching the user's keywords)
 // an empty Roles cell whose sites couldn't be read says so: "none yet" would read as "it has no openings"
@@ -794,7 +799,8 @@ function scanGap(c) {
   const n = (ps.unrouted || []).length;
   const [say, why] = sc.at && sc.ok === false ? [t("The last scan didn't work"), t("The roles shown are from the scan before; the company's page says why")]
     : ps.needs === "claude" ? [n ? t("{n} site not read", { n }, "{n} sites not read") : t("A site not read"), unscannedSay(ps.unrouted, ps.tried)]
-    : sc.ok && sc.error ? [t("Some pages didn't read"), sc.error] : [];
+    : sc.ok && sc.error ? [t("Some pages didn't read"), sc.error]
+    : sc.ok && sc.short ? [t("{n} of {all} read", { n: sc.short[0], all: sc.short[1] }), shortSay(sc.short)] : [];
   return say ? h("span", { class: "fs-status warn scan-gap", title: why }, icon("alert"), say) : null;
 }
 
@@ -867,10 +873,6 @@ function scanNews() {
         ch.new.length > 4 && h("button", { type: "button", class: "linkish news-more", onclick: () => openCompanyAt(c.id) }, t("and {n} more", { n: ch.new.length - 4 }))));
   }).filter(Boolean);
   const folded = store("fold:hunt-today") === "1";
-  const kw = scanInfo().keywords || [];
-  const kwInput = h("input", { class: "kw-input", id: "hunt-keywords", value: kw.join(", "), spellcheck: "false",
-    placeholder: t("e.g. 算法, AI, Agent, 后端"), "aria-label": t("Roles you look for"),
-    onchange: async (e) => { try { await api("PUT", "/api/hunt/scan-settings", { keywords: e.target.value }); await loadHunt({ quiet: true }); } catch (err) { toast(err.message); } } });
   // folds from its title like a card, and stays folded; the roles you look for stay in the head either way
   const box = h("div", { class: "scan-news" + (folded ? " folded" : ""), id: "hunt-today" },
     // "nothing new" only after a scan that read a site; with none read, the bars below say why
@@ -883,7 +885,7 @@ function scanNews() {
           store("fold:hunt-today", now ? "1" : null);
         } }, icon("down"), h("b", null, t("Today")), rows.length > 0 && h("span", { class: "card-n" }, String(rows.length))),
       h("span", { class: "muted sn-none" }, rows.length || !readToday ? "" : t("nothing new from the last day's scans")),
-      h("span", { class: "spacer" }), h("label", { class: "kw-label", for: "hunt-keywords" }, t("Roles you look for")), kwInput),
+      h("span", { class: "spacer" }), tracksButton()),
     rows,
     learn.length > 0 && (() => {
       // each site on the side it is on: one company can have a site the AI tried and one it never saw
@@ -920,8 +922,8 @@ async function openCompanyAt(cid, pid = null) {
   if (p && !p.closed && !p.stale) {
     const q = (H.pq || "").trim().toLowerCase();
     if (q && ![p.title, p.location, p.category].join(" ").toLowerCase().includes(q)) H.pq = "";
-    if (!kwMatch(p.title)) H.pall = true;
-    const shown = (v.postings || []).filter((x) => !x.closed && !x.stale && (H.pall || kwMatch(x.title)));
+    if (!inTracks(p)) H.pall = true;
+    const shown = (v.postings || []).filter((x) => !x.closed && !x.stale && (H.pall || inTracks(x)));
     const i = shown.findIndex((x) => x.id === pid);
     if (i >= (H.plimit || 120)) H.plimit = i + 1 + 40;
   }
@@ -968,6 +970,162 @@ function askLearn(cs) {
   aiRun(aiKey("learn", cs), () => sendChat(ask, { fresh: true }), check);
 }
 
+// a read the site's own count says is short: what was read, of how many, and that nothing unread was closed
+const shortSay = (sh) => t("read {n} of the {all} roles its site lists; the rest weren't read, and none of them was closed", { n: sh[0], all: sh[1] });
+
+function askShort(c, sh) {
+  const check = huntCheck((d) => {
+    const x = huntOf(d, [c.id])[0];
+    const s2 = x && ((x.postings || {}).scan || {});
+    if (!x || !s2.short) return { ok: true, say: t("Every role {name}'s site lists is read now", { name: c.name }) };
+    return { ok: false, say: t("{name}: the scan still reads {n} of {all}. Its chat says what the AI found.", { name: c.name, n: s2.short[0], all: s2.short[1] }),
+      again: t("{name}'s scan still reads {n} of the {all} roles its site lists. Find where the rest go missing, fix the route and send it with scan-route, or tell me which step failed and the error.", { name: c.name, n: s2.short[0], all: s2.short[1] }) };
+  });
+  aiRun(aiKey("short", [c]), () => sendChat(t("{name}'s scan read {n} of the {all} roles its careers site says it lists. Find where the rest go missing (pages it stops before, a filter, roles kept as one, a page that timed out), fix its scan route and send it again with scan-route, until the counts agree.",
+    { name: c.name, n: sh[0], all: sh[1] }), { fresh: true }), check);
+}
+
+// a posting's tracks, as small tags beside its title
+function trackTags(p) {
+  const by = Object.fromEntries(huntTracks().map((tr) => [tr.id, tr]));
+  const ts = (p.tracks || []).filter((x) => by[x]);
+  return ts.length ? h("span", { class: "trk-tags" }, ts.map((x) => h("span", { class: "trk-tag", "data-track": x }, trackName(by[x])))) : null;
+}
+
+// the tracks, in the head of Today: what is set up, one click to change it
+function tracksButton() {
+  const trs = huntTracks().filter((tr) => (tr.keywords || []).length);
+  return h("button", { class: "btn sm ghost trk-btn", id: "hunt-tracks", title: t("The kinds of role you go for, each with the words its titles use"),
+    onclick: () => editTracks() }, icon("filter"),
+  trs.length ? t("Tracks: {names}", { names: trs.map(trackName).join(", ") }) : t("Set up your tracks"));
+}
+
+// Tracks, edited in a dialog: nothing is saved until Done (a pick inside a dialog waits for Done)
+function editTracks() {
+  const root = $("#modal-root");
+  if (root.firstChild) return;
+  let rows = huntTracks().map((tr) => ({ ...tr, keywords: (tr.keywords || []).join(", "), exclude: (tr.exclude || []).join(", ") }));
+  if (!rows.length) rows = [{ id: "", name: "", keywords: "", exclude: "", subset: "" }];
+  const choices = subsets().filter((x) => x.id !== ALL);
+  const list = h("div", { class: "trk-list" });
+  const close = () => { root.replaceChildren(); document.removeEventListener("keydown", onKey, true); };
+  const onKey = (e) => { if (e.key === "Escape" && !Float.cur) { e.stopPropagation(); close(); } };
+  const field = (label, input) => h("label", { class: "trk-field" }, h("span", { class: "trk-lab" }, label), input);
+  const paint = () => {
+    list.replaceChildren(...rows.map((r, i) => h("div", { class: "trk-row", "data-i": String(i) },
+      h("div", { class: "trk-top" },
+        h("input", { class: "trk-name", value: r.name, placeholder: t("Track name, e.g. AI 应用工程师"), "aria-label": t("Track name"), spellcheck: "false",
+          oninput: (e) => { r.name = e.target.value; } }),
+        uiSelect({ label: t("Resume for this track"), menuWidth: 280, value: choices.some((x) => x.id === r.subset) ? r.subset : null,
+          placeholder: t("Resume: any"), cls: "trk-subset",
+          options: [{ value: null, label: t("Resume: any") }, ...choices.map((x) => ({ value: x.id, label: subsetName(x) }))],
+          onChange: (v) => { r.subset = v || ""; } }).el,
+        h("button", { class: "btn sm ghost trk-del", title: t("Remove this track"), "aria-label": t("Remove this track"),
+          onclick: () => { rows.splice(i, 1); paint(); } }, icon("trash"))),
+      field(t("Titles with any of"), h("input", { class: "trk-kw", value: r.keywords, spellcheck: "false", placeholder: t("AI, Agent, 大模型, LLM, AI+应用"),
+        oninput: (e) => { r.keywords = e.target.value; } })),
+      field(t("But not"), h("input", { class: "trk-ex", value: r.exclude, spellcheck: "false", placeholder: t("销售, 售前"),
+        oninput: (e) => { r.exclude = e.target.value; } })))));
+  };
+  paint();
+  const done = async () => {
+    try {
+      await api("PUT", "/api/hunt/scan-settings", { tracks: rows.map((r) => ({ id: r.id, name: r.name.trim(), keywords: r.keywords, exclude: r.exclude, subset: r.subset })) });
+      close();
+      await loadHunt({ quiet: true });
+      toast(t("Tracks saved"));
+    } catch (e) { toast(e.message); }
+  };
+  root.replaceChildren(h("div", { class: "modal-back", onmousedown: (e) => { if (e.target === e.currentTarget) close(); } },
+    h("div", { class: "modal trk-modal", role: "dialog", "aria-modal": "true", "aria-label": t("Your tracks") },
+      h("h3", null, t("Your tracks")),
+      h("p", null, t("One track per kind of role you go for. A role is picked for you when its title has one of a track's words; separate words with commas, and join two with + when a title needs both. Two or three letters (AI, ML) count only as a whole word.")),
+      list,
+      h("div", { class: "trk-more" },
+        h("button", { class: "btn sm", onclick: () => { rows.push({ id: "", name: "", keywords: "", exclude: "", subset: "" }); paint(); const n = list.querySelectorAll(".trk-name"); n[n.length - 1].focus(); } },
+          icon("plus"), t("Add a track")),
+        h("button", { class: "btn sm", disabled: !ui.chat.available, title: ui.chat.available ? t("The AI sets them up from your resume subsets and the words real postings use") : missingAgentText(),
+          onclick: () => { close(); askTracks(); } }, icon("sparkle"), t("Let AI set them up"))),
+      h("div", { class: "acts" }, h("button", { class: "btn", onclick: close }, t("Cancel")), h("button", { class: "btn primary", onclick: done }, t("Done"))))));
+  document.addEventListener("keydown", onKey, true);
+  const first = list.querySelector(".trk-name");
+  if (first) first.focus();
+}
+
+function askTracks() {
+  const before = JSON.stringify(huntTracks());
+  const check = huntCheck(() => anyTracks() && JSON.stringify(huntTracks()) !== before
+    ? { ok: true, say: t("Tracks set up: {names}", { names: huntTracks().map(trackName).join(", ") }) }
+    : { ok: false, say: t("No tracks were saved. Its chat says why."), again: t("Save the tracks with `tracks --stdin` now.") });
+  aiRun("tracks", () => sendChat(t("Set up my tracks: one per kind of role I go for, from my resume subsets and what you know about what I want, each with the words real postings use in their titles and the resume subset it goes out with. Then check them against one company's titles and tell me what you set up."),
+    { fresh: true }), check);
+}
+
+// ---- Picked for you: every company's open roles that fall in a track, in one list
+async function loadPicked() {
+  if (H.pickedLoading) return;
+  H.pickedLoading = true;
+  try { H.picked = await api("GET", "/api/hunt/matches"); } catch (e) { toast(e.message); }
+  finally { H.pickedLoading = false; }
+  if (W.ws === "fill" && H.tab === "picked" && !H.page) paintHunt();
+}
+
+function pickedPage() {
+  const d = H.data;
+  const head = h("div", { class: "hunt-head" }, h("h1", null, t("Picked for you")),
+    h("p", null, t("Open roles from every company you follow whose titles fall in one of your tracks, newest first. Nothing here uses the AI: it is your tracks' words against each title.")));
+  if (!anyTracks()) {
+    return [head, h("div", { class: "hunt-empty trk-empty" },
+      h("div", { class: "t" }, t("No tracks yet")),
+      h("p", null, t("A track is a kind of role you go for, like AI 应用工程师 or AI 产品经理, with the words its titles use. Set one up and the roles that fit are picked out of every scan.")),
+      h("div", { class: "row wrap" },
+        h("button", { class: "btn sm primary", disabled: !ui.chat.available, title: ui.chat.available ? null : missingAgentText(), "data-ai": "tracks", onclick: askTracks }, icon("sparkle"), t("Let AI set them up")),
+        h("button", { class: "btn sm", onclick: () => editTracks() }, icon("plus"), t("Set them up myself"))))];
+  }
+  // fetched once per change of the tracker: a "hunt" event reloads H.data, and a new sign makes this fetch again
+  const sig = (d.scan.last_run || {}).at + "|" + JSON.stringify(huntTracks()) + "|" + d.companies.reduce((k, c) => k + ((c.postings || {}).matching || 0), 0);
+  if (H.pickedSig !== sig) { H.pickedSig = sig; loadPicked(); }
+  const m = H.picked;
+  if (!m) return [head, h("div", { class: "muted" }, t("Loading…"))];
+  const trs = huntTracks().filter((tr) => (tr.keywords || []).length);
+  const cur = trs.some((tr) => tr.id === H.ptrack) ? H.ptrack : "";
+  const q = (H.pq2 || "").trim().toLowerCase();
+  const fresh = H.pnew ? new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10) : "";
+  const shown = m.postings.filter((p) => (!cur || p.tracks.includes(cur)) && (!p.app || H.papplied)
+    && (!fresh || (p.first_seen || "").slice(0, 10) >= fresh)
+    && (!q || [p.title, p.company_name, p.location, p.category].join(" ").toLowerCase().includes(q)));
+  const seg = (id, label, n) => h("button", { type: "button", class: "trk-seg" + (cur === id ? " on" : ""), "aria-pressed": String(cur === id),
+    onclick: () => { H.ptrack = id; H.plimit2 = 0; paintHunt(); } }, label, h("span", { class: "n" }, String(n)));
+  const limit = H.plimit2 || 150;
+  const byCo = Object.fromEntries(d.companies.map((c) => [c.id, c]));
+  const row = (p) => h("div", { class: "post-row picked-row", "data-id": p.id },
+    byCo[p.company] ? companyLogo(byCo[p.company]) : null,
+    h("div", { class: "pr-main" },
+      h("a", { class: "pr-title", href: p.url || null, "data-ext": p.url ? "" : null }, p.title),
+      trs.length > 1 && trackTags(p),
+      h("span", { class: "pr-meta" }, [h("button", { class: "linkish pk-co", onclick: () => openCompanyAt(p.company, p.id) }, p.company_name),
+        p.location, p.batch && t(BATCH_NAMES[p.batch] || p.batch), p.posted && t("posted {date}", { date: p.posted }),
+        p.deadline && h("span", { class: "c-due" + (p.deadline < today() ? " late" : "") }, t("closes {date}", { date: p.deadline }))]
+        .filter(Boolean).flatMap((x, i) => (i ? [" · ", x] : [x])))),
+    p.app ? h("button", { class: "btn sm ghost pr-added", title: t("In your applications: open it"), onclick: () => openHunt("app", p.app) }, icon("check"), t("Added"))
+      : h("button", { class: "btn sm", title: t("Add it to your applications"), onclick: async () => { await applyPosting(p); H.pickedSig = null; } }, icon("plus"), t("Want to apply")));
+  const short = d.companies.filter((c) => ((c.postings || {}).scan || {}).short);
+  return [head,
+    h("div", { class: "hunt-tools picked-tools" },
+      h("div", { class: "trk-segs", role: "group", "aria-label": t("Your tracks") },
+        trs.length > 1 && seg("", t("All tracks"), m.total), trs.map((tr) => seg(tr.id, trackName(tr), m.counts[tr.id] || 0))),
+      h("button", { class: "btn sm ghost", id: "picked-edit-tracks", onclick: () => editTracks() }, icon("pen"), t("Edit tracks")),
+      h("span", { class: "spacer" }),
+      h("button", { class: "btn sm ghost" + (H.pnew ? " on" : ""), "aria-pressed": String(!!H.pnew), onclick: () => { H.pnew = !H.pnew; paintHunt(); } }, t("New this week")),
+      h("button", { class: "btn sm ghost" + (H.papplied ? " on" : ""), "aria-pressed": String(!!H.papplied), onclick: () => { H.papplied = !H.papplied; paintHunt(); } }, t("Show added")),
+      searchBox("picked-search", H.pq2 || "", t("Search these roles"), (v) => { H.pq2 = v; })),
+    short.length > 0 && h("div", { class: "note-bar warn" }, icon("alert"), h("span", { class: "nb-text" },
+      t("Read in part, so roles may be missing here: {names}", { names: short.map((c) => t("{company} ({n} of {all})", { company: c.name, n: c.postings.scan.short[0], all: c.postings.scan.short[1] })).join(", ") }))),
+    shown.length ? h("div", { class: "post-list picked-list" }, shown.slice(0, limit).map(row),
+      shown.length > limit && h("button", { class: "btn sm ghost", onclick: () => { H.plimit2 = limit + 200; paintHunt(); } }, t("Show {n} more", { n: Math.min(200, shown.length - limit) })))
+      : h("div", { class: "hunt-empty" }, m.total ? t("Nothing matches") : t("No open role at the companies you follow is in your tracks yet. Scan them, or widen a track's words."))];
+}
+
 // a company's open postings, on its page
 function postingsCard(v) {
   const c = v.company;
@@ -980,8 +1138,8 @@ function postingsCard(v) {
   const fresh = new Set(sc.new || []);
   const q = (H.pq || "").trim().toLowerCase();
   const showAll = !!H.pall;
-  const shown = open.filter((p) => (showAll || kwMatch(p.title)) && (!q || [p.title, p.location, p.category].join(" ").toLowerCase().includes(q)));
-  const hidden = open.length - open.filter((p) => kwMatch(p.title)).length;
+  const shown = open.filter((p) => (showAll || inTracks(p)) && (!q || [p.title, p.location, p.category].join(" ").toLowerCase().includes(q)));
+  const hidden = open.length - open.filter(inTracks).length;
   const limit = H.plimit || 120;
   const busy = scanning(c.id) || sc.running;
   const waiting = !busy && (sc.queued || scanQueued(c.id));
@@ -996,6 +1154,9 @@ function postingsCard(v) {
     : sc.ok && sc.error ? h("span", { class: "fs-status warn", id: "company-read-in-part" }, icon("alert"), sc.unread
       ? t("scanned {when} · {how} · {n} of {all} pages didn't read; the roles they had last time are kept", { when: huntWhen(sc.at), how: howName(sc.how), n: sc.unread[0], all: sc.unread[1] })
       : t("scanned {when} · {how} · some pages didn't read", { when: huntWhen(sc.at), how: howName(sc.how) }))
+    // read, but fewer roles than the site says it has: never shown as a whole read
+    : sc.ok && sc.short ? h("span", { class: "fs-status warn", id: "company-read-short" }, icon("alert"),
+      t("scanned {when} · {what}", { when: huntWhen(sc.at), what: shortSay(sc.short) }))
     // read, but a site still has no route: the next scan can't read it again, so "scanned" alone would read as set up
     : sc.ok && sc.needs === "claude" ? h("span", { class: "fs-status warn", id: "company-no-route" }, icon("alert"), sc.how === "claude"
       ? t("read by hand by the AI {when} · {what}, so a scan won't update these roles", { when: huntWhen(sc.at), what: unscannedSay(sc.unrouted, sc.tried) })
@@ -1006,6 +1167,7 @@ function postingsCard(v) {
     h("div", { class: "pr-main" },
       h("a", { class: "pr-title", href: p.url || null, "data-ext": p.url ? "" : null }, p.title),
       fresh.has(p.id) && !p.stale && h("span", { class: "chip new-chip" }, t("new")),
+      huntTracks().length > 1 && trackTags(p),
       p.changed && p.changed.deadline && h("span", { class: "chip", title: p.changed.deadline.join(" → ") }, t("deadline changed")),
       // one line, one separator: the deadline is a part like the others, only coloured when it has passed
       h("span", { class: "pr-meta" }, [p.location, p.category, p.batch && t(BATCH_NAMES[p.batch] || p.batch),
@@ -1023,6 +1185,8 @@ function postingsCard(v) {
       title: allTried(sc.unrouted, sc.tried) ? t("The AI tried once and the scan still can't read it; it tries again, told what is still missing")
         : t("The AI reads its site once and records a scan route; after that, scans read it without AI") },
       icon("sparkle"), allTried(sc.unrouted, sc.tried) ? t("Let AI try again") : t("Let AI learn its site")),
+    sc.ok && sc.short && h("button", { class: "btn sm", id: "company-fix-short", "data-ai": aiKey("short", [c]), disabled: !ui.chat.available,
+      title: t("The AI finds where the rest go missing and fixes the scan route"), onclick: () => askShort(c, sc.short) }, icon("sparkle"), t("Let AI read the rest")),
     !sc.ok && sc.at && sc.how === "route" && h("button", { class: "btn sm", "data-ai": aiKey("learn", [c]), disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Ask AI to record the scan route again")),
     h("button", { class: "btn sm", id: "company-scan", "aria-busy": (busy || waiting) && "true", disabled: !!busy || waiting || sc.needs === "sites",
       title: sc.needs === "sites" ? t("Add a careers site below first") : waiting ? t("Waiting for the companies before it…") : null,
@@ -1035,10 +1199,11 @@ function postingsCard(v) {
     sc.ok && !busy && !open.length && h("p", { class: "muted card-p", id: "company-no-postings" },
       t("Its sites list no open roles right now. If you know they hire, check the addresses under Its careers sites.")),
     open.length > 0 && h("div", { class: "row wrap post-tools" }, search, hidden > 0 && h("button", { class: "btn sm ghost", onclick: () => { H.pall = !H.pall; paintHunt(); } },
-      showAll ? t("Only the roles you look for") : t("Show all ({n} more)", { n: hidden }))),
+      showAll ? t("Only roles in your tracks") : t("Show all ({n} more)", { n: hidden }))),
     shown.length ? h("div", { class: "post-list" }, shown.slice(0, limit).map(row),
       shown.length > limit && h("button", { class: "btn sm ghost", onclick: () => { H.plimit = limit + 200; paintHunt(); } }, t("Show {n} more", { n: Math.min(200, shown.length - limit) })))
-      : open.length > 0 && h("p", { class: "muted card-p" }, t("Nothing here matches. Change the roles you look for on the Companies tab, or show all.")),
+      : open.length > 0 && h("p", { class: "muted card-p" }, t("None of its roles is in your tracks. Change your tracks, or show all."),
+        " ", h("button", { class: "linkish", onclick: () => editTracks() }, t("Edit tracks"))),
     stale.length > 0 && h("details", { class: "post-closed", id: "company-stale" },
       h("summary", { title: t("Still on its site, but the closing date has passed, or there is none and it was posted over a year ago") },
         icon("down"), t("{n} probably over", { n: stale.length })),

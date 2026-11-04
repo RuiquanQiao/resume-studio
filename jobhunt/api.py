@@ -26,7 +26,7 @@ from . import ics, logos, reader, writing
 from .geo import Geo
 from .history import History, describe
 from .logos import fetch_logo, fetch_logo_in_browser
-from .postings import Postings, same_link, stale
+from .postings import tracks_of, Postings, same_link, stale
 from .scan import Scanner
 from .store import LOGO_TYPES, STATE_IDS, Hunt, SameCompany
 from .views import Views
@@ -314,17 +314,18 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         apps = sorted(hunt.applications(c["id"]), key=lambda a: a.get("order") or 0)
         evs = [e for e in hunt.events() if e["app"] in {a["id"] for a in apps}]
         st = scanner.live_state(c)
+        trs = posts.tracks()
         return {"company": {**c, "logo_url": logo_url(c), "subset_label": subset_label(doc, c.get("subset") or ""),
                             "research": research(c, apps, resume_langs(doc)),
                             "subset_exists": bool(c.get("subset")) and model.get_item(doc, "subset", c["subset"]) is not None},
                 "applications": apps, "events": evs,
-                "postings": sorted(({**p, "stale": stale(p)} for p in posts.all(c["id"])),
+                "postings": sorted(({**p, "stale": stale(p), "tracks": tracks_of(p["title"], trs)} for p in posts.all(c["id"])),
                                    key=lambda p: (bool(p.get("closed")), p.get("category") or "", p["title"])),
                 "scan": {k: v for k, v in st.items() if k != "route"} | {"recorded": bool(st.get("route")),
                                                                        "running": scanner.running.get(c["id"]),
                                                                        "queued": c["id"] in scanner.queue,
                                                                        "sites": scanner.site_status(c)},
-                "keywords": posts.scans()["keywords"]}
+                "keywords": posts.scans()["keywords"], "tracks": posts.tracks()}
 
     def app_view(ref: str) -> dict:
         a = hunt.application(ref)
@@ -445,7 +446,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             c["postings"]["tried"] = st["tried"]
         sc = posts.scans()
         return {**tb, "platforms": platforms(), "tracker": tracker(), "career_ops": tool.installed(),
-                "scan": {"keywords": sc["keywords"], "daily": sc["daily"], "last_all": sc["last_all"],
+                "scan": {"keywords": sc["keywords"], "tracks": sc["tracks"], "daily": sc["daily"], "last_all": sc["last_all"],
                          "running": dict(scanner.running), "providers": scanner.providers_ready(),
                          "last_run": scanner.last_run, "queued": list(scanner.queue),
                          "batch": dict(scanner.batch) if scanner.batch else None},
@@ -479,10 +480,16 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         scanner.start(ids, auto=bool(b.get("auto")))
         return {"started": ids}
 
+    @app.route("GET", "/api/hunt/matches")
+    def matches_view(req: Request):
+        """Every open role, of every company, in one of the user's tracks: the roles picked for them (user,
+        2026-11-04: "scanned, but nothing picked out the roles I'd want")."""
+        return posts.matched()
+
     @app.route("PUT", "/api/hunt/scan-settings")
     def scan_settings(req: Request):
         b = body(req)
-        return posts.settings(keywords=b.get("keywords"), daily=b.get("daily"))
+        return posts.settings(keywords=b.get("keywords"), daily=b.get("daily"), tracks=b.get("tracks"))
 
     @app.route("POST", "/api/hunt/postings/{pid}/apply")
     def apply_posting(req: Request):
@@ -847,6 +854,9 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 if errs:
                     raise HttpError(400, "the route has problems:\n- " + "\n- ".join(errs))
                 res = scanner.scan(c["id"])
+                # a route that never says the site's count can't be checked: told, so the AI adds it
+                if "found" in res and not any(re.search(r"\btotal\b", p.get("script") or "") for p in r.get("pages") or []):
+                    res["no_total"] = True
                 return {"scanned": [res], "company": company_view(c["id"]), "text": "route saved and run"}
             if cmd == "postings":
                 c = hunt.company(str(a.get("ref") or ""))
@@ -862,6 +872,10 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 return {"app": app_view(x["id"]), "text": "added"}
             if cmd == "keywords":
                 return {"settings": posts.settings(keywords=a.get("keywords")), "text": "keywords"}
+            if cmd == "show-tracks":
+                return {"settings": {"tracks": posts.tracks()}, "text": "tracks"}
+            if cmd == "tracks":
+                return {"settings": posts.settings(tracks=a.get("tracks")), "text": "tracks"}
             if cmd == "sent":
                 ref = str(a.get("ref") or "")
                 if "/" in ref or (ref[:1] == "A" and ref[1:].isdigit()):
@@ -878,7 +892,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 return {**history.undo(str(a.get("change") or ""), by="chat"), "text": "undone"}
             raise HttpError(400, f"unknown command {cmd!r}; one of: list, show, add-company, edit-company, fill, add-role, "
                                  "edit-role, status, note, book, rebook, unbook, ics, about, sent, scan, scan-route, postings, apply, "
-                                 "keywords, history, undo")
+                                 "keywords, tracks, history, undo")
 
         out = guard(run)
         if cmd in RECORDED:

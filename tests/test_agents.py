@@ -283,7 +283,8 @@ def test_pi_chat_session_tools_and_usage(server, agent_log):
     assert text(m) == "pi heard: hello pi"
     tool = next(b for b in m["blocks"] if b["type"] == "tool")
     assert tool["name"] == "Read" and tool["hint"] == "resume.yaml" and tool["status"] == "done"
-    argv = lines(agent_log)[0]["argv"]
+    # the chat's own process: a model-list fetch (`--no-session`) may have started before it and be line 0
+    argv = next(x["argv"] for x in lines(agent_log) if "argv" in x and "--no-session" not in x["argv"])
     assert argv[argv.index("--model") + 1] == "anthropic/claude-fake" and argv[argv.index("--thinking") + 1] == "minimal"
     assert "--append-system-prompt" in argv and "--session-id" in argv
     meta = server.req("GET", f"/api/chats/{cid}")[1]["chat"]

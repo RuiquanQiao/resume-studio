@@ -83,10 +83,20 @@ def run_summary(out: list[dict], auto: bool) -> dict:
 
 def same_once(found: list[dict]) -> list[dict]:
     """One role read twice, through two addresses of the same board (Feishu's /index/position/<id> and
-    /xinghe/position/<id>): kept once. The same title with the same long id in its address is the same role."""
+    /xinghe/position/<id>): kept once. The same title with the same long id in its address is the same role.
+    A number that three or more differently titled roles share is not a role's id but the company's (Hotjob puts its
+    tenant, /SU12345678…/, in every address): it never makes two roles one (2026-11-04: 448 roles read, 381 kept,
+    every trainee role posted in two cities dropped)."""
+    def ids_of(p: dict) -> list[str]:
+        return re.findall(r"\d{8,}", urlsplit(str(p.get("url") or "")).path)
+    titles: dict[str, set[str]] = {}
+    for p in found:
+        for i in ids_of(p):
+            titles.setdefault(i, set()).add(str(p.get("title") or "").strip().casefold())
+    shared = {i for i, ts in titles.items() if len(ts) > 2}
     seen, out = set(), []
     for p in found:
-        ids = re.findall(r"\d{8,}", urlsplit(str(p.get("url") or "")).path)
+        ids = [i for i in ids_of(p) if i not in shared]
         k = (str(p.get("title") or "").strip().casefold(), max(ids, key=len)) if ids else None
         if k and k in seen:
             continue
@@ -94,6 +104,19 @@ def same_once(found: list[dict]) -> list[dict]:
             seen.add(k)
         out.append(p)
     return out
+
+
+def short_of(rows: list[dict], totals: dict[str, int]) -> list[int] | None:
+    """[read, the site says] when a route read fewer different roles than its site says it lists, else None.
+    The check that doesn't trust the script, or the agent that wrote it: a site (2026-11-04) said 448 and 381 came in,
+    and only the agent's own last line said so. A role counts once (same_once, then by its link or title + place).
+    A few short (a role taken down between one page and the next) is no gap: 2% or 2 roles, whichever is more."""
+    if not totals:
+        return None
+    want = sum(totals.values())
+    from .postings import clean, fingerprint
+    got = len({fingerprint(x) for x in (clean(p) for p in same_once(rows)) if x})
+    return [got, want] if want - got > max(2, want // 50) else None
 
 
 class RouteFailed(Exception):
@@ -278,7 +301,8 @@ class Scanner:
         return self.browser.hold() if hasattr(self.browser, "hold") else contextlib.nullcontext()
 
     # ---- one company ----
-    def run_route(self, route: dict, errors: list[str] | None = None, unread: list[int] | None = None) -> list[dict]:
+    def run_route(self, route: dict, errors: list[str] | None = None, unread: list[int] | None = None,
+                  totals: dict[str, int] | None = None) -> list[dict]:
         """Each address in a tab of its own, off the screen (core/browser.py read_pages): a scan never takes the
         tab the user or Claude is working in. A browser the scan started closes itself once nothing uses it
         (core/browser.py close_if_idle); one the user opened stays."""
@@ -287,12 +311,16 @@ class Scanner:
                 self.browser.ensure()
             except BrowserError as e:
                 raise RouteFailed(str(e))
-            return self._read_route(route, errors, unread)
+            return self._read_route(route, errors, unread, totals)
 
-    def _read_route(self, route: dict, errors: list[str] | None = None, unread: list[int] | None = None) -> list[dict]:
+    def _read_route(self, route: dict, errors: list[str] | None = None, unread: list[int] | None = None,
+                    totals: dict[str, int] | None = None) -> list[dict]:
         """One page that doesn't read (a slow site timing out) never throws away the pages that did: its trouble
         goes into `errors`, how many of the route's pages didn't read into `unread` ([unread, all]), and the rest
-        is kept. Only a route that read nothing at all fails. Pages in a row on one address share one opened page."""
+        is kept. Only a route that read nothing at all fails. Pages in a row on one address share one opened page.
+        A script that says how many roles its list has (`total`, as the site says it: "448 个职位") puts it in
+        `totals`, one number per list (its `list` name, else its address): the pages of one long list split
+        across several scripts each say the whole list's number, so the biggest counts, not their sum."""
         pages = route.get("pages") or []
         groups: list[tuple[str, list[str]]] = []
         for p in pages:
@@ -334,6 +362,9 @@ class Scanner:
                     problems.append(t("the script on {url} gave no list of postings", url=url))
                     continue
                 found += rows
+                if totals is not None and isinstance(out, dict) and str(out.get("total") or "").strip().isdigit():
+                    k = str(out.get("list") or url)
+                    totals[k] = max(totals.get(k, 0), int(str(out["total"]).strip()))
         if not found:
             raise RouteFailed("; ".join(problems) or t("the route found no postings at all: the site has probably changed"))
         if errors is not None:
@@ -372,6 +403,8 @@ class Scanner:
                 return {"company": c["id"], "needs": "sites"}
             found: list[dict] = []
             hows, errors, needs, unread = [], [], [], []
+            totals: dict[str, int] = {}
+            routed: list[dict] = []
             api = [s for s in plan if s["how"] not in ("route", "claude")]
             # a route page on a list a provider reads (a Moka or Workday board the AI recorded a script for) is read
             # through the provider: the AI's script only for what no provider reads (8 companies, 2026-11-03)
@@ -393,7 +426,8 @@ class Scanner:
                     self.running[c["id"]] = "route"
                     self.publish()
                     try:
-                        found += self.run_route({**route, "pages": scripts}, errors, unread)
+                        routed = self.run_route({**route, "pages": scripts}, errors, unread, totals)
+                        found += routed
                         hows.append("route")
                     except RouteFailed as e:
                         if not found:
@@ -412,12 +446,18 @@ class Scanner:
                     return {"company": c["id"], "error": "; ".join(errors), "scan": st, "needs": needs[0] if needs else "",
                             "unrouted": missing}
                 return {"company": c["id"], "needs": needs[0] if needs else "claude", "unrouted": missing}
-            complete = not errors and not needs
+            short = short_of(routed, totals)
+            # read in part, by the site's own count: what wasn't read isn't closed (a cheaper model's route that
+            # stopped at page 38 of 45 must never close the roles on pages 39 to 45)
+            complete = not errors and not needs and not short
             res = self.postings.merge(c["id"], found, how="+".join(dict.fromkeys(hows)), complete=complete)
+            # short: [read, the site says] — kept until a scan reads them all, said wherever the count is shown
+            self.postings.set_scan_state(c["id"], short=short or None)
             if errors:   # unread: how many of the route's pages didn't read, of how many ([17, 20]), for the window to say
                 self.postings.set_scan_state(c["id"], error="; ".join(errors), unread=unread or None)
             return {"company": c["id"], "found": res["found"], "new": len(res["new"]), "closed": len(res["closed"]),
-                    "changed": len(res["changed"]), "needs": needs[0] if needs else "", "errors": errors, "unrouted": missing}
+                    "changed": len(res["changed"]), "needs": needs[0] if needs else "", "errors": errors, "unrouted": missing,
+                    "short": short or None}
         finally:
             with self.lock:
                 self.running.pop(c["id"], None)

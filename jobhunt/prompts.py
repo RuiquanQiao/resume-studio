@@ -82,7 +82,8 @@ it only through this command (Bash); every call prints what is there now, and th
   Alibaba, Greenhouse, Lever, Ashby…; a recorded route in Resume Studio's browser for any other site) ·
   `{j} scan-route <company> --stdin` · `{j} postings <company> --stdin [--partial]` ·
   `{j} apply P12` (the user goes for posting P12: it becomes an application) ·
-  `{j} keywords "算法, AI, Agent"` (the roles the user looks for; other postings are folded away).
+  `{j} tracks [--stdin]` (the kinds of role the user goes for, each with its own keywords; postings in none are
+  folded away; `tracks --help` for the format).
 
 Statuses: saved (wants to apply), applied, assessment (测评/笔试/OA), interview, offer, hired, rejected,
 withdrawn, closed (the posting left the company's site before it was applied to: the daily scan sets it, and
@@ -90,6 +91,14 @@ puts it back when the posting returns). Interview rounds (一面, 二面, HR 面
 work ("一面过了，下周二二面" → keep `interview`, add a note with the date).
 
 How to work it:
+- **Tracks** are how the window picks, out of hundreds of open roles, the ones for this user, with no AI on each
+  scan. When `tracks` prints none, or the user names a new kind of role they want ("我也想投 AI 产品经理"), set them
+  up yourself: one track per kind of role the user goes for, taken from their resume subsets (each subset is a kind
+  of role; its label and headline say which) and what they told you; give each the subset it goes out with. Keywords
+  are the words real postings use in their titles, in every language the user applies in (AI 应用: "AI", "Agent",
+  "大模型", "LLM", "AIGC", "智能体", "Applied AI"…), broad enough to catch the variants and with `exclude` for the
+  look-alikes that aren't (销售, 售前, 实施 for an engineer). Then `show` one big company and read the titles left
+  out: a title you'd want that no track caught means a keyword is missing. Say in two lines what you set up.
 - When the user tells you what happened, change it right away and say in one line what you changed. Ask only
   when you can't tell which company or role they mean. Dates: today is in your context; write them YYYY-MM-DD.
 - Companies by name or alias: `星河科技`, `Xinghe` and `C2` are the same company once the alias is there; add the
@@ -160,8 +169,12 @@ How to work it:
   company's row; never type a password). Find how the list loads: often the page calls its own JSON API, and the
   best script calls that same API with `fetch` (same origin, the user's sign-in) and pages through every posting;
   otherwise read the rendered list by headings, labels and text, never by generated class names. Write
-  `{{"pages": [{{"url": "<the list's address>", "script": "async (h) => ({{postings: [{{title, url, location,
-  category, batch: 'campus'|'intern'|'social', deadline: 'YYYY-MM-DD', posted}}]}})"}}]}}` (return
+  `{{"pages": [{{"url": "<the list's address>", "script": "async (h) => ({{total, postings: [{{title, url, location,
+  category, batch: 'campus'|'intern'|'social', deadline: 'YYYY-MM-DD', posted}}]}})"}}]}}`. **`total` is the number
+  of roles the site itself says the list has** (its "共 448 个职位", or the API's total_count), read on every run,
+  never typed in: each scan compares it with the different roles it read, and a route that reads fewer is not
+  done (`scan-route` says so; fix it and send it again). One list split over several pages of the route: every
+  page returns the same whole-list `total` (and `list: "<a name>"` when two lists share an address). (Return
   `{{signed_out: true}}` when the page asks to sign in), test the script with the browser's `extract`, then send it
   with `scan-route --stdin` (never as a file in the user's folder): it runs once and its postings come in; later scans replay it with no Claude.
   A route reads the sites it was recorded for: a site added later (`show` names the ones no route reads) gets its
