@@ -925,7 +925,7 @@ function askLearn(cs) {
       { sites: named.map(([c, u]) => t("{company} ({sites})", { company: c.name, sites: u.join(", ") })).join("; ") })
     : t("Learn to read the careers sites of {names} that the scan can't read yet (show says which), and only those. For each one, first see whether its list is on a recruiting system the scan reads through its API (then give the site that list); only a list no API reads gets a scan route.",
       { names: cs.map((c) => c.name).join(", ") });
-  aiRun(aiKey("learn", cs), () => sendChat(ask), check);
+  aiRun(aiKey("learn", cs), () => sendChat(ask, { fresh: true }), check);
 }
 
 // a company's open postings, on its page
@@ -1329,7 +1329,7 @@ async function addFromLink() {
     return { ok: false, say: t("No role with this link was added"),
       again: t("No role with the link {url} is on the list yet. Add it with add-role, or tell me why it can't be added.", { url }) };
   });
-  aiRun("add-link", () => sendChat(t("Read this posting and add it: {url}", { url })), check);
+  aiRun("add-link", () => sendChat(t("Read this posting and add it: {url}", { url }), { fresh: true }), check);
 }
 
 async function newApplication(companyId = null) {
@@ -1572,7 +1572,7 @@ function askRewrite(cs) {
   });
   aiRun(aiKey("rewrite", cs), () => sendChat(cs.length === 1
     ? t("Write what is known about {company} again in {lang}: its industry, strength, size and the About, with the same facts and sources.", { company: cs[0].name, lang: cs[0].research.lang_name })
-    : t("Write what is known about these companies again, each in the language it is described in: their industry, strength, size and the About, with the same facts and sources. {names}", { names: cs.map((c) => c.name).join(", ") })), check);
+    : t("Write what is known about these companies again, each in the language it is described in: their industry, strength, size and the About, with the same facts and sources. {names}", { names: cs.map((c) => c.name).join(", ") }), { fresh: true }), check);
 }
 // on a company's page: what is there is in another language than the company is described in
 function languageBar(c) {
@@ -1602,7 +1602,7 @@ function askRead(a, c) {
     return { ok: false, say: t("The job description of {role} is still not filled in", { role: now.role }),
       again: t("The job description of {role} at {company} is still not filled in. Read {url} again and keep its text with jd, or tell me why the page can't be read.", { role: now.role, company: c.name, url: now.url }) };
   });
-  aiRun("read:" + a.id, () => sendChat(t("Read the posting at {url} and fill in {role} at {company}: its job description, location and apply-by date.", { url: a.url, role: a.role, company: c.name })), check);
+  aiRun("read:" + a.id, () => sendChat(t("Read the posting at {url} and fill in {role} at {company}: its job description, location and apply-by date.", { url: a.url, role: a.role, company: c.name }), { fresh: true }), check);
 }
 
 // Claude researches each company and fills every field (docs/JOB_HUNT.md, 2026-10-18); one message each, queued in one chat
@@ -1630,7 +1630,8 @@ function askFill(cs) {
   });
   aiRun(aiKey("fill", cs), async () => {
     let ok = false;
-    for (const c of cs) ok = await sendChat(t("Find out about {company} and fill in all its fields: industry, strength, headquarters, the cities it hires in, size, its careers sites, its logo and the About, each with a source.", { company: c.name })) || ok;
+    let fresh = true;   // one new chat for them all: the rest queue in it
+    for (const c of cs) { ok = await sendChat(t("Find out about {company} and fill in all its fields: industry, strength, headquarters, the cities it hires in, size, its careers sites, its logo and the About, each with a source.", { company: c.name }), { fresh }) || ok; fresh = false; }
     return ok;
   }, check);
 }

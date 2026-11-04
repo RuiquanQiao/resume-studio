@@ -746,7 +746,7 @@ function paintDocument({ keepScroll = true, flash = false } = {}) {
     h("div", null, t("Put every real experience here; pick for each resume later.")),
     h("div", { class: "acts" },
       h("button", { class: "btn primary sm", onclick: () => newEntry((sections().find((s) => s.id === "projects") || sections()[0] || {}).id || "projects") }, icon("plus"), t("Add entry")),
-      h("button", { class: "btn sm", onclick: () => startChatWith(t("Please import the experience from my old resume into resume.yaml. The old resume is at: ")) }, icon("sparkle"), t("Let AI import")))));
+      h("button", { class: "btn sm", onclick: () => startChatWith(t("Please import the experience from my old resume into resume.yaml. The old resume is at: "), { fresh: true }) }, icon("sparkle"), t("Let AI import")))));
   mid.replaceChildren(wrap);
   ui.docSig = docSig();
   if (anchor) restoreAnchor(anchor); else mid.scrollTop = 0;
@@ -1577,7 +1577,7 @@ function openSettings(section = null) {
   if (root.firstChild) return;
   pendingUiLang = undefined;
   const done = async () => {
-    try { await applyAgentSetting(); await applyJobsSettings(); await applyTracker(); } catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
+    try { await applyAgentSetting(); await applyAiNewChat(); await applyJobsSettings(); await applyTracker(); } catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
     try { if (await applyUiLang()) { await saveDraft(); location.reload(); return; } }
     catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
     close();
@@ -1585,7 +1585,7 @@ function openSettings(section = null) {
   const close = () => {
     for (const k of Object.keys(jobsPending)) delete jobsPending[k];
     pendingTracker = undefined; pendingDaily = undefined;
-    pendingUiLang = undefined; pendingAgentSetting = undefined; closeSettings = () => {}; root.replaceChildren(); document.removeEventListener("keydown", onKey); $("#settings-btn").focus(); };
+    pendingUiLang = undefined; pendingAgentSetting = undefined; pendingAiNewChat = undefined; closeSettings = () => {}; root.replaceChildren(); document.removeEventListener("keydown", onKey); $("#settings-btn").focus(); };
   closeSettings = close;
   // bubble phase: an open dropdown takes Escape first (it stops the event in the capture phase)
   const onKey = (e) => { if (e.key === "Escape") close(); };
@@ -1596,6 +1596,7 @@ function openSettings(section = null) {
       h("h3", null, t("Settings")),
       h("p", null, t("These belong to this computer, not to your resume.")),
       agentSettingsField(),
+      aiNewChatField(),
       h("div", { class: "field" }, h("label", null, t("App language"), h("span", { class: "hint" }, t("The language of this window; it follows your computer unless you pick one"))), uiLangPicker()),
       h("div", { class: "field" }, h("label", null, t("Data file"), h("span", { class: "hint" }, t("Your resume is this file; companies, applications, the plan and chats are in the resume-studio-data folder next to it. The window opens it next time too"))),
         h("div", { class: "data-path" }, S.data_path),
@@ -1715,7 +1716,7 @@ function sectionsForm() {
       h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, t("The AI will know your projects are here: ask it in the chat which ones are worth a place on your resume; picking a folder for an entry also starts here.")),
       rootRows,
       h("div", { class: "ev-actions" }, h("button", { class: "btn sm", onclick: addRoot }, icon("folder"), t("Choose folder")),
-        roots.length && ui.chat.available ? h("button", { class: "btn sm ghost", "data-ai": "pick-projects", onclick: () => aiRun("pick-projects", () => sendChat(t("Look at my project folders ({folders}) and pick the projects most worth putting on my resume, with your reasons. Don't change resume.yaml yet; once I confirm, add them one at a time.", { folders: roots.join(", ") }))) }, icon("sparkle"), t("Let AI pick projects")) : null),
+        roots.length && ui.chat.available ? h("button", { class: "btn sm ghost", "data-ai": "pick-projects", onclick: () => aiRun("pick-projects", () => sendChat(t("Look at my project folders ({folders}) and pick the projects most worth putting on my resume, with your reasons. Don't change resume.yaml yet; once I confirm, add them one at a time.", { folders: roots.join(", ") }), { fresh: true })) }, icon("sparkle"), t("Let AI pick projects")) : null),
     ]),
   ];
 }
@@ -2112,7 +2113,7 @@ async function aiEntry(action, entryId, extra = {}) {
     const snapshot = clone(entryById(entryId));
     delete ui.ai[entryId];
     if (["mock", "probe", "answer"].includes(action)) ui.mockOpen.add(entryId);   // the result shows where it was asked
-    const ok = await sendChat(extra.text || "", { action, entryId, target: extra.target, lang: extra.lang, path: extra.path });
+    const ok = await sendChat(extra.text || "", { action, entryId, target: extra.target, lang: extra.lang, path: extra.path, fresh: true });
     if (ok) ui.ai[entryId] = { chat: ui.chat.id, action, snapshot, done: false };
     return ok;
   });
@@ -2123,7 +2124,7 @@ async function aiBatch(action, extra = {}) {
   await aiRun("batch", async () => {
     await saveDraft();
     const snaps = Object.fromEntries(entries().map((e) => [e.id, clone(e)]));
-    const ok = await sendChat("", { action, target: extra.target, lang: extra.lang });
+    const ok = await sendChat("", { action, target: extra.target, lang: extra.lang, fresh: true });
     if (ok) ui.batch = { chat: ui.chat.id, action, snaps };
     return ok;
   });

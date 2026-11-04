@@ -108,7 +108,7 @@ def test_app_language_can_be_picked_and_reset(server):
     assert '"lang": "ko"' in server.req("GET", "/i18n.js")[1].decode("utf-8")
     code, err = server.req("DELETE", "/api/subsets/ALL")          # the API speaks the chosen language too
     assert code == 400 and err["error"] == i18n.t("ALL (the full set) can't be deleted", ui="ko")
-    assert server.req("PUT", "/api/prefs", {"ui_lang": None})[1] == {"ui_lang": "zh", "chosen": None}
+    assert server.req("PUT", "/api/prefs", {"ui_lang": None})[1] == {"ui_lang": "zh", "chosen": None, "ai_new_chat": True}
 
 
 @needs_tex

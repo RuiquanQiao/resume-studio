@@ -259,10 +259,27 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     hunt.logo_watcher = SignatureWatcher(logo_files, hunt._changed)
     hunt.logo_watcher.start()
 
+    def site_urls(ref: str) -> set[str]:
+        try:
+            return {s["url"] for s in scanner.sites_of(hunt.company(ref))}   # `site` (the form's) counts too
+        except KeyError:
+            return set()
+
+    def sites_changed(cid: str, before: set[str]) -> None:
+        """A company's careers sites changed, whoever changed them (the window, the AI's fill or edit, a new company):
+        the new ones are checked and scanned at once, so its roles come in without another click on Scan; one no scan
+        reads is marked for the AI to learn. One gone takes its warning with it."""
+        now = [s["url"] for s in scanner.sites_of(hunt.company(cid))]
+        added = [u for u in now if u not in before]
+        if added or before - set(now):
+            threading.Thread(target=scanner.check_sites, args=(cid, added), daemon=True, name="hunt-check-sites").start()
+
     def fill(ref: str, fields: dict) -> dict:
         """Claude's research on a company, every field at once, the logo downloaded into the data folder."""
         fields = fields if isinstance(fields, dict) else {}
+        before = site_urls(ref)
         c, kept = hunt.fill(ref, fields)
+        sites_changed(c["id"], before)
         r = research(c, hunt.applications(c["id"]), resume_langs())
         lang_error = (f"what you wrote is in {r['rewrite_name']}, but this company's research is written in {r['lang_name']} "
                       f"({r['lang']}): send industry, strength, size and about again, in {r['lang_name']}") if r["rewrite"] else ""
@@ -564,6 +581,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 raise HttpError(409, str(e), {"same": e.same and brief(e.same), "close": [brief(x) for x in e.close]})
         c = guard(add)
         want_logos(c["id"])
+        sites_changed(c["id"], set())   # a careers site given with the name: its roles come in now
         return company_view(c["id"])
 
     # ---- what the AI changed, each undoable (jobhunt/history.py) ------------------------
@@ -585,14 +603,10 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         b = body(req)
         if b.get("subset"):
             subset_to_send(studio, str(b["subset"]))
-        before = {s["url"] for s in guard(lambda: hunt.company(req.params["cid"])).get("sites") or []}
+        before = site_urls(guard(lambda: hunt.company(req.params["cid"]))["id"])
         c = guard(lambda: hunt.update_company(req.params["cid"], b))
         want_logos(c["id"])
-        added = [s["url"] for s in c.get("sites") or [] if s["url"] not in before]
-        # a new address: can a scan read it? found out now, not on a scan that quietly skips it; one gone takes
-        # its warning with it
-        if added or before - {s["url"] for s in c.get("sites") or []}:
-            threading.Thread(target=scanner.check_sites, args=(c["id"], added), daemon=True, name="hunt-check-sites").start()
+        sites_changed(c["id"], before)
         return guard(lambda: company_view(req.params["cid"]))
 
     @app.route("DELETE", "/api/hunt/companies/{cid}")
@@ -757,13 +771,16 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                     subset_to_send(studio, str(a["subset"]))
                 cid = hunt.add_company(a)["id"]
                 want_logos(cid)
+                sites_changed(cid, set())
                 return {"company": company_view(cid), "text": "added"}
             if cmd == "edit-company":
                 ref = str(a.pop("ref", "") or "")
                 if a.get("subset"):
                     subset_to_send(studio, str(a["subset"]))
+                was = site_urls(ref)
                 cid = hunt.update_company(ref, a, source=src)["id"]
                 want_logos(cid)
+                sites_changed(cid, was)
                 return {"company": company_view(cid), "text": "changed"}
             if cmd == "add-role":
                 ref = str(a.pop("company", "") or "")

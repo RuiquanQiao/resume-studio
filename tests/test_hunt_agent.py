@@ -624,6 +624,66 @@ def test_a_site_added_after_the_route_was_recorded_is_checked_and_handed_to_the_
     assert sc.check_sites("C1", [moka]) == [] and started == ["C1"]
 
 
+def test_a_new_companys_sites_are_scanned_at_once_whoever_adds_them(live, data_file, monkeypatch):
+    """2026-11-04: a company added with its careers site (or filled in by the AI) waited for a click on Scan before any
+    of its roles came in. Every way a site arrives now checks it at once (check_sites scans what a scan can read)."""
+    checked: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(live.inst.hunt.scanner, "check_sites", lambda cid, urls: checked.append((cid, list(urls))))
+    monkeypatch.setattr(hunt_api, "fetch_logo", lambda url: (PNG, "image/png"))
+    def wait(n: int) -> bool:   # the check runs on a thread of its own
+        for _ in range(100):
+            if len(checked) >= n:
+                return True
+            time.sleep(0.05)
+        return False
+    site = "https://careers.xinghe.example/campus"
+    # the window's form, with a site: checked at once
+    code, r = live.req("POST", "/api/hunt/companies", {"name": "鏄熸渤绉戞妧", "site": site})
+    assert code == 200 and wait(1) and checked == [(r["company"]["id"], [site])]
+    # without one there is nothing to check yet
+    live.req("POST", "/api/hunt/companies", {"name": "Kestrel Labs"})
+    time.sleep(0.3)
+    assert len(checked) == 1
+    # the AI's fill gives it its sites: only the new ones are checked
+    intern = "https://jobs.kestrel.example/intern"
+    fields = {"sites": [{"url": intern, "kind": "intern"}]}
+    assert cli(data_file, "fill", "Kestrel Labs", "--stdin", stdin=json.dumps(fields))[0] == 0
+    assert wait(2) and checked[1] == ("C2", [intern])
+    # the AI's own add-company and edit-company
+    assert cli(data_file, "add-company", "Acme Robotics", "--site", "https://acme.example/careers")[0] == 0
+    assert wait(3) and checked[2] == ("C3", ["https://acme.example/careers"])
+    # a fill that changes no site starts no check
+    assert cli(data_file, "fill", "Kestrel Labs", "--stdin", stdin=json.dumps({"industry": "AI"}))[0] == 0
+    time.sleep(0.3)
+    assert len(checked) == 3
+
+
+def test_a_check_of_new_sites_waits_for_a_scan_of_the_same_company(hunt, monkeypatch):
+    """A site the AI adds while the first scan of a new company runs: that scan read the old list, so the check
+    waits for it instead of giving up (it used to return at once, and the new site was never read)."""
+    import threading
+    ps = Postings(hunt)
+    hunt.add_company({"name": "Moka Co"})
+    moka = "https://app.mokahr.example/campus-recruitment/moka/1"
+    sc = Scanner(hunt, ps, NoTool(), FakeBrowser({}), lambda: None)
+    sc._providers[moka] = "moka"
+    started: list[str] = []
+    sc.start = lambda ids, auto=False: started.extend(ids)
+    sc.running["C1"] = "scan"                                   # a scan of it is going on
+    hunt.update_company("C1", {"sites": [{"url": moka}]})
+    t = threading.Thread(target=sc.check_sites, args=("C1", [moka]))
+    t.start()
+    time.sleep(0.4)
+    assert t.is_alive() and started == []                      # waiting, not given up
+    sc.running.pop("C1")
+    t.join(5)
+    assert not t.is_alive() and started == ["C1"]
+    # it doesn't wait forever
+    monkeypatch.setattr("jobhunt.scan.CHECK_WAIT", 0.3)
+    sc.running["C1"] = "scan"
+    assert sc.check_sites("C1", [moka]) == [] and started == ["C1"]
+
+
 def test_a_site_gets_its_kind_only_from_someone_who_looked(hunt):
     """A pasted address is not 校招 because the company had no campus site yet (2026-11-03): its kind stays empty
     until the user picks one or the AI reads the site; the AI never changes a kind the user set."""

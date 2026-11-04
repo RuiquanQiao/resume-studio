@@ -43,6 +43,7 @@ MAX_PAGES = 20   # of a recorded route, each with 2 minutes
 # a page gets 90 s to open, and two more tries after a pause, before it counts as unread
 OPEN_TIMEOUT = 90
 RETRY_WAITS = (5, 15)
+CHECK_WAIT = 20 * 60   # longest a check of new sites waits for a scan of the same company to end
 
 
 def validate_route(data: Any) -> tuple[dict, list[str]]:
@@ -224,12 +225,26 @@ class Scanner:
         """Sites were just added to a company: find out at once whether a scan can read them. One that can (a provider,
         or the route already reads it) is scanned now; one that can't is marked on the company for the AI to learn,
         so the window says so instead of the next scan quietly reading only the old ones. Returns those."""
-        c = self.hunt.company(ref)
-        with self.lock:
-            if c["id"] in self.running:
+        cid = self.hunt.company(ref)["id"]
+        # a scan of it going on read the sites it had when it began: wait for it, then check the new ones
+        # (a site the AI adds while the first scan of a new company runs would otherwise never be read)
+        until = time.time() + CHECK_WAIT
+        while True:
+            with self.lock:
+                if cid not in self.running:
+                    self.running[cid] = "check"
+                    self.started[cid] = time.time()
+                    break
+            if time.time() > until:
                 return []
-            self.running[c["id"]] = "check"
-            self.started[c["id"]] = time.time()
+            time.sleep(0.5)
+        try:
+            c = self.hunt.company(cid)
+        except KeyError:   # removed meanwhile
+            with self.lock:
+                self.running.pop(cid, None)
+                self.started.pop(cid, None)
+            return []
         self.publish()
         try:
             plan = self.plan(c)

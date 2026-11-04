@@ -2177,5 +2177,7 @@
  "filled in its details": "Angaben ergänzt",
  "wrote its description": "Beschreibung geschrieben",
  "changed the status": "Status geändert",
- "Applied on": "Beworben am"
+ "Applied on": "Beworben am",
+ "Buttons that ask the AI start a new chat": "KI-Schaltflächen starten einen neuen Chat",
+ "A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open": "Ein neuer Chat beginnt klein, daher verbraucht jede Schaltfläche weniger von deinem Kontingent als ein langer Chat. Aus: Schaltflächen machen im geöffneten Chat weiter"
 }

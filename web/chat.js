@@ -134,6 +134,29 @@ function agentSettingsField() {
   pendingAgentSetting = undefined;
   return h("div", { class: "field" }, h("label", null, t("Agent provider"), h("span", { class: "hint" }, t("The agent used for new chats and this chat when it is empty"))), select.el);
 }
+// whether a button that asks the AI starts a new chat (aiNewChat); saved on Done, like the rest of Settings
+let pendingAiNewChat;
+function aiNewChatField() {
+  pendingAiNewChat = undefined;
+  const box = h("div", { class: "field", id: "ai-new-chat" });
+  const paint = () => {
+    const on = pendingAiNewChat ?? aiNewChat();
+    box.replaceChildren(h("button", { type: "button", class: "check-row", role: "checkbox", "aria-checked": String(on),
+      onclick: () => { pendingAiNewChat = !on; paint(); } }, h("span", { class: "check" + (on ? " on" : "") }),
+    h("span", null, t("Buttons that ask the AI start a new chat"),
+      h("span", { class: "hint" }, t("A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open")))));
+  };
+  paint();
+  return box;
+}
+async function applyAiNewChat() {
+  if (pendingAiNewChat === undefined) return;
+  const v = pendingAiNewChat;
+  pendingAiNewChat = undefined;
+  if (v === aiNewChat()) return;
+  const r = await api("PUT", "/api/prefs", { ai_new_chat: v });
+  if (S && S.claude) S.claude.ai_new_chat = r.ai_new_chat;
+}
 let pendingAgentSetting;
 async function applyAgentSetting() {
   if (!pendingAgentSetting) return;
@@ -1423,7 +1446,18 @@ function runLocal(text) {
 }
 
 // ---------------------------------------------------------------- sending
-function startChatWith(text) {
+// A button that asks the AI starts a chat of its own (Settings can turn this off): a long chat sends its whole
+// history again with every message, and once the agent's cache has expired all of it counts against the plan.
+// The open chat is used as it is while nothing has been said in it yet.
+function aiNewChat() { return !(S && S.claude && S.claude.ai_new_chat === false); }
+async function freshChatForButton() {
+  if (!aiNewChat() || !ui.chat.id || !(ui.chat.messages.length || ui.chat.running)) return;
+  const c = await createChat();
+  await openChat(c.id);
+}
+
+async function startChatWith(text, { fresh = false } = {}) {
+  if (fresh) { try { await freshChatForButton(); } catch (e) { toast(e.message); return; } }
   showChat();
   const ta = $("#chat-input");
   ta.value = text;
@@ -1431,9 +1465,11 @@ function startChatWith(text) {
   ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
-async function sendChat(text, { action = null, entryId = null, target = null, lang = null, path = null, files = [] } = {}) {
+// fresh: sent by a button (not typed in the chat), so it goes to a new chat when Settings says so (aiNewChat)
+async function sendChat(text, { action = null, entryId = null, target = null, lang = null, path = null, files = [], fresh = false } = {}) {
   if (!ui.chat.available) { toast(t("The {cmd} command was not found", { cmd: agentOf().exe })); return false; }
   if (!action && !text.trim() && !files.length) return false;
+  if (fresh) await freshChatForButton();
   if (action && ui.chat.running) { toast(t("{agent} is still replying; wait or stop it first", { agent: agentOf().short })); return false; }
   await saveDraft();
   if (!ui.chat.id) {

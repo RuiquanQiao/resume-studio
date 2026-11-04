@@ -2177,5 +2177,7 @@
  "filled in its details": "infos complétées",
  "wrote its description": "présentation écrite",
  "changed the status": "statut changé",
- "Applied on": "Date de candidature"
+ "Applied on": "Date de candidature",
+ "Buttons that ask the AI start a new chat": "Les boutons IA ouvrent une nouvelle discussion",
+ "A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open": "Une nouvelle discussion part de zéro : chaque bouton consomme moins de votre forfait qu'en continuant une longue discussion. Désactivé : les boutons continuent dans la discussion ouverte"
 }

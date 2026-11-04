@@ -2177,5 +2177,7 @@
  "filled in its details": "datos completados",
  "wrote its description": "descripción escrita",
  "changed the status": "estado cambiado",
- "Applied on": "Fecha de solicitud"
+ "Applied on": "Fecha de solicitud",
+ "Buttons that ask the AI start a new chat": "Los botones de IA abren un chat nuevo",
+ "A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open": "Un chat nuevo empieza pequeño, así que cada botón gasta menos de tu plan que seguir en un chat largo. Desactivado: los botones siguen en el chat abierto"
 }

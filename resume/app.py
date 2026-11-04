@@ -241,12 +241,16 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
 
     @app.route("PUT", "/api/prefs")
     def set_prefs(req):
-        """ui_lang: a language code, or null to follow the computer again. The page reloads after."""
+        """ui_lang: a language code, or null to follow the computer again (the page reloads after).
+        ai_new_chat: whether a button that asks the AI starts a new chat (true when never set)."""
         b = req.json() or {}
         if "ui_lang" in b:
             prefs.save(ui_lang=b["ui_lang"] if b["ui_lang"] in i18n.UI_LANGS else None)   # None drops the choice
             i18n.set_lang(prefs.ui_lang())
-        return {"ui_lang": i18n.current(), "chosen": prefs.load().get("ui_lang")}
+        if "ai_new_chat" in b:
+            prefs.save(ai_new_chat=bool(b["ai_new_chat"]))
+        return {"ui_lang": i18n.current(), "chosen": prefs.load().get("ui_lang"),
+                "ai_new_chat": prefs.load().get("ai_new_chat") is not False}
 
     @app.route("POST", "/api/focus")
     def focus(req):

@@ -923,6 +923,7 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px va
 .sub-label { margin: 12px 0 6px; font-size: 12px; font-weight: 600; color: var(--text-2); }
 .check-row { display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 4px 0; border: 0; background: none; text-align: left; cursor: pointer; font-size: 12.5px; color: var(--text); line-height: 1.45; }
 .check-row .check { margin-top: 1px; pointer-events: none; }
+.check-row .hint { display: block; margin-top: 2px; }   /* its own line under the option, not run on after it */
 .check-row:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); border-radius: 4px; }
 .inline-confirm { margin-top: 10px; padding: 10px 12px; border-radius: var(--r); border: 1px solid var(--accent); background: var(--accent-soft); font-size: 12.5px; }
 .inline-confirm p { margin: 4px 0 8px !important; }

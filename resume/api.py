@@ -34,7 +34,10 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         return agents.get(picked).id
 
     chats.default_agent = default_agent
-    studio.extra_state = lambda: {"claude": {"available": chats.available(default_agent()), "running": chats.running()}}
+    # ai_new_chat: a button that asks the AI starts a chat of its own (on unless turned off in Settings): a long
+    # chat sends its whole history again with every message, and once its cache has expired all of it counts in full
+    studio.extra_state = lambda: {"claude": {"available": chats.available(default_agent()), "running": chats.running(),
+                                             "ai_new_chat": (prefs.load().get("ai_new_chat") if prefs else None) is not False}}
 
     def body(req: Request) -> dict:
         data = req.json()

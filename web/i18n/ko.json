@@ -2009,5 +2009,7 @@
  "filled in its details": "정보 채움",
  "wrote its description": "소개 작성",
  "changed the status": "상태 변경",
- "Applied on": "지원일"
+ "Applied on": "지원일",
+ "Buttons that ask the AI start a new chat": "AI 버튼을 누르면 새 채팅 시작",
+ "A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open": "새 채팅은 짧게 시작하므로 긴 채팅에서 이어 가는 것보다 요금제 사용량이 적습니다. 끄면 열려 있는 채팅에서 이어 갑니다"
 }

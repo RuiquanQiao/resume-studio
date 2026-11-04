@@ -2009,5 +2009,7 @@
  "filled in its details": "补全资料",
  "wrote its description": "写入介绍",
  "changed the status": "更改状态",
- "Applied on": "投递日期"
+ "Applied on": "投递日期",
+ "Buttons that ask the AI start a new chat": "点 AI 按钮时开一个新对话",
+ "A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open": "新对话从零开始，每次点按钮消耗的额度比在长对话里接着聊少得多。关掉后，按钮会在当前打开的对话里继续"
 }

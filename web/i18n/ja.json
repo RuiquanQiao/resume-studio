@@ -2009,5 +2009,7 @@
  "filled in its details": "情報を補完",
  "wrote its description": "紹介を作成",
  "changed the status": "ステータス変更",
- "Applied on": "応募日"
+ "Applied on": "応募日",
+ "Buttons that ask the AI start a new chat": "AI ボタンを押すと新しいチャットを始める",
+ "A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open": "新しいチャットは短いところから始まるので、長いチャットで続けるよりプランの使用量が少なくて済みます。オフにすると、開いているチャットで続けます"
 }

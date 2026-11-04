@@ -636,6 +636,60 @@ def test_polish_shows_diff_and_undo_restores(page, server, data_file, fake_claud
     assert original.splitlines()[0] == data_file.read_text(encoding="utf-8").splitlines()[0]
 
 
+def test_an_ai_button_starts_a_new_chat_unless_settings_say_otherwise(page, server, fake_claude):
+    """2026-11-04: an AI button went on in the open chat, sending its whole (maybe long, cache expired) history again.
+    It now starts a chat of its own (an empty open chat is used as it is); Settings can turn that off."""
+    chats = lambda: server.req("GET", "/api/chats")[1]["chats"]
+    idle = "() => !ui.chat.running && !AI_WORK.size"
+    open_chat_tab(page)
+    page.fill("#chat-input", "你好")
+    page.keyboard.press("Enter")
+    page.wait_for_function(idle)
+    talk = page.evaluate("ui.chat.id")
+    assert len(chats()) == 1
+
+    def polish():
+        open_entry(page, "EXP-002")
+        page.click("#active .ai-btn")
+        page.click(".float .menu-item:has-text('润色')")
+        page.fill("#polish-box input", "更简洁")
+        page.click("#polish-box button")
+        page.wait_for_selector(".msg-user:has-text('QuizLoom')")
+        page.wait_for_function(idle, timeout=15000)
+
+    polish()
+    assert len(chats()) == 2 and page.evaluate("ui.chat.id") != talk            # a chat of its own
+    first = server.req("GET", f"/api/chats/{page.evaluate('ui.chat.id')}")[1]["messages"][0]
+    assert first["role"] == "user" and "QuizLoom" in first["text"]
+    assert all("QuizLoom" not in m.get("text", "") for m in server.req("GET", f"/api/chats/{talk}")[1]["messages"])
+    # an empty open chat is used as it is: no second empty one
+    page.click("#chat-new")
+    page.wait_for_function("() => ui.chat.messages.length === 0")
+    empty = page.evaluate("ui.chat.id")
+    polish()
+    assert len(chats()) == 3 and page.evaluate("ui.chat.id") == empty
+    # turned off in Settings (saved on Done): the button goes on in the chat that is open
+    page.click("#settings-btn")
+    box = page.locator(".modal.settings #ai-new-chat .check-row")
+    assert box.get_attribute("aria-checked") == "true"                           # on unless turned off
+    page.locator(".modal.settings").screenshot(path=str(ART / "settings-ai-new-chat.png"))
+    box.click()
+    assert box.get_attribute("aria-checked") == "false"
+    assert state(server)["claude"]["ai_new_chat"] is True                        # nothing saved before Done
+    page.click(".modal.settings button:text('完成')")
+    page.wait_for_selector(".modal.settings", state="detached")
+    assert state(server)["claude"]["ai_new_chat"] is False
+    polish()
+    assert len(chats()) == 3 and page.evaluate("ui.chat.id") == empty
+    # it stays off after a restart of the page
+    page.reload()
+    page.wait_for_selector(".entry")
+    page.click("#settings-btn")
+    assert page.locator(".modal.settings #ai-new-chat .check-row").get_attribute("aria-checked") == "false"
+    page.keyboard.press("Escape")
+    server.req("PUT", "/api/prefs", {"ai_new_chat": True})
+
+
 def test_mock_interview_predicts_hides_answers_and_follows_up(page, server, data_file, fake_claude, monkeypatch):
     mock = ("    evidence: []\n    interview:\n      - q: 为什么拆成多阶段？\n        a: 一个 prompt 会跑偏。\n"
             "        follow_ups:\n          - {q: 怎么发现跑偏的？, a: 【待补充：一个具体例子】}\n  - id: EXP-003")
