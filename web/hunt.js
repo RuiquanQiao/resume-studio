@@ -222,15 +222,20 @@ function paintHunt() {
 }
 function paintHuntNow(el) {
   const old = el.querySelector(".hunt-scroll");
-  const scroll = old && old.dataset.page === pageKey() ? old.scrollTop : 0;
+  const key = pageKey();
+  // a table remembers where it was read to: back from a company's page, it opens there again (a page opens at its top)
+  const scroll = old && old.dataset.page === key ? old.scrollTop : key.startsWith("table:") ? HUNT_SCROLL[key] || 0 : 0;
   let body;
   if (!H.data) body = h("div", { class: "muted" }, t("Loading…"));
   else if (H.page && H.page.kind === "company") body = H.view && H.view.company ? companyPage(H.view) : h("div", { class: "muted" }, t("Loading…"));
   else if (H.page && H.page.kind === "app") body = H.view && H.view.application ? appPage(H.view) : h("div", { class: "muted" }, t("Loading…"));
   else body = H.tab === "companies" ? companiesTable() : H.tab === "platforms" ? platformsTable() : appsTable();
-  const sc = h("div", { class: "hunt-scroll", "data-page": pageKey() }, h("div", { class: "hunt-wrap" + (H.page ? " is-page" : "") }, body));
+  const sc = h("div", { class: "hunt-scroll", "data-page": key }, h("div", { class: "hunt-wrap" + (H.page ? " is-page" : "") }, body));
   el.replaceChildren(huntBar(), sc);
   sc.scrollTop = scroll;
+  // only a loaded table's scrolling counts: "Loading…" is too short to hold the place and would forget it
+  if (key.startsWith("table:") && H.data)
+    sc.addEventListener("scroll", () => { if (sc.isConnected) HUNT_SCROLL[key] = sc.scrollTop; }, { passive: true });
   dbvKeepX(sc);
   for (const ta of el.querySelectorAll("textarea")) autosizeFull(ta);
 }
@@ -240,7 +245,8 @@ function searchBox(id, value, placeholder, set) {
   return h("input", { class: "hunt-search", type: "search", id, value, placeholder, spellcheck: "false", "aria-label": placeholder,
     oninput: (e) => { set(e.target.value); paintHunt(); } });
 }
-const pageKey = () => (H.page ? H.page.kind + ":" + H.page.id : "table:" + H.tab);
+const HUNT_SCROLL = {};   // pageKey → how far down a table was scrolled, for this window's life
+const pageKey = () =>(H.page ? H.page.kind + ":" + H.page.id : "table:" + H.tab);
 
 // ================================================================ the tables
 function tableTools(...right) {

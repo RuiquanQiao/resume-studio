@@ -2276,6 +2276,37 @@ def test_a_long_table_scrolls_with_its_page_under_a_heading_row_that_stays(page_
     pg.set_viewport_size({"width": 1440, "height": 900})
 
 
+def test_back_from_a_company_page_the_table_is_where_it_was_left(page_all, server):
+    """Reading down the companies table, opening one and coming back lands at the same place, not the top
+    (user, 2026-11-04). The company's own page opens at its top."""
+    pg = page_all
+    for i in range(40):
+        server.req("POST", "/api/hunt/companies", {"name": f"公司 {i:02d}"})
+    pg.set_viewport_size({"width": 1000, "height": 650})
+    pg.keyboard.press("Control+3")
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.wait_for_function("() => document.querySelectorAll('.dbv-view[data-table=companies] tbody tr').length >= 40")
+    pg.evaluate("() => { document.querySelector('.hunt-scroll').scrollTop = 700; }")
+    pg.wait_for_function("() => document.querySelector('.hunt-scroll').scrollTop >= 650")
+    top = pg.evaluate("() => document.querySelector('.hunt-scroll').scrollTop")
+    # a row on screen, opened from its name
+    cid = pg.evaluate("""() => { const sc = document.querySelector('.hunt-scroll').getBoundingClientRect();
+        const r = [...document.querySelectorAll('.dbv-view[data-table=companies] tbody tr')]
+          .find((tr) => tr.getBoundingClientRect().top > sc.top + 60); return r.dataset.id; }""")
+    pg.evaluate("(id) => openHunt('company', id)", cid)
+    pg.wait_for_selector(".hunt-back")
+    assert pg.evaluate("() => document.querySelector('.hunt-scroll').scrollTop") == 0   # the page opens at its top
+    pg.click(".hunt-back")
+    pg.wait_for_selector(".dbv-view[data-table=companies] tbody tr")
+    assert abs(pg.evaluate("() => document.querySelector('.hunt-scroll').scrollTop") - top) <= 1
+    # another tab and back: still there
+    pg.click(".hunt-tab[data-tab=apps]")
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.wait_for_selector(".dbv-view[data-table=companies] tbody tr")
+    assert abs(pg.evaluate("() => document.querySelector('.hunt-scroll').scrollTop") - top) <= 1
+    pg.set_viewport_size({"width": 1440, "height": 900})
+
+
 def test_a_cv_edited_in_career_ops_is_never_overwritten(connected, page_all, server):
     pg = page_all
     open_job_search(pg)
