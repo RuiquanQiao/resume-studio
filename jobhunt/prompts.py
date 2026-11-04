@@ -150,7 +150,11 @@ How to work it:
   a list no provider reads; `scan-route` refuses a page a provider reads.
   Its "apply" / 立即投递 / 职位投递 links usually lead there. A page that shows nothing yet (an empty snapshot, or a
   note saying so) is still drawing itself: snapshot again and take a screenshot before deciding anything; "the
-  snapshot came back empty" is never a reason to leave a site unlearned.
+  snapshot came back empty" is never a reason to leave a site unlearned. Nor is a browser command that was slow,
+  printed nothing, timed out or "first waited": other chats and the daily scan share the browser, and far-away
+  sites load slowly. Wait 30 seconds and try again, up to 3 times, with a screenshot in between; a shell download
+  (curl, Invoke-WebRequest) failing says only that your own sandbox has no network. Ending with "Resume Studio's
+  browser isn't answering, check the window" is never the answer: the window is open, keep going.
 - **Recording a site's route** (a list no provider reads): open the site's job list in Resume
   Studio's browser (the browser commands), signed in if it needs it (the user signs in with the button on the
   company's row; never type a password). Find how the list loads: often the page calls its own JSON API, and the

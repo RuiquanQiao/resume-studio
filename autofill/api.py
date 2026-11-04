@@ -488,6 +488,14 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         # each chat works in a browser tab of its own (scripts/browser.py sends its id): two chats, or a chat and a
         # check for updates, never land on each other's page
         with browser.acting(req.headers.get("X-Resume-Studio-Chat")):
-            return bro(run)
+            browser.take_waited()
+            r = bro(run)
+            # time spent queuing is said, so the AI never takes it for the site being slow or unreadable
+            waited = {k: v for k, v in browser.take_waited().items() if v >= 2}
+            if waited and isinstance(r, dict):
+                say = "; ".join(f"{round(v)} s for {k}" for k, v in waited.items())
+                lead = f"this command first waited {say}: that was the browser being busy, not this page being slow."
+                r["note"] = f"{r['note']} {lead}" if r.get("note") else lead
+            return r
 
     return fill

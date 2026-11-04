@@ -558,6 +558,36 @@ def test_a_page_drawn_after_load_is_read_not_given_up_on(live, data_file, fake_s
     assert "the page shows nothing yet" in out(cli(data_file, "text"))
 
 
+def test_a_slow_read_never_holds_up_another_chat(live, data_file, fake_site):
+    """2026-11-04: the daily scan read a slow site and held the one browser lock for minutes; every chat's `open`
+    and `snapshot` queued behind it, timed out after 3 minutes and the AI gave up on sites that read fine. Each
+    piece of work now holds only its own lock: a chat drives its tab while a scan reads in another."""
+    b = live.inst.browser
+    b.open(fake_site + "/linkedin/profile.html")                 # the browser is up
+    slow = "async (h) => { await h.sleep(12000); return {done: true}; }"
+    got = {}
+    reader = threading.Thread(target=lambda: got.update(r=b.read_page(fake_site + "/jobs/slow.html", slow, timeout=60)))
+    reader.start()
+    time.sleep(1.5)                                             # the scan is reading now, its 12 s script running
+    t0 = time.time()
+    r = cli(data_file, "open", fake_site + "/jobs/late.html", chat="chat-a")
+    snap = out(cli(data_file, "snapshot", chat="chat-a"))
+    took = time.time() - t0
+    assert r.returncode == 0 and 'link "Apply now"' in snap, out(r) + snap
+    assert took < 9, f"the chat waited {took:.1f} s behind the scan's read"
+    assert reader.is_alive()                                    # it really ran alongside
+    reader.join(30)
+    assert got["r"] == {"done": True}
+    # waiting it can't avoid (its own earlier command still running) is said as waiting, never as the page's slowness
+    long = "async (h) => { await h.sleep(5000); return 1; }"
+    first = threading.Thread(target=lambda: cli(data_file, "extract", "--stdin", stdin=long, chat="chat-a"))
+    first.start()
+    time.sleep(1)
+    r = out(cli(data_file, "snapshot", chat="chat-a"))
+    first.join(30)
+    assert "first waited" in r and "not this page being slow" in r, r
+
+
 def test_two_chats_driving_at_once_keep_to_their_own_tabs(live, data_file, fake_site):
     """A scan chat reading a careers site while another chat pushes a profile (2026-10-30: the scan's `open` took
     the tab the push was clicking in, and the push's next snapshot landed on the careers page). Each chat works in

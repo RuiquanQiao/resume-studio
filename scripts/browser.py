@@ -57,7 +57,16 @@ def call(url: str, method: str, path: str, payload: dict | None = None) -> dict:
             msg = str(e)
         sys.exit(f"error: {msg}")
     except OSError as e:
-        sys.exit(f"error: can't reach Resume Studio at {url} ({e}). Is the window open?")
+        # a window that answers a quick question is open, only this command took too long: say that, never
+        # "is the window open?" (2026-11-04: the AI read that as "Resume Studio is broken" and gave up)
+        try:
+            with urllib.request.urlopen(url.rstrip("/") + "/api/browser", timeout=5):
+                pass
+        except OSError:
+            sys.exit(f"error: can't reach Resume Studio at {url} ({e}). Is the window open?")
+        sys.exit(f"error: Resume Studio is open, but this command got no answer within 3 minutes ({e}). That is the "
+                 "page or the browser being slow, not the site being unreadable: run it again, take a screenshot, "
+                 "or open the page anew. Don't call the site unreadable until a screenshot shows it blank.")
 
 
 def read_text(args: argparse.Namespace) -> str:
@@ -74,6 +83,8 @@ def show(r: dict) -> None:
         print("\n".join(r["lines"]))
         if r.get("truncated"):
             print("(cut off here: use `snapshot --in <ref>` for one part, or `text`)")
+        if r.get("note"):
+            print("note: " + r["note"])
         return
     if "text" in r and len(r) <= 3 and "url" not in r:
         print(r["text"])

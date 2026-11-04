@@ -261,7 +261,12 @@ class ManagedBrowser:
         self.state = "off"                    # off | starting | running | error | signin
         self.error = ""
         self.signin_url = ""                  # sign-in mode: the page it opened at
+        # `lock` guards the bookkeeping only (the tabs, which work has which, starting and stopping): held for
+        # moments. What a piece of work does on its page holds that work's own lock (`_page`), so two chats, a
+        # scan and a check read their pages at the same time instead of queuing behind the slowest (2026-11-04:
+        # the daily scan held one lock for minutes and every chat's command waited, then timed out)
         self.lock = threading.RLock()
+        self.work_locks: dict[str | None, threading.RLock] = {}
         self.pages: dict[str, dict] = {}      # targetId -> {url, title, opener}
         # Each piece of work drives a tab of its own, so two of them never land on each other's page: a chat by
         # its id (scripts/browser.py sends it), a check for updates by its site, read_page by its tab. None is
@@ -327,6 +332,44 @@ class ManagedBrowser:
     def acting(self, key: str | None) -> "ManagedBrowser._Acting":
         """`with browser.acting(chat_id):` around what one piece of work does: it works in that work's own tab."""
         return self._Acting(self, key or None)
+
+    def _page(self) -> "ManagedBrowser._Waited":
+        """The lock of the work this thread does: its commands run one at a time, other work's alongside."""
+        key = self.work
+        with self.lock:
+            lk = self.work_locks.get(key)
+            if lk is None:
+                lk = self.work_locks[key] = threading.RLock()
+        return self._Waited(self, lk, "an earlier command of this same work")
+
+    class _Waited:
+        """Takes a lock, and when that had to wait, keeps how long and for what (`waited` on the thread), so the
+        answer can say so: time spent behind other work is never the page's slowness."""
+        def __init__(self, b: "ManagedBrowser", lk: Any, what: str):
+            self.b, self.lk, self.what = b, lk, what
+
+        def __enter__(self):
+            if not self.lk.acquire(blocking=False):
+                t0 = time.time()
+                self.lk.acquire()
+                w = getattr(self.b.local, "waited", None) or {}
+                w[self.what] = w.get(self.what, 0.0) + time.time() - t0
+                self.b.local.waited = w
+            return self.b
+
+        def __exit__(self, *exc):
+            self.lk.release()
+            return False
+
+    def take_waited(self) -> dict[str, float]:
+        """What this thread's commands waited for, since it was last asked (seconds by what)."""
+        w = getattr(self.local, "waited", None) or {}
+        self.local.waited = {}
+        return w
+
+    def _shared(self) -> "ManagedBrowser._Waited":
+        """The bookkeeping lock: held for moments, except while the browser starts or stops."""
+        return self._Waited(self, self.lock, "the browser starting, or other work choosing its tab")
 
     def _busy_with(self, key: str | None) -> bool:
         if key is None:
@@ -655,7 +698,9 @@ class ManagedBrowser:
         return self._Hold(self)
 
     def in_use(self) -> bool:
-        if self.holds:
+        # work in the middle of a command (a posting read for a logo or a JD holds no `hold`): with no lock
+        # shared any more, nothing else keeps the browser from closing under it
+        if self.holds or self.acting_now:
             return True
         try:
             return bool(self.busy and self.busy())
@@ -696,7 +741,11 @@ class ManagedBrowser:
                 pass
     # ---- the page being worked on ---------------------------------------------
     def _session(self) -> str:
-        self.ensure()
+        with self._shared():
+            self.ensure()
+            return self._session_locked()
+
+    def _session_locked(self) -> str:
         self.last_used = time.time()
         assert self.conn is not None
         key = self.work
@@ -737,7 +786,7 @@ class ManagedBrowser:
 
     def _js(self, call: str, *, by_value: bool = True, timeout: float = 30.0) -> Any:
         """Run `__rs.<call>` in the isolated world (installing it there first)."""
-        with self.lock:
+        with self._page():
             sid = self._session()
             assert self.conn is not None
             self._ask()
@@ -782,7 +831,7 @@ class ManagedBrowser:
                                        "doesn't answer; run the command again in a moment, or open the page anew")
 
     def here(self) -> dict:
-        with self.lock:
+        with self._page():
             self._session()
             url = self._ask("location.href") or ""
             title = self._ask("document.title") or ""
@@ -829,11 +878,12 @@ class ManagedBrowser:
     def open(self, url: str, new_tab: bool = False) -> dict:
         if not url.startswith(("http://", "https://", "about:")):
             raise BrowserError("only http(s) addresses can be opened")
-        with self.lock:
+        with self._page():
             self.ensure()
             assert self.conn is not None
             if new_tab:
-                self.current = self._new_tab()
+                with self.lock:
+                    self.current = self._new_tab()
             r = self._send("Page.navigate", {"url": url})
             if r.get("errorText"):
                 raise BrowserError(f"couldn't open {url}: {r['errorText']}")
@@ -846,7 +896,7 @@ class ManagedBrowser:
 
     def front(self) -> None:
         """Show the page being worked on (the user signs in there, or watches)."""
-        with self.lock:
+        with self._page():
             self._send("Page.bringToFront")
             try:
                 assert self.conn is not None
@@ -857,7 +907,7 @@ class ManagedBrowser:
                 pass
 
     def snapshot(self, within: str | None = None, max_chars: int = 60000) -> dict:
-        with self.lock:
+        with self._page():
             here = self.here()
             arg = "null" if within is None else repr(str(within))
             r = self._js(f"snapshot({arg}, {int(max_chars)})")
@@ -872,7 +922,7 @@ class ManagedBrowser:
 
     def text(self) -> dict:
         read = "document.body ? document.body.innerText : ''"
-        with self.lock:
+        with self._page():
             txt = (self._eval_page(read) or "").strip()
             if not txt:
                 self.wait_drawn()
@@ -886,7 +936,7 @@ class ManagedBrowser:
         body = ("helpers.sleep(0).then(async () => { const fn = (" + script + "\n);"
                 " if (typeof fn !== 'function') throw new Error('the script must be a function: async (h) => ({...})');"
                 " const out = await fn(__rs.helpers); return JSON.stringify(out === undefined ? null : out); })")
-        with self.lock:
+        with self._page():
             raw = self._js(body, timeout=timeout)
         try:
             return json.loads(raw) if isinstance(raw, str) else raw
@@ -931,8 +981,9 @@ class ManagedBrowser:
             self.ensure()
             assert self.conn is not None
             tid = self._new_tab(newWindow=True, background=True)
-            acting = self.acting(f"read:{tid}")
-            acting.__enter__()
+        acting = self.acting(f"read:{tid}")
+        acting.__enter__()
+        with self._page():
             try:
                 try:
                     win = self.conn.send("Browser.getWindowForTarget", {"targetId": tid})
@@ -956,15 +1007,18 @@ class ManagedBrowser:
                 return out
             finally:
                 try:
-                    self.conn.send("Target.closeTarget", {"targetId": tid})
+                    if self.conn is not None:
+                        self.conn.send("Target.closeTarget", {"targetId": tid})
                 except CdpError:
                     pass
-                self.closed.add(tid)
-                self.pages.pop(tid, None)
-                sid = self.sessions.pop(tid, None)
-                if sid:
-                    self.contexts.pop(sid, None)
-                self.current = None
+                with self.lock:
+                    self.closed.add(tid)
+                    self.pages.pop(tid, None)
+                    sid = self.sessions.pop(tid, None)
+                    if sid:
+                        self.contexts.pop(sid, None)
+                    self.current = None
+                    self.work_locks.pop(f"read:{tid}", None)
                 acting.__exit__(None, None, None)
 
     def _mouse_click(self, x: float, y: float, count: int = 1) -> None:
@@ -991,7 +1045,7 @@ class ManagedBrowser:
                            "take a new snapshot, or hover a nearer ref first")
 
     def hover(self, ref: str) -> dict:
-        with self.lock:
+        with self._page():
             what = self._js(f"target({int(ref)})")
             if not self._reveal(ref):
                 p = self._js(f"point({int(ref)})")
@@ -1000,7 +1054,7 @@ class ManagedBrowser:
             return {**self.here(), "target": what}
 
     def click(self, ref: str) -> dict:
-        with self.lock:
+        with self._page():
             what = self._js(f"target({int(ref)})")
             self._reveal(ref)
             p = self._js(f"point({int(ref)})")
@@ -1035,14 +1089,14 @@ class ManagedBrowser:
                                               "modifiers": mods})
 
     def press(self, combo: str) -> dict:
-        with self.lock:
+        with self._page():
             self.key(combo)
             self._pause()
             return self.here()
 
     def type(self, ref: str, text: str, clear: bool = True) -> dict:
         """Click into the field, empty it (select all + delete), then type `text` as real input."""
-        with self.lock:
+        with self._page():
             k = self._js(f"kind({int(ref)})")
             if k not in ("textbox", "combobox"):
                 raise BrowserError(f"ref {ref} is a {k or 'element'}, not a text field")
@@ -1070,14 +1124,14 @@ class ManagedBrowser:
             return out
 
     def select(self, ref: str, option: str) -> dict:
-        with self.lock:
+        with self._page():
             what = self._js(f"target({int(ref)})")
             r = self._js(f"choose({int(ref)}, {option!r})")
             self._pause()
             return {**self.here(), "value": r["value"], "target": what}
 
     def scroll(self, ref: str | None = None, dy: int = 600) -> dict:
-        with self.lock:
+        with self._page():
             if ref:
                 self._js(f"point({int(ref)})")
             else:
@@ -1086,7 +1140,7 @@ class ManagedBrowser:
             return self.here()
 
     def upload(self, ref: str, files: list[str]) -> dict:
-        with self.lock:
+        with self._page():
             if self._js(f"kind({int(ref)})") != "file":
                 raise BrowserError(f"ref {ref} is not a file field")
             obj = self._js(f"el({int(ref)})", by_value=False)
@@ -1095,7 +1149,7 @@ class ManagedBrowser:
             return {**self.here(), "target": self._js(f"target({int(ref)})")}
 
     def screenshot(self, path: Path, full: bool = False) -> dict:
-        with self.lock:
+        with self._page():
             params: dict[str, Any] = {"format": "png"}
             if full:
                 params["captureBeyondViewport"] = True
@@ -1116,7 +1170,7 @@ class ManagedBrowser:
                 for i, (tid, p) in enumerate(self.pages.items())]
 
     def use_tab(self, index: int) -> dict:
-        with self.lock:
+        with self._page(), self.lock:
             self.ensure()
             ids = list(self.pages)
             if not 0 <= index < len(ids):
@@ -1128,7 +1182,7 @@ class ManagedBrowser:
             return self.here()
 
     def back(self) -> dict:
-        with self.lock:
+        with self._page():
             self._eval_page("history.back()")
             self.wait_loaded(10)
             return self.here()
