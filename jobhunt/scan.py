@@ -196,7 +196,20 @@ class Scanner:
             st["unrouted"] = [u for u in was if u in now]
             if not st["unrouted"] and st.get("needs") == "claude":
                 st["needs"] = ""
+        # `tried`: when the AI was asked to learn a site and the scan still couldn't read it after: only while it can't
+        st["tried"] = {u: at for u, at in (st.get("tried") or {}).items() if u in (st.get("unrouted") or [])}
         return st
+
+    def learn_tried(self, ref: str, urls: list[str]) -> dict[str, str]:
+        """The AI was asked to learn these sites and the scan still can't read them: kept, so the window says "the AI
+        tried" instead of "the AI has to learn it first", as if nothing had been tried (user, 2026-11-04)."""
+        c = self.hunt.company(ref)
+        st = self.live_state(c)
+        with self.hunt.lock:
+            tried = {**st["tried"], **{u: time.strftime("%Y-%m-%dT%H:%M:%S") for u in urls if u in (st.get("unrouted") or [])}}
+            self.postings.set_scan_state(c["id"], tried=tried)
+        self.publish()
+        return tried
 
     def site_status(self, c: dict) -> dict[str, str]:
         """Whether each site is scanned automatically, for the window to say on its row, from what is known without

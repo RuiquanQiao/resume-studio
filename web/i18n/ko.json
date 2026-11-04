@@ -1965,7 +1965,6 @@
  "Read the way the AI recorded once, no AI": "AI가 한 번 기록한 방법으로 읽습니다. AI 없이",
  "Read through its recruiting system's public API, no AI": "채용 시스템의 공개 API로 읽습니다. AI 없이",
  "Scanned automatically": "자동 스캔 가능",
- "Still can't be scanned automatically: {sites}. The AI didn't record how to read them.": "아직 자동 스캔할 수 없습니다: {sites}. AI가 읽는 법을 기록하지 않았습니다.",
  "The AI has to read it once and record how": "AI가 한 번 읽고 읽는 법을 기록해야 합니다",
  "The next scan finds out whether it can read this site by itself": "다음 스캔에서 이 사이트를 스스로 읽을 수 있는지 확인합니다",
  "read by hand by the AI {when} · {what}, so a scan won't update these roles": "{when} AI가 직접 읽음 · {what}, 스캔으로는 이 직무들이 갱신되지 않습니다",
@@ -2011,5 +2010,18 @@
  "changed the status": "상태 변경",
  "Applied on": "지원일",
  "Buttons that ask the AI start a new chat": "AI 버튼을 누르면 새 채팅 시작",
- "A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open": "새 채팅은 짧게 시작하므로 긴 채팅에서 이어 가는 것보다 요금제 사용량이 적습니다. 끄면 열려 있는 채팅에서 이어 갑니다"
+ "A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open": "새 채팅은 짧게 시작하므로 긴 채팅에서 이어 가는 것보다 요금제 사용량이 적습니다. 끄면 열려 있는 채팅에서 이어 갑니다",
+ "{sites}: the AI tried to learn it, but the scan still can't read it": "{sites}: AI가 읽는 법을 익히려 했지만 아직 스캔할 수 없습니다",
+ "; ": "; ",
+ "The roles shown are from the scan before; the company's page says why": "여기 보이는 채용은 그 전 스캔 결과입니다. 이유는 회사 페이지에 있습니다",
+ "{n} site not read": "{n}개 사이트를 읽지 못함",
+ "A site not read": "읽지 못한 사이트가 있음",
+ "Some pages didn't read": "일부 페이지를 읽지 못함",
+ "The AI tried once and the scan still can't read it; it tries again, told what is still missing": "AI가 한 번 시도했지만 아직 스캔할 수 없습니다. 다시 시도할 때 무엇이 부족한지 알려 줍니다",
+ "Let AI try again": "AI에게 다시 시도 요청",
+ "The AI tried these and the scan still can't read them: {sites}.": "AI가 시도했지만 아직 스캔할 수 없는 사이트: {sites}.",
+ "The AI tried, but the scan still can't read: {sites}. Its chat says what it found.": "AI가 시도했지만 아직 스캔할 수 없습니다: {sites}. 알아낸 내용은 채팅에 있습니다.",
+ "The AI tried; still can't be scanned": "AI 시도함 · 아직 자동 스캔 불가",
+ "The AI tried to learn it {when}, and the scan still can't read it": "AI가 {when}에 시도했지만 아직 스캔할 수 없습니다",
+ "Its list is at {list}, but no scan reads that address yet": "채용 목록은 {list}에 있지만 이 주소는 아직 스캔할 수 없습니다"
 }

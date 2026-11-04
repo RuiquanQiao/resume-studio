@@ -442,6 +442,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             st = scanner.live_state(c)
             c["postings"]["needs"] = st.get("needs") or ""
             c["postings"]["unrouted"] = st.get("unrouted") or []
+            c["postings"]["tried"] = st["tried"]
         sc = posts.scans()
         return {**tb, "platforms": platforms(), "tracker": tracker(), "career_ops": tool.installed(),
                 "scan": {"keywords": sc["keywords"], "daily": sc["daily"], "last_all": sc["last_all"],
@@ -594,6 +595,13 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     @app.route("POST", "/api/hunt/history/{hid}/undo")
     def undo_change(req: Request):
         return guard(lambda: history.undo(req.params["hid"], by="window"))
+
+    @app.route("POST", "/api/hunt/companies/{cid}/learn-tried")
+    def learn_tried(req: Request):
+        """The window's check after "Let AI learn": these sites are still unreadable though the AI tried."""
+        urls = [str(u) for u in body(req).get("sites") or [] if u]
+        guard(lambda: scanner.learn_tried(req.params["cid"], urls))
+        return company_view(req.params["cid"])
 
     @app.route("GET", "/api/hunt/companies/{cid}")
     def get_company(req: Request):

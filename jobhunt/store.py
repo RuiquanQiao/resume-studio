@@ -513,6 +513,15 @@ class Hunt:
             c["note"] = _long(fields["note"], 4000)
         if "sites" in fields:
             c["sites"] = Hunt._sites(fields["sites"])
+            # `site` (the one shown first) was one of them: taken off the list, it goes too, or the scan would still read
+            # it and warn about it (a company's first site removed in the window stayed, 2026-11-04)
+            if c.get("site") and "site" not in fields and not any(x["url"] == c["site"] for x in c["sites"]):
+                c["site"] = ""
+        # the list is what the window shows and edits: a site given alone (the "Add a company" form) is on it too
+        if c.get("site") and not any(x["url"] == c["site"] for x in c.get("sites") or []):
+            c["sites"] = Hunt._sites([{"url": c["site"]}, *(c.get("sites") or [])])
+            c["site"] = c["sites"][0]["url"] if c["sites"] else ""
+        if "sites" in fields:
             if c["sites"] and not c.get("site"):
                 c["site"] = next((x["url"] for x in c["sites"] if x["kind"] == "campus"), c["sites"][0]["url"])
         if "sources" in fields and isinstance(fields["sources"], dict):

@@ -2722,9 +2722,14 @@ def test_an_ai_button_checks_its_work_when_the_chat_ends(page_all):
     company has a scan route; until then the window says so and offers to ask again in the same chat."""
     pg = page_all
     c = {"id": "C91", "name": "测试大学", "postings": {"needs": "claude", "unrouted": ["https://join.test.example/Default.aspx"]}}
+    # the server is told the AI tried (C91 exists only in this page, so the request is caught here)
+    pg.evaluate("""() => { window.tried = []; const real = api;
+      api = async (m, p, b) => p.endsWith('/learn-tried') ? (window.tried.push([p, b]), {}) : real(m, p, b); }""")
     out = pg.evaluate(AI_CHECK, {"run": "askLearn([{id: 'C91', name: '测试大学', unrouted: ['https://join.test.example/Default.aspx']}])",
                                  "data": {"companies": [c], "applications": []}})
-    assert out["warn"] and out["say"] == "还是不能自动扫描：join.test.example/Default.aspx。AI 没有把读法存下来。", out
+    # it says what is so, never whose fault it is (思摩尔国际, 2026-11-04: the AI found the list, the scan didn't know it)
+    assert out["warn"] and out["say"] == "AI 试过了，扫描还是读不了：join.test.example/Default.aspx。它在对话里说了查到什么。", out
+    assert pg.evaluate("window.tried") == [["/api/hunt/companies/C91/learn-tried", {"sites": ["https://join.test.example/Default.aspx"]}]]
     # the AI is handed the sites no scan reads, by name, and told to leave the others alone (星河科技, 2026-11-03)
     assert "只学这些：测试大学（https://join.test.example/Default.aspx）" in out["sent"][0] and "不要动" in out["sent"][0], out["sent"]
     assert out["again"] == "再让 AI 做一次"

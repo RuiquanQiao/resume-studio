@@ -939,6 +939,75 @@ needs_node = pytest.mark.skipif(not shutil.which("node"), reason="Node.js not in
 
 
 @needs_node
+def test_a_moka_campus_apply_list_is_read_through_its_api(hunt, tmp_path):
+    """思摩尔国际 (2026-11-04): its campus list is at app.mokahr.com/campus_apply/smoore/150918, a spelling career-ops'
+    Moka provider doesn't know (it knows /campus-recruitment/...), so the site read as "no scan can read it" though
+    its 53 roles come through the same API. The bridge hands the provider the spelling it knows."""
+    import subprocess
+    co = tmp_path / "career-ops"
+    (co / "providers").mkdir(parents=True)
+    (co / "providers" / "_registry.mjs").write_text("""
+export async function loadProviders() { return new Map([['mokahr', (await import('./mokahr.mjs')).default]]); }
+export function resolveProvider(entry, providers) { const p = providers.get('mokahr'); return p.detect(entry) ? { provider: p } : null; }
+""", encoding="utf-8")
+    (co / "providers" / "_http.mjs").write_text("export function makeHttpCtx() { return {}; }\n", encoding="utf-8")
+    (co / "providers" / "mokahr.mjs").write_text(r"""
+const RE = /^\/(?:social-recruitment|campus-recruitment|apply)\/([^/]+)\/(\d+)\/?$/;   // career-ops' own
+export default { id: 'mokahr', detect: (e) => { try { const u = new URL(e.careers_url);
+    return u.hostname === 'app.mokahr.com' && RE.test(u.pathname); } catch { return false; } },
+  async fetch(entry) { return [{ title: '产品专员', url: entry.careers_url + '#/job/1' }]; } };
+""", encoding="utf-8")
+    entries = tmp_path / "entries.json"
+    sites = ["https://app.mokahr.com/campus_apply/smoore/150918#/jobs", "https://app.mokahr.com/social_apply/smoore/1/",
+             "https://app.mokahr.com/apply/smoore/126055", "https://example.com/campus_apply/a/1"]
+    entries.write_text(json.dumps({"entries": [{"key": str(i), "name": "思摩尔国际", "url": u} for i, u in enumerate(sites)]}), encoding="utf-8")
+    bridge = Path(hunt_api.__file__).resolve().parent.parent / "jobs" / "co_scan.mjs"
+    out = subprocess.run([shutil.which("node"), str(bridge), str(co), str(entries)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    got = {r["url"]: r for r in json.loads(out.stdout.strip().splitlines()[-1])["results"]}
+    assert got[sites[0]]["provider"] == "mokahr"                                # keyed by the site as the company has it
+    assert got[sites[0]]["jobs"][0]["url"] == "https://app.mokahr.com/campus-recruitment/smoore/150918#/job/1"
+    assert got[sites[1]]["provider"] == "mokahr"                                # its social twin too
+    assert got[sites[2]]["jobs"][0]["url"].startswith("https://app.mokahr.com/apply/smoore/126055")   # the known spelling as it was
+    assert got[sites[3]]["provider"] is None                                    # only Moka's own addresses
+
+
+def test_a_site_the_ai_tried_to_learn_says_so_until_a_scan_reads_it(live, data_file):
+    """2026-11-04: after the AI was asked to learn a site and the scan still couldn't read it, every place still said
+    "the AI has to learn it first", as if nothing had been tried. The window's check keeps it as tried."""
+    sc = live.inst.hunt.scanner
+    hunt = live.inst.hunt
+    a, b = "https://careers.smoore.example/campus", "https://www.smoore.example/social"
+    hunt.add_company({"name": "思摩尔国际", "sites": [{"url": a}, {"url": b}]})
+    sc.postings.set_scan_state("C1", needs="claude", unrouted=[a, b], at="2026-11-04T10:00:00", ok=True)
+    code, v = live.req("POST", "/api/hunt/companies/C1/learn-tried", {"sites": [a, "https://elsewhere.example"]})
+    assert code == 200 and list(v["scan"]["tried"]) == [a]                       # only a site the scan can't read
+    row = next(c for c in live.req("GET", "/api/hunt")[1]["companies"] if c["id"] == "C1")
+    assert list(row["postings"]["tried"]) == [a] and row["postings"]["unrouted"] == [a, b]
+    # once a scan reads it, it is neither unreadable nor tried any more
+    sc.postings.set_scan_state("C1", unrouted=[b])
+    assert live.req("GET", "/api/hunt/companies/C1")[1]["scan"]["tried"] == {}
+    # a site taken off the company takes its mark with it
+    sc.postings.set_scan_state("C1", unrouted=[a, b])
+    hunt.update_company("C1", {"sites": [{"url": b}]})
+    assert live.req("GET", "/api/hunt/companies/C1")[1]["scan"]["tried"] == {}
+
+
+def test_a_site_from_the_form_is_on_the_list_and_removing_the_first_site_removes_it(hunt):
+    """The "Add a company" form's site was kept only as `site`, never on the list the window shows; and a company's
+    first site taken off the list stayed as `site`, so the scan went on reading it and warning about it."""
+    sc = Scanner(hunt, Postings(hunt), NoTool(), None, lambda: None)
+    c = hunt.add_company({"name": "思摩尔国际", "site": "careers.smoore.example/campus"})
+    assert [s["url"] for s in c["sites"]] == ["https://careers.smoore.example/campus"] and c["site"] == c["sites"][0]["url"]
+    c = hunt.update_company("C1", {"sites": [*c["sites"], {"url": "https://www.smoore.example/social"}]})
+    assert [s["url"] for s in c["sites"]] == ["https://careers.smoore.example/campus", "https://www.smoore.example/social"]
+    c = hunt.update_company("C1", {"sites": [{"url": "https://www.smoore.example/social"}]})   # the first one taken off
+    assert c["site"] == "https://www.smoore.example/social"
+    assert [s["url"] for s in sc.sites_of(c)] == ["https://www.smoore.example/social"]
+    c = hunt.update_company("C1", {"sites": []})
+    assert c["site"] == "" and sc.sites_of(c) == []
+
+
+@needs_node
 def test_career_ops_providers_read_a_site_through_the_bridge(hunt, tmp_path):
     """jobs/co_scan.mjs loads career-ops' providers from its own folder (here a stand-in with its registry's shape)."""
     co = tmp_path / "career-ops"

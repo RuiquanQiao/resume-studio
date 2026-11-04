@@ -755,10 +755,19 @@ function companyLogo(c, cls = "", slot = false) {
 const scanInfo = () => (H.data && H.data.scan) || { running: {}, keywords: [] };
 // read now, or asked for a moment ago (H.starting, until the server has the run)
 const scanning = (cid) => !!(scanInfo().running || {})[cid] || H.starting === "all" || (Array.isArray(H.starting) && H.starting.includes(cid));
-// the sites a scan can't read yet, named: never "a company", which reads as all its sites (user, 2026-11-03)
-const unscannedSay = (urls) => (urls || []).length
-  ? t("{sites} can't be scanned automatically yet: the AI has to learn it first", { sites: urls.map(siteName).join(", ") })
-  : t("Its careers site can't be scanned automatically yet: the AI has to learn it first");
+// the sites a scan can't read yet, named: never "a company", which reads as all its sites (user, 2026-11-03); one the
+// AI was already asked to learn says so (`tried`, from the check after "Let AI learn"): "the AI has to learn it first"
+// after it tried read as if nothing had been done (user, 2026-11-04)
+function unscannedSay(urls, tried = {}) {
+  urls = urls || [];
+  if (!urls.length) return t("Its careers site can't be scanned automatically yet: the AI has to learn it first");
+  const before = urls.filter((u) => tried[u]), never = urls.filter((u) => !tried[u]);
+  return [never.length && t("{sites} can't be scanned automatically yet: the AI has to learn it first", { sites: never.map(siteName).join(", ") }),
+    before.length && t("{sites}: the AI tried to learn it, but the scan still can't read it", { sites: before.map(siteName).join(", ") })]
+    .filter(Boolean).join(t("; "));
+}
+// every unreadable site of theirs was tried already: the button offers another try, not a first one
+const allTried = (urls, tried = {}) => (urls || []).length > 0 && urls.every((u) => tried[u]);
 const scanQueued = (cid) => (scanInfo().queued || []).includes(cid);   // in the run, after the companies before it
 const kwMatch = (title) => { const kw = scanInfo().keywords || []; return !kw.length || kw.some((k) => title.toLowerCase().includes(k.toLowerCase())); };
 
@@ -767,9 +776,20 @@ const kwMatch = (title) => { const kw = scanInfo().keywords || []; return !kw.le
 function scanTrouble(c) {
   const ps = c.postings || {}, sc = ps.scan || {};
   const say = sc.at && sc.ok === false ? (sc.signed_out ? t("The site asks to sign in") : t("The last scan didn't work"))
-    : ps.needs === "claude" ? unscannedSay(ps.unrouted)
+    : ps.needs === "claude" ? unscannedSay(ps.unrouted, ps.tried)
     : ps.needs === "sites" ? t("No careers site to scan") : "";
   return say && h("span", { class: "fs-status warn" }, icon("alert"), say);
+}
+
+// beside the roles it has: what the count leaves out, short, the whole sentence on hover. "71 open" read as all of
+// 思摩尔's roles while its campus site couldn't be read at all (user, 2026-11-04)
+function scanGap(c) {
+  const ps = c.postings || {}, sc = ps.scan || {};
+  const n = (ps.unrouted || []).length;
+  const [say, why] = sc.at && sc.ok === false ? [t("The last scan didn't work"), t("The roles shown are from the scan before; the company's page says why")]
+    : ps.needs === "claude" ? [n ? t("{n} site not read", { n }, "{n} sites not read") : t("A site not read"), unscannedSay(ps.unrouted, ps.tried)]
+    : sc.ok && sc.error ? [t("Some pages didn't read"), sc.error] : [];
+  return say ? h("span", { class: "fs-status warn scan-gap", title: why }, icon("alert"), say) : null;
 }
 
 function openChip(c) {
@@ -859,10 +879,21 @@ function scanNews() {
       h("span", { class: "muted sn-none" }, rows.length || !readToday ? "" : t("nothing new from the last day's scans")),
       h("span", { class: "spacer" }), h("label", { class: "kw-label", for: "hunt-keywords" }, t("Roles you look for")), kwInput),
     rows,
-    learn.length > 0 && h("div", { class: "note-bar" }, icon("sparkle"), h("span", { class: "nb-text" },
-      t("Can't be scanned automatically yet: {sites}. The AI reads each once and records how; after that, scans need no AI.",
-        { sites: learn.map((c) => (c.postings.unrouted || []).length ? t("{company} ({sites})", { company: c.name, sites: c.postings.unrouted.map(siteName).join(", ") }) : c.name).join("; ") })),
-      h("button", { class: "btn sm", "data-ai": aiKey("learn", learn), disabled: !ui.chat.available, onclick: () => askLearn(learn) }, icon("sparkle"), t("Let AI learn them"))),
+    learn.length > 0 && (() => {
+      // each site on the side it is on: one company can have a site the AI tried and one it never saw
+      const named = (tried) => learn.map((c) => {
+        const all = c.postings.unrouted || [];
+        if (!all.length) return tried ? "" : c.name;
+        const us = all.filter((u) => !!(c.postings.tried || {})[u] === tried);
+        return us.length ? t("{company} ({sites})", { company: c.name, sites: us.map(siteName).join(", ") }) : "";
+      }).filter(Boolean).join(t("; "));
+      const first = named(false), again = named(true);
+      return h("div", { class: "note-bar" }, icon("sparkle"), h("span", { class: "nb-text" }, [
+        first && t("Can't be scanned automatically yet: {sites}. The AI reads each once and records how; after that, scans need no AI.", { sites: first }),
+        again && t("The AI tried these and the scan still can't read them: {sites}.", { sites: again })].filter(Boolean).join(" ")),
+        h("button", { class: "btn sm", "data-ai": aiKey("learn", learn), disabled: !ui.chat.available, onclick: () => askLearn(learn) },
+          icon("sparkle"), first ? t("Let AI learn them") : t("Let AI try again")));
+    })(),
     noSites.length > 0 && h("div", { class: "note-bar" }, icon("alert"), h("span", { class: "nb-text" },
       t("{names}: no careers site known yet.", { names: noSites.map((c) => c.name).join(", ") })),
       h("button", { class: "btn sm", "data-ai": aiKey("fill", noSites), disabled: !ui.chat.available, onclick: () => askFill(noSites) }, icon("sparkle"), t("Ask AI to find them"))),
@@ -914,7 +945,10 @@ function askLearn(cs) {
     const left = huntOf(d, ids).filter((c) => (c.postings || {}).needs === "claude");
     if (!left.length) return { ok: true, say: t("Every careers site of {names} is scanned automatically now", { names: huntOf(d, ids).map((c) => c.name).join(", ") }) };
     const sites = left.map((c) => ((c.postings.unrouted || []).length ? c.postings.unrouted.map(siteName).join(", ") : c.name)).join(", ");
-    return { ok: false, say: t("Still can't be scanned automatically: {sites}. The AI didn't record how to read them.", { sites }),
+    // kept, so every place says "the AI tried" from now on; whose fault it is the check can't know (思摩尔国际: the AI
+    // found the list, the scan didn't know that kind of address), so it says only what is so
+    for (const c of left) api("POST", `/api/hunt/companies/${encodeURIComponent(c.id)}/learn-tried`, { sites: c.postings.unrouted || [] }).catch(() => {});
+    return { ok: false, say: t("The AI tried, but the scan still can't read: {sites}. Its chat says what it found.", { sites }),
       again: t("{sites} still can't be scanned automatically. Record how to read each with scan-route, or tell me which step failed and the error you got.", { sites }) };
   });
   // the sites no scan reads, named: a site the scan reads already is never handed to the AI (星河科技, 2026-11-03:
@@ -948,7 +982,7 @@ function postingsCard(v) {
   // running or waiting, the Scan button says it, spinning: a second "Scanning…" beside it would say it twice
   const status = busy || waiting ? null
     // a scan that stopped because it can't read the site records no time: say why, not "not scanned yet"
-    : !sc.at && sc.needs === "claude" ? h("span", { class: "fs-status warn" }, icon("alert"), unscannedSay(sc.unrouted))
+    : !sc.at && sc.needs === "claude" ? h("span", { class: "fs-status warn" }, icon("alert"), unscannedSay(sc.unrouted, sc.tried))
     : !sc.at && sc.needs === "sites" ? h("span", { class: "fs-status warn" }, icon("alert"), t("No careers site to scan"))
     : !sc.at ? h("span", { class: "muted" }, t("not scanned yet"))
     // read in part (a slow page timed out): what it read is kept, and the bar below says which page didn't
@@ -958,8 +992,8 @@ function postingsCard(v) {
       : t("scanned {when} · {how} · some pages didn't read", { when: huntWhen(sc.at), how: howName(sc.how) }))
     // read, but a site still has no route: the next scan can't read it again, so "scanned" alone would read as set up
     : sc.ok && sc.needs === "claude" ? h("span", { class: "fs-status warn", id: "company-no-route" }, icon("alert"), sc.how === "claude"
-      ? t("read by hand by the AI {when} · {what}, so a scan won't update these roles", { when: huntWhen(sc.at), what: unscannedSay(sc.unrouted) })
-      : t("scanned {when} · {what}", { when: huntWhen(sc.at), what: unscannedSay(sc.unrouted) }))
+      ? t("read by hand by the AI {when} · {what}, so a scan won't update these roles", { when: huntWhen(sc.at), what: unscannedSay(sc.unrouted, sc.tried) })
+      : t("scanned {when} · {what}", { when: huntWhen(sc.at), what: unscannedSay(sc.unrouted, sc.tried) }))
     : sc.ok ?h("span", { class: "muted" }, t("scanned {when} · {how}", { when: huntWhen(sc.at), how: howName(sc.how) }))
     : h("span", { class: "fs-status bad" }, icon("alert"), sc.signed_out ? t("The site asks to sign in") : t("The last scan didn't work"));
   const row = (p) => h("div", { class: "post-row" + (p.closed ? " closed" : ""), "data-id": p.id },
@@ -980,7 +1014,9 @@ function postingsCard(v) {
   // the head carries the count, when it was read and Scan: all still at hand with the list folded away
   const acts = [status,
     sc.needs === "claude" && h("button", { class: "btn sm", "data-ai": aiKey("learn", [c]), disabled: !ui.chat.available, onclick: () => askLearn([{ ...c, unrouted: sc.unrouted || [] }]),
-      title: t("The AI reads its site once and records a scan route; after that, scans read it without AI") }, icon("sparkle"), t("Let AI learn its site")),
+      title: allTried(sc.unrouted, sc.tried) ? t("The AI tried once and the scan still can't read it; it tries again, told what is still missing")
+        : t("The AI reads its site once and records a scan route; after that, scans read it without AI") },
+      icon("sparkle"), allTried(sc.unrouted, sc.tried) ? t("Let AI try again") : t("Let AI learn its site")),
     !sc.ok && sc.at && sc.how === "route" && h("button", { class: "btn sm", "data-ai": aiKey("learn", [c]), disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Ask AI to record the scan route again")),
     h("button", { class: "btn sm", id: "company-scan", "aria-busy": (busy || waiting) && "true", disabled: !!busy || waiting || sc.needs === "sites",
       title: sc.needs === "sites" ? t("Add a careers site below first") : waiting ? t("Waiting for the companies before it…") : null,
@@ -1040,7 +1076,7 @@ function companyProps() {
       render: (c) => h("div", { class: "role-chips" },
         scanning(c.id) ? h("span", { class: "scan-chip" }, h("span", { class: "spin" }), t("Scanning…"))
           : scanQueued(c.id) && h("span", { class: "scan-chip c-muted" }, t("Waiting…")),
-        (c.apps || []).map(roleChip), openChip(c),
+        (c.apps || []).map(roleChip), openChip(c), openChip(c) && !scanning(c.id) && scanGap(c),
         !scanning(c.id) && !scanQueued(c.id) && !(c.apps || []).length && !openChip(c) && (scanTrouble(c) || h("span", { class: "c-muted" }, t("none yet")))) },
     placesProp("places", t("Hires in"), (c, v) => cellCompany(c, { places: v })),
     { key: "hq", label: t("Headquarters"), type: "custom", width: 130, hidden: true, group: true, get: (c) => (c.hq ? placeName(c.hq) : ""),
@@ -1445,7 +1481,7 @@ function companyPage(v) {
     ], { fold: "company-roles" }),
     postingsCard(v),
     card(t("Its careers site"), t("one profile there, filled from a subset"), [
-      h("div", { class: "field" }, h("label", null, t("Its careers sites"), h("span", { class: "hint" }, keptHint(c, "sites") || t("scanned for open roles"))), sitesEditor(c, (v.scan || {}).sites || {})),
+      h("div", { class: "field" }, h("label", null, t("Its careers sites"), h("span", { class: "hint" }, keptHint(c, "sites") || t("scanned for open roles"))), sitesEditor(c, (v.scan || {}).sites || {}, (v.scan || {}).tried || {})),
       h("div", { class: "grid2" }, hfield(t("Where you sign up"), c.site, save("site"), { placeholder: "https://careers.example.com/campus", hint: keptHint(c, "site"), link: true }),
         hfield(t("Account"), c.account, save("account"), { placeholder: t("e.g. the phone or email you signed up with"), hint: t("never a password") })),
       h("div", { class: "field" }, h("label", null, t("Filled from"), h("span", { class: "hint" }, t("the subset this site gets"))), h("div", { class: "su-subset" }, pick.el,
@@ -1482,12 +1518,15 @@ function companyPage(v) {
 }
 
 // on a careers site's row: whether a scan reads it by itself (Scanner.site_status), said on every row
-function siteScanChip(how, list) {
+function siteScanChip(how, list, tried = "") {
   const [cls, say, why] = how === "api" ? ["ok", t("Scanned automatically"), list
       ? t("Its list is at {list}, read through its recruiting system's public API, no AI", { list: siteName(list) })
       : t("Read through its recruiting system's public API, no AI")]
     : how === "route" ? ["ok", t("Scanned automatically"), t("Read the way the AI recorded once, no AI")]
-    : how === "no" ? ["warn", t("Can't be scanned automatically yet"), t("The AI has to read it once and record how")]
+    : how === "no" && tried ? ["warn", t("The AI tried; still can't be scanned"), [t("The AI tried to learn it {when}, and the scan still can't read it", { when: huntWhen(tried) }),
+      list && t("Its list is at {list}, but no scan reads that address yet", { list: siteName(list) })].filter(Boolean).join(t("; "))]
+    : how === "no" ? ["warn", t("Can't be scanned automatically yet"), list ? t("Its list is at {list}, but no scan reads that address yet", { list: siteName(list) })
+      : t("The AI has to read it once and record how")]
     : ["", t("Not checked yet"), t("The next scan finds out whether it can read this site by itself")];
   return h("span", { class: "site-scan " + cls, title: why }, icon(cls === "ok" ? "check" : cls === "warn" ? "alert" : "history"), say);
 }
@@ -1495,7 +1534,7 @@ function siteScanChip(how, list) {
 const SITE_KINDS = { campus: "Campus", intern: "Internships", social: "Experienced", other: "Other" };
 
 // the company's careers sites, each one changeable: its kind, its address (emptied, it goes), or gone; and more
-function sitesEditor(c, scans = {}) {
+function sitesEditor(c, scans = {}, tried = {}) {
   const sites = (c.sites || []).map((x) => ({ ...x }));
   const save = () => editCompany(c.id, { sites });
   const kinds = Object.entries(SITE_KINDS).map(([value, label]) => ({ value, label: t(label) }));
@@ -1506,7 +1545,7 @@ function sitesEditor(c, scans = {}) {
       onchange: (e) => { const v = e.target.value.trim(); if (v === x.url) return; if (v) x.url = v; else sites.splice(i, 1); save(); } }),
     // "own site" is the value the AI is told to write (jobhunt/prompts.py): said in the interface's language
     x.system && h("span", { class: "muted" }, x.system.replace(/^own site\b/i, t("Built by the company"))),
-    siteScanChip(scans[x.url], x.list),
+    siteScanChip(scans[x.url], x.list, tried[x.url]),
     h("button", { class: "btn icon sm ghost", title: t("Open it in your everyday browser"), "aria-label": t("Open it in your everyday browser"), onclick: () => openInBrowser(x.url) }, icon("external")),
     h("button", { class: "btn icon sm ghost", title: t("Remove this site"), "aria-label": t("Remove this site"), onclick: () => { sites.splice(i, 1); save(); } }, icon("x"))));
   const add = h("input", { class: "su-add-input", id: "company-add-site", spellcheck: "false", placeholder: t("Add a careers site: paste its address and press Enter"),

@@ -2130,7 +2130,6 @@
  "Read the way the AI recorded once, no AI": "Gelesen so, wie die KI es einmal festgehalten hat, ohne KI",
  "Read through its recruiting system's public API, no AI": "Gelesen über die öffentliche API des Bewerbungssystems, ohne KI",
  "Scanned automatically": "Automatisch gescannt",
- "Still can't be scanned automatically: {sites}. The AI didn't record how to read them.": "Noch nicht automatisch scannbar: {sites}. Die KI hat nicht festgehalten, wie man sie liest.",
  "The AI has to read it once and record how": "Die KI muss sie einmal lesen und festhalten, wie",
  "The next scan finds out whether it can read this site by itself": "Der nächste Scan findet heraus, ob er diese Seite selbst lesen kann",
  "read by hand by the AI {when} · {what}, so a scan won't update these roles": "von Hand gelesen durch die KI {when} · {what}, also aktualisiert ein Scan diese Stellen nicht",
@@ -2179,5 +2178,21 @@
  "changed the status": "Status geändert",
  "Applied on": "Beworben am",
  "Buttons that ask the AI start a new chat": "KI-Schaltflächen starten einen neuen Chat",
- "A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open": "Ein neuer Chat beginnt klein, daher verbraucht jede Schaltfläche weniger von deinem Kontingent als ein langer Chat. Aus: Schaltflächen machen im geöffneten Chat weiter"
+ "A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open": "Ein neuer Chat beginnt klein, daher verbraucht jede Schaltfläche weniger von deinem Kontingent als ein langer Chat. Aus: Schaltflächen machen im geöffneten Chat weiter",
+ "{sites}: the AI tried to learn it, but the scan still can't read it": "{sites}: Die KI hat versucht, sie lesen zu lernen, aber der Scan kann sie noch nicht lesen",
+ "; ": "; ",
+ "The roles shown are from the scan before; the company's page says why": "Die gezeigten Stellen stammen vom Scan davor; die Seite der Firma sagt, warum",
+ "{n} site not read": [
+  "{n} Seite nicht gelesen",
+  "{n} Seiten nicht gelesen"
+ ],
+ "A site not read": "Eine Seite nicht gelesen",
+ "Some pages didn't read": "Einige Seiten wurden nicht gelesen",
+ "The AI tried once and the scan still can't read it; it tries again, told what is still missing": "Die KI hat es einmal versucht und der Scan kann sie noch nicht lesen; sie versucht es erneut und erfährt, was noch fehlt",
+ "Let AI try again": "KI erneut versuchen lassen",
+ "The AI tried these and the scan still can't read them: {sites}.": "Die KI hat diese versucht und der Scan kann sie noch nicht lesen: {sites}.",
+ "The AI tried, but the scan still can't read: {sites}. Its chat says what it found.": "Die KI hat es versucht, aber der Scan kann noch nicht lesen: {sites}. Ihr Chat sagt, was sie gefunden hat.",
+ "The AI tried; still can't be scanned": "KI hat es versucht; noch nicht automatisch scannbar",
+ "The AI tried to learn it {when}, and the scan still can't read it": "Die KI hat es {when} versucht, und der Scan kann sie noch nicht lesen",
+ "Its list is at {list}, but no scan reads that address yet": "Ihre Liste liegt unter {list}, aber kein Scan liest diese Adresse bisher"
 }

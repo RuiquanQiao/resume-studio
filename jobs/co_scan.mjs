@@ -41,9 +41,21 @@ function feishuPortal(url) {
   } catch { return ''; }
 }
 
+// Moka's own lists also live at /campus_apply/<org>/<site> (and /social_apply/): the same site and API as
+// /campus-recruitment/<org>/<site>, which is the only spelling career-ops' provider knows. 思摩尔国际's campus list
+// (2026-11-04) was read as "no scan can read it" though its 53 roles come through the same API.
+function providerUrl(url) {
+  try {
+    const u = new URL(url);
+    if (!/(^|\.)mokahr\.com$/i.test(u.hostname)) return url;
+    const m = u.pathname.match(/^\/(campus|social)_apply\/([^/]+)\/(\d+)\/?$/);
+    return m ? `${u.origin}/${m[1]}-recruitment/${m[2]}/${m[3]}` : url;
+  } catch { return url; }
+}
+
 const results = [];
 for (const e of entries) {
-  const entry = { name: e.name || '', careers_url: e.url };
+  const entry = { name: e.name || '', careers_url: providerUrl(e.url) };
   let r = null;
   try {
     r = resolveProvider(entry, providers, { skipIds: ['local-parser'] });

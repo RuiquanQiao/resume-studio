@@ -701,7 +701,7 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px va
 .note-bar > svg.i, .sync-bar > svg.i { color: var(--text-3); }
 .note-bar.warn { background: color-mix(in srgb, var(--bad-soft) 70%, transparent); color: var(--text); }
 .note-bar.warn > svg.i { color: var(--bad); }
-.nb-text { flex: 1 1 200px; min-width: 0; }   /* every notice's text: a narrow box moves its buttons below, never squeezes it */
+.nb-text { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }   /* every notice's text: a narrow box moves its buttons below, never squeezes it; a long address breaks */
 .note-bar .btn, .sync-bar .btn { flex: none; }
 .note-line { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); }
 .note-line svg.i { width: 14px; height: 14px; }

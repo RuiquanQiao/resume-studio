@@ -275,6 +275,17 @@ def scan_read_in_part(c):
                                                        error=f"the page {url} didn't open in 3 tries: Page.navigate timed out")
 
 
+def sites_the_ai_tried(c):
+    """A company with open roles whose other sites can't be read: one the AI was asked to learn and couldn't (思摩尔国际,
+    2026-11-04), one never tried, with a long address. The table says so beside the count, every place tells them apart."""
+    filled_companies(c)
+    hunt = c.server.inst.hunt
+    intern = "https://careers.xinghe.example/intern"
+    long = "https://app.mokahr.example/campus_apply/xinghe-technology-group-holdings/150918/" + "x" * 90
+    hunt.update_company("C1", {"sites": [*hunt.company("C1")["sites"], {"url": long, "kind": "social", "list": long}]})
+    hunt.scanner.postings.set_scan_state("C1", needs="claude", unrouted=[intern, long], tried={intern: "2026-11-04T11:44:12"})
+
+
 def read_failed(c):
     """A role added from the open postings (its row says so), whose page then didn't read."""
     filled_companies(c)
@@ -511,6 +522,10 @@ STATES = [
           lambda pg, c: (pg.wait_for_selector(".note-bar.warn #app-read, #app-read"), pg.evaluate("() => document.querySelector('#app-read').scrollIntoView({block: 'center'})"))), ["section.card .note-bar.warn", "#app-read"], prepare=read_failed),
     State("applying, a company whose scan failed", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
           [".card-acts .fs-status.bad", ".note-bar.warn"], prepare=failed_scan),
+    State("applying, companies with roles and a site no scan reads", applying("companies"),
+          [".htable .role-chip.open-chip", ".htable .scan-gap", ".scan-news .note-bar"], prepare=sites_the_ai_tried),
+    State("applying, a company with a site the AI tried and one it didn't", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
+          ["#company-no-route", ".co-sites .site-scan.warn", ".post-row"], prepare=sites_the_ai_tried),
     State("applying, a company whose scan read only some pages", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
           [".card-acts .fs-status.warn", ".note-bar.warn", ".post-row"], prepare=scan_read_in_part),
     State("applying, a long table scrolled both ways, two columns frozen", then(applying("apps"),

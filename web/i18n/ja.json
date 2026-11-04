@@ -1965,7 +1965,6 @@
  "Read the way the AI recorded once, no AI": "AI が一度記録した読み方で読みます。AI は不要",
  "Read through its recruiting system's public API, no AI": "採用システムの公開 API で読みます。AI は不要",
  "Scanned automatically": "自動スキャン可",
- "Still can't be scanned automatically: {sites}. The AI didn't record how to read them.": "まだ自動スキャンできません：{sites}。AI が読み方を記録しませんでした。",
  "The AI has to read it once and record how": "AI が一度読んで読み方を記録する必要があります",
  "The next scan finds out whether it can read this site by itself": "次のスキャンで、このサイトを自分で読めるか確かめます",
  "read by hand by the AI {when} · {what}, so a scan won't update these roles": "{when} AI が手で読みました · {what}。スキャンではこれらの職種は更新されません",
@@ -2011,5 +2010,18 @@
  "changed the status": "ステータス変更",
  "Applied on": "応募日",
  "Buttons that ask the AI start a new chat": "AI ボタンを押すと新しいチャットを始める",
- "A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open": "新しいチャットは短いところから始まるので、長いチャットで続けるよりプランの使用量が少なくて済みます。オフにすると、開いているチャットで続けます"
+ "A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open": "新しいチャットは短いところから始まるので、長いチャットで続けるよりプランの使用量が少なくて済みます。オフにすると、開いているチャットで続けます",
+ "{sites}: the AI tried to learn it, but the scan still can't read it": "{sites}：AI が読み方を覚えようとしましたが、まだスキャンできません",
+ "; ": "；",
+ "The roles shown are from the scan before; the company's page says why": "表示している求人は前回のスキャンのものです。理由は会社のページにあります",
+ "{n} site not read": "{n} 件のサイトが読めていません",
+ "A site not read": "読めていないサイトがあります",
+ "Some pages didn't read": "一部のページが読めませんでした",
+ "The AI tried once and the scan still can't read it; it tries again, told what is still missing": "AI が一度試しましたが、まだスキャンできません。次は何が足りないかを伝えて試します",
+ "Let AI try again": "AI にもう一度試してもらう",
+ "The AI tried these and the scan still can't read them: {sites}.": "AI が試しましたが、まだスキャンできないサイト：{sites}。",
+ "The AI tried, but the scan still can't read: {sites}. Its chat says what it found.": "AI が試しましたが、まだスキャンできません：{sites}。何がわかったかはチャットにあります。",
+ "The AI tried; still can't be scanned": "AI が試行済み・まだ自動スキャン不可",
+ "The AI tried to learn it {when}, and the scan still can't read it": "AI が{when}に試しましたが、まだスキャンできません",
+ "Its list is at {list}, but no scan reads that address yet": "求人一覧は {list} にありますが、このアドレスはまだスキャンできません"
 }

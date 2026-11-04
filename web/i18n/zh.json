@@ -1965,7 +1965,6 @@
  "Read the way the AI recorded once, no AI": "按 AI 记下的读法读取，不用 AI",
  "Read through its recruiting system's public API, no AI": "通过它的招聘系统公开接口读取，不用 AI",
  "Scanned automatically": "能自动扫描",
- "Still can't be scanned automatically: {sites}. The AI didn't record how to read them.": "还是不能自动扫描：{sites}。AI 没有把读法存下来。",
  "The AI has to read it once and record how": "要先让 AI 读一次、记下读法",
  "The next scan finds out whether it can read this site by itself": "下次扫描会查明能不能自己读这个网址",
  "read by hand by the AI {when} · {what}, so a scan won't update these roles": "{when}由 AI 手动读的 · {what}，扫描不会更新这些岗位",
@@ -2011,5 +2010,18 @@
  "changed the status": "更改状态",
  "Applied on": "投递日期",
  "Buttons that ask the AI start a new chat": "点 AI 按钮时开一个新对话",
- "A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open": "新对话从零开始，每次点按钮消耗的额度比在长对话里接着聊少得多。关掉后，按钮会在当前打开的对话里继续"
+ "A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open": "新对话从零开始，每次点按钮消耗的额度比在长对话里接着聊少得多。关掉后，按钮会在当前打开的对话里继续",
+ "{sites}: the AI tried to learn it, but the scan still can't read it": "{sites}：AI 试过学读，扫描还是读不了",
+ "; ": "；",
+ "The roles shown are from the scan before; the company's page says why": "这里显示的是更早一次扫描的岗位；原因见公司页面",
+ "{n} site not read": "{n} 个网址没读到",
+ "A site not read": "有网址没读到",
+ "Some pages didn't read": "有的页面没读出来",
+ "The AI tried once and the scan still can't read it; it tries again, told what is still missing": "AI 试过一次，扫描还是读不了；再试时会告诉它还差什么",
+ "Let AI try again": "让 AI 再试一次",
+ "The AI tried these and the scan still can't read them: {sites}.": "AI 试过这些网址，扫描还是读不了：{sites}。",
+ "The AI tried, but the scan still can't read: {sites}. Its chat says what it found.": "AI 试过了，扫描还是读不了：{sites}。它在对话里说了查到什么。",
+ "The AI tried; still can't be scanned": "AI 试过，仍不能自动扫描",
+ "The AI tried to learn it {when}, and the scan still can't read it": "AI {when}试过学读，扫描还是读不了",
+ "Its list is at {list}, but no scan reads that address yet": "岗位列表在 {list}，但扫描还读不了这个地址"
 }

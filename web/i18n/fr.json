@@ -2130,7 +2130,6 @@
  "Read the way the AI recorded once, no AI": "Lu comme l’IA l’a noté une fois, sans IA",
  "Read through its recruiting system's public API, no AI": "Lu via l’API publique de son système de recrutement, sans IA",
  "Scanned automatically": "Scanné automatiquement",
- "Still can't be scanned automatically: {sites}. The AI didn't record how to read them.": "Toujours pas scannés automatiquement : {sites}. L’IA n’a pas noté comment les lire.",
  "The AI has to read it once and record how": "L’IA doit le lire une fois et noter comment",
  "The next scan finds out whether it can read this site by itself": "Le prochain scan vérifiera s’il peut lire ce site seul",
  "read by hand by the AI {when} · {what}, so a scan won't update these roles": "lu à la main par l’IA {when} · {what}, donc un scan ne mettra pas ces postes à jour",
@@ -2179,5 +2178,21 @@
  "changed the status": "statut changé",
  "Applied on": "Date de candidature",
  "Buttons that ask the AI start a new chat": "Les boutons IA ouvrent une nouvelle discussion",
- "A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open": "Une nouvelle discussion part de zéro : chaque bouton consomme moins de votre forfait qu'en continuant une longue discussion. Désactivé : les boutons continuent dans la discussion ouverte"
+ "A new chat starts small, so each button uses less of your plan than going on in a long chat. Off: buttons go on in the chat that is open": "Une nouvelle discussion part de zéro : chaque bouton consomme moins de votre forfait qu'en continuant une longue discussion. Désactivé : les boutons continuent dans la discussion ouverte",
+ "{sites}: the AI tried to learn it, but the scan still can't read it": "{sites} : l'IA a essayé d'apprendre à le lire, mais l'analyse ne peut toujours pas",
+ "; ": " ; ",
+ "The roles shown are from the scan before; the company's page says why": "Les offres affichées viennent de l'analyse précédente ; la page de l'entreprise dit pourquoi",
+ "{n} site not read": [
+  "{n} site non lu",
+  "{n} sites non lus"
+ ],
+ "A site not read": "Un site non lu",
+ "Some pages didn't read": "Certaines pages n'ont pas été lues",
+ "The AI tried once and the scan still can't read it; it tries again, told what is still missing": "L'IA a essayé une fois et l'analyse ne peut toujours pas le lire ; elle réessaie en sachant ce qui manque",
+ "Let AI try again": "Laisser l'IA réessayer",
+ "The AI tried these and the scan still can't read them: {sites}.": "L'IA a essayé ceux-ci et l'analyse ne peut toujours pas les lire : {sites}.",
+ "The AI tried, but the scan still can't read: {sites}. Its chat says what it found.": "L'IA a essayé, mais l'analyse ne peut toujours pas lire : {sites}. Sa discussion dit ce qu'elle a trouvé.",
+ "The AI tried; still can't be scanned": "L'IA a essayé ; pas encore analysé automatiquement",
+ "The AI tried to learn it {when}, and the scan still can't read it": "L'IA a essayé de l'apprendre {when}, et l'analyse ne peut toujours pas le lire",
+ "Its list is at {list}, but no scan reads that address yet": "Sa liste est sur {list}, mais aucune analyse ne lit encore cette adresse"
 }
