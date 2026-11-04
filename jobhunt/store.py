@@ -400,11 +400,19 @@ class Hunt:
         data[key] = [x for x in data.get(key) or [] if isinstance(x, dict) and x.get("id")]
         return data
 
-    def _write(self, name: str, data: dict) -> None:
+    def _write(self, name: str, data: dict, *, rows: str = "") -> None:
+        """`rows`: the key of a long list written one record per line, each without spaces (postings.json: 53,000
+        records indented took 31 MB; a line each is still read and compared by eye, one record at a time)."""
         self.dir.mkdir(parents=True, exist_ok=True)
         path = self._file(name)
         tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8", newline="\n")
+        if rows:
+            dump = lambda x: json.dumps(x, ensure_ascii=False, separators=(",", ":"))
+            head = ",".join(f"{dump(k)}:{dump(v)}" for k, v in data.items() if k != rows)
+            text = "{" + head + ("," if head else "") + dump(rows) + ":[\n" + ",\n".join(dump(x) for x in data.get(rows) or []) + "\n]}\n"
+        else:
+            text = json.dumps(data, ensure_ascii=False, indent=1)
+        tmp.write_text(text, encoding="utf-8", newline="\n")
         for attempt in range(20):   # Windows: a reader may hold the file for a moment
             try:
                 os.replace(tmp, path)

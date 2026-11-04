@@ -2,6 +2,7 @@
 
     resume-studio-data/hunt/postings.json   {"next": 9, "postings": [{id: "P1", company: "C1", key, title, url, location, category,
                                   batch, deadline, posted, first_seen, last_seen, closed, changed, app, source}]}
+                                  one posting a line, its empty fields (and a key that is its link) left out
     resume-studio-data/hunt/scans.json      {"last_all": "...", "keywords": ["算法", "AI", ...], "daily": true,
                                   "companies": {"C1": {at, ok, error, how, found, new, closed, changed, route}}}
 
@@ -24,6 +25,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -117,13 +119,77 @@ def matches(title: str, keywords: list[str]) -> bool:
     return any(k.casefold() in s for k in keywords if k)
 
 
+# A posting's fields that most postings leave empty: written only when they hold something, and the key only when
+# it isn't the link (it is for 9 postings in 10). Read back, every posting has them all again.
+DEFAULTS: dict[str, Any] = {"url": "", "location": "", "category": "", "batch": "", "deadline": "", "posted": "",
+                            "closed": "", "changed": {}, "app": None, "source": ""}
+
+
+def _full(p: dict) -> dict:
+    for k, v in DEFAULTS.items():
+        if k not in p:
+            p[k] = {} if k == "changed" else v
+    if "key" not in p:
+        p["key"] = fingerprint(p) if not p["url"] else p["url"]
+    return p
+
+
+def _slim(p: dict) -> dict:
+    return {k: v for k, v in p.items()
+            if not (k in DEFAULTS and v == DEFAULTS[k]) and not (k == "key" and v == p.get("url") and v)}
+
+
 class Postings:
+    """postings.json holds every posting a scan ever found (53,000 for 80 companies in 2026-11): read once and kept
+    while the file stays as it is, for what only reads it (the table, a company's page, the news); what writes
+    reads it fresh, under the tracker's lock. Each read hands out copies, so nothing changes the kept one."""
+
     def __init__(self, hunt: Hunt):
         self.hunt = hunt
+        self._kept: tuple[tuple[int, int], dict] | None = None
+        self._kept_lock = threading.Lock()
 
     # ---- files ----
     def _data(self) -> dict:
-        return self.hunt._read("postings.json", "postings")
+        """Fresh, for a change that is written back (_save)."""
+        data = self.hunt._read("postings.json", "postings")
+        for p in data["postings"]:
+            _full(p)
+        return data
+
+    def _save(self, data: dict) -> None:
+        self.hunt._write("postings.json", {"next": data["next"], "postings": [_slim(p) for p in data["postings"]]}, rows="postings")
+        with self._kept_lock:
+            self._kept = None
+
+    def _view(self) -> dict:
+        """The postings as the file holds them now, parsed once per change of the file. Never changed by a caller."""
+        try:
+            st = self.hunt._file("postings.json").stat()
+            sig = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            sig = (0, 0)
+        with self._kept_lock:
+            if self._kept and self._kept[0] == sig:
+                return self._kept[1]
+        data = self._data()
+        with self._kept_lock:
+            self._kept = (sig, data)
+        return data
+
+    def slim_file(self) -> bool:
+        """A file written before 2026-11-04 (indented, every empty field) is written again the short way, once."""
+        path = self.hunt._file("postings.json")
+        try:
+            with path.open("rb") as f:
+                head = f.read(64)
+        except OSError:
+            return False
+        if not head.strip() or b'"postings":[\n' in head:   # none yet, or written the short way already
+            return False
+        with self.hunt.lock:
+            self._save(self._data())
+        return True
 
     def scans(self) -> dict:
         try:
@@ -174,17 +240,17 @@ class Postings:
 
     # ---- postings ----
     def all(self, company: str | None = None) -> list[dict]:
-        ps = self._data()["postings"]
+        ps = self._view()["postings"]
         if company:
             cid = self.hunt.company(company)["id"]
             ps = [p for p in ps if p["company"] == cid]
-        return ps
+        return [{**p, "changed": dict(p["changed"])} for p in ps]
 
     def get(self, ref: str) -> dict:
-        p = next((x for x in self._data()["postings"] if x["id"] == str(ref).strip()), None)
+        p = next((x for x in self._view()["postings"] if x["id"] == str(ref).strip()), None)
         if not p:
             raise KeyError(t("No posting “{ref}”", ref=ref))
-        return p
+        return {**p, "changed": dict(p["changed"])}
 
     def merge(self, company: str, found: list[Any], *, how: str, complete: bool = True) -> dict:
         """What a scan found: new ones added, gone ones closed (only when the scan read every list: `complete`),
@@ -260,7 +326,7 @@ class Postings:
                     linked.add(aid)
                     if complete and p.get("closed") and p not in closed:
                         gone.append(p)
-            self.hunt._write("postings.json", data)
+            self._save(data)
         st = self.set_scan_state(c["id"], at=seen_now, ok=True, error="", unread=None, signed_out=False, how=how, found=len(keys),
                                  new=[p["id"] for p in new], closed=[p["id"] for p in closed], changed=[p["id"] for p in changed])
         follow = self._follow(c, closed + gone, reopened)
@@ -305,7 +371,8 @@ class Postings:
         k = same_link(url)
         if not re.match(r"https?://", k, re.I):
             return None
-        return next((p for p in self._data()["postings"] if not p["key"].startswith("t:") and same_link(p["key"]) == k), None)
+        p = next((p for p in self._view()["postings"] if not p["key"].startswith("t:") and same_link(p["key"]) == k), None)
+        return {**p, "changed": dict(p["changed"])} if p else None
 
     def link(self, a: dict) -> None:
         """A role just given a link that a scan already found is linked to that posting now, not at the next scan."""
@@ -318,7 +385,7 @@ class Postings:
                 return
             me = next(x for x in data["postings"] if x["id"] == p["id"])
             me["app"] = a["id"]
-            self.hunt._write("postings.json", data)
+            self._save(data)
         self.hunt._changed()
 
     def apply(self, ref: str, *, source: str = "window") -> dict:
@@ -347,7 +414,7 @@ class Postings:
             data = self._data()
             me = next(x for x in data["postings"] if x["id"] == p["id"])
             me["app"] = a["id"]
-            self.hunt._write("postings.json", data)
+            self._save(data)
         self.hunt._changed()
         return a
 
@@ -358,7 +425,8 @@ class Postings:
         kw = d["keywords"]
         out: dict[str, dict] = {}
         today = time.strftime("%Y-%m-%d")
-        for p in self._data()["postings"]:
+        ps = self._view()["postings"]
+        for p in ps:
             s = out.setdefault(p["company"], {"open": 0, "matching": 0, "stale": 0})
             if p.get("closed"):
                 continue
@@ -368,7 +436,7 @@ class Postings:
             s["open"] += 1
             if matches(p["title"], kw):
                 s["matching"] += 1
-        news = {p["id"]: p for p in self._data()["postings"]}
+        news = {p["id"]: p for p in ps}
         for cid, st in d["companies"].items():
             s = out.setdefault(cid, {"open": 0, "matching": 0, "stale": 0})
             s["scan"] = {k: st.get(k) for k in ("at", "ok", "error", "signed_out", "how", "found")}
@@ -382,7 +450,7 @@ class Postings:
         """What the scans of the last day brought, per company: matching new, closed and changed postings."""
         d = self.scans()
         kw = d["keywords"]
-        by_id = {p["id"]: p for p in self._data()["postings"]}
+        by_id = {p["id"]: p for p in self._view()["postings"]}
         cut = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - since_hours * 3600))
         out = []
         for cid, st in d["companies"].items():
@@ -390,7 +458,7 @@ class Postings:
                 continue
             row = {"company": cid, "at": st["at"]}
             for k in ("new", "closed", "changed"):
-                row[k] = [by_id[i] for i in st.get(k) or [] if i in by_id and matches(by_id[i]["title"], kw)
+                row[k] = [dict(by_id[i]) for i in st.get(k) or [] if i in by_id and matches(by_id[i]["title"], kw)
                           and not (k == "new" and stale(by_id[i]))]
             if any(row[k] for k in ("new", "closed", "changed")):
                 out.append(row)
@@ -400,7 +468,7 @@ class Postings:
         with self.hunt.lock:
             data = self._data()
             data["postings"] = [p for p in data["postings"] if p["company"] != cid]
-            self.hunt._write("postings.json", data)
+            self._save(data)
             d = self.scans()
             d["companies"].pop(cid, None)
             self._save_scans(d)

@@ -658,6 +658,75 @@ def test_a_new_companys_sites_are_scanned_at_once_whoever_adds_them(live, data_f
     assert len(checked) == 3
 
 
+def test_postings_are_written_short_and_read_back_whole(hunt):
+    """2026-11-04: 53,609 postings took 31 MB, indented, every empty field written, the link twice (as `key` too).
+    One a line now, empty fields and a key that is the link left out; read back, every posting is whole again."""
+    ps = Postings(hunt)
+    hunt.add_company({"name": "阿里云"})
+    ps.merge("C1", [{"title": "算法工程师", "url": "https://talent.example/job/1"},
+                    {"title": "无链接岗", "location": "杭州", "deadline": "2030-01-01"}], how="alibaba")
+    before = ps.all()
+    raw = (hunt.dir / "postings.json").read_text(encoding="utf-8")
+    lines = raw.splitlines()
+    assert lines[0] == '{"next":3,"postings":[' and lines[-1] == "]}" and len(lines) == 4   # one posting a line
+    assert '"category"' not in raw and '"app"' not in raw and '"changed"' not in raw and ": " not in raw
+    one, two = json.loads(lines[1].rstrip(",")), json.loads(lines[2])
+    assert "key" not in one and one["url"] == "https://talent.example/job/1"            # its key is its link
+    assert two["key"] == "t:无链接岗|杭州" and "url" not in two                          # a key that isn't one stays
+    fresh = Postings(hunt).all()
+    assert fresh == before and fresh[0]["key"] == fresh[0]["url"] and fresh[0]["changed"] == {} and fresh[0]["app"] is None
+    # the next scan matches them as before: nothing new, nothing closed
+    res = ps.merge("C1", [{"title": "算法工程师", "url": "https://talent.example/job/1"},
+                          {"title": "无链接岗", "location": "杭州", "deadline": "2030-02-01"}], how="alibaba")
+    assert (res["found"], len(res["new"]), len(res["closed"]), len(res["changed"])) == (2, 0, 0, 1)
+    assert ps.get("P2")["changed"]["deadline"] == ["2030-01-01", "2030-02-01"]
+    # a linked application survives the round trip
+    a = ps.apply("P1")
+    assert Postings(hunt).get("P1")["app"] == a["id"]
+
+
+def test_an_older_postings_file_is_written_short_once(hunt):
+    ps = Postings(hunt)
+    hunt.add_company({"name": "快手"})
+    old = {"next": 2, "postings": [{"id": "P1", "company": "C1", "key": "https://ks.example/j/1", "title": "后端", "url": "https://ks.example/j/1",
+                                    "location": "", "category": "", "batch": "", "deadline": "", "posted": "2026-10-01",
+                                    "first_seen": "2026-10-01T10:00:00", "last_seen": "2026-11-01T10:00:00", "closed": "",
+                                    "changed": {}, "app": None, "source": "route"}]}
+    (hunt.dir / "postings.json").write_text(json.dumps(old, ensure_ascii=False, indent=1), encoding="utf-8")
+    size = (hunt.dir / "postings.json").stat().st_size
+    assert ps.all() == old["postings"]                                     # read as it is
+    assert ps.slim_file() is True and (hunt.dir / "postings.json").stat().st_size < size * 0.6
+    assert Postings(hunt).all() == old["postings"] and ps.all() == old["postings"]
+    assert ps.slim_file() is False                                         # once
+    (hunt.dir / "postings.json").unlink()
+    assert ps.slim_file() is False and ps.all() == []                      # no file: nothing to do
+
+
+def test_postings_are_parsed_once_per_change_and_never_changed_by_a_reader(hunt, monkeypatch):
+    ps = Postings(hunt)
+    hunt.add_company({"name": "网易"})
+    ps.merge("C1", [{"title": "游戏策划", "url": "https://hr.163.example/1"}], how="route")
+    reads = []
+    real = hunt._read
+    monkeypatch.setattr(hunt, "_read", lambda name, key: reads.append(name) or real(name, key))
+    ps.all(); ps.summary(); ps.changes(); ps.get("P1"); ps.by_url("https://hr.163.example/1")
+    assert reads.count("postings.json") == 1                               # the table, the news, a page: one parse
+    # what a reader gets is a copy
+    got = ps.get("P1")
+    got["title"] = "改掉了"; got["changed"]["x"] = 1
+    ps.all()[0]["closed"] = "2030"
+    assert ps.get("P1")["title"] == "游戏策划" and ps.get("P1")["changed"] == {} and ps.get("P1")["closed"] == ""
+    # a write here is seen at once
+    ps.merge("C1", [{"title": "游戏策划", "url": "https://hr.163.example/1"}, {"title": "美术", "url": "https://hr.163.example/2"}], how="route")
+    assert len(ps.all()) == 2
+    # so is one from outside (another editor, a restore): the file changed, so it is read again
+    f = hunt.dir / "postings.json"
+    text = f.read_text(encoding="utf-8").replace("美术", "美术设计")
+    time.sleep(0.02)
+    f.write_text(text, encoding="utf-8")
+    assert [p["title"] for p in ps.all()] == ["游戏策划", "美术设计"]
+
+
 def test_a_check_of_new_sites_waits_for_a_scan_of_the_same_company(hunt, monkeypatch):
     """A site the AI adds while the first scan of a new company runs: that scan read the old list, so the check
     waits for it instead of giving up (it used to return at once, and the new site was never read)."""

@@ -80,6 +80,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
 
     hunt.on_change = changed
     posts = Postings(hunt)
+    threading.Thread(target=posts.slim_file, name="hunt-slim-postings", daemon=True).start()   # once, an older file
     views = Views(hunt.dir)
     geo = Geo(hunt.dir)
     scanner = Scanner(hunt, posts, tool, browser, lambda: app.bus.publish("hunt", {}))
