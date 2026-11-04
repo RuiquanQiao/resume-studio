@@ -1856,8 +1856,19 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .trk-field { display: grid; grid-template-columns: 9em minmax(0, 1fr); align-items: center; gap: 8px; }
 .trk-lab { font-size: 12px; color: var(--text-3); }
 .trk-more { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-.trk-empty { max-width: 560px; }
-.trk-empty p { text-wrap: pretty; }
+/* no track yet: one left-aligned column under the heading, two sample tracks, then the two ways in */
+.trk-empty { max-width: 620px; margin-top: 18px; }
+.trk-empty h2 { margin: 0 0 6px; font-size: 15px; font-weight: 650; color: var(--text); }
+.trk-empty > p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.6; text-wrap: pretty; }
+.trk-ex-list { list-style: none; margin: 16px 0 20px; padding: 0; border-top: 1px solid var(--line); }
+.trk-ex { display: grid; grid-template-columns: minmax(7em, max-content) minmax(0, 1fr); align-items: baseline; column-gap: 12px; row-gap: 4px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.trk-ex-name { font-size: 13px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.trk-ex .trk-tags { min-width: 0; }
+.trk-ex .trk-tag { background: var(--panel); border: 1px solid var(--line); line-height: 20px; color: var(--text); }
+.trk-ex-not { grid-column: 2; font-size: 12px; color: var(--text-3); }
+.trk-empty-do { display: flex; flex-wrap: wrap; gap: 8px; }
+.trk-empty > .trk-empty-hint { margin-top: 10px; font-size: 12px; color: var(--text-3); }
+@media (max-width: 560px) { .trk-ex { grid-template-columns: 1fr; } .trk-ex-not { grid-column: 1; } }
 .picked-tools { margin: 4px 0 10px; }
 .trk-segs { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 9px; background: var(--hover); border: 1px solid var(--line); max-width: 100%; }
 .trk-seg { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text-2);
@@ -1870,3 +1881,10 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .picked-row > .co-logo { flex: none; width: 24px; height: 24px; border-radius: 5px; align-self: flex-start; margin-top: 1px; }
 .pk-co { color: var(--text-2); font-size: 12px; }
 @media (max-width: 640px) { .trk-field { grid-template-columns: 1fr; gap: 2px; } .trk-top { flex-wrap: wrap; } }
+
+/* picked roles ranked by fit (web/hunt.js fitBadge, rankBar) */
+.pk-fit { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 11px; line-height: 18px; white-space: nowrap; font-variant-numeric: tabular-nums;
+  background: var(--hover); color: var(--text-2); }
+.pk-fit.hi { background: var(--ok-soft); color: var(--ok); }
+.pk-fit.lo { color: var(--text-3); }
+.select.pk-sort { height: 28px; font-size: 12px; }

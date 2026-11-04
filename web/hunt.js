@@ -1075,15 +1075,27 @@ function pickedPage() {
   const head = h("div", { class: "hunt-head" }, h("h1", null, t("Picked for you")),
     h("p", null, t("Open roles from every company you follow whose titles fall in one of your tracks, newest first. Nothing here uses the AI: it is your tracks' words against each title.")));
   if (!anyTracks()) {
-    return [head, h("div", { class: "hunt-empty trk-empty" },
-      h("div", { class: "t" }, t("No tracks yet")),
-      h("p", null, t("A track is a kind of role you go for, like AI 应用工程师 or AI 产品经理, with the words its titles use. Set one up and the roles that fit are picked out of every scan.")),
-      h("div", { class: "row wrap" },
-        h("button", { class: "btn sm primary", disabled: !ui.chat.available, title: ui.chat.available ? null : missingAgentText(), "data-ai": "tracks", onclick: askTracks }, icon("sparkle"), t("Let AI set them up")),
-        h("button", { class: "btn sm", onclick: () => editTracks() }, icon("plus"), t("Set them up myself"))))];
+    // first use: what a track is, shown as two made-up ones, then the two ways to get one. Left-aligned with the
+    // heading, no box: one column the eye reads top to bottom
+    const sample = (name, words, not) => h("li", { class: "trk-ex" },
+      h("span", { class: "trk-ex-name" }, name),
+      h("span", { class: "trk-tags" }, words.split(/[,，]\s*/).map((w) => h("span", { class: "trk-tag" }, w))),
+      not && h("span", { class: "trk-ex-not" }, t("except {words}", { words: not })));
+    return [h("div", { class: "hunt-head" }, h("h1", null, t("Picked for you"))),
+      h("section", { class: "trk-empty", "aria-labelledby": "trk-empty-title" },
+        h("h2", { id: "trk-empty-title" }, t("Tell it which kinds of role you go for")),
+        h("p", null, t("Each kind is a track: a name and the words its titles use. Every scan then picks the matching roles out of all your companies, no AI needed.")),
+        h("ul", { class: "trk-ex-list", "aria-label": t("For example") },
+          sample(t("Backend engineer"), t("Backend, Java, Go, Server"), t("Test")),
+          sample(t("Product manager"), t("Product manager, PM, Product+Strategy"), "")),
+        h("div", { class: "trk-empty-do" },
+          h("button", { class: "btn primary", disabled: !ui.chat.available, title: ui.chat.available ? null : missingAgentText(), "data-ai": "tracks", onclick: askTracks }, icon("sparkle"), t("Let AI set them up")),
+          h("button", { class: "btn", onclick: () => editTracks() }, icon("plus"), t("Set them up myself"))),
+        h("p", { class: "trk-empty-hint" }, t("The AI builds them from your resume subsets and the titles your companies really use; you can change them after.")))];
   }
   // fetched once per change of the tracker: a "hunt" event reloads H.data, and a new sign makes this fetch again
-  const sig = (d.scan.last_run || {}).at + "|" + JSON.stringify(huntTracks()) + "|" + d.companies.reduce((k, c) => k + ((c.postings || {}).matching || 0), 0);
+  const sig = (d.scan.last_run || {}).at + "|" + JSON.stringify(huntTracks()) + "|" + d.companies.reduce((k, c) => k + ((c.postings || {}).matching || 0), 0)
+    + "|" + JSON.stringify(d.scan.reading || null);
   if (H.pickedSig !== sig) { H.pickedSig = sig; loadPicked(); }
   const m = H.picked;
   if (!m) return [head, h("div", { class: "muted" }, t("Loading…"))];
@@ -1094,6 +1106,10 @@ function pickedPage() {
   const shown = m.postings.filter((p) => (!cur || p.tracks.includes(cur)) && (!p.app || H.papplied)
     && (!fresh || (p.first_seen || "").slice(0, 10) >= fresh)
     && (!q || [p.title, p.company_name, p.location, p.category].join(" ").toLowerCase().includes(q)));
+  // best fit first: a role whose description was compared with its track's resume, by its score; the rest after,
+  // newest first as before
+  const byFit = H.psort === "fit" && m.ranked;
+  if (byFit) shown.sort((a, b) => (b.fit ? b.fit.score : -1) - (a.fit ? a.fit.score : -1));
   const seg = (id, label, n) => h("button", { type: "button", class: "trk-seg" + (cur === id ? " on" : ""), "aria-pressed": String(cur === id),
     onclick: () => { H.ptrack = id; H.plimit2 = 0; paintHunt(); } }, label, h("span", { class: "n" }, String(n)));
   const limit = H.plimit2 || 150;
@@ -1103,6 +1119,7 @@ function pickedPage() {
     h("div", { class: "pr-main" },
       h("a", { class: "pr-title", href: p.url || null, "data-ext": p.url ? "" : null }, p.title),
       trs.length > 1 && trackTags(p),
+      fitBadge(p),
       h("span", { class: "pr-meta" }, [h("button", { class: "linkish pk-co", onclick: () => openCompanyAt(p.company, p.id) }, p.company_name),
         p.location, p.batch && t(BATCH_NAMES[p.batch] || p.batch), p.posted && t("posted {date}", { date: p.posted }),
         p.deadline && h("span", { class: "c-due" + (p.deadline < today() ? " late" : "") }, t("closes {date}", { date: p.deadline }))]
@@ -1116,14 +1133,42 @@ function pickedPage() {
         trs.length > 1 && seg("", t("All tracks"), m.total), trs.map((tr) => seg(tr.id, trackName(tr), m.counts[tr.id] || 0))),
       h("button", { class: "btn sm ghost", id: "picked-edit-tracks", onclick: () => editTracks() }, icon("pen"), t("Edit tracks")),
       h("span", { class: "spacer" }),
+      m.ranked && uiSelect({ id: "picked-sort", value: byFit ? "fit" : "new", cls: "pk-sort", label: t("Order"),
+        options: [{ value: "new", label: t("Newest first") }, { value: "fit", label: t("Best fit first") }],
+        onChange: (v) => { H.psort = v; H.plimit2 = 0; paintHunt(); } }).el,
       h("button", { class: "btn sm ghost" + (H.pnew ? " on" : ""), "aria-pressed": String(!!H.pnew), onclick: () => { H.pnew = !H.pnew; paintHunt(); } }, t("New this week")),
       h("button", { class: "btn sm ghost" + (H.papplied ? " on" : ""), "aria-pressed": String(!!H.papplied), onclick: () => { H.papplied = !H.papplied; paintHunt(); } }, t("Show added")),
       searchBox("picked-search", H.pq2 || "", t("Search these roles"), (v) => { H.pq2 = v; })),
+    rankBar(m, trs),
     short.length > 0 && h("div", { class: "note-bar warn" }, icon("alert"), h("span", { class: "nb-text" },
       t("Read in part, so roles may be missing here: {names}", { names: short.map((c) => t("{company} ({n} of {all})", { company: c.name, n: c.postings.scan.short[0], all: c.postings.scan.short[1] })).join(", ") }))),
     shown.length ? h("div", { class: "post-list picked-list" }, shown.slice(0, limit).map(row),
       shown.length > limit && h("button", { class: "btn sm ghost", onclick: () => { H.plimit2 = limit + 200; paintHunt(); } }, t("Show {n} more", { n: Math.min(200, shown.length - limit) })))
       : h("div", { class: "hunt-empty" }, m.total ? t("Nothing matches") : t("No open role at the companies you follow is in your tracks yet. Scan them, or widen a track's words."))];
+}
+
+// how well a picked role's description fits its track's resume: a word match, and it says so on hover
+function fitBadge(p) {
+  const f = p.fit;
+  if (!f) return null;
+  const tip = [t("Skills its description names that your resume “{name}” names too: {words}", { name: subsetName(subsets().find((x) => x.id === f.subset)) || f.subset, words: f.hit.join(", ") || "—" }),
+    t("Not in your resume: {words}", { words: f.miss.join(", ") || "—" })].join("\n");
+  return h("span", { class: "pk-fit" + (f.score >= 60 ? " hi" : f.score < 30 ? " lo" : ""), title: tip }, t("{n}% fit", { n: f.score }));
+}
+
+// above the picked roles: whether they can be ranked, and the descriptions being read for it
+function rankBar(m, trs) {
+  if (m.reading) return h("div", { class: "note-bar", id: "picked-reading" }, h("span", { class: "spin" }),
+    h("span", { class: "nb-text" }, t("Reading the descriptions of picked roles to rank them: {n} of {all}", { n: m.reading.done, all: m.reading.total })));
+  if (!trs.some((tr) => tr.subset)) return h("div", { class: "note-bar", id: "picked-no-subset" }, icon("sparkle"),
+    h("span", { class: "nb-text" }, t("Give a track the resume it goes out with, and its roles are ranked by how well their descriptions fit it.")),
+    h("button", { class: "btn sm", onclick: () => editTracks() }, t("Edit tracks")));
+  if (!m.unread) return null;
+  return h("div", { class: "note-bar", id: "picked-unread" }, icon("file"),
+    h("span", { class: "nb-text" }, t("{n} picked roles have no description read yet, so they can't be ranked.", { n: m.unread })),
+    h("button", { class: "btn sm", id: "picked-read", onclick: async () => {
+      try { await api("POST", "/api/hunt/matches/read"); H.pickedSig = null; paintHunt(); } catch (e) { toast(e.message); }
+    } }, t("Read them")));
 }
 
 // a company's open postings, on its page

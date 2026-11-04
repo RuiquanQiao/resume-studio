@@ -616,7 +616,12 @@ exclusions and the resume subset it goes out with. No AI runs per posting: it is
 The flow today: add a company → AI fills it → scan → (now) picked roles → Want to apply → JD read → resume subset →
 fill the site → submit → track progress. What still costs the user attention, most valuable first:
 
-1. **Rank inside a track, not just filter.** A title match says "this kind of role", not "a good one for me". After
+1. **Rank inside a track, not just filter.** *Done 2026-11-04, first version:* once a scan run ends, every picked
+   role's own page is read in the background (`jobhunt/rank.py`, one page a second, at most 80 a run, kept in
+   `hunt/jds.json`), and the skills its description names are compared with the skills the track's resume subset
+   names: "86% fit" on the row, the words matched and missing on hover, and a "Best fit first" order. Still to do:
+   hard constraints (city, batch, graduation year) and the AI's written note for the top few.
+   Original note:  A title match says "this kind of role", not "a good one for me". After
    the cheap filter, score each picked role locally against its track's subset (`jobs/fit.py` already counts a
    JD's keywords in a subset; give it the JD, which `read` fetches) and the user's hard constraints (city, batch,
    graduation year, deadline). Only the top few per day go to the AI for a written fit/gap note. Filter free, rank
@@ -640,6 +645,9 @@ fill the site → submit → track progress. What still costs the user attention
 - `scans.json` `tracks: [{id, name, keywords, exclude, subset}]`; `keywords` stays as the union for older readers.
 - `scans.json` `companies.<id>.short: [read, total] | null`.
 - `GET /api/hunt/matches`: the picked roles; `hunt.py tracks [--stdin]` for the agent.
+- `hunt/jds.json` `{posting id: {jd, read, deadline?, error?}}`; `POST /api/hunt/matches/read` reads the unread ones.
+- A role's link is its key. `same_once` makes two links one role only when they differ in their first path segment
+  alone with the same title (a Feishu board's sections); the earlier guess from long numbers in links dropped roles.
 
 
 The Autofill page is organised around **the selected profile site**: LinkedIn and BOSS直聘 are its tabs,

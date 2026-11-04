@@ -20,6 +20,9 @@ import threading
 import time
 import uuid
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fake_log import append_line  # noqa: E402
+
 args = sys.argv[1:]
 proto = args[0]
 log = os.environ.get("FAKE_AGENT_LOG")
@@ -28,8 +31,8 @@ lock = threading.Lock()
 
 def note(obj):
     if log:
-        with lock, open(log, "a", encoding="utf-8") as f:
-            f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+        with lock:
+            append_line(log, obj)
 
 
 def out(obj):

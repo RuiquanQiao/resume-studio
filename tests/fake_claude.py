@@ -31,6 +31,9 @@ import threading
 import time
 import uuid
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fake_log import append_line  # noqa: E402
+
 args = sys.argv[1:]
 log = os.environ.get("FAKE_CLAUDE_LOG")
 sid = args[args.index("--resume") + 1] if "--resume" in args else str(uuid.uuid4())
@@ -49,8 +52,7 @@ def out(obj):
 
 def note(path_suffix, obj):
     if log:
-        with open(log + path_suffix, "a", encoding="utf-8") as f:
-            f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+        append_line(log + path_suffix, obj)
 
 
 INIT = {

@@ -82,22 +82,22 @@ def run_summary(out: list[dict], auto: bool) -> dict:
             "no_site": sum(1 for r in unread if r.get("needs") == "sites")}
 
 def same_once(found: list[dict]) -> list[dict]:
-    """One role read twice, through two addresses of the same board (Feishu's /index/position/<id> and
-    /xinghe/position/<id>): kept once. The same title with the same long id in its address is the same role.
-    A number that three or more differently titled roles share is not a role's id but the company's (Hotjob puts its
-    tenant, /SU12345678…/, in every address): it never makes two roles one (2026-11-04: 448 roles read, 381 kept,
-    every trainee role posted in two cities dropped)."""
-    def ids_of(p: dict) -> list[str]:
-        return re.findall(r"\d{8,}", urlsplit(str(p.get("url") or "")).path)
-    titles: dict[str, set[str]] = {}
-    for p in found:
-        for i in ids_of(p):
-            titles.setdefault(i, set()).add(str(p.get("title") or "").strip().casefold())
-    shared = {i for i, ts in titles.items() if len(ts) > 2}
+    """A role's link is its key. One exception: a board with several sections (Feishu's /index/position/<id> and
+    /xinghe/position/<id>) lists one role under each, so two links that differ only in their first path segment,
+    with the same title, are one role read twice: kept once. Anything else that differs is another role (2026-11-04:
+    an earlier rule guessed role ids from long numbers in the link, took a company number for one, and dropped 67)."""
+    def key(p: dict):
+        try:
+            u = urlsplit(str(p.get("url") or "").strip())
+        except ValueError:
+            return None
+        segs = [x for x in u.path.split("/") if x]
+        if len(segs) < 3:
+            return None
+        return (u.netloc.lower(), "/".join(segs[1:]), u.query, u.fragment, str(p.get("title") or "").strip().casefold())
     seen, out = set(), []
     for p in found:
-        ids = [i for i in ids_of(p) if i not in shared]
-        k = (str(p.get("title") or "").strip().casefold(), max(ids, key=len)) if ids else None
+        k = key(p)
         if k and k in seen:
             continue
         if k:
@@ -138,6 +138,7 @@ class Scanner:
         self.queue: list[str] = []
         self.batch: dict | None = None         # {total, done, auto} while a run goes on
         self.retry_waits = RETRY_WAITS         # seconds before each new try of a page that didn't open
+        self.after_run: Callable[[], Any] | None = None   # once a run the user started ends (the picked roles' JDs)
 
     # ---- which sites, read how ----
     @staticmethod
@@ -528,6 +529,11 @@ class Scanner:
                 if not auto or out:
                     self.postings.mark_all_scanned()
                 self.last_run = run_summary(out, auto)
+            if self.after_run and (not auto or self.browser_open()):
+                try:
+                    self.after_run()
+                except Exception:  # noqa: BLE001  reading descriptions never fails the scan
+                    pass
         except BaseException:
             with self.lock:   # never left looking busy
                 if not ended:

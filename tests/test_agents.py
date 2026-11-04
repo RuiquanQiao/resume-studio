@@ -40,7 +40,13 @@ def agent_log(tmp_path, monkeypatch):
 
 
 def lines(log):
-    return [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines() if x.strip()] if log.exists() else []
+    """The fake agents' log. A line still being written (no newline yet) is left for the next look: reading it
+    half-written failed `_wait` loops now and then (2026-11-04)."""
+    if not log.exists():
+        return []
+    text = log.read_text(encoding="utf-8")
+    whole = text if text.endswith("\n") else text[:text.rfind("\n") + 1]
+    return [json.loads(x) for x in whole.splitlines() if x.strip()]
 
 
 def sent(log, method=None, kind=None):
@@ -139,7 +145,8 @@ def test_codex_chat_resumes_its_thread(server, agent_log, data_file):
     assert "resume.yaml" in start["developerInstructions"]          # the window's note goes in Codex's instructions slot
     turn = sent(agent_log, "turn/start")[0]["params"]
     assert turn["effort"] == "high" and turn["input"][0] == {"type": "text", "text": "你好 codex"}
-    assert lines(agent_log)[0]["argv"][-1] == "app-server"
+    # the chat's own process; another agent's background probe may have started first and be line 0
+    assert any(x["argv"][-1] == "app-server" for x in lines(agent_log) if "argv" in x)
 
     say(server, cid, "again")
     assert text(reply(server, cid)) == "codex heard: again"
@@ -234,7 +241,7 @@ def test_acp_agent_session_load_permission_and_learned_modes(server, agent_log):
     meta = server.req("GET", f"/api/chats/{cid}")[1]["chat"]
     assert meta["session_id"].startswith("s-") and meta["model"] == "fake-max" and meta["mode_actual"] == "default"
     assert [x["status"] for x in meta["tasks"]] == ["completed", "in_progress"]
-    assert lines(agent_log)[0]["argv"][-1] == "--acp"
+    assert any(x["argv"][-1] == "--acp" for x in lines(agent_log) if "argv" in x)
     first = sent(agent_log, "session/prompt")[0]["params"]["prompt"][0]["text"]
     assert first.startswith("<context>") and first.endswith("hello qwen")   # the window's note rides along: ACP has no system prompt
     # what the first session said about the agent: its modes, models and commands, for the pickers
@@ -268,7 +275,7 @@ def test_acp_stop_and_error(server, agent_log):
     time.sleep(0.3)
     server.req("POST", f"/api/chats/{cid}/cancel")
     assert reply(server, cid)["cancelled"] and sent(agent_log, "session/cancel")
-    assert lines(agent_log)[0]["argv"][-2:] == ["--profile", "acp"]
+    assert any(x["argv"][-2:] == ["--profile", "acp"] for x in lines(agent_log) if "argv" in x)
     say(server, cid, "FAIL")
     assert reply(server, cid)["error"] == "fake acp failed"
     # an ACP agent can't go back to the middle of a chat
@@ -283,8 +290,9 @@ def test_pi_chat_session_tools_and_usage(server, agent_log):
     assert text(m) == "pi heard: hello pi"
     tool = next(b for b in m["blocks"] if b["type"] == "tool")
     assert tool["name"] == "Read" and tool["hint"] == "resume.yaml" and tool["status"] == "done"
-    # the chat's own process: a model-list fetch (`--no-session`) may have started before it and be line 0
-    argv = next(x["argv"] for x in lines(agent_log) if "argv" in x and "--no-session" not in x["argv"])
+    # the chat's own process (the one with a session): a model-list fetch (`--no-session`) or another agent's
+    # background probe may have started before it
+    argv = next(x["argv"] for x in lines(agent_log) if "argv" in x and "--session-id" in x["argv"])
     assert argv[argv.index("--model") + 1] == "anthropic/claude-fake" and argv[argv.index("--thinking") + 1] == "minimal"
     assert "--append-system-prompt" in argv and "--session-id" in argv
     meta = server.req("GET", f"/api/chats/{cid}")[1]["chat"]

@@ -27,6 +27,7 @@ from .geo import Geo
 from .history import History, describe
 from .logos import fetch_logo, fetch_logo_in_browser
 from .postings import tracks_of, Postings, same_link, stale
+from .rank import Descriptions, fit, skill_words
 from .scan import Scanner
 from .store import LOGO_TYPES, STATE_IDS, Hunt, SameCompany
 from .views import Views
@@ -85,6 +86,10 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     geo = Geo(hunt.dir)
     scanner = Scanner(hunt, posts, tool, browser, lambda: app.bus.publish("hunt", {}))
     hunt.scanner = scanner   # the app (and tests) reach the scanner through the tracker
+    descs = Descriptions(hunt, lambda: scanner.browser, lambda: app.bus.publish("hunt", {}))
+    hunt.descriptions = descs
+    # a scan run ends: the picked roles it brought get their descriptions read, so they can be ranked
+    scanner.after_run = lambda: descs.start(posts.matched()["postings"]) if scanner.browser is not None else 0
     history = History(hunt)
     hunt.history = history
     studio.on_subset_renamed.append(hunt.rename_subset)
@@ -448,7 +453,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         return {**tb, "platforms": platforms(), "tracker": tracker(), "career_ops": tool.installed(),
                 "scan": {"keywords": sc["keywords"], "tracks": sc["tracks"], "daily": sc["daily"], "last_all": sc["last_all"],
                          "running": dict(scanner.running), "providers": scanner.providers_ready(),
-                         "last_run": scanner.last_run, "queued": list(scanner.queue),
+                         "last_run": scanner.last_run, "queued": list(scanner.queue), "reading": descs.status(),
                          "batch": dict(scanner.batch) if scanner.batch else None},
                 "changes": posts.changes(), "geo": located(), "places": place_names()}
 
@@ -484,7 +489,40 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     def matches_view(req: Request):
         """Every open role, of every company, in one of the user's tracks: the roles picked for them (user,
         2026-11-04: "scanned, but nothing picked out the roles I'd want")."""
-        return posts.matched()
+        m = posts.matched()
+        jds = descs.all()
+        doc, _ = studio.store.load()
+        have: dict[str, set[str]] = {}   # subset id -> the skills its resume names, in every resume language
+        for tr in m["tracks"]:
+            sid = tr.get("subset") or ""
+            if sid and sid not in have and model.get_item(doc, "subset", sid) is not None:
+                from jobs.fit import subset_text
+                have[sid] = skill_words(subset_text(doc, model.get_item(doc, "subset", sid)))
+        subset_of = {tr["id"]: tr.get("subset") for tr in m["tracks"]}
+        for p in m["postings"]:
+            j = jds.get(p["id"]) or {}
+            p["jd"] = "read" if j.get("jd") else "failed" if j.get("error") else ""
+            if not p.get("deadline") and j.get("deadline"):
+                p["deadline"] = j["deadline"]
+            best = None
+            for tid in p["tracks"]:
+                sid = subset_of.get(tid)
+                f = fit(j["jd"], have[sid]) if j.get("jd") and sid in have else None
+                if f and (best is None or f["score"] > best["score"]):
+                    best = {**f, "subset": sid}
+            p["fit"] = best
+        m["ranked"] = bool(have)
+        m["reading"] = descs.status()
+        m["unread"] = sum(1 for p in m["postings"] if not p["jd"] and re.match(r"https?://", p.get("url") or ""))
+        return m
+
+    @app.route("POST", "/api/hunt/matches/read")
+    def read_matches(req: Request):
+        """Read the description of every picked role that has none yet, in the background (jobhunt/rank.py)."""
+        if scanner.browser is None:
+            raise HttpError(409, t("Resume Studio's browser isn't available here"))
+        m = posts.matched()
+        return {"started": descs.start(m["postings"]), "reading": descs.status()}
 
     @app.route("PUT", "/api/hunt/scan-settings")
     def scan_settings(req: Request):

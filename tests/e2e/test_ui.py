@@ -1618,7 +1618,15 @@ def test_a_link_the_scan_found_is_added_without_the_ai(page, server):
     pg.click(".modal .btn.primary")
     pg.wait_for_selector("#toast.show:has-text('已经在列表里')")
     assert len(hunt.applications()) == 1
-    pg.click(".hunt-tab[data-tab=apps]")                                  # off the role's page: the next test has no A1
+    # off the role's page: the next test has no A1. A click that lands while the role's page is still being drawn
+    # (the toast's repaint) is lost now and then: clicked again until the page is gone
+    for _ in range(5):
+        pg.click(".hunt-tab[data-tab=apps]")
+        try:
+            pg.wait_for_selector(".hunt-wrap:not(.is-page)", timeout=4000)
+            break
+        except Exception:  # noqa: BLE001
+            continue
     pg.wait_for_selector(".hunt-wrap:not(.is-page)")
 
 
@@ -3024,5 +3032,5 @@ def test_tracks_are_set_in_a_dialog_and_pick_roles_from_every_company(page, serv
     assert [t["name"] for t in posts.tracks()] == ["AI 应用", "AI 产品"]
     pg.click(".trk-seg:has-text('AI 产品')")
     assert pg.locator(".picked-row .pr-title").all_inner_texts() == ["AI 产品经理"]
-    assert "星河科技" in pg.inner_text(".picked-tools + .note-bar")    # read in part: roles may be missing
+    assert "星河科技" in pg.inner_text(".picked-tools ~ .note-bar.warn")    # read in part: roles may be missing
     posts.settings(tracks=[])

@@ -264,6 +264,18 @@ def picked_roles(c):
     posts.set_scan_state("C1", short=[10, 448])
 
 
+def picked_ranked(c):
+    """The track goes out with a resume and some roles' descriptions were read: fit badges, the sort, what's unread."""
+    picked_roles(c)
+    hunt = c.server.inst.hunt
+    hunt.scanner.postings.settings(tracks=[{"name": "研发与算法（包括推荐、广告、搜索和 AI Agent 方向的所有岗位）", "keywords": "研发, 算法, Agent",
+                                            "exclude": "安全", "subset": "RES-TECH-EN"}, {"name": "Graduate engineering", "keywords": "Engineer"}])
+    # P1 and P2 are in the applications already (hidden until "Show added"): the badges go on roles still to add
+    hunt._write("jds.json", {"P3": {"jd": "Python, PyTorch, scikit-learn, React, Docker", "read": "2026-11-04 10:00"},
+                             "P5": {"jd": "C++, CUDA, Kubernetes, Spark, Hadoop, Flink, Kafka, Scala", "read": "2026-11-04 10:00"},
+                             "P6": {"error": "the page didn't open", "read": "2026-11-04 10:00"}})
+
+
 def no_tracks(c):
     filled_companies(c)
     c.server.inst.hunt.scanner.postings.settings(tracks=[])
@@ -531,9 +543,11 @@ STATES = [
            ".hist-row .hist-act"], prepare=ai_changes),
     State("applying, companies filled in, with today's changes", applying("companies"),
           [".htable .co-logo img", ".htable .role-chip.open-chip", ".scan-news .news-row", ".scan-news .note-bar"], prepare=filled_companies),
-    State("applying, picked for you, no tracks yet", picked, [".hunt-empty.trk-empty"], prepare=no_tracks),
+    State("applying, picked for you, no tracks yet", picked, [".trk-empty .trk-ex-list", ".trk-empty .trk-empty-do", ".trk-empty .trk-empty-hint"], prepare=no_tracks),
     State("applying, picked for you, two tracks, one company read in part", picked,
-          [".picked-row .trk-tag", ".trk-segs .trk-seg.on", ".picked-tools + .note-bar.warn"], prepare=picked_roles),
+          [".picked-row .trk-tag", ".trk-segs .trk-seg.on", ".picked-tools ~ .note-bar.warn", "#picked-no-subset"], prepare=picked_roles),
+    State("applying, picked for you, ranked by fit, some descriptions not read", picked,
+          [".picked-row .pk-fit.hi", ".picked-row .pk-fit.lo", "#picked-sort", "#picked-unread"], prepare=picked_ranked),
     State("applying, editing tracks", then(picked, click("#picked-edit-tracks"), wait(".trk-modal .trk-row")),
           [".trk-modal .trk-row .trk-kw", ".trk-modal .trk-subset", ".trk-modal .trk-more"], prepare=picked_roles),
     State("applying, a company's open roles", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),

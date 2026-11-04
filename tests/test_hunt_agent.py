@@ -1258,3 +1258,69 @@ def test_tracks_pick_the_roles_for_each_kind_of_role(hunt):
     # the old `keywords` command still sets the first track
     ps.settings(keywords="Agent, 算法")
     assert [t["keywords"] for t in ps.tracks()] == [["Agent", "算法"]]
+
+
+# ---------------------------------------------------------------- picked roles ranked by fit (2026-11-04)
+def test_a_role_link_is_its_key_and_only_a_boards_two_sections_make_one_role(hunt):
+    """A link is a role's key. Two links count as one role only when they differ in their first path segment alone
+    (a Feishu board's /index/ and /<site>/ sections) and carry the same title."""
+    from jobhunt.scan import same_once
+    rows = [{"title": "A", "url": "https://x.example/index/position/1/detail"},
+            {"title": "A", "url": "https://x.example/campus/position/1/detail"},     # same role, other section
+            {"title": "A", "url": "https://x.example/index/position/2/detail"},      # same title, other role
+            {"title": "B", "url": "https://x.example/campus/position/1/detail?x=1"},  # other query: other role
+            {"title": "A", "url": "https://y.example/index/position/1/detail"}]      # other site
+    assert len(same_once(rows)) == 4
+
+
+def test_picked_roles_get_their_descriptions_read_and_ranked_by_their_tracks_resume(server):
+    """Tracks filter by title; a title can't say whether the role suits the user. Picked roles' pages are read in
+    the background and each description's skills are compared with the resume its track goes out with."""
+    import time as _t
+    hunt = server.inst.hunt
+    posts = hunt.scanner.postings
+    hunt.add_company({"name": "星河科技"})
+    base = "https://careers.example.com/job/"
+    posts.merge("C1", [{"title": "机器学习工程师", "url": base + "1"}, {"title": "前端工程师", "url": base + "2"},
+                       {"title": "AI 研究员", "url": base + "3"}, {"title": "财务专员", "url": base + "4"}], how="route")
+    posts.settings(tracks=[{"name": "ML", "keywords": "机器学习, 前端, AI", "subset": "RES-TECH-EN"}])
+    jds = {base + "1": "职位描述 岗位职责 熟悉 Python 和 PyTorch，了解 scikit-learn，有深度学习经验 任职要求 本科以上",
+           base + "2": "岗位职责 负责 Vue、Angular、Webpack 和 Flutter 开发 任职要求 熟悉 Kotlin, Swift",
+           base + "3": ""}
+
+    class Pages:
+        def read_page(self, url, script, timeout=60.0):
+            if url == base + "3":
+                raise RuntimeError("the page didn't open")
+            return {"jd": jds[url], "text": "截止日期：2026-12-01" if url == base + "1" else ""}
+    hunt.scanner.browser = Pages()
+    hunt.descriptions.pause = 0
+    m = server.req("GET", "/api/hunt/matches")[1]
+    assert m["total"] == 3 and m["unread"] == 3 and m["ranked"] and all(p["fit"] is None for p in m["postings"])
+    r = server.req("POST", "/api/hunt/matches/read")[1]
+    assert r["started"] == 3
+    end = _t.time() + 10
+    while hunt.descriptions.status() and _t.time() < end:
+        _t.sleep(0.05)
+    m = server.req("GET", "/api/hunt/matches")[1]
+    by = {p["title"]: p for p in m["postings"]}
+    ml, fe, ai = by["机器学习工程师"], by["前端工程师"], by["AI 研究员"]
+    assert ml["jd"] == "read" and ml["deadline"] == "2026-12-01"
+    assert ml["fit"]["score"] > fe["fit"]["score"] and {"python", "pytorch", "scikit-learn"} <= set(ml["fit"]["hit"])
+    assert "flutter" in fe["fit"]["miss"] and ml["fit"]["subset"] == "RES-TECH-EN"
+    assert ai["jd"] == "failed" and ai["fit"] is None and m["unread"] == 0
+    # a failed page isn't read again the same day; a read one never again
+    assert server.req("POST", "/api/hunt/matches/read")[1]["started"] == 0
+    # a track with no resume: nothing to rank against
+    posts.settings(tracks=[{"name": "ML", "keywords": "机器学习, 前端, AI"}])
+    m = server.req("GET", "/api/hunt/matches")[1]
+    assert not m["ranked"] and all(p["fit"] is None for p in m["postings"])
+
+
+def test_a_description_counts_only_the_skills_it_names():
+    from jobhunt.rank import fit, skill_words
+    assert {"python", "c++", "rag", "机器学习"} <= skill_words("Strong Python and C++ skills, RAG pipelines, 机器学习")
+    assert not skill_words("We are a great team with strong communication and the ability to work across teams")
+    assert fit("about our company", {"python"}) is None
+    f = fit("Python, PyTorch, Docker, Kubernetes", {"python", "pytorch"})
+    assert f["score"] == 50 and f["miss"] == ["docker", "kubernetes"]
