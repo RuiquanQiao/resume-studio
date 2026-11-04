@@ -539,6 +539,25 @@ def test_a_page_busy_for_longer_than_a_command_waits_still_answers(live, data_fi
     assert r.returncode == 0 and "done" in out(r), out(r)
 
 
+def test_a_page_drawn_after_load_is_read_not_given_up_on(live, data_file, fake_site):
+    """campus.nio.com is "complete" with an empty body and draws itself a second later: Codex took the empty
+    snapshot it got right after `open` for "can't be read" and stopped. open and snapshot wait until the page
+    shows something; a page that never does says so, and how to go on, instead of printing only its title."""
+    r = cli(data_file, "open", fake_site + "/jobs/late.html")
+    assert r.returncode == 0 and "note:" not in out(r), out(r)
+    snap = out(cli(data_file, "snapshot"))
+    assert "# Campus hiring" in snap and 'link "Apply now"' in snap, snap
+    # snapshot alone waits too (the page opened by a click, or reloaded)
+    live.inst.browser._eval_page("location.reload()")
+    snap = out(cli(data_file, "snapshot"))
+    assert 'link "Apply now"' in snap, snap
+    r = cli(data_file, "open", fake_site + "/jobs/blank.html")
+    assert "note: the page shows nothing yet" in out(r), out(r)
+    snap = out(cli(data_file, "snapshot"))
+    assert "the page shows nothing yet" in snap and "not unreadable" in snap, snap
+    assert "the page shows nothing yet" in out(cli(data_file, "text"))
+
+
 def test_two_chats_driving_at_once_keep_to_their_own_tabs(live, data_file, fake_site):
     """A scan chat reading a careers site while another chat pushes a profile (2026-10-30: the scan's `open` took
     the tab the push was clicking in, and the push's next snapshot landed on the careers page). Each chat works in

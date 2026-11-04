@@ -1,0 +1,15 @@
+<!doctype html>
+<!-- A single-page app like campus.nio.com (tests only): "complete" with an empty body, its own script draws
+     the page 1.5 seconds later. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Late page</title></head>
+<body>
+<div id="app"></div>
+<script>
+setTimeout(() => {
+  document.getElementById("app").innerHTML =
+    '<h1>Campus hiring</h1><a href="https://example.com/campus/">Apply now</a><p>2027 autumn programme</p>';
+}, 1500);
+</script>
+</body>
+</html>

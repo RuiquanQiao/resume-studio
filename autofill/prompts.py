@@ -40,6 +40,9 @@ these sites). You work in it only through this command (Bash); every call prints
   appear in the snapshot marked `(shows on hover)`: `click` them as they are, it moves the mouse there first.
 - `{b} screenshot` saves a PNG and prints its path: open it with Read when the lines aren't enough.
 - `{b} text` — the page's plain text (long lists, when snapshots are cut off).
+- A page that shows nothing (a snapshot with no lines, or a note saying so) is still loading or drawing itself,
+  not unreadable: snapshot again after a few seconds and take a screenshot. Never tell the user a page can't be
+  read until a screenshot shows it blank too, and then say what you tried.
 
 Work like a careful person: one change at a time, read the dialog before saving, check the value after
 typing (`type` prints what the field now holds), and never click anything you weren't asked to.

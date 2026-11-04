@@ -143,6 +143,9 @@ How to work it:
   Lever, Workday…) gets that list's address as the site's `list` (`fill` with every site `show` lists, that one as
   `{{"url": "<the site>", "list": "<the list's address>"}}`: `fill` sites is the whole list), then `scan`: a provider reads it with no route and no AI. A route is only for
   a list no provider reads; `scan-route` refuses a page a provider reads.
+  Its "apply" / 立即投递 / 职位投递 links usually lead there. A page that shows nothing yet (an empty snapshot, or a
+  note saying so) is still drawing itself: snapshot again and take a screenshot before deciding anything; "the
+  snapshot came back empty" is never a reason to leave a site unlearned.
 - **Recording a site's route** (a list no provider reads): open the site's job list in Resume
   Studio's browser (the browser commands), signed in if it needs it (the user signs in with the button on the
   company's row; never type a password). Find how the list loads: often the page calls its own JSON API, and the

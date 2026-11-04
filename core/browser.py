@@ -42,6 +42,10 @@ class PageNotOpened(BrowserError):
     trying again later can work."""
 
 
+EMPTY_NOTE = ("the page shows nothing yet, after waiting 10 seconds: it is still loading or drawing itself, not unreadable. "
+              "Wait a few seconds and snapshot again, take a screenshot to see it, or open it anew; don't conclude it "
+              "can't be read until a screenshot shows it blank too")
+
 COMMANDS = {"open", "snapshot", "text", "click", "hover", "type", "select", "press", "scroll", "upload", "screenshot", "tabs",
             "tab", "back", "front", "sign-in", "profile", "report", "signed-out", "extract", "route", "sync"}
 
@@ -797,6 +801,30 @@ class ManagedBrowser:
             time.sleep(0.2)
         time.sleep(0.4 if self.pace else 0.05)   # single-page apps render a moment after "load"
 
+    # how much the page shows: its visible text and controls. A single-page app (campus.nio.com, `/#/`)
+    # is "complete" with an empty body and draws itself a second or more later.
+    _DRAWN_JS = ("(() => { const b = document.body; if (!b) return [0, 0];"
+                 " return [(b.innerText || '').trim().length,"
+                 " b.querySelectorAll('a[href],button,input,select,textarea,[role=button]').length]; })()")
+
+    def wait_drawn(self, timeout: float = 10.0) -> bool:
+        """Wait until the page shows something and has stopped changing (two equal readings in a row), at most
+        `timeout` seconds. False: still nothing to show when the time ran out."""
+        end = time.time() + timeout
+        last = None
+        while True:
+            try:
+                now = self._eval_page(self._DRAWN_JS, timeout=5)
+            except CdpError:   # busy, or navigating: ask again
+                now = None
+            if isinstance(now, list) and now[0] > 0:
+                if now == last:
+                    return True
+                last = now
+            if time.time() >= end:
+                return isinstance(last, list) and last[0] > 0
+            time.sleep(0.3)
+
     # ---- what callers use ----------------------------------------------------
     def open(self, url: str, new_tab: bool = False) -> dict:
         if not url.startswith(("http://", "https://", "about:")):
@@ -810,7 +838,11 @@ class ManagedBrowser:
             if r.get("errorText"):
                 raise BrowserError(f"couldn't open {url}: {r['errorText']}")
             self.wait_loaded()
-            return self.here()
+            drawn = self.wait_drawn()
+            here = self.here()
+            if not drawn:
+                here["note"] = EMPTY_NOTE
+            return here
 
     def front(self) -> None:
         """Show the page being worked on (the user signs in there, or watches)."""
@@ -829,11 +861,23 @@ class ManagedBrowser:
             here = self.here()
             arg = "null" if within is None else repr(str(within))
             r = self._js(f"snapshot({arg}, {int(max_chars)})")
-            return {**here, "lines": r["lines"], "truncated": r["truncated"]}
+            if not r["lines"] and within is None:   # not drawn yet: wait for it once, then read again
+                self.wait_drawn()
+                here = self.here()
+                r = self._js(f"snapshot({arg}, {int(max_chars)})")
+            out = {**here, "lines": r["lines"], "truncated": r["truncated"]}
+            if not r["lines"] and within is None:
+                out["lines"] = ["(" + EMPTY_NOTE + ")"]
+            return out
 
     def text(self) -> dict:
+        read = "document.body ? document.body.innerText : ''"
         with self.lock:
-            return {**self.here(), "text": self._eval_page("document.body ? document.body.innerText : ''") or ""}
+            txt = (self._eval_page(read) or "").strip()
+            if not txt:
+                self.wait_drawn()
+                txt = (self._eval_page(read) or "").strip()
+            return {**self.here(), "text": txt or "(" + EMPTY_NOTE + ")"}
 
     def run_script(self, script: str, timeout: float = 60.0) -> Any:
         """A read route's script on the open page: `async (h) => data`, where h are the helpers in
