@@ -450,7 +450,7 @@ def test_postings_read_by_hand_leave_the_site_still_needing_a_route(live, data_f
     c = live.req("GET", "/api/hunt")[1]["companies"][0]
     assert c["postings"]["open"] == 1 and c["postings"]["needs"] == "claude"   # the window still offers "Let AI learn its site"
     # once its route is recorded, postings sent by hand no longer bring the flag back
-    live.inst.hunt.scanner.save_route("某大学", {"pages": [{"url": page, "script": "async (h) => ({postings: []})"}]})
+    live.inst.hunt.scanner.save_route("某大学", {"pages": [{"url": page, "script": "async (h) => ({postings: []})"}]}, check=False)
     r = do("postings", ref="某大学", postings=[{"title": "2027年度应届毕业生招聘公告", "url": page + "/1"}])[1]
     assert r["scanned"][0]["needs"] == "" and live.req("GET", "/api/hunt")[1]["companies"][0]["postings"]["needs"] == ""
 
@@ -489,10 +489,11 @@ def test_a_site_is_scanned_by_its_recorded_route(hunt):
     assert validate_route({"pages": [{"url": "ftp://x", "script": "1"}]})[1]
     many = {"pages": [{"url": page, "script": "async (h) => ({postings: []})"}] * 21}
     assert "at most 20 pages" in validate_route(many)[1][0] and not validate_route({"pages": many["pages"][:20]})[1]
+    sc.empty_wait = 0
     r, errs = sc.save_route("星河科技", {"pages": [{"url": page, "script": "async (h) => ({postings: []})"}]})
-    assert not errs
+    assert not errs and browser.opened == [page]                                 # tried once before it is kept
     res = sc.scan("星河科技")
-    assert (res["found"], res["new"], res["needs"]) == (1, 1, "") and browser.opened == [page]
+    assert (res["found"], res["new"], res["needs"]) == (1, 1, "") and browser.opened == [page, page]
     assert ps.scan_state("C1")["how"] == "route" and ps.scan_state("C1")["needs"] == ""
     # the site asks to sign in: the scan says so, the postings stay
     browser.pages[page] = {"signed_out": True}
@@ -834,6 +835,7 @@ def test_a_slow_network_gets_time_and_more_tries_before_a_page_counts_as_unread(
     sc.retry_waits = (0, 0)
     pages = [{"url": campus, "script": "() => 1"}] + [{"url": social, "script": f"() => {n}"} for n in range(2, 19)]
     assert not sc.save_route("星河科技", {"pages": pages})[1]
+    browser.calls = []
     assert sc.scan("星河科技")["found"] == 18
     assert [(u, n) for u, n, _ in browser.calls] == [(campus, 1), (social, 17)] and {w for *_, w in browser.calls} == {90}
     # opening twice in a row too slowly is a slow network, not a page that didn't read
@@ -897,6 +899,7 @@ def test_a_scan_holds_the_browser_while_it_reads_and_says_what_it_found(hunt):
     browser = FakeBrowser({page: {"postings": [{"title": "服务端研发工程师", "url": page + "/1"}]}}, off=True)
     sc = Scanner(hunt, ps, NoTool(), browser, lambda: None)
     sc.save_route("星河科技", {"pages": [{"url": page, "script": "async (h) => ({postings: []})"}]})
+    browser.opened, browser.held_while_reading = [], []
     sc.scan_many(["C1"])
     assert browser.opened == [page] and browser.held_while_reading == [True] and browser.holds == 0
     assert {k: sc.last_run[k] for k in ("auto", "companies", "new", "closed", "failed")} == \
@@ -1116,12 +1119,12 @@ def test_the_window_and_claude_scan_and_apply(live, data_file, monkeypatch):
     code, out = cli(data_file, "tracks")
     assert "T2 AI 产品" in out
     assert [t["name"] for t in live.req("GET", "/api/hunt/matches")[1]["tracks"]] == ["后端", "AI 产品"]
-    # one that says, and reads fewer: not done, said to the AI in so many words
+    # one that says, and reads fewer: never kept, and the AI is told why in so many words (鹏芯微, 2026-11-05)
     fake.pages[page]["total"] = 9
-    code, out = cli(data_file, "scan-route", "星河科技", "--stdin",
-                    stdin=json.dumps({"pages": [{"url": page, "script": "async (h) => ({total: 9, postings: []})"}]}))
-    assert "not done: the route read 2 different roles and the site says it lists 9" in out and "not checked" not in out, out
-    assert "read in part: the route read 2" in out
+    short = {"pages": [{"url": page, "script": "async (h) => ({total: 9, postings: []})"}]}
+    code, out = cli(data_file, "scan-route", "星河科技", "--stdin", stdin=json.dumps(short))
+    assert code != 0 and "read 2 different roles and the site says it lists 9. Nothing was kept" in out, out
+    assert live.inst.hunt.scanner.postings.route("C1")["pages"] == route["pages"]   # the route it had stays
     del fake.pages[page]["total"]
     # Claude's own reading, when no route can be recorded
     code, out = cli(data_file, "postings", "星河科技", "--stdin", stdin=json.dumps({"postings": [{"title": "服务端研发工程师", "url": page + "/1"}]}))

@@ -1587,7 +1587,6 @@
  "the page {url} didn't read: {error}": "ページ {url} を読み込めませんでした：{error}",
  "the posting {job}": "求人「{job}」",
  "the roles you apply for here": "ここで応募する職種",
- "the route found no postings at all: the site has probably changed": "ルートで求人が 1 件も見つかりません。サイトが変わったようです",
  "the script on {url} gave no list of postings": "{url} のスクリプトが求人一覧を返しませんでした",
  "the site asks to sign in": "サイトがサインインを求めています",
  "the subset this site gets": "このサイトに使うサブセット",
@@ -2095,5 +2094,7 @@
  "Product manager": "プロダクトマネージャー",
  "Product manager, PM, Product+Strategy": "プロダクトマネージャー, PM, プロダクト+戦略",
  "except {words}": "{words} を除く",
- "The AI builds them from your resume subsets and the titles your companies really use; you can change them after.": "AI が履歴書のサブセットと企業が実際に使う求人タイトルから設定します。あとで自由に変えられます。"
+ "The AI builds them from your resume subsets and the titles your companies really use; you can change them after.": "AI が履歴書のサブセットと企業が実際に使う求人タイトルから設定します。あとで自由に変えられます。",
+ "北森's job list": "北森（Beisen）の求人一覧",
+ "the route's pages opened but its scripts read no roles on {pages}, twice, a while apart: the list may not show yet when they read it, or they read the wrong part of the page": "ルートのページは開きましたが、スクリプトは {pages} で時間をおいて 2 回読んでも求人を 1 件も読めませんでした。読んだ時点で一覧がまだ表示されていないか、ページの違う場所を読んでいる可能性があります"
 }

@@ -1587,7 +1587,6 @@
  "the page {url} didn't read: {error}": "{url} 페이지를 읽지 못했습니다: {error}",
  "the posting {job}": "공고 ‘{job}’",
  "the roles you apply for here": "여기서 지원하는 직무",
- "the route found no postings at all: the site has probably changed": "경로로 공고를 하나도 찾지 못했습니다. 사이트가 바뀐 것 같습니다",
  "the script on {url} gave no list of postings": "{url}의 스크립트가 공고 목록을 주지 않았습니다",
  "the site asks to sign in": "사이트가 로그인을 요구합니다",
  "the subset this site gets": "이 사이트에 쓸 서브셋",
@@ -2095,5 +2094,7 @@
  "Product manager": "프로덕트 매니저",
  "Product manager, PM, Product+Strategy": "프로덕트 매니저, PM, 프로덕트+전략",
  "except {words}": "{words} 제외",
- "The AI builds them from your resume subsets and the titles your companies really use; you can change them after.": "AI가 이력서 서브셋과 회사들이 실제로 쓰는 공고 제목으로 설정합니다. 나중에 언제든 바꿀 수 있습니다."
+ "The AI builds them from your resume subsets and the titles your companies really use; you can change them after.": "AI가 이력서 서브셋과 회사들이 실제로 쓰는 공고 제목으로 설정합니다. 나중에 언제든 바꿀 수 있습니다.",
+ "北森's job list": "베이썬(北森) 채용 목록",
+ "the route's pages opened but its scripts read no roles on {pages}, twice, a while apart: the list may not show yet when they read it, or they read the wrong part of the page": "경로의 페이지는 열렸지만 스크립트가 {pages}에서 시간을 두고 두 번 읽어도 공고를 하나도 읽지 못했습니다. 읽을 때 목록이 아직 표시되지 않았거나 페이지의 다른 부분을 읽고 있을 수 있습니다"
 }

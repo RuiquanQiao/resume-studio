@@ -79,7 +79,8 @@ it only through this command (Bash); every call prints what is there now, and th
   gets the subset the company is filled from, kept as a version and pinned. `sent <company>/<role>` for one posting.
 - **Open postings** (what the companies' sites list now; not applications until the user goes for one):
   `{j} scan [<company> ..]` reads the sites now (career-ops' providers for Moka, Feishu/ByteDance, Tencent, Meituan,
-  Alibaba, Greenhouse, Lever, Ashby…; a recorded route in Resume Studio's browser for any other site) ·
+  Alibaba, Greenhouse, Lever, Ashby…; 北森 portals, `<x>.zhiye.com` or a company's own domain on it, by the scan
+  itself; a recorded route in Resume Studio's browser for any other site) ·
   `{j} scan-route <company> --stdin` · `{j} postings <company> --stdin [--partial]` ·
   `{j} apply P12` (the user goes for posting P12: it becomes an application) ·
   `{j} tracks [--stdin]` (the kinds of role the user goes for, each with its own keywords; postings in none are
@@ -156,7 +157,9 @@ How to work it:
   its list on a recruiting system (Feishu `<x>.jobs.feishu.cn/<portal>`, Moka `app.mokahr.com/..`, Greenhouse,
   Lever, Workday…) gets that list's address as the site's `list` (`fill` with every site `show` lists, that one as
   `{{"url": "<the site>", "list": "<the list's address>"}}`: `fill` sites is the whole list), then `scan`: a provider reads it with no route and no AI. A route is only for
-  a list no provider reads; `scan-route` refuses a page a provider reads.
+  a list no provider reads; `scan-route` refuses a page a provider reads. `scan-route` runs the route once before
+  keeping it and keeps it only when it reads roles, as many as the site says it lists: when it refuses, nothing
+  was kept; fix what it names and send it again.
   Its "apply" / 立即投递 / 职位投递 links usually lead there. A page that shows nothing yet (an empty snapshot, or a
   note saying so) is still drawing itself: snapshot again and take a screenshot before deciding anything; "the
   snapshot came back empty" is never a reason to leave a site unlearned. Nor is a browser command that was slow,

@@ -34,6 +34,7 @@ from core.browser import BrowserError, PageNotOpened
 from core.cdp import CdpError
 from core.i18n import t
 
+from . import beisen
 from .postings import Postings
 from .store import Hunt, site_host, site_key
 
@@ -44,6 +45,7 @@ MAX_PAGES = 20   # of a recorded route, each with 2 minutes
 OPEN_TIMEOUT = 90
 RETRY_WAITS = (5, 15)
 CHECK_WAIT = 20 * 60   # longest a check of new sites waits for a scan of the same company to end
+EMPTY_WAIT = 8         # a page that read no roles is read once more after this: its list may still be loading
 
 
 def validate_route(data: Any) -> tuple[dict, list[str]]:
@@ -138,6 +140,12 @@ class Scanner:
         self.queue: list[str] = []
         self.batch: dict | None = None         # {total, done, auto} while a run goes on
         self.retry_waits = RETRY_WAITS         # seconds before each new try of a page that didn't open
+        self.empty_wait = EMPTY_WAIT           # seconds before a page whose script read no roles is read again
+        # 北森 sites, read by the scan itself (jobhunt/beisen.py); tests hand in their own
+        self.beisen_detect: Callable[[str], bool] = beisen.detect
+        self.beisen_read: Callable[[str], dict] = beisen.read
+        self._not_beisen: set[str] = set()     # asked once per run of the app
+        self._fresh: dict[str, dict] = {}      # company id -> what a route just tried (try_route) read, for its scan
         self.after_run: Callable[[], Any] | None = None   # once a run the user started ends (the picked roles' JDs)
 
     # ---- which sites, read how ----
@@ -208,6 +216,17 @@ class Scanner:
         for r in self._bridge([{"key": u, "name": name, "url": u} for u in unknown], detect=True):
             if not r.get("error"):
                 self._providers[r["url"]] = r.get("provider")
+        # 北森 is read by the scan itself (jobhunt/beisen.py), career-ops or not: asked of what career-ops left
+        # every address, not only the new ones: career-ops keeps "none reads it" (None) for an address, and one 北森
+        # couldn't be asked about (the site didn't answer) is asked again
+        for u in dict.fromkeys(urls):
+            if self._providers.get(u) or u in self._not_beisen:
+                continue
+            got = self.beisen_detect(u)
+            if got:
+                self._providers[u] = beisen.PROVIDER
+            elif got is False:   # None: the site didn't answer; asked again at the next scan
+                self._not_beisen.add(u)
 
     def live_state(self, c: dict) -> dict:
         """The company's scan state as its sites are now: a site that can't be scanned is warned about only while it
@@ -331,6 +350,7 @@ class Scanner:
                 groups.append((p["url"], [p["script"]]))
         found: list[dict] = []
         problems: list[str] = []
+        empty: list[str] = []
         missed = 0
         for url, scripts in groups:
             outs: list[Any] = [None] * len(scripts)
@@ -358,16 +378,30 @@ class Scanner:
                 if isinstance(out, dict) and out.get("signed_out"):
                     raise RouteFailed(t("the site asks to sign in"), signed_out=True)
                 rows = out.get("postings") if isinstance(out, dict) else out
+                if isinstance(rows, list) and not rows:
+                    # no roles on a page that answered: a list that draws itself after loading may not have been
+                    # there yet (鹏芯微, 2026-11-05: 20 roles one scan, none the next). Read once more, a while later
+                    time.sleep(self.empty_wait)
+                    again = self._read_pages(url, [scripts[i]])[0]
+                    if not isinstance(again, Exception) and not (isinstance(again, dict) and again.get("signed_out")):
+                        out = again
+                        rows = out.get("postings") if isinstance(out, dict) else out
                 if not isinstance(rows, list):
                     missed += 1
                     problems.append(t("the script on {url} gave no list of postings", url=url))
                     continue
+                if not rows:
+                    empty.append(url)
                 found += rows
                 if totals is not None and isinstance(out, dict) and str(out.get("total") or "").strip().isdigit():
                     k = str(out.get("list") or url)
                     totals[k] = max(totals.get(k, 0), int(str(out["total"]).strip()))
         if not found:
-            raise RouteFailed("; ".join(problems) or t("the route found no postings at all: the site has probably changed"))
+            # said as it is: the pages opened and the scripts ran, and read no roles twice over. Never "the site has
+            # changed", which nobody checked (鹏芯微's route read none on a site with 24 roles, 2026-11-05)
+            raise RouteFailed("; ".join(problems) or t("the route's pages opened but its scripts read no roles on {pages}, twice, "
+                                                       "a while apart: the list may not show yet when they read it, or they "
+                                                       "read the wrong part of the page", pages=", ".join(dict.fromkeys(empty))))
         if errors is not None:
             errors += problems
         elif problems:
@@ -382,15 +416,15 @@ class Scanner:
         except (BrowserError, CdpError) as e:   # the tab itself didn't open: every script on it is unread
             return [e] * len(scripts)
 
-    def scan(self, ref: str, *, allow_route: bool = True) -> dict:
+    def scan(self, ref: str, *, allow_route: bool = True, just_tried: bool = False) -> dict:
         """Read every site of the company that can be read without Claude. Says what needs Claude
         (`needs`: "sites" when none is known, "claude" when a site has no route yet), and keeps that on the scan."""
-        res = self._scan(ref, allow_route=allow_route)
+        res = self._scan(ref, allow_route=allow_route, just_tried=just_tried)
         if not res.get("busy"):
             self.postings.set_scan_state(res["company"], needs=res.get("needs") or "", unrouted=res.get("unrouted") or [])
         return res
 
-    def _scan(self, ref: str, *, allow_route: bool = True) -> dict:
+    def _scan(self, ref: str, *, allow_route: bool = True, just_tried: bool = False) -> dict:
         c = self.hunt.company(ref)
         with self.lock:
             if c["id"] in self.running:
@@ -416,18 +450,50 @@ class Scanner:
             scripts = [p for p in scripts if not self._providers.get(p["url"])]
             # one list read once: two sites fronting the same board (its own page and the board itself) are one read
             lists = list(dict.fromkeys([*(self.list_of(s) for s in api), *via_api]))
-            for r in self._bridge([{"key": u, "name": c["name"], "url": u} for u in lists]):
+            ours = beisen.lists([u for u in lists if self._providers.get(u) == beisen.PROVIDER])
+            for r in self._bridge([{"key": u, "name": c["name"], "url": u} for u in lists
+                                   if self._providers.get(u) != beisen.PROVIDER]):
                 if r.get("error"):
                     errors.append(f"{r['url']}: {r['error']}")
                 else:
                     found += r.get("jobs") or []
                     hows.append(str(r.get("provider")))
+            counted: list[dict] = []   # rows read from a list that says its own count: checked against it
+            if ours:
+                keep = self._known_links(c["id"])
+                portals: set[str] = set()
+                for u in ours:
+                    try:
+                        r = self.beisen_read(u)
+                    except Exception as e:  # noqa: BLE001  (beisen.ReadFailed, or anything else the site does)
+                        errors.append(f"{u}: {e}")
+                        continue
+                    # one portal under two addresses (job.imou.com and imou.zhiye.com) is one list: read once
+                    if r.get("portal") and r["portal"] in portals:
+                        continue
+                    portals.add(r.get("portal") or u)
+                    # a role already kept under another spelling of its link (a route the AI wrote linked it
+                    # /campus/jobs?jobAdId=<number>) keeps that link: a role's link is its key
+                    jobs = [{**j, "url": keep.get(j.get("id") or "") or keep.get(j.get("number") or "") or j["url"]}
+                            for j in r.get("jobs") or []]
+                    found += jobs
+                    counted += jobs
+                    if isinstance(r.get("total"), int):
+                        totals[u] = max(totals.get(u, 0), r["total"])
+                    hows.append(beisen.PROVIDER)
             if scripts:
                 if allow_route:
                     self.running[c["id"]] = "route"
                     self.publish()
                     try:
-                        routed = self.run_route({**route, "pages": scripts}, errors, unread, totals)
+                        fresh = self._fresh.pop(c["id"], None) if just_tried else None
+                        if fresh and fresh["pages"] == scripts:   # the route was tried just now: what it read
+                            routed = fresh["rows"]
+                            errors += fresh["errors"]
+                            unread[:] = fresh["unread"]
+                            totals.update(fresh["totals"])
+                        else:
+                            routed = self.run_route({**route, "pages": scripts}, errors, unread, totals)
                         found += routed
                         hows.append("route")
                     except RouteFailed as e:
@@ -447,7 +513,7 @@ class Scanner:
                     return {"company": c["id"], "error": "; ".join(errors), "scan": st, "needs": needs[0] if needs else "",
                             "unrouted": missing}
                 return {"company": c["id"], "needs": needs[0] if needs else "claude", "unrouted": missing}
-            short = short_of(routed, totals)
+            short = short_of(routed + counted, totals)
             # read in part, by the site's own count: what wasn't read isn't closed (a cheaper model's route that
             # stopped at page 38 of 45 must never close the roles on pages 39 to 45)
             complete = not errors and not needs and not short
@@ -464,6 +530,14 @@ class Scanner:
                 self.running.pop(c["id"], None)
                 self.started.pop(c["id"], None)
             self.publish()
+
+    def _known_links(self, cid: str) -> dict[str, str]:
+        """The links the company's postings are kept under, by the ids in them (a 北森 role's uuid or its number)."""
+        out: dict[str, str] = {}
+        for p in self.postings.all(cid):
+            for tok in re.findall(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|\d{6,}", p.get("url") or ""):
+                out.setdefault(tok.lower(), p["url"])
+        return out
 
     def browser_open(self) -> bool:
         try:
@@ -542,9 +616,10 @@ class Scanner:
         finally:
             self.publish()
 
-    def save_route(self, ref: str, data: Any) -> tuple[dict, list[str]]:
+    def save_route(self, ref: str, data: Any, *, check: bool = True) -> tuple[dict, list[str]]:
         """The route records the sites it was made for: every site of the company a provider doesn't read, unless it
-        names them (`sites`). With `add`, its pages join the route the company has (a site added later)."""
+        names them (`sites`). With `add`, its pages join the route the company has (a site added later). `check`:
+        it is run once first, and kept only when it reads every role its site says it has (try_route)."""
         r, errs = validate_route(data)
         if errs:
             return {}, errs
@@ -570,5 +645,34 @@ class Scanner:
                 [s["url"] for s in self.sites_of(c) if self.covers(old, s["url"])]
             sites = list(dict.fromkeys([*kept, *sites]))
         r["sites"] = sites
+        # tried before it is kept (鹏芯微, 2026-11-05: a route that read 20 of the site's 24 roles was kept, and the
+        # next scan read none): one that reads no roles, or fewer than the site says it lists, goes back to the AI
+        # with what went wrong, and the company keeps the route it had
+        errs = self.try_route(c, r) if check else []
+        if errs:
+            return {}, errs
         self.postings.set_scan_state(c["id"], route=r)
         return r, []
+
+    def try_route(self, c: dict, route: dict) -> list[str]:
+        """What is wrong with a route, by running it once now: [] when it reads every role its site says it has.
+        What it read is kept for the scan that follows (`_scan`), so a slow site isn't read twice in a row."""
+        totals: dict[str, int] = {}
+        errors: list[str] = []
+        unread: list[int] = []
+        self._fresh.pop(c["id"], None)
+        try:
+            rows = self.run_route(route, errors, unread, totals)
+        except RouteFailed as e:
+            if e.signed_out:   # nothing wrong with the route: the user signs in, and the scan reads it then
+                return []
+            return [f"tried before keeping it, the route read no roles: {e}. Nothing was kept; fix the script "
+                    f"(wait for the list to show, or better, call the API the page itself calls) and send it again"]
+        short = short_of(rows, totals)
+        if short:
+            return [f"tried before keeping it, the route read {short[0]} different roles and the site says it lists "
+                    f"{short[1]}. Nothing was kept. Find where the rest go missing (a page that shows only the "
+                    f"first part of the list, pages it stops before, a filter, two roles kept as one because they "
+                    f"share a title), fix the route and send it again"]
+        self._fresh[c["id"]] = {"pages": route["pages"], "rows": rows, "errors": errors, "unread": unread, "totals": totals}
+        return []

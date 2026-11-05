@@ -891,7 +891,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 r, errs = scanner.save_route(c["id"], a.get("route"))
                 if errs:
                     raise HttpError(400, "the route has problems:\n- " + "\n- ".join(errs))
-                res = scanner.scan(c["id"])
+                res = scanner.scan(c["id"], just_tried=True)
                 # a route that never says the site's count can't be checked: told, so the AI adds it
                 if "found" in res and not any(re.search(r"\btotal\b", p.get("script") or "") for p in r.get("pages") or []):
                     res["no_total"] = True

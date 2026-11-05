@@ -121,7 +121,12 @@ the company (creating and filling it when new), adds the posting with its detail
 
 - Greenhouse, Lever and Ashby sites are read through their public APIs, with code taken from career-ops'
   `scan.mjs` (MIT, credited in the file), no browser and no Claude.
-- Any other site (Xinghe's own site, Moka, 北森…) is read in Resume Studio's browser by a **recorded route**,
+- **北森** portals (`<x>.zhiye.com`, or a company's own domain on it, found by its page naming a portal whose list
+  answers) are read by the scan itself (`jobhunt/beisen.py`): the list API, every page to the end, each portal
+  once and whole, checked against the list's own `Count`. Before (2026-11-05) each needed an AI-written route,
+  and 鹏芯微's read the drawn page, which shows 20 of its 24 roles and sometimes none. A role kept under a route's
+  older spelling of its link keeps that link.
+- Any other site (Xinghe's own site…) is read in Resume Studio's browser by a **recorded route**,
   as profiles are (`autofill/route.py`): the first scan lets Claude find the job list, sign-in included (the
   user signs in with the row's button), and record read-only page scripts; later scans replay them with no
   Claude. A route that stops working asks Claude to record it again. A route has at most 20 pages, each with
@@ -598,6 +603,11 @@ numbers differed. Two causes, one in our code and one in the process:
   company, said in the companies table ("381/448 read"), on its page with **Let AI read the rest**, on Picked for
   you, and to the agent as "not done" by `scan-route` and `show`. A short read closes nothing. A route with no
   `total` is told it can't be checked.
+- **A route was kept before it was checked** (鹏芯微, 2026-11-05: 20 of 24 kept, then the next scan read none and
+  the window blamed the site). `scan-route` now runs the route once first and keeps it only when it reads roles,
+  as many as its site says; otherwise the AI is told why and the company keeps the route it had. The scan right
+  after uses what that try read. A page whose script reads no roles is read once more, 8 s later (a list that
+  draws itself late), and a route that still reads none says so, never "the site has probably changed".
 
 Then **tracks**: a user goes for several kinds of role at once, and a scan of a big company lists hundreds of roles,
 so "the roles you look for" (one list of keywords) became tracks, after career-ops' `title_filter` (its matching

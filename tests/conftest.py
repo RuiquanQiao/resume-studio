@@ -47,6 +47,8 @@ os.environ["RESUME_STUDIO_LANG"] = "zh-CN"
 os.environ["STUDIO_LOGOS"] = "off"
 # places the list doesn't know are looked up on OpenStreetMap; tests that want it hand in what it answers
 os.environ["STUDIO_PLACES"] = "off"
+# whether a careers site is on 北森 is asked of the site itself; tests' made-up sites are never asked
+os.environ["STUDIO_BEISEN_DETECT"] = "off"
 # the user's own Claude Code settings (a model picked there, say) never reach the fake one's answers
 os.environ["CLAUDE_CONFIG_DIR"] = str(ROOT / ".cache" / "claude-config")
 os.environ.pop("ANTHROPIC_MODEL", None)

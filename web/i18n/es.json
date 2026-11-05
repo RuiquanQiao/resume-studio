@@ -1608,7 +1608,6 @@
  "the page {url} didn't read: {error}": "no se pudo leer la página {url}: {error}",
  "the posting {job}": "la oferta {job}",
  "the roles you apply for here": "los puestos a los que te presentas aquí",
- "the route found no postings at all: the site has probably changed": "la ruta no encontró ninguna oferta: el sitio probablemente cambió",
  "the script on {url} gave no list of postings": "el script de {url} no devolvió ninguna lista de ofertas",
  "the site asks to sign in": "el sitio pide iniciar sesión",
  "the subset this site gets": "el subconjunto que recibe esta web",
@@ -2269,5 +2268,7 @@
  "Product manager": "Gestión de producto",
  "Product manager, PM, Product+Strategy": "Product manager, PM, Producto+Estrategia",
  "except {words}": "excepto {words}",
- "The AI builds them from your resume subsets and the titles your companies really use; you can change them after.": "La IA los crea a partir de tus versiones del currículum y de los títulos que tus empresas usan de verdad; puedes cambiarlos después."
+ "The AI builds them from your resume subsets and the titles your companies really use; you can change them after.": "La IA los crea a partir de tus versiones del currículum y de los títulos que tus empresas usan de verdad; puedes cambiarlos después.",
+ "北森's job list": "la lista de empleos de 北森 (Beisen)",
+ "the route's pages opened but its scripts read no roles on {pages}, twice, a while apart: the list may not show yet when they read it, or they read the wrong part of the page": "Las páginas de la ruta se abrieron, pero sus scripts no leyeron ninguna oferta en {pages}, dos veces y con un rato entre medias: puede que la lista aún no se viera al leerla, o que lean la parte equivocada de la página"
 }

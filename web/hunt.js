@@ -1259,7 +1259,8 @@ function postingsCard(v) {
 
 const BATCH_NAMES = { campus: "Campus", intern: "Internship", social: "Experienced", other: "Other" };
 function howName(how) {
-  return String(how || "").split("+").map((x) => (x === "route" ? t("its recorded route") : x === "claude" ? t("read by AI") : x)).join(" + ");
+  return String(how || "").split("+").map((x) => (x === "route" ? t("its recorded route") : x === "claude" ? t("read by AI")
+    : x === "beisen" ? t("北森's job list") : x)).join(" + ");
 }
 
 async function applyPosting(p) {
