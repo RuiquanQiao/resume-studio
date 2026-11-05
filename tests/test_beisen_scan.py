@@ -96,6 +96,7 @@ def test_a_beisen_portal_is_read_whole_by_the_scan_itself(hunt, monkeypatch):
         p = next(x for x in ps.all() if x["title"] == "27届-工程师3(J10603)")
         assert (p["url"], p["location"], p["batch"], p["posted"], p["deadline"]) == \
             (site.url + "/campus/detail?jobAdId=6e5432f5-1cd4-46e8-9ee9-000000000003", "深圳", "campus", "2026-10-27", "")
+        assert p["category"] == ""   # 北森's "校园招聘" is the batch, never shown a second time as its category
         assert next(x for x in ps.all() if x["title"].startswith("27届-工程师99"))["batch"] == "social"
         st = ps.scan_state("C1")
         assert st["ok"] and st["how"] == "beisen" and not st.get("short")

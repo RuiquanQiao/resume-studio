@@ -140,7 +140,7 @@ def posting(base: str, j: dict) -> dict | None:
     cat = str(j.get("CategoryId") or "")
     path = KINDS.get(cat, cat or "jobs")
     return {"title": str(j["JobAdName"]).strip(), "url": f"{base}/{path}/detail?jobAdId={j['Id']}",
-            "location": _city(j.get("LocNames")), "category": str(j.get("ClassificationOne") or j.get("Category") or ""),
+            "location": _city(j.get("LocNames")), "category": str(j.get("ClassificationOne") or ""),   # its job family; `Category` (校园招聘) is the batch again
             "batch": KINDS.get(cat, ""), "posted": _date(j.get("PostDate")), "deadline": _date(j.get("EndTime")),
             # its ids, for a role kept before under another spelling of its link (scan.py _known_links)
             "id": str(j["Id"]).lower(), "number": str(j.get("JobAdId") or "")}
