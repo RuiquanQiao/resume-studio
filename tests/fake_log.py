@@ -31,3 +31,15 @@ def append_line(path: str, obj: object) -> None:
             os.write(fd, data)
     finally:
         os.close(fd)
+
+
+def fake_title(prompt: str) -> str:
+    """What the stand-ins answer when asked to name a chat (core/naming.py): the message's start after "AI名 ";
+    NONAME in the message: no answer (the ask fails); LATETITLE: the answer takes 1.5 s."""
+    import time
+    msg = prompt.split("<message>", 1)[-1].split("</message>", 1)[0].strip()
+    if "NONAME" in msg:
+        return ""
+    if "LATETITLE" in msg:
+        time.sleep(1.5)
+    return "AI名 " + msg[:10]

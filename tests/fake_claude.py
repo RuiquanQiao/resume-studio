@@ -36,6 +36,16 @@ from fake_log import append_line  # noqa: E402
 
 args = sys.argv[1:]
 log = os.environ.get("FAKE_CLAUDE_LOG")
+if "--output-format" in args and args[args.index("--output-format") + 1] == "text":   # naming a chat (core/naming.py)
+    from fake_log import fake_title  # noqa: E402
+    prompt = sys.stdin.buffer.read().decode("utf-8")
+    if log:
+        append_line(log + ".title", {"argv": args, "cwd": os.getcwd(), "prompt": prompt})
+    name = fake_title(prompt)
+    if not name:
+        sys.exit(1)
+    sys.stdout.buffer.write((name + "\n").encode("utf-8"))
+    sys.exit(0)
 sid = args[args.index("--resume") + 1] if "--resume" in args else str(uuid.uuid4())
 if "--fork-session" in args:
     sid = str(uuid.uuid4())

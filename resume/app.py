@@ -140,6 +140,7 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
     # what each installed agent offers (models, effort, modes, account): cached, refreshed at every start
     hub = AgentHub(studio.data_dir, studio.store.cache_dir)
     chats = ChatRunner(app.bus, ChatStore(studio.store.state_dir / "chats"), cwd=studio.data_dir, hub=hub)
+    chats.naming_dir = studio.store.cache_dir / "naming"
     tracker = EvidenceTracker(studio.store.state_dir)
     for agent_id, info in hub.infos.items():
         if agent_id == "claude" or info.agent.installed():

@@ -1646,6 +1646,12 @@ async function onChatEvent(type, ev) {
     }
     return;
   }
+  if (type === "chat.title") {   // the agent named a chat the user started by typing (core/naming.py)
+    ui.chat.list = ui.chat.list.map((c) => (c.id === ev.chat ? { ...c, title: ev.title } : c));
+    if (ev.chat === ui.chat.id && ui.chat.meta) ui.chat.meta = { ...ui.chat.meta, title: ev.title };
+    renderChatSelect();
+    return;
+  }
   if (type === "chat.done" && ev.chat !== ui.chat.id) setUnread(ev.chat, true);   // ended while the user was elsewhere
   if (type === "chat.done") { paintChatDot((ui.chat.busy || []).filter((id) => id !== ev.chat)); aiRunDone(ev.chat, ev.error); askAttention(); }
   if (ev.chat !== ui.chat.id) {
@@ -1701,7 +1707,7 @@ async function onChatEvent(type, ev) {
   }
 }
 
-const CHAT_EVENTS = ["chat.start", "chat.init", "chat.meta", "chat.thinking", "chat.delta", "chat.tool", "chat.block", "chat.ask",
+const CHAT_EVENTS = ["chat.start", "chat.init", "chat.meta", "chat.title", "chat.thinking", "chat.delta", "chat.tool", "chat.block", "chat.ask",
   "chat.tasks", "chat.queue", "chat.reply", "chat.next", "chat.done", "claude.info", "claude.limits"];
 function listenChat(es) {
   for (const name of CHAT_EVENTS) es.addEventListener(name, (m) => onChatEvent(name, JSON.parse(m.data)));

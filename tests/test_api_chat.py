@@ -7,6 +7,7 @@ import os
 import shutil
 import time
 import urllib.parse
+from pathlib import Path
 
 import pytest
 
@@ -87,7 +88,7 @@ def test_chat_is_a_real_resumed_session(server, data_file, fake_claude):
     assert blocks[0]["name"] == "Read" and blocks[0]["status"] == "done"
     assert blocks[1]["text"].count("好的，我看过了") == 1              # streamed text not duplicated
     sid = r["chat"]["session_id"]
-    assert sid and r["chat"]["title"].startswith("你好")
+    assert sid and r["chat"]["title"] in ("你好，帮我看看简历", "AI名 你好，帮我看看简历")   # its start, then the agent's name for it
     ctx_path = calls(fake_claude)[0]["argv"][calls(fake_claude)[0]["argv"].index("--append-system-prompt-file") + 1]
     ctx = open(ctx_path, encoding="utf-8").read()
     assert str(data_file.resolve()) in ctx and "RES-TECH-EN" in ctx and "EXP-002" in ctx
@@ -325,7 +326,58 @@ def test_a_button_names_its_chat_and_a_typed_message_names_its_own(server, fake_
     _send(server, cid, "   ", title="   ", attachments=[])                  # nothing to send: refused, still untitled
     _send(server, cid, "帮我看看这一段经历写得怎么样", title="  ")             # a blank title: the message names it
     server.wait_idle(cid)
-    assert server.req("GET", f"/api/chats/{cid}")[1]["chat"]["title"].startswith("帮我看看")
+    assert "帮我看看" in server.req("GET", f"/api/chats/{cid}")[1]["chat"]["title"]   # its start, or the agent's name from it
+
+
+def _title_when(server, cid, want, timeout=15):
+    end = time.time() + timeout
+    while time.time() < end:
+        got = server.req("GET", f"/api/chats/{cid}")[1]["chat"]["title"]
+        if got == want:
+            return got
+        time.sleep(0.05)
+    return server.req("GET", f"/api/chats/{cid}")[1]["chat"]["title"]
+
+
+def test_a_typed_chat_is_named_by_its_agent(server, fake_claude):
+    """Claude Code names only its interactive sessions, never a `-p` one (user, 2026-11-08: "a chat I start by
+    typing should be named by the agent"): the app asks it once, on a small model, with no tools, nothing kept,
+    in an empty folder; the message's start is the name meanwhile, and stays it when the ask fails."""
+    cid = server.req("POST", "/api/chats")[1]["id"]
+    _send(server, cid, "我投了字节的后端岗，下周一面，帮我准备一下项目经历怎么讲")
+    assert _title_when(server, cid, "AI名 我投了字节的后端岗") == "AI名 我投了字节的后端岗"
+    server.wait_idle(cid)
+    ask = calls(fake_claude.with_name(fake_claude.name + ".title"))
+    assert len(ask) == 1 and "我投了字节的后端岗" in ask[0]["prompt"]
+    argv = ask[0]["argv"]
+    assert argv[argv.index("--model") + 1] == "haiku" and "--no-session-persistence" in argv
+    assert argv[argv.index("--tools") + 1] == "" and argv[argv.index("--max-turns") + 1] == "1"
+    folder = Path(ask[0]["cwd"])
+    assert folder.name == "naming" and folder.parent.name == ".cache" and not list(folder.iterdir())   # nothing left
+    assert all("--output-format" not in c["argv"] or "stream-json" in c["argv"] for c in calls(fake_claude))   # the chat's own log: its reply only
+    _send(server, cid, "继续")
+    server.wait_idle(cid)
+    assert len(calls(fake_claude.with_name(fake_claude.name + ".title"))) == 1        # named once, by its first message
+
+    cid = server.req("POST", "/api/chats")[1]["id"]
+    _send(server, cid, "NONAME 这一条起不了名")
+    server.wait_idle(cid)
+    time.sleep(0.5)
+    assert server.req("GET", f"/api/chats/{cid}")[1]["chat"]["title"] == "NONAME 这一条起不了名"   # the ask failed: its start
+
+    cid = server.req("POST", "/api/chats")[1]["id"]
+    _send(server, cid, "LATETITLE 我自己会改名")
+    server.req("PUT", f"/api/chats/{cid}", {"title": "我起的名字"})                      # renamed while the agent thinks
+    time.sleep(2.2)
+    assert server.req("GET", f"/api/chats/{cid}")[1]["chat"]["title"] == "我起的名字"     # the user's name stays
+    server.wait_idle(cid)
+
+    cid = server.req("POST", "/api/chats")[1]["id"]
+    before = len(calls(fake_claude.with_name(fake_claude.name + ".title")))
+    _send(server, cid, "Find out about 星河科技", title="星河科技 添加")
+    server.wait_idle(cid)
+    time.sleep(0.3)
+    assert len(calls(fake_claude.with_name(fake_claude.name + ".title"))) == before    # a button's chat: named by the button
 
 
 def test_queue_while_running_and_interrupt(server, fake_claude):

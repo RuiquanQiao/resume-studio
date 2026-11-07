@@ -41,6 +41,17 @@ def out(obj):
         sys.stdout.flush()
 
 
+if proto == "codex" and args[1:2] == ["exec"]:   # naming a chat (core/naming.py): the answer goes to -o
+    from fake_log import fake_title  # noqa: E402
+    prompt = sys.stdin.buffer.read().decode("utf-8")
+    if log:
+        append_line(log + ".title", {"argv": args, "cwd": os.getcwd(), "prompt": prompt})
+    name = fake_title(prompt)
+    if not name:
+        sys.exit(1)
+    with open(args[args.index("-o") + 1], "w", encoding="utf-8") as f:
+        f.write(name + "\n")
+    sys.exit(0)
 note({"proto": proto, "argv": args, "cwd": os.getcwd()})
 inbox: dict = {}          # answers to our own requests, by id
 interrupted = threading.Event()

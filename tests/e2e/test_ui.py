@@ -526,6 +526,8 @@ def test_chat_streams_markdown_tools_and_resumes(page, server, fake_claude):
     page.wait_for_selector(".msg-ai .md strong:text('已经处理')", timeout=10000)
     assert page.locator(".msg-ai .md li").count() == 2
     assert page.locator(".msg-ai .tool .tn").first.inner_text() == "读取"
+    # a chat started by typing is named by its agent, and the list shows the name without a reload
+    page.wait_for_selector("#chat-select .sel-label:text-is('AI名 你好，帮我看看')", timeout=10000)
     page.wait_for_selector("#chat-stop.hidden", state="attached")
     page.fill("#chat-input", "继续")
     page.keyboard.press("Enter")
@@ -2990,7 +2992,9 @@ def test_working_timer_restarts_for_each_reply(page_all):
       const serverAge = Date.now() - workStart();
       // Even the fallback for older servers belongs to this reply, not this chat.
       ui.chat.messages = []; ui.chat.live = {blocks: []};
-      const fallbackAge = Date.now() - workStart();
+      // the start first: workStart() sets it to now, and a Date.now() taken before it was 1 ms early now and then
+      const fallbackStart = workStart();
+      const fallbackAge = Date.now() - fallbackStart;
       ui.chat.running = false; ui.chat.live = null;
       await sendChat('another new message');
       const secondAge = Date.now() - workStart();

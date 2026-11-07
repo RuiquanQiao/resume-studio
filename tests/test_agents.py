@@ -155,6 +155,28 @@ def test_codex_chat_resumes_its_thread(server, agent_log, data_file):
     assert server.req("GET", "/api/claude?agent=codex")[1]["limits"]["windows"]["five_hour"]["utilization"] == 0.12
 
 
+def test_a_typed_codex_chat_is_named_by_codex(server, agent_log):
+    """The chat's own agent names it: Codex in its one-shot mode (`exec`), nothing kept, the answer read from -o."""
+    cid = new_chat(server, "codex")
+    say(server, cid, "帮我看看为什么简历超出一页")
+    reply(server, cid)
+    end = time.time() + 15
+    while time.time() < end and server.req("GET", f"/api/chats/{cid}")[1]["chat"]["title"] != "AI名 帮我看看为什么简历超":
+        time.sleep(0.05)
+    assert server.req("GET", f"/api/chats/{cid}")[1]["chat"]["title"] == "AI名 帮我看看为什么简历超"
+    ask = lines(agent_log.with_name(agent_log.name + ".title"))
+    assert len(ask) == 1 and ask[0]["argv"][1] == "exec" and "--ephemeral" in ask[0]["argv"]
+    assert "-s" in ask[0]["argv"] and ask[0]["argv"][ask[0]["argv"].index("-s") + 1] == "read-only"
+
+
+def test_an_agent_without_a_one_shot_mode_keeps_the_message_start(server, agent_log):
+    cid = new_chat(server, "qwen")
+    say(server, cid, "帮我改一下自我介绍")
+    reply(server, cid)
+    time.sleep(0.5)
+    assert server.req("GET", f"/api/chats/{cid}")[1]["chat"]["title"] == "帮我改一下自我介绍"
+
+
 def test_reply_start_time_resets_after_queue_wait(server):
     cid = new_chat(server, "codex")
     say(server, cid, "QUESTION")

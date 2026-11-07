@@ -33,7 +33,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from . import agents
+from . import agents, naming
 from .claude_info import EFFORTS, valid_model_id
 from .events import EventBus
 from .i18n import t
@@ -279,6 +279,7 @@ class ChatRunner:
         self.cwd = cwd
         self.tools = tools or DEFAULT_TOOLS      # Claude Code's pre-approved tools
         self.hub = hub                           # each agent's info (models, modes…), when the app has one
+        self.naming_dir: Path | None = None      # an empty folder the agent names chats in (core/naming.py)
         self.workspaces: dict[str, Workspace] = {}
         # what every chat in the data folder is told besides the window's own context (the tracker's and
         # the browser's commands), so a chat can do anything from any workspace
@@ -376,7 +377,13 @@ class ChatRunner:
                 context += "\n" + WINDOWS_TEXT_NOTE
         self.store.append(chat_id, msg)
         if chat.get("title") in (None, "", *UNTITLED, t("New chat")):
-            self.store.update_meta(chat_id, title=" ".join(str(title).split())[:60] if title and str(title).strip() else _title_from(text))
+            if title and str(title).strip():
+                self.store.update_meta(chat_id, title=" ".join(str(title).split())[:60])
+            else:   # typed: its start for now, the agent's own name for it once it has one
+                first = _title_from(text if shown is None else shown)
+                self.store.update_meta(chat_id, title=first)
+                threading.Thread(target=self._name, args=(chat_id, agent.id, text if shown is None else shown, first),
+                                 name="chat-title", daemon=True).start()
         else:
             self.store.update_meta(chat_id)
 
@@ -452,6 +459,17 @@ class ChatRunner:
                 self._kill(turn)
 
     # ---- what the drivers call -------------------------------------------
+    def _name(self, chat_id: str, agent_id: str, text: str, first: str) -> None:
+        """The agent names the chat (core/naming.py); a name the user gave it meanwhile stays."""
+        name = naming.ask(agent_id, text, self.naming_dir or self.store.root.parent / "naming")
+        if not name:
+            return
+        meta = self.store.meta(chat_id)
+        if not meta or meta.get("title") != first:
+            return
+        self.store.update_meta(chat_id, touch=False, title=name)
+        self._emit("chat.title", chat_id, title=name)
+
     def _emit(self, event: str, chat_id: str, **data: Any) -> None:
         self.bus.publish(event, {"chat": chat_id, **data})
 
