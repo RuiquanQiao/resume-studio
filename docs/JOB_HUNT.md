@@ -626,9 +626,11 @@ exclusions and the resume subset it goes out with. No AI runs per posting: it is
 The flow today: add a company → AI fills it → scan → (now) picked roles → Want to apply → JD read → resume subset →
 fill the site → submit → track progress. What still costs the user attention, most valuable first:
 
-1. **Rank inside a track, not just filter.** *Done 2026-11-04, first version:* once a scan run ends, every picked
-   role's own page is read in the background (`jobhunt/rank.py`, one page a second, at most 80 a run, kept in
-   `hunt/jds.json`), and the skills its description names are compared with the skills the track's resume subset
+1. **Rank inside a track, not just filter.** *Done 2026-11-04, first version; changed 2026-11-07:* a scan only reads
+   the sites' job lists and picks roles by title (no browser pages, no AI). A role's own page is read when the user
+   clicks Want to apply (its description goes on the application), or for every picked role when they click "Read
+   them" (`jobhunt/rank.py`, one page a second, at most 80 a run, kept in `hunt/jds.json`); a scan no longer starts
+   that by itself, because scanning one company read other companies' pages. Then the skills its description names are compared with the skills the track's resume subset
    names: "86% fit" on the row, the words matched and missing on hover, and a "Best fit first" order. Still to do:
    hard constraints (city, batch, graduation year) and the AI's written note for the top few.
    Original note:  A title match says "this kind of role", not "a good one for me". After

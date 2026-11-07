@@ -88,8 +88,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     hunt.scanner = scanner   # the app (and tests) reach the scanner through the tracker
     descs = Descriptions(hunt, lambda: scanner.browser, lambda: app.bus.publish("hunt", {}))
     hunt.descriptions = descs
-    # a scan run ends: the picked roles it brought get their descriptions read, so they can be ranked
-    scanner.after_run = lambda: descs.start(posts.matched()["postings"]) if scanner.browser is not None else 0
+    # a scan never opens role pages: a role's description is read when the user picks it (Want to apply), or when
+    # they ask for the picked roles' descriptions (user, 2026-11-07: scanning one company read other companies' pages)
     history = History(hunt)
     hunt.history = history
     studio.on_subset_renamed.append(hunt.rename_subset)
@@ -499,8 +499,12 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 from jobs.fit import subset_text
                 have[sid] = skill_words(subset_text(doc, model.get_item(doc, "subset", sid)))
         subset_of = {tr["id"]: tr.get("subset") for tr in m["tracks"]}
+        apps = {a["id"]: a for a in hunt.applications()}
         for p in m["postings"]:
             j = jds.get(p["id"]) or {}
+            a = apps.get(p.get("app") or "") or {}
+            if not j.get("jd") and a.get("jd"):   # read when it was added (Want to apply): its fit comes from that
+                j = {"jd": a["jd"]}
             p["jd"] = "read" if j.get("jd") else "failed" if j.get("error") else ""
             if not p.get("deadline") and j.get("deadline"):
                 p["deadline"] = j["deadline"]

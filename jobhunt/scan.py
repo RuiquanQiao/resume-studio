@@ -146,7 +146,6 @@ class Scanner:
         self.beisen_read: Callable[[str], dict] = beisen.read
         self._not_beisen: set[str] = set()     # asked once per run of the app
         self._fresh: dict[str, dict] = {}      # company id -> what a route just tried (try_route) read, for its scan
-        self.after_run: Callable[[], Any] | None = None   # once a run the user started ends (the picked roles' JDs)
 
     # ---- which sites, read how ----
     @staticmethod
@@ -603,11 +602,6 @@ class Scanner:
                 if not auto or out:
                     self.postings.mark_all_scanned()
                 self.last_run = run_summary(out, auto)
-            if self.after_run and (not auto or self.browser_open()):
-                try:
-                    self.after_run()
-                except Exception:  # noqa: BLE001  reading descriptions never fails the scan
-                    pass
         except BaseException:
             with self.lock:   # never left looking busy
                 if not ended:

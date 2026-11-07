@@ -1095,7 +1095,7 @@ function pickedPage() {
   }
   // fetched once per change of the tracker: a "hunt" event reloads H.data, and a new sign makes this fetch again
   const sig = (d.scan.last_run || {}).at + "|" + JSON.stringify(huntTracks()) + "|" + d.companies.reduce((k, c) => k + ((c.postings || {}).matching || 0), 0)
-    + "|" + JSON.stringify(d.scan.reading || null);
+    + "|" + JSON.stringify(d.scan.reading || null) + "|" + d.applications.filter((x) => x.jd).length;   // a role added from here gets its fit once its description is read
   if (H.pickedSig !== sig) { H.pickedSig = sig; loadPicked(); }
   const m = H.picked;
   if (!m) return [head, h("div", { class: "muted" }, t("Loading…"))];

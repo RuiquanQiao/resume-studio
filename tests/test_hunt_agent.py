@@ -1320,6 +1320,48 @@ def test_picked_roles_get_their_descriptions_read_and_ranked_by_their_tracks_res
     assert not m["ranked"] and all(p["fit"] is None for p in m["postings"])
 
 
+def test_a_scan_never_opens_role_pages_and_want_to_apply_reads_one_and_ranks_it(server):
+    """User, 2026-11-07: scanning one company opened other companies' role pages in the browser. A scan only reads
+    job lists; a role's page is read when the user clicks Want to apply, and its fit comes from that description."""
+    import time as _t
+    hunt = server.inst.hunt
+    posts = hunt.scanner.postings
+    hunt.add_company({"name": "星河科技"})
+    hunt.add_company({"name": "万象科技"})
+    base = "https://careers.example.com/job/"
+    posts.merge("C1", [{"title": "机器学习工程师", "url": base + "1"}, {"title": "AI 研究员", "url": base + "2"}], how="route")
+    posts.settings(tracks=[{"name": "ML", "keywords": "机器学习, AI", "subset": "RES-TECH-EN"}])
+    opened = []
+
+    class Pages:
+        def read_page(self, url, script, timeout=60.0):
+            opened.append(url)
+            return {"jd": "岗位职责 熟悉 Python 和 PyTorch，了解 scikit-learn 任职要求", "text": ""}
+
+        def status(self):
+            return {"state": "running"}
+    hunt.scanner.browser = Pages()
+    hunt.descriptions.pause = 0
+    hunt.scanner.plan = lambda c: []          # the other company's scan reads nothing: no site
+    hunt.scanner.start(["C2"])                # the user scans 万象科技 with the browser open
+    end = _t.time() + 10
+    while (hunt.scanner.batch or hunt.descriptions.status()) and _t.time() < end:
+        _t.sleep(0.05)
+    _t.sleep(0.2)
+    assert opened == [] and hunt.descriptions.status() is None
+    assert server.req("GET", "/api/hunt/matches")[1]["unread"] == 2
+    # Want to apply reads that one role's page, and the picked list ranks it by that description
+    r = server.req("POST", "/api/hunt/postings/P1/apply")[1]
+    aid = r["application"]["id"]
+    end = _t.time() + 10
+    while not server.req("GET", f"/api/hunt/apps/{aid}")[1]["application"]["jd"] and _t.time() < end:
+        _t.sleep(0.05)
+    assert opened == [base + "1"]
+    by = {p["title"]: p for p in server.req("GET", "/api/hunt/matches")[1]["postings"]}
+    assert by["机器学习工程师"]["jd"] == "read" and {"python", "pytorch"} <= set(by["机器学习工程师"]["fit"]["hit"])
+    assert by["AI 研究员"]["fit"] is None and by["AI 研究员"]["jd"] == ""
+
+
 def test_a_description_counts_only_the_skills_it_names():
     from jobhunt.rank import fit, skill_words
     assert {"python", "c++", "rag", "机器学习"} <= skill_words("Strong Python and C++ skills, RAG pipelines, 机器学习")
