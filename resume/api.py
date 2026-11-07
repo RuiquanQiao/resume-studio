@@ -496,6 +496,24 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
     ACTIONS = ("polish", "translate", "fit", "sync", "mock", "probe", "answer", "batch_translate", "batch_fit", "batch_sync")
     ONE_ENTRY = ("polish", "translate", "fit", "sync", "mock", "probe", "answer")
 
+    def chat_title(action: str, entry: str, subset: Any, target: str, lang: str) -> str:
+        """The name of a chat an editor button starts: what it is about, then what it does."""
+        sub = (model.tr((subset or {}).get("label"), lang) or t("All entries")) if not model.is_all(subset) else t("All entries")
+        to = prompts.lang_name(target) if target else ""
+        names = {
+            "polish": lambda: t("{entry}: polish", entry=entry),
+            "translate": lambda: t("{entry}: into {lang}", entry=entry, lang=to),
+            "fit": lambda: t("{entry}: fit on one line", entry=entry),
+            "sync": lambda: t("{entry}: update from the project", entry=entry),
+            "mock": lambda: t("{entry}: mock interview", entry=entry),
+            "probe": lambda: t("{entry}: follow-up questions", entry=entry),
+            "answer": lambda: t("{entry}: answer a question", entry=entry),
+            "batch_translate": lambda: t("{subset}: all into {lang}", subset=sub, lang=to),
+            "batch_fit": lambda: t("{subset}: fit every line", subset=sub),
+            "batch_sync": lambda: t("Every changed project: update"),
+        }
+        return names[action]() if action in names else ""
+
     @app.route("POST", "/api/chats/{cid}/send")
     def send(req: Request):
         """A chat message: typed by the user, or one of the editor's buttons (`action`)."""
@@ -585,6 +603,13 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
             if not text and not b.get("attachments"):
                 raise HttpError(400, t("The message is empty"))
 
+        # a chat a button starts is named for what the button does, never after the start of its long prompt
+        # (user, 2026-11-08); a typed first message names its chat by its own start (core/chat.py)
+        if action:
+            title = chat_title(action, name(entry) if entry is not None else "", subset, str(b.get("target") or ""), lang)
+        else:
+            title = str(b.get("title") or "")
+
         add_dirs = []
         for e in involved:  # let Claude read the involved entries' evidence folders
             for p in e.get("evidence") or []:
@@ -611,7 +636,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
             r = chats.send(cid, prompt, context=context, add_dirs=add_dirs, on_done=done if targets else None,
                            meta={"action": action, "polish": action == "polish", "entry_id": b.get("entry_id"),
                                  "entries": [str(e.get("id")) for e in involved]},
-                           images=images, files=files, shown=text if action is None else None)
+                           images=images, files=files, shown=text if action is None else None, title=title)
         except KeyError:
             raise HttpError(404, t("Chat not found"))
         except RuntimeError as e:

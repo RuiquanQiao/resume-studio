@@ -41,7 +41,7 @@ RECORDED = {"add-company", "edit-company", "fill", "about", "add-role", "edit-ro
 
 
 def subset_to_send(studio: Studio, subset_id: str | None) -> str:
-    doc, _ = studio.store.load()
+    doc = studio.store.peek()   # only read
     if not subset_id:
         raise HttpError(409, t("Pick the subset this goes out with first"))
     if subset_id == model.ALL_ID or model.get_item(doc, "subset", subset_id) is None:
@@ -81,7 +81,17 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
 
     hunt.on_change = changed
     posts = Postings(hunt)
-    threading.Thread(target=posts.slim_file, name="hunt-slim-postings", daemon=True).start()   # once, an older file
+
+    def warm() -> None:
+        """An older file written the short way once; then the postings parsed and every title matched against the
+        tracks, so the window's first look at the table doesn't wait for 50,000 titles (3 s in 2026-11)."""
+        time.sleep(1.5)   # after the window's first page has its answers: parsing holds Python's lock meanwhile
+        try:
+            posts.slim_file()
+            posts.summary()
+        except Exception:  # noqa: BLE001 (a file being written: the first look reads it then)
+            pass
+    threading.Thread(target=warm, name="hunt-warm-postings", daemon=True).start()
     views = Views(hunt.dir)
     geo = Geo(hunt.dir)
     scanner = Scanner(hunt, posts, tool, browser, lambda: app.bus.publish("hunt", {}))
@@ -113,7 +123,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
 
     def resume_langs(doc: Any = None) -> list[str]:
         """The languages the user's resume is written in (its own setting): what company research may be in."""
-        doc = doc if doc is not None else studio.store.load()[0]
+        doc = doc if doc is not None else studio.store.peek()
         return [str(x) for x in (doc.get("settings") or {}).get("languages") or ["en"]]
 
     def research(c: dict, apps: list[dict], langs: list[str]) -> dict:
@@ -259,7 +269,10 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
 
     def logo_files() -> list[tuple[str, int, int]]:
         d = hunt.dir / "logos"
-        return sorted((p.name, p.stat().st_mtime_ns, p.stat().st_size) for p in d.iterdir()) if d.is_dir() else []
+        if not d.is_dir():
+            return []
+        with os.scandir(d) as it:   # on Windows the listing carries each file's times and size: no call per file
+            return sorted((e.name, e.stat().st_mtime_ns, e.stat().st_size) for e in it)
 
     # a picture changed from outside the app (Claude, a file manager): the window shows it without a restart
     hunt.logo_watcher = SignatureWatcher(logo_files, hunt._changed)
@@ -315,7 +328,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
 
     def company_view(ref: str) -> dict:
         c = hunt.company(ref)
-        doc, _ = studio.store.load()
+        doc = studio.store.peek()   # only read
         apps = sorted(hunt.applications(c["id"]), key=lambda a: a.get("order") or 0)
         evs = [e for e in hunt.events() if e["app"] in {a["id"] for a in apps}]
         st = scanner.live_state(c)
@@ -412,7 +425,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             raise HttpError(409, t("Every role on {company}'s site has already gone out", company=c["name"]))
         n = keep_version(studio, sub, c["name"])
         out = [hunt.mark_sent(a["id"], sub, n, source=source) for a in todo]
-        doc, _ = studio.store.load()
+        doc = studio.store.peek()   # only read
         copied = guard(lambda: copy_to_tracker(out, c, subset_label(doc, sub), n))
         return {"n": n, "subset": sub, "sent": [a["id"] for a in out], "copied": copied}
 
@@ -424,14 +437,14 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         sub = subset_to_send(studio, subset or a.get("subset") or c.get("subset") or None)
         if version:
             if not studio.versions.get(sub, int(version)):
-                raise HttpError(404, t("{subset} has no v{n}", subset=subset_label(studio.store.load()[0], sub), n=version))
+                raise HttpError(404, t("{subset} has no v{n}", subset=subset_label(studio.store.peek(), sub), n=version))
             n = int(version)
         else:
             n = keep_version(studio, sub, f"{c['name']} — {a['role']}")
         if subset and subset != (a.get("subset") or c.get("subset")):
             hunt.update_application(a["id"], {"subset": subset})   # what it went out with is what it goes out with
         a = hunt.mark_sent(a["id"], sub, n, source=source)
-        doc, _ = studio.store.load()
+        doc = studio.store.peek()   # only read
         copied = guard(lambda: copy_to_tracker([a], c, subset_label(doc, sub), n))
         return {"n": n, "subset": sub, "sent": [a["id"]], "copied": copied}
 
@@ -772,7 +785,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             if eid and not apps[0]["schedule"]:
                 raise KeyError(t("{role} has nothing booked called “{ref}”", role=a["role"], ref=eid))
             name = f"applying-{a['id']}" + (f"-{eid}" if eid else "")
-        doc, _ = studio.store.load()
+        doc = studio.store.peek()   # only read
         out = studio.data_dir / str((doc.get("settings") or {}).get("export_dir") or "exports") / f"{name}.ics"
         out.parent.mkdir(parents=True, exist_ok=True)
         names = {c["id"]: c["name"] for c in hunt.companies()}

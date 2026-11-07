@@ -319,10 +319,12 @@ class ChatRunner:
     # ---- public --------------------------------------------------------
     def send(self, chat_id: str, text: str, context: str = "", add_dirs: list[str] | None = None,
              meta: dict | None = None, on_done: Any = None, images: list[dict] | None = None,
-             files: list[dict] | None = None, shown: str | None = None) -> dict:
+             files: list[dict] | None = None, shown: str | None = None, title: str | None = None) -> dict:
         """Start a reply, or queue the message behind the running one. Returns {"queued": bool}.
 
-        `text` goes to the agent; `shown` (default: the same) is what the transcript displays."""
+        `text` goes to the agent; `shown` (default: the same) is what the transcript displays. `title`: the chat's
+        name when this message is its first, set by the button that sent it ("星河科技 添加"); a typed first
+        message names the chat by its own start."""
         from .drivers import driver_for   # drivers builds on this module
         chat = self.store.meta(chat_id)
         if chat is None:
@@ -374,7 +376,7 @@ class ChatRunner:
                 context += "\n" + WINDOWS_TEXT_NOTE
         self.store.append(chat_id, msg)
         if chat.get("title") in (None, "", *UNTITLED, t("New chat")):
-            self.store.update_meta(chat_id, title=_title_from(text))
+            self.store.update_meta(chat_id, title=" ".join(str(title).split())[:60] if title and str(title).strip() else _title_from(text))
         else:
             self.store.update_meta(chat_id)
 

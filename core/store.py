@@ -150,6 +150,16 @@ class YamlStore:
                 self._parsed = (digest, self.parse(text))
             return copy.deepcopy(self._parsed[1]), digest
 
+    def peek(self) -> Any:
+        """The document as the file holds it now, shared, for a caller that only reads a setting or two: load()'s
+        copy of the whole document costs more than the rest of a look at the job-hunt table. Never change it."""
+        with self.lock:
+            text = self.read_text()
+            digest = self.digest_text(text)
+            if self._parsed is None or self._parsed[0] != digest:
+                self._parsed = (digest, self.parse(text))
+            return self._parsed[1]
+
     def parse(self, text: str) -> Any:
         doc = self._yaml.load(text)
         if self.upgrade:

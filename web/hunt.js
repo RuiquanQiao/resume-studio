@@ -967,7 +967,7 @@ function askLearn(cs) {
       { sites: named.map(([c, u]) => t("{company} ({sites})", { company: c.name, sites: u.join(", ") })).join("; ") })
     : t("Learn to read the careers sites of {names} that the scan can't read yet (show says which), and only those. For each one, first see whether its list is on a recruiting system the scan reads through its API (then give the site that list); only a list no API reads gets a scan route.",
       { names: cs.map((c) => c.name).join(", ") });
-  aiRun(aiKey("learn", cs), () => sendChat(ask, { fresh: true }), check);
+  aiRun(aiKey("learn", cs), () => sendChat(ask, { fresh: true, title: t("Learn the careers sites of {names}", { names: cs.map((c) => c.name).join(", ") }) }), check);
 }
 
 // a read the site's own count says is short: what was read, of how many, and that nothing unread was closed
@@ -982,7 +982,7 @@ function askShort(c, sh) {
       again: t("{name}'s scan still reads {n} of the {all} roles its site lists. Find where the rest go missing, fix the route and send it with scan-route, or tell me which step failed and the error.", { name: c.name, n: s2.short[0], all: s2.short[1] }) };
   });
   aiRun(aiKey("short", [c]), () => sendChat(t("{name}'s scan read {n} of the {all} roles its careers site says it lists. Find where the rest go missing (pages it stops before, a filter, roles kept as one, a page that timed out), fix its scan route and send it again with scan-route, until the counts agree.",
-    { name: c.name, n: sh[0], all: sh[1] }), { fresh: true }), check);
+    { name: c.name, n: sh[0], all: sh[1] }), { fresh: true, title: t("Fix the scan of {company}", { company: c.name }) }), check);
 }
 
 // a posting's tracks, as small tags beside its title
@@ -1058,7 +1058,7 @@ function askTracks() {
     ? { ok: true, say: t("Tracks set up: {names}", { names: huntTracks().map(trackName).join(", ") }) }
     : { ok: false, say: t("No tracks were saved. Its chat says why."), again: t("Save the tracks with `tracks --stdin` now.") });
   aiRun("tracks", () => sendChat(t("Set up my tracks: one per kind of role I go for, from my resume subsets and what you know about what I want, each with the words real postings use in their titles and the resume subset it goes out with. Then check them against one company's titles and tell me what you set up."),
-    { fresh: true }), check);
+    { fresh: true, title: t("Set up tracks") }), check);
 }
 
 // ---- Picked for you: every company's open roles that fall in a track, in one list
@@ -1458,9 +1458,11 @@ async function newCompany(name = "") {
       }
     } });
   if (!made) return null;
+  // the chat starts at once, the table and the company's page load beside it (user, 2026-11-08: the chat took
+  // seconds to show up); the prompt names the company, so it needs nothing the table brings
+  askFill([made], { adding: true });
   await loadHunt({ quiet: true });
-  openHunt("company", made.id);
-  askFill([made]);
+  await openHunt("company", made.id);
   return made;
 }
 
@@ -1600,7 +1602,7 @@ async function addFromLink() {
     return { ok: false, say: t("No role with this link was added"),
       again: t("No role with the link {url} is on the list yet. Add it with add-role, or tell me why it can't be added.", { url }) };
   });
-  aiRun("add-link", () => sendChat(t("Read this posting and add it: {url}", { url }), { fresh: true }), check);
+  aiRun("add-link", () => sendChat(t("Read this posting and add it: {url}", { url }), { fresh: true, title: t("Add a posting from {site}", { site: siteName(url).split("/")[0] }) }), check);
 }
 
 async function newApplication(companyId = null) {
@@ -1614,7 +1616,7 @@ async function newApplication(companyId = null) {
       try {
         let cid = fixed ? fixed.id : f.cid || (cs.find((c) => c.name.toLowerCase() === f.company.toLowerCase()) || {}).id;
         if (!cid) {
-          try { const made = (await api("POST", "/api/hunt/companies", { name: f.company, different: !!f.different })).company; cid = made.id; askFill([made]); }
+          try { const made = (await api("POST", "/api/hunt/companies", { name: f.company, different: !!f.different })).company; cid = made.id; askFill([made], { adding: true }); }
           catch (e) {
             if (e.status === 409 && e.data && e.data.same) cid = e.data.same.id;   // one of its other names: that company
             else if (sameCompany(e, f.company, m, { label: (c) => t("Use {company}", { company: c.name }), pick: (c) => m.retry({ cid: c.id }) })) return;
@@ -1846,7 +1848,8 @@ function askRewrite(cs) {
   });
   aiRun(aiKey("rewrite", cs), () => sendChat(cs.length === 1
     ? t("Write what is known about {company} again in {lang}: its industry, strength, size and the About, with the same facts and sources.", { company: cs[0].name, lang: cs[0].research.lang_name })
-    : t("Write what is known about these companies again, each in the language it is described in: their industry, strength, size and the About, with the same facts and sources. {names}", { names: cs.map((c) => c.name).join(", ") }), { fresh: true }), check);
+    : t("Write what is known about these companies again, each in the language it is described in: their industry, strength, size and the About, with the same facts and sources. {names}", { names: cs.map((c) => c.name).join(", ") }),
+    { fresh: true, title: t("Rewrite {names} in their language", { names: cs.map((c) => c.name).join(", ") }) }), check);
 }
 // on a company's page: what is there is in another language than the company is described in
 function languageBar(c) {
@@ -1876,7 +1879,7 @@ function askRead(a, c) {
     return { ok: false, say: t("The job description of {role} is still not filled in", { role: now.role }),
       again: t("The job description of {role} at {company} is still not filled in. Read {url} again and keep its text with jd, or tell me why the page can't be read.", { role: now.role, company: c.name, url: now.url }) };
   });
-  aiRun("read:" + a.id, () => sendChat(t("Read the posting at {url} and fill in {role} at {company}: its job description, location and apply-by date.", { url: a.url, role: a.role, company: c.name }), { fresh: true }), check);
+  aiRun("read:" + a.id, () => sendChat(t("Read the posting at {url} and fill in {role} at {company}: its job description, location and apply-by date.", { url: a.url, role: a.role, company: c.name }), { fresh: true, title: t("Read the posting of {role} at {company}", { role: a.role, company: c.name }) }), check);
 }
 
 // Claude researches each company and fills every field (docs/JOB_HUNT.md, 2026-10-18); one message each, queued in one chat
@@ -1889,7 +1892,8 @@ function unfilled(c) {
   return { empty: fillFields().filter(([k]) => !own(k) && !has(k)).map(([, l]) => l),
     unsourced: fillFields().filter(([k, , src]) => src && !own(k) && has(k) && !(c.sources || {})[k]).map(([, l]) => l) };
 }
-function askFill(cs) {
+// adding: the companies were just added (the chat is named "<company> 添加"), else asked to fill in again
+function askFill(cs, { adding = false } = {}) {
   if (!ui.chat.available) return;
   const ids = cs.map((c) => c.id);
   const check = huntCheck((d) => {
@@ -1909,12 +1913,13 @@ function askFill(cs) {
   });
   // one click does the whole company (user, 2026-11-04: "getting a company's information must never take two
   // clicks"): its fields, its careers sites, every site the scan can't read learnt, and its roles brought in
+  const title = adding ? t("Add {company}", { company: cs.map((c) => c.name).join(", ") }) : t("Fill in {names}", { names: cs.map((c) => c.name).join(", ") });
   aiRun(aiKey("fill", cs), async () => {
     let ok = false;
     let fresh = true;   // one new chat for them all: the rest queue in it
     for (const c of cs) {
       ok = await sendChat(t("Find out about {company} and fill in all its fields: industry, strength, headquarters, the cities it hires in, size, its careers sites, its logo and the About, each with a source.", { company: c.name })
-        + " " + t("Then bring its open roles in: scan it, learn every careers site the scan can't read yet, and scan again until its roles are on the list. It is done only when they are, or when you've shown it has no careers site that lists roles."), { fresh }) || ok;
+        + " " + t("Then bring its open roles in: scan it, learn every careers site the scan can't read yet, and scan again until its roles are on the list. It is done only when they are, or when you've shown it has no careers site that lists roles."), { fresh, title }) || ok;
       fresh = false;
     }
     return ok;

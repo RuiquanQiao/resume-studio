@@ -304,6 +304,30 @@ def test_question_and_plan_cards(server, fake_claude):
     assert server.req("GET", f"/api/chats/{cid}")[1]["chat"]["mode"] == "acceptEdits"   # the next reply does not re-plan
 
 
+def test_a_button_names_its_chat_and_a_typed_message_names_its_own(server, fake_claude):
+    """A button's chat was named after the first 28 characters of its prompt (user, 2026-11-08): the button names
+    it ("星河科技 添加"), an editor action is named by the server, a typed first message still by its start."""
+    cid = server.req("POST", "/api/chats")[1]["id"]
+    _send(server, cid, "Find out about 星河科技 and fill in all its fields: industry, strength, headquarters", title="星河科技 添加")
+    server.wait_idle(cid)
+    assert server.req("GET", f"/api/chats/{cid}")[1]["chat"]["title"] == "星河科技 添加"
+    _send(server, cid, "继续", title="别的名字")
+    server.wait_idle(cid)
+    assert server.req("GET", f"/api/chats/{cid}")[1]["chat"]["title"] == "星河科技 添加"     # only the first message names it
+    cid = server.req("POST", "/api/chats")[1]["id"]
+    _send(server, cid, "", action="polish", entry_id="EXP-002", subset_id="RES-TECH-EN")
+    server.wait_idle(cid)
+    title = server.req("GET", f"/api/chats/{cid}")[1]["chat"]["title"]
+    entry = next(e for e in server.req("GET", "/api/state")[1]["doc"]["entries"] if e["id"] == "EXP-002")
+    name = entry["title"] if isinstance(entry["title"], str) else entry["title"].get("en") or next(iter(entry["title"].values()))
+    assert title == f"{name} 润色"[:60]
+    cid = server.req("POST", "/api/chats")[1]["id"]
+    _send(server, cid, "   ", title="   ", attachments=[])                  # nothing to send: refused, still untitled
+    _send(server, cid, "帮我看看这一段经历写得怎么样", title="  ")             # a blank title: the message names it
+    server.wait_idle(cid)
+    assert server.req("GET", f"/api/chats/{cid}")[1]["chat"]["title"].startswith("帮我看看")
+
+
 def test_queue_while_running_and_interrupt(server, fake_claude):
     code, chat = server.req("POST", "/api/chats")
     cid = chat["id"]

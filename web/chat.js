@@ -1473,8 +1473,19 @@ async function freshChatForButton() {
   await openChat(c.id);
 }
 
-async function startChatWith(text, { fresh = false } = {}) {
+// the chat's name on screen before the server's answer (its first message names it there too: core/chat.py)
+function nameChatHere(title) {
+  const name = title.split(/\s+/).join(" ").trim().slice(0, 60);
+  const now = (ui.chat.meta || {}).title;
+  if (!name || !ui.chat.meta || (now && !["New chat", "新对话", t("New chat")].includes(now))) return;   // renamed by the user: theirs
+  ui.chat.meta = { ...ui.chat.meta, title: name };
+  ui.chat.list = ui.chat.list.map((c) => (c.id === ui.chat.id ? { ...c, title: name } : c));
+  renderChatSelect();
+}
+
+async function startChatWith(text, { fresh = false, title = "" } = {}) {
   if (fresh) { try { await freshChatForButton(); } catch (e) { toast(e.message); return; } }
+  ui.chat.nextTitle = title ? { chat: ui.chat.id, title } : null;   // no chat yet (null): the one sendChat makes
   showChat();
   const ta = $("#chat-input");
   ta.value = text;
@@ -1483,7 +1494,9 @@ async function startChatWith(text, { fresh = false } = {}) {
 }
 
 // fresh: sent by a button (not typed in the chat), so it goes to a new chat when Settings says so (aiNewChat)
-async function sendChat(text, { action = null, entryId = null, target = null, lang = null, path = null, files = [], fresh = false } = {}) {
+// title: the chat's name if this is its first message, for a button's chat (user, 2026-11-08: "星河科技 添加", not the
+// first 28 characters of its prompt); the server names an editor action's chat itself (resume/api.py chat_title)
+async function sendChat(text, { action = null, entryId = null, target = null, lang = null, path = null, files = [], fresh = false, title = "" } = {}) {
   if (!ui.chat.available) { toast(t("The {cmd} command was not found", { cmd: agentOf().exe })); return false; }
   if (!action && !text.trim() && !files.length) return false;
   if (fresh) await freshChatForButton();
@@ -1499,8 +1512,13 @@ async function sendChat(text, { action = null, entryId = null, target = null, la
   const batch = action && action.startsWith("batch_");
   const attachments = files.map((f) => (f.data ? { name: f.name, data: f.data } : { name: f.name, path: f.path }));
   const editing = W.ws === "resume" && ui.sel.kind === "entry" ? ui.sel.id : null;   // elsewhere the resume isn't on screen
-  const body = { text, subset_id: ui.subsetId, entry_id: batch ? null : entryId || editing, action, target, lang, path, attachments, screen: screenLine() };
+  // a button that only filled the composer (startChatWith) named the chat the user sends it in
+  const next = ui.chat.nextTitle;
+  const named = title || (next && (next.chat === ui.chat.id || next.chat === null) ? next.title : "");   // null: no chat then
+  ui.chat.nextTitle = null;
+  const body = { text, subset_id: ui.subsetId, entry_id: batch ? null : entryId || editing, action, target, lang, path, attachments, screen: screenLine(), title: named };
   const queued = ui.chat.running;
+  if (named && !queued && !ui.chat.messages.length) nameChatHere(named);   // shown at once; the server keeps the same
   if (!queued) {
     ui.chat.running = true;
     ui.chat.live = { blocks: [], started_at: Date.now() / 1000 };

@@ -1710,6 +1710,8 @@ def test_a_company_with_several_roles_goes_out_with_a_pinned_version(page, serve
     pg.click(".modal .btn.primary")
     pg.wait_for_selector(".hunt-wrap.is-page .ed-head h1:text('星河科技')")
     assert pg.input_value(".hunt-wrap input[placeholder^='https://careers']") == "https://careers.example.com/campus"
+    # the chat that fills it in is named for the button, not after its prompt (user, 2026-11-08)
+    pg.wait_for_selector("#chat-select .sel-label:text-is('星河科技 添加')")
     choose(pg, "#company-subset", "RES-TECH-EN")
     pg.wait_for_selector("#company-subset[data-value='RES-TECH-EN']")
     pg.fill("#company-add-role", "服务端研发工程师，算法工程师")

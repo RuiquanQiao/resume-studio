@@ -703,6 +703,62 @@ def test_an_older_postings_file_is_written_short_once(hunt):
     assert ps.slim_file() is False and ps.all() == []                      # no file: nothing to do
 
 
+def test_the_table_matches_each_title_once_and_counts_again_only_on_a_change(hunt, monkeypatch):
+    """53,000 postings took 12 s a look at the table (2026-11-08): every keyword folded the title again, and every
+    look counted them all again. A title is folded once per set of tracks; an unchanged count is kept."""
+    import jobhunt.postings as P
+    ps = Postings(hunt)
+    hunt.add_company({"name": "网易"})
+    ps.settings(tracks=[{"name": "AI", "keywords": ["AI", "算法", "Agent"]}])
+    ps.merge("C1", [{"title": f"AI 工程师 {i}", "url": f"https://hr.163.example/{i}"} for i in range(30)]
+             + [{"title": "前端开发", "url": "https://hr.163.example/fe"}], how="route")
+    folds = []
+    real = P._fold
+    monkeypatch.setattr(P, "_fold", lambda x: folds.append(x) or real(x))
+    P._TRACKED.clear()
+    s = ps.summary()["C1"]
+    assert (s["open"], s["matching"]) == (31, 30)
+    assert folds.count("前端开发") == 1                                     # not once per keyword it misses
+    folds.clear()
+    again = ps.summary()["C1"]
+    assert again["matching"] == 30 and not folds                          # nothing changed: nothing counted again
+    again["needs"] = "claude"
+    assert "needs" not in ps.summary()["C1"]                              # what the table adds stays the table's
+    ps.settings(tracks=[{"name": "前端", "keywords": ["前端"]}])
+    assert ps.summary()["C1"]["matching"] == 1                            # other tracks: counted again
+    ps.merge("C1", [{"title": "前端开发", "url": "https://hr.163.example/fe"}, {"title": "前端实习", "url": "https://hr.163.example/fe2"}], how="route")
+    s = ps.summary()["C1"]
+    assert (s["open"], s["matching"]) == (2, 2)                           # a scan's write: counted again
+    # the same answers as matching one title at a time
+    assert P.tracks_of("AI 前端", ps.tracks()) == ["T1"] and P.tracks_of("后端", ps.tracks()) == []
+    assert P.matches("AI 产品经理", ["AI+产品"]) and not P.matches("AI 应用工程师", ["AI+产品"])
+    assert not P.matches("Maintenance", ["AI"]) and not P.matches("AI 工程师", ["AI"], ["工程师"]) and P.matches("x", [])
+    assert not P.keyword_hits("AI 工程师", " + ")                           # a keyword with nothing in it hits nothing
+
+
+def test_scans_are_parsed_once_per_change(hunt, monkeypatch):
+    """The table asks for each company's scan state: 200 parses of a 700 KB scans.json a look (2026-11-08)."""
+    ps = Postings(hunt)
+    hunt.add_company({"name": "网易"})
+    ps.set_scan_state("C1", ok=True)
+    loads = []
+    real = hunt._load
+    monkeypatch.setattr(hunt, "_load", lambda name: loads.append(name) or real(name))
+    for _ in range(20):
+        ps.scan_state("C1"); ps.tracks(); ps.route("C1")
+    assert loads.count("scans.json") <= 1
+    ps.set_scan_state("C1", ok=False, error="timed out")
+    assert ps.scan_state("C1")["error"] == "timed out"                     # a write here is seen at once
+    f = hunt.dir / "scans.json"
+    d = json.loads(f.read_text(encoding="utf-8"))
+    d["companies"]["C1"]["error"] = "edited elsewhere"
+    time.sleep(0.02)
+    f.write_text(json.dumps(d), encoding="utf-8")
+    assert ps.scan_state("C1")["error"] == "edited elsewhere"              # so is one from outside
+    ps.set_scan_state("C1", ok=True)                                       # a change starts from the file, not the kept copy
+    assert ps.scan_state("C1")["error"] == "edited elsewhere" and ps.scan_state("C1")["ok"] is True
+
+
 def test_postings_are_parsed_once_per_change_and_never_changed_by_a_reader(hunt, monkeypatch):
     ps = Postings(hunt)
     hunt.add_company({"name": "网易"})
@@ -711,6 +767,9 @@ def test_postings_are_parsed_once_per_change_and_never_changed_by_a_reader(hunt,
     real = hunt._read
     monkeypatch.setattr(hunt, "_read", lambda name, key: reads.append(name) or real(name, key))
     ps.all(); ps.summary(); ps.changes(); ps.get("P1"); ps.by_url("https://hr.163.example/1")
+    assert reads.count("postings.json") == 0                               # the merge kept what it wrote: no parse
+    other = Postings(hunt)                                                 # another reader (the app started again)
+    other.all(); other.summary(); other.changes(); other.get("P1")
     assert reads.count("postings.json") == 1                               # the table, the news, a page: one parse
     # what a reader gets is a copy
     got = ps.get("P1")

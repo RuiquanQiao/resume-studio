@@ -757,7 +757,7 @@ function paintDocument({ keepScroll = true, flash = false } = {}) {
     h("div", null, t("Put every real experience here; pick for each resume later.")),
     h("div", { class: "acts" },
       h("button", { class: "btn primary sm", onclick: () => newEntry((sections().find((s) => s.id === "projects") || sections()[0] || {}).id || "projects") }, icon("plus"), t("Add entry")),
-      h("button", { class: "btn sm", onclick: () => startChatWith(t("Please import the experience from my old resume into resume.yaml. The old resume is at: "), { fresh: true }) }, icon("sparkle"), t("Let AI import")))));
+      h("button", { class: "btn sm", onclick: () => startChatWith(t("Please import the experience from my old resume into resume.yaml. The old resume is at: "), { fresh: true, title: t("Import my old resume") }) }, icon("sparkle"), t("Let AI import")))));
   mid.replaceChildren(wrap);
   ui.docSig = docSig();
   if (anchor) restoreAnchor(anchor); else mid.scrollTop = 0;
@@ -1727,7 +1727,7 @@ function sectionsForm() {
       h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, t("The AI will know your projects are here: ask it in the chat which ones are worth a place on your resume; picking a folder for an entry also starts here.")),
       rootRows,
       h("div", { class: "ev-actions" }, h("button", { class: "btn sm", onclick: addRoot }, icon("folder"), t("Choose folder")),
-        roots.length && ui.chat.available ? h("button", { class: "btn sm ghost", "data-ai": "pick-projects", onclick: () => aiRun("pick-projects", () => sendChat(t("Look at my project folders ({folders}) and pick the projects most worth putting on my resume, with your reasons. Don't change resume.yaml yet; once I confirm, add them one at a time.", { folders: roots.join(", ") }), { fresh: true })) }, icon("sparkle"), t("Let AI pick projects")) : null),
+        roots.length && ui.chat.available ? h("button", { class: "btn sm ghost", "data-ai": "pick-projects", onclick: () => aiRun("pick-projects", () => sendChat(t("Look at my project folders ({folders}) and pick the projects most worth putting on my resume, with your reasons. Don't change resume.yaml yet; once I confirm, add them one at a time.", { folders: roots.join(", ") }), { fresh: true, title: t("Pick projects for my resume") })) }, icon("sparkle"), t("Let AI pick projects")) : null),
     ]),
   ];
 }

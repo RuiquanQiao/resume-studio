@@ -23,6 +23,7 @@ or that has none and was posted over a year ago, is `stale`: kept and shown fold
 """
 from __future__ import annotations
 
+import functools
 import json
 import re
 import threading
@@ -126,28 +127,39 @@ def _fold(s: str) -> str:
     return " ".join("".join(ch for ch in s if not unicodedata.combining(ch)).split()).casefold()
 
 
-def _one(word: str, title: str) -> bool:
-    w = _fold(word)
-    if not w:
-        return False
-    if re.fullmatch(r"[a-z]{2,3}", w):
-        return re.search("(?<!" + _WORD + ")" + re.escape(w) + "(?!" + _WORD + ")", title) is not None
-    return w in title
+@functools.lru_cache(maxsize=4096)
+def _keyword(keyword: str) -> tuple | None:
+    """A keyword taken apart once: each part folded, a 2-3 letter acronym as its whole-word pattern. None: a part
+    that folds to nothing, so the keyword hits no title."""
+    out = []
+    for x in [x for x in re.split(r"\s*\+\s*", keyword) if x.strip()] or [keyword]:
+        w = _fold(x)
+        if not w:
+            return None
+        out.append(re.compile("(?<!" + _WORD + ")" + re.escape(w) + "(?!" + _WORD + ")") if re.fullmatch(r"[a-z]{2,3}", w) else w)
+    return tuple(out)
+
+
+def _hits(folded: str, keyword: str) -> bool:
+    parts = _keyword(keyword)
+    return parts is not None and all((x in folded) if isinstance(x, str) else x.search(folded) is not None for x in parts)
 
 
 def keyword_hits(title: str, keyword: str) -> bool:
-    folded = _fold(title)
-    parts = [x for x in re.split(r"\s*\+\s*", keyword) if x.strip()] or [keyword]
-    return all(_one(x, folded) for x in parts)
+    return _hits(_fold(title), keyword)
+
+
+def _matches(folded: str, keywords: Any, exclude: Any) -> bool:
+    if exclude and any(_hits(folded, x) for x in exclude if x):
+        return False
+    if not keywords:
+        return True
+    return any(_hits(folded, k) for k in keywords if k)
 
 
 def matches(title: str, keywords: list[str], exclude: list[str] | None = None) -> bool:
     """Whether a title is one the user looks for: no keywords is every title; an excluded word rules it out."""
-    if exclude and any(keyword_hits(title, x) for x in exclude if x):
-        return False
-    if not keywords:
-        return True
-    return any(keyword_hits(title, k) for k in keywords if k)
+    return _matches(_fold(title), keywords, exclude)
 
 
 def _words(v: Any, limit: int = 40) -> list[str]:
@@ -175,9 +187,42 @@ def clean_tracks(v: Any) -> list[dict]:
     return out[:12]
 
 
+# 53,000 postings are matched against the tracks on every look at the table (12 s in 2026-11 when each keyword folded
+# the title again): a title's tracks are kept per set of tracks, the newest few sets only
+_TRACKED: dict[tuple, dict[str, tuple[str, ...]]] = {}
+_TRACKED_LOCK = threading.Lock()
+
+
+_LAST_TRACKS: list = [None, None]   # [the list asked about last, its key]: the same list 53,000 times in a row
+
+
+def _tracks_key(tracks: list[dict]) -> tuple:
+    last = _LAST_TRACKS
+    if last[0] is tracks:
+        return last[1]
+    key = tuple((tr["id"], tuple(tr["keywords"]), tuple(tr.get("exclude") or ())) for tr in tracks)
+    _LAST_TRACKS[:] = [tracks, key]
+    return key
+
+
 def tracks_of(title: str, tracks: list[dict]) -> list[str]:
     """The tracks a title belongs to (their ids); a track with no keywords takes none."""
-    return [tr["id"] for tr in tracks if tr["keywords"] and matches(title, tr["keywords"], tr["exclude"])]
+    key = _tracks_key(tracks)
+    seen = _TRACKED.get(key)
+    if seen is None:
+        with _TRACKED_LOCK:
+            seen = _TRACKED.get(key)
+            if seen is None:
+                while len(_TRACKED) >= 4:
+                    _TRACKED.pop(next(iter(_TRACKED)))
+                seen = _TRACKED[key] = {}
+    got = seen.get(title)
+    if got is None:
+        folded = _fold(title)
+        got = tuple(tr["id"] for tr in tracks if tr["keywords"] and _matches(folded, tr["keywords"], tr["exclude"]))
+        if len(seen) < 200_000:
+            seen[title] = got
+    return list(got)
 
 
 def wanted(title: str, tracks: list[dict]) -> bool:
@@ -213,28 +258,49 @@ class Postings:
     def __init__(self, hunt: Hunt):
         self.hunt = hunt
         self._kept: tuple[tuple[int, int], dict] | None = None
+        self._scans_kept: tuple[tuple[int, int], dict] | None = None
+        self._summary_kept: tuple | None = None
         self._kept_lock = threading.Lock()
 
     # ---- files ----
+    def _sig(self) -> tuple[int, int]:
+        try:
+            st = self.hunt._file("postings.json").stat()
+            return (st.st_mtime_ns, st.st_size)
+        except OSError:
+            return (0, 0)
+
     def _data(self) -> dict:
-        """Fresh, for a change that is written back (_save)."""
+        """Fresh, for a change that is written back (_save): a copy of the kept view while the file is as it was
+        (each scan wrote back after parsing 24 MB again: a second a company), else read from the file."""
+        sig = self._sig()
+        with self._kept_lock:
+            kept = self._kept if self._kept and self._kept[0] == sig and sig != (0, 0) else None
+        if kept:
+            v = kept[1]
+            return {**{k: x for k, x in v.items() if k != "postings"},
+                    "postings": [{**p, "changed": dict(p["changed"])} for p in v["postings"]]}
         data = self.hunt._read("postings.json", "postings")
         for p in data["postings"]:
             _full(p)
         return data
 
     def _save(self, data: dict) -> None:
-        self.hunt._write("postings.json", {"next": data["next"], "postings": [_slim(p) for p in data["postings"]]}, rows="postings")
-        with self._kept_lock:
-            self._kept = None
-
-    def _view(self) -> dict:
-        """The postings as the file holds them now, parsed once per change of the file. Never changed by a caller."""
+        rows = [_slim(p) for p in data["postings"]]
+        self.hunt._write("postings.json", {"next": data["next"], "postings": rows}, rows="postings")
+        # what was just written is the new view, without parsing 24 MB again (copies: the caller may go on with `data`)
+        kept = {"next": data["next"], "postings": [_full({**x, "changed": dict(x["changed"])} if "changed" in x else dict(x)) for x in rows]}
         try:
             st = self.hunt._file("postings.json").stat()
             sig = (st.st_mtime_ns, st.st_size)
         except OSError:
-            sig = (0, 0)
+            sig = None
+        with self._kept_lock:
+            self._kept = (sig, kept) if sig else None
+
+    def _view(self) -> dict:
+        """The postings as the file holds them now, parsed once per change of the file. Never changed by a caller."""
+        sig = self._sig()
         with self._kept_lock:
             if self._kept and self._kept[0] == sig:
                 return self._kept[1]
@@ -258,6 +324,23 @@ class Postings:
         return True
 
     def scans(self) -> dict:
+        """scans.json as it is now, parsed once per change of the file (the table asks for it once per company:
+        200 parses of 700 KB a look). Shared: never changed by a caller; a change goes through _fresh_scans."""
+        try:
+            st = self.hunt._file("scans.json").stat()
+            sig = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            sig = (0, 0)
+        with self._kept_lock:
+            if self._scans_kept and self._scans_kept[0] == sig:
+                return self._scans_kept[1]
+        d = self._fresh_scans()
+        with self._kept_lock:
+            self._scans_kept = (sig, d)
+        return d
+
+    def _fresh_scans(self) -> dict:
+        """Read from the file, for a change that is written back (under the tracker's lock)."""
         try:
             d = json.loads(self.hunt._load("scans.json") or "{}")
         except ValueError:
@@ -274,11 +357,13 @@ class Postings:
 
     def _save_scans(self, d: dict) -> None:
         self.hunt._write("scans.json", d)
+        with self._kept_lock:
+            self._scans_kept = None
 
     def settings(self, keywords: Any = None, daily: Any = None, tracks: Any = None) -> dict:
         """`tracks` sets the whole list; `keywords` (the one list before tracks) the first track's keywords."""
         with self.hunt.lock:
-            d = self.scans()
+            d = self._fresh_scans()
             if tracks is not None:
                 d["tracks"] = clean_tracks(tracks)
             elif keywords is not None:
@@ -301,7 +386,7 @@ class Postings:
 
     def set_scan_state(self, cid: str, **fields: Any) -> dict:
         with self.hunt.lock:
-            d = self.scans()
+            d = self._fresh_scans()
             st = {**(d["companies"].get(cid) or {}), **fields}
             d["companies"][cid] = st
             self._save_scans(d)
@@ -309,7 +394,7 @@ class Postings:
 
     def mark_all_scanned(self) -> None:
         with self.hunt.lock:
-            d = self.scans()
+            d = self._fresh_scans()
             d["last_all"] = _now()
             self._save_scans(d)
 
@@ -498,12 +583,20 @@ class Postings:
 
     def summary(self) -> dict:
         """Per company: open postings, how many match the keywords, what the last scan brought (for the table).
-        Stale ones (still listed, probably over) count apart, never as open."""
+        Stale ones (still listed, probably over) count apart, never as open. Counted again only when the postings,
+        the scans or the day change; each company's row is the caller's to add to."""
         d = self.scans()
+        view = self._view()
+        sig = (id(view), id(d), time.strftime("%Y-%m-%d"))
+        kept = self._summary_kept
+        if not kept or kept[0] != sig:
+            kept = self._summary_kept = (sig, self._summary(d, view["postings"]), (view, d))   # holds them: ids stay theirs
+        return {cid: dict(s) for cid, s in kept[1].items()}
+
+    def _summary(self, d: dict, ps: list[dict]) -> dict:
         trs = d["tracks"]
         out: dict[str, dict] = {}
         today = time.strftime("%Y-%m-%d")
-        ps = self._view()["postings"]
         for p in ps:
             s = out.setdefault(p["company"], {"open": 0, "matching": 0, "stale": 0, "tracks": {}})
             if p.get("closed"):
@@ -569,7 +662,7 @@ class Postings:
             data = self._data()
             data["postings"] = [p for p in data["postings"] if p["company"] != cid]
             self._save(data)
-            d = self.scans()
+            d = self._fresh_scans()
             d["companies"].pop(cid, None)
             self._save_scans(d)
 
