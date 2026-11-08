@@ -288,6 +288,12 @@ class ManagedBrowser:
         self.last_used = 0.0
         self.idle_close = idle_close          # seconds after the work is done
         self.closing = False                  # within CLOSE_WARNING of closing itself
+        # Reading needs no window: a scan, a lookup or a chat reading pages runs the browser with none (headless),
+        # so nothing shows up beside the screen's edge or flashes in the taskbar while the user is in another app
+        # (2026-11-09). It gets a window only when the user should see it: they ask to, they sign in, or work is
+        # done there on their behalf (`show`). `shown` says which this one is.
+        self.shown = False
+        self.ua: dict | None = None           # a windowless browser's user agent, said as a windowed one says it
 
     # ---- whose tab ------------------------------------------------------------
     @property
@@ -398,7 +404,7 @@ class ManagedBrowser:
         return {"state": self.state, "error": self.error, "browser": NAMES.get(self.kind or (found or ("", ""))[0], ""),
                 "found": bool(found), "url": page.get("url", ""), "title": page.get("title", ""),
                 "tabs": sum(1 for p in self.pages.values() if p.get("type") == "page"), "signin_url": self.signin_url,
-                "owner": self.owner, "closing": self.closing}
+                "owner": self.owner, "closing": self.closing, "shown": self.shown}
 
     def _changed(self) -> None:
         if self.on_change:
@@ -408,15 +414,19 @@ class ManagedBrowser:
                 pass
 
     def _lost(self) -> None:
-        self.state, self.conn, self.owner, self.closing = "off", None, "", False
+        self.state, self.conn, self.owner, self.closing, self.shown, self.ua = "off", None, "", False, False, None
         self.pages, self.sessions, self.contexts, self.tab_of, self.last_tab = {}, {}, {}, {}, None
         self.closed = set()
 
-    def ensure(self) -> bool:
-        """Running and connected, starting it (or reattaching to the one left open) when needed.
+    def ensure(self, window: bool = False) -> bool:
+        """Running and connected, starting it (or reattaching to the one left open) when needed: without a window,
+        unless `window` (then a windowless one running now is opened anew with one, see `show`).
         True when this call started the browser (a caller that did may close it again when it is done)."""
         with self.lock:
             if self.conn is not None and not self.conn.closed:
+                if window and not self.shown:
+                    self._reopen_shown()
+                    return False
                 return False
             if self.state == "signin":
                 raise BrowserError("The browser is open for signing in, without Resume Studio's control. "
@@ -437,21 +447,63 @@ class ManagedBrowser:
                 port = self._live_port(port_file)
                 if port is None:
                     port_file.unlink(missing_ok=True)
-                    self._launch(exe, profile)
+                    self._launch(exe, profile, window)
                     started = True
                     port = self._wait_port(port_file)
+                    self.shown = window
+                else:   # one left open by an earlier run: shown unless it is a windowless one
+                    # (Edge names itself "Edg/…" either way; the user agent says HeadlessChrome)
+                    self.shown = "HeadlessChrome" not in str(version_info(port).get("User-Agent", ""))
                 self._connect(port)
             except (BrowserError, CdpError, OSError) as e:
                 self.state, self.error = "error", str(e)
                 self._changed()
                 raise BrowserError(str(e)) from e
             self.state = "running"
-            # one left open by an earlier run of the app was not started for this work: it is the user's
-            self.owner, self.last_used = ("work" if started else "user"), time.time()
-            if started:
+            # one left open by an earlier run of the app was not started for this work: it is the user's, unless it
+            # has no window (nobody can be using it: it closes itself like one work started)
+            work = started or not self.shown
+            self.owner, self.last_used = ("work" if work else "user"), time.time()
+            if work:
                 threading.Thread(target=self._close_when_done, args=(self.conn,), daemon=True, name="browser-idle").start()
             self._changed()
+            if window and not self.shown:
+                self._reopen_shown()
             return started
+
+    def _reopen_shown(self) -> None:
+        """The windowless browser, opened anew with a window on the same profile (one profile is one browser
+        process, so it can't just grow a window). Each piece of work finds its page again, in a tab of its own as
+        before; what was typed into a page and not sent is lost, so work that fills a form shows the browser first."""
+        with self.lock:
+            keep = [(k, (self.pages.get(t) or {}).get("url", "")) for k, t in self.tab_of.items()
+                    if not str(k or "").startswith("read:")]
+            last = next((k for k, t in self.tab_of.items() if t == self.last_tab), None)
+            owner = self.owner
+            self.stop()
+            if not self._wait_free(self.profile_dir(self.kind)):
+                raise BrowserError(f"{NAMES.get(self.kind, 'The browser')} didn't close to open again with a window. Try again.")
+            self.ensure(window=True)
+            assert self.conn is not None
+            if owner == "user":
+                self.owner = "user"
+            for k, url in keep:
+                if not url.startswith(("http://", "https://")):
+                    continue
+                tid = self.tab_of.get(None) if k is None else self._new_tab()
+                if tid is None:
+                    tid = self.tab_of[None] = self._new_tab()
+                self.tab_of[k] = tid
+                try:
+                    sid = self.conn.send("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
+                    self.sessions[tid] = sid
+                    self.conn.send("Page.enable", session=sid)
+                    self.conn.send("Page.navigate", {"url": url}, session=sid)
+                except CdpError:
+                    pass   # the work's next command opens it again
+                if k == last:
+                    self.last_tab = tid
+            self._changed()
 
     def _live_port(self, port_file: Path) -> int | None:
         try:
@@ -461,7 +513,7 @@ class ManagedBrowser:
         except (OSError, ValueError, IndexError):
             return None
 
-    def _launch(self, exe: str, profile: Path) -> None:
+    def _launch(self, exe: str, profile: Path, window: bool = False) -> None:
         profile.mkdir(parents=True, exist_ok=True)
         self.log.parent.mkdir(parents=True, exist_ok=True)
         args = [exe, f"--user-data-dir={profile}", "--remote-debugging-port=0", "--no-first-run",
@@ -470,7 +522,7 @@ class ManagedBrowser:
                 # (otherwise screenshots stall and pages pause their timers)
                 "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding",
                 "--disable-background-timer-throttling"]
-        if self.headless:
+        if self.headless or not window:   # self.headless: the tests', never with a window
             args += ["--headless=new", "--window-size=1280,900"]
         args.append("about:blank")
         flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
@@ -495,6 +547,7 @@ class ManagedBrowser:
 
     def _connect(self, port: int) -> None:
         info = version_info(port)
+        self.ua = self._windowed_ua(str(info.get("User-Agent") or ""))
         conn = Connection(info["webSocketDebuggerUrl"])
         conn.listeners.append(self._on_event)
         self.conn = conn
@@ -503,6 +556,23 @@ class ManagedBrowser:
             self._track(t)
         pages = [tid for tid, p in self.pages.items() if p["type"] == "page"]
         self.tab_of = {None: pages[-1] if pages else self._new_tab()}
+
+    def _windowed_ua(self, ua: str) -> dict | None:
+        """A windowless browser names itself "HeadlessChrome" in its user agent, which some sites refuse; every
+        page it works on is told the user agent the same browser says with a window (a real browser either way).
+        None for a browser with a window."""
+        if "HeadlessChrome" not in ua:
+            return None
+        full = (re.search(r"HeadlessChrome/([\d.]+)", ua) or re.search(r"Chrome/([\d.]+)", ua) or [None, "0"])[1]
+        major = full.split(".")[0]
+        brand = "Microsoft Edge" if self.kind == "msedge" else "Google Chrome"
+        brands = [{"brand": "Chromium", "version": major}, {"brand": brand, "version": major},
+                  {"brand": "Not?A_Brand", "version": "99"}]
+        meta = {"brands": brands, "fullVersionList": [{**b, "version": full if b["brand"] != "Not?A_Brand" else "99.0.0.0"}
+                                                      for b in brands],
+                "fullVersion": full, "platform": "Windows" if os.name == "nt" else "Linux", "platformVersion": "",
+                "architecture": "x86", "model": "", "mobile": False, "bitness": "64", "wow64": False}
+        return {"userAgent": ua.replace("HeadlessChrome", "Chrome"), "userAgentMetadata": meta}
 
     def _new_tab(self, **opts: Any) -> str:
         """A blank tab, known at once (its targetCreated event may come after the first command for it)."""
@@ -613,6 +683,7 @@ class ManagedBrowser:
             if self.state == "signin":
                 self._close_signin()
         if url:
+            self.ensure(window=True)   # the user is looking at that page: it opens where they can see it
             self.open(url)
             self.front()
         return self.status()
@@ -768,6 +839,11 @@ class ManagedBrowser:
             sid = self.conn.send("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
             self.sessions[tid] = sid
             self.conn.send("Page.enable", session=sid)
+            if self.ua:
+                try:
+                    self.conn.send("Emulation.setUserAgentOverride", self.ua, session=sid)
+                except CdpError:
+                    pass   # it reads all the same, as itself
         return sid
 
     def _send(self, method: str, params: dict | None = None, timeout: float = 30.0) -> dict:
@@ -895,7 +971,9 @@ class ManagedBrowser:
             return here
 
     def front(self) -> None:
-        """Show the page being worked on (the user signs in there, or watches)."""
+        """Show the page being worked on (the user signs in there, or watches): a windowless browser is opened
+        anew with a window first."""
+        self.ensure(window=True)
         with self._page():
             self._send("Page.bringToFront")
             try:
@@ -1156,6 +1234,12 @@ class ManagedBrowser:
             try:
                 data = self._send("Page.captureScreenshot", params, timeout=20)["data"]
             except CdpError:
+                if not self.shown:   # no window to be minimized: a page still drawing, so wait and try once more
+                    time.sleep(1.0)
+                    data = self._send("Page.captureScreenshot", params, timeout=30)["data"]
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(base64.b64decode(data))
+                    return {**self.here(), "path": str(path)}
                 # a minimized window draws nothing to capture: show it, then try once more
                 self.front()
                 time.sleep(0.5)

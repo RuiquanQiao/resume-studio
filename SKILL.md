@@ -397,9 +397,15 @@ Edge) with a profile of its own in `<skill>/.local/browser/` and drives it over 
   "send the code" silently never arrives). Then `browser.py sign-in <url>` reopens the same browser
   profile without remote control for the user to sign in; browser commands are refused until they press
   "switch back" in the window. Never try to hide that the browser is driven.
+- The browser has no window while it only reads (scans, lookups, your `open`/`snapshot`/`text`): nothing
+  pops up or flashes while the user works elsewhere. It gets a window when the user should see it: run
+  `front` when they should look at or finish something there (a sign-in, a captcha), and **before you
+  start filling a form or changing anything on a site for them** (an application form, a profile edit):
+  `front` reopens the browser with a window, so text typed into a page before it is lost. Never click
+  the final submit of an application yourself; ask the user.
 - A browser started for work (a scan, a check, your commands) closes itself a minute after the work is
   done (no reply running, no scan or check). One the user opened stays open, and so does one you show
-  them with `front`: use `front` when the user should look at or finish something there.
+  them with `front`.
 - Each chat drives a tab of its own (the app gives the agent `RESUME_STUDIO_CHAT`, which the browser command
   sends), and so does each check for updates, so a scan chat and a push chat at the same time never land on
   each other's page. `tab <n>` refuses a tab that other work is using right now.

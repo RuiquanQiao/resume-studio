@@ -194,6 +194,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         site = site_of(req)
         st = fill.load(site.id)
         url = str((st.get("current") or {}).get("url") or "") or site.home
+        bro(lambda: browser.ensure(window=True))           # opened where the user sees it, not first without a window
         here = bro(lambda: browser.open(url if site.owns(url) else site.home))
         bro(browser.front)
         browser.claim()                                    # the user's now: it stays until they close it
@@ -285,7 +286,9 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         if over:
             raise HttpError(409, t("Shorten the text that is over {site}'s limit first: {items}", site=site.name,
                                    items=", ".join(i["label"] for i in over)))
-        bro(browser.ensure)
+        # changes go up on the user's behalf: in a browser they can watch and take over, from the start (showing it
+        # later would open it anew and lose what was typed)
+        bro(lambda: browser.ensure(window=True))
         st = fill.load(site.id)
 
         def profile_url(st: dict) -> str:

@@ -483,6 +483,51 @@ def test_a_browser_work_started_closes_itself_when_the_work_is_done(live, fake_s
         b.busy = lambda: bool(live.inst.chats.running())
 
 
+def test_work_runs_the_browser_with_no_window_and_pages_see_a_windowed_one(tmp_path, fake_site, monkeypatch):
+    """Reading (a scan, Claude's open/snapshot) starts the browser windowless, with no test switch on: nothing shows
+    beside the screen or flashes in the taskbar (2026-11-09). Pages still see the user agent of a windowed browser."""
+    from core.browser import ManagedBrowser
+    monkeypatch.setenv("RESUME_STUDIO_BROWSER", "msedge")
+    b = ManagedBrowser(tmp_path / "profiles", tmp_path / "browser.log", pace=0)   # headless=False: production's
+    try:
+        assert b.ensure() is True and b.status()["shown"] is False
+        assert "HeadlessChrome" in b.conn.send("Browser.getVersion")["userAgent"]
+        b.open(fake_site + "/linkedin/profile.html")
+        ua = b._eval_page("navigator.userAgent")
+        brands = b._eval_page("JSON.stringify(navigator.userAgentData ? navigator.userAgentData.brands : [])")
+        assert "Headless" not in ua and "Edg" in ua
+        assert "Headless" not in brands and "Microsoft Edge" in brands
+        assert b.read_page(fake_site + "/jobs/posting.html", "async (h) => document.title")   # a scan's read
+        assert b.status()["shown"] is False
+    finally:
+        b.stop()
+
+
+def test_showing_the_browser_reopens_it_with_a_window_and_keeps_each_works_page(live, fake_site):
+    """`front` (the 显示浏览器 button, a sign-in, a form filled for the user) opens the windowless browser anew with a
+    window; each chat finds its page again in its own tab. (The tests' browser stays headless, flagged shown.)"""
+    b = live.inst.browser
+    b.stop()
+    with b.acting("chat-a"):
+        b.open(fake_site + "/linkedin/profile.html")
+    with b.acting("chat-b"):
+        b.open(fake_site + "/jobs/posting.html")
+    assert b.status()["shown"] is False and b.status()["owner"] == "work"
+    first = b.conn
+    assert live.req("POST", "/api/browser/start", {})[1]["shown"] is True
+    assert b.conn is not first and b.status()["owner"] == "user"
+    with b.acting("chat-a"):
+        assert b.here()["url"].endswith("/linkedin/profile.html")
+    with b.acting("chat-b"):
+        assert b.here()["url"].endswith("/jobs/posting.html")
+    assert b.tab_of["chat-a"] != b.tab_of["chat-b"]
+    second = b.conn
+    b.front()                                                     # shown already: nothing reopens
+    assert b.conn is second
+    b.stop()
+    assert b.status()["shown"] is False
+
+
 def test_browser_command_drives_a_real_page(live, data_file, fake_site):
     """scripts/browser.py → the window → CDP → a headless Edge with its own profile."""
     r = cli(data_file, "open", fake_site + "/linkedin/profile.html")
