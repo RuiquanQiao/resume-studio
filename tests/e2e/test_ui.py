@@ -1731,17 +1731,32 @@ def test_the_browser_chip_says_whether_it_runs_in_the_background_or_a_window(pag
         pg.keyboard.press("Control+3")
         pg.wait_for_selector("#browser-here")
         show({"state": "off"}, "off")
-        assert "浏览器没打开" in pg.inner_text("#browser-here") and "显示浏览器" in pg.inner_text("#browser-show")
+        # the state is the button (user, 2026-11-09): no "Show the browser" or ⋯ of its own at the far end of the bar
+        assert "浏览器没打开" in pg.inner_text("#browser-here") and pg.get_attribute("#browser-show", "aria-label") == "打开浏览器"
+        assert pg.locator("#ws-tools button").count() == 2 and "显示浏览器" not in pg.inner_text("#ws-tools")
+        assert pg.is_disabled("#browser-here .bchip-menu")   # there, greyed: nothing in it while the browser is off
+        # read in one go: the chip is drawn again as the state comes in, and a locator can land between two drawings
+        menu_right = "() => document.querySelector('#browser-here .bchip-menu').getBoundingClientRect().right"
+        menu_off = pg.evaluate(menu_right)
         page_url = "https://campus.tj-sports.com/apply"
         show({"state": "running", "shown": False, "working": True, "url": page_url}, "working")
-        assert pg.inner_text("#browser-here .bh-mode") == "后台"
+        assert pg.inner_text("#browser-here .bchip-mode") == "后台" and pg.get_attribute("#browser-show", "aria-label") == "显示浏览器"
+        assert "点一下显示浏览器" in pg.get_attribute("#browser-show", "data-tip")
         assert pg.evaluate("getComputedStyle(document.querySelector('#browser-here .fb-dot')).animationName") == "pulse"
+        # the ▾ stays where it was: the bar doesn't move when the browser opens
+        assert abs(pg.evaluate(menu_right) - menu_off) < 1 and not pg.is_disabled("#browser-here .bchip-menu")
+        pg.click("#browser-here .bchip-menu")
+        assert "关闭浏览器" in pg.inner_text(".menu")
+        pg.keyboard.press("Escape")
+        # pointed at, it looks pressable
+        pg.hover("#browser-show")
+        assert pg.evaluate("getComputedStyle(document.querySelector('#browser-show')).cursor") == "pointer"
         pg.screenshot(path=str(ART / "browser-chip-background.png"), clip=pg.locator("#browser-here").bounding_box())
         show({"state": "running", "shown": False, "working": False, "url": page_url}, "working")   # a moment after the last command
         pg.wait_for_function("() => document.querySelector('#browser-here').dataset.mode === 'background'", timeout=6000)
         assert pg.evaluate("getComputedStyle(document.querySelector('#browser-here .fb-dot')).animationName") == "none"
         show({"state": "running", "shown": True, "working": True, "url": page_url}, "window")
-        assert pg.inner_text("#browser-here .bh-mode") == "已显示" and "切到浏览器" in pg.inner_text("#browser-show")
+        assert pg.inner_text("#browser-here .bchip-mode") == "已显示" and pg.get_attribute("#browser-show", "aria-label") == "切到浏览器"
         # a long address stays inside the bar
         show({"state": "running", "shown": False, "working": False, "url": page_url + "?source=university&" + "x" * 300}, "background")
         for size, scheme in (((2000, 1000), "light"), ((900, 800), "dark"), ((1440, 900), "light")):
@@ -1749,10 +1764,15 @@ def test_the_browser_chip_says_whether_it_runs_in_the_background_or_a_window(pag
             pg.emulate_media(color_scheme=scheme)
             pg.wait_for_timeout(150)
             over = pg.evaluate("""() => { const c = document.querySelector('#browser-here'), bar = c.closest('.ws-tools'),
-                btn = document.querySelector('#browser-show').getBoundingClientRect(), r = c.getBoundingClientRect();
+                r = c.getBoundingClientRect(), page = c.querySelector('.bchip-page').getBoundingClientRect(),
+                menu = c.querySelector('.bchip-menu').getBoundingClientRect();
                 return r.right > bar.getBoundingClientRect().right + 1 || bar.scrollWidth > bar.clientWidth + 1
-                  || document.documentElement.scrollWidth > innerWidth || (r.right > btn.left && r.top < btn.bottom && r.bottom > btn.top); }""")
+                  || document.documentElement.scrollWidth > innerWidth || page.right > menu.left + 1 || menu.right > r.right + 1; }""")
             assert not over, (size, scheme)
+            # the page's name is shown whole enough to read, or not at all: never a stub like "ca…"
+            name_w = pg.evaluate("() => { const p = document.querySelector('#browser-here .bchip-page'); "
+                                 "return p.offsetParent ? p.getBoundingClientRect().width : 0; }")
+            assert name_w == 0 or name_w > 80, (size, name_w)
             bar = pg.locator("#browser-here").evaluate("(c) => { const r = c.closest('.topbar, header, .ws-tools').getBoundingClientRect(); "
                                                        "return {x: r.x, y: r.y, width: r.width, height: r.height}; }")
             pg.screenshot(path=str(ART / f"browser-chip-{size[0]}-{scheme}.png"), clip=bar)
@@ -2767,11 +2787,19 @@ AI_CHECK = """async ({run, data, finish = true}) => {
   eval(run);
   for (let i = 0; i < 100 && window.sent.length === before; i++) await new Promise((r) => setTimeout(r, 30));
   await new Promise((r) => setTimeout(r, 30));
-  if (finish) aiRunDone('check-chat', null);
+  // the chat ends; work not done is sent back by itself (AI_AGAIN times), and each of those ends the same way
+  const autos = [];
+  for (let n = 0; finish && n < 5; n++) {
+    const k = window.sent.length;
+    aiRunDone('check-chat', null);
+    await new Promise((r) => setTimeout(r, 60));
+    if (window.sent.length === k) break;
+    autos.push(document.querySelector('#toast span').textContent);
+  }
   await new Promise((r) => setTimeout(r, 30));
   const el = document.querySelector('#toast');
   return {say: el.querySelector('span').textContent, warn: el.classList.contains('warn'), again: el.querySelector('button') ? el.querySelector('button').textContent : null,
-          sent: window.sent};
+          sent: window.sent, autos};
 }"""
 
 
@@ -2787,13 +2815,18 @@ def test_an_ai_button_checks_its_work_when_the_chat_ends(page_all):
                                  "data": {"companies": [c], "applications": []}})
     # it says what is so, never whose fault it is (思摩尔国际, 2026-11-04: the AI found the list, the scan didn't know it)
     assert out["warn"] and out["say"] == "AI 试过了，扫描还是读不了：join.test.example/Default.aspx。它在对话里说了查到什么。", out
-    assert pg.evaluate("window.tried") == [["/api/hunt/companies/C91/learn-tried", {"sites": ["https://join.test.example/Default.aspx"]}]]
+    assert pg.evaluate("window.tried") == [["/api/hunt/companies/C91/learn-tried", {"sites": ["https://join.test.example/Default.aspx"]}]] * 3
     # the AI is handed the sites no scan reads, by name, and told to leave the others alone (星河科技, 2026-11-03)
     assert "只学这些：测试大学（https://join.test.example/Default.aspx）" in out["sent"][0] and "不要动" in out["sent"][0], out["sent"]
+    # not done is never handed in ("AI老是不负责任地撂挑子", 2026-11-09): sent back by itself twice, with what is
+    # missing and that stopping needs proof, before the window asks the user
+    assert len(out["sent"]) == 3 and len(out["autos"]) == 2, out
+    assert all(a.startswith("还没做完，") and "join.test.example" in a for a in out["autos"]), out["autos"]
+    assert all("scan-route" in m and "做完之前不要停" in m for m in out["sent"][1:]), out["sent"]
     assert out["again"] == "再让 AI 做一次"
     pg.click("#toast button")
-    pg.wait_for_function("() => window.sent.length === 2")
-    assert "scan-route" in pg.evaluate("window.sent[1]") and pg.evaluate("AI_WORK.has('learn:C91')")
+    pg.wait_for_function("() => window.sent.length === 4")
+    assert "scan-route" in pg.evaluate("window.sent[3]") and pg.evaluate("AI_WORK.has('learn:C91')")
     # recorded: it says what was done
     pg.evaluate("() => { AI_WORK.clear(); }")
     c["postings"] = {"needs": "", "unrouted": []}

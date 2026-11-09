@@ -2298,5 +2298,11 @@
  "In the background": "Im Hintergrund",
  "Switch to the browser": "Zum Browser wechseln",
  "In a window: {page}": "Angezeigt: {page}",
- "In the background: {page}": "Im Hintergrund: {page}"
+ "In the background: {page}": "Im Hintergrund: {page}",
+ "Not done yet, so {agent} goes on: {missing}": "Noch nicht fertig, {agent} macht weiter: {missing}",
+ "Don't stop until it is done, or until you have shown it can't be: each way you tried, the exact request and what came back.": "Hör nicht auf, bevor es fertig ist oder du gezeigt hast, dass es nicht geht: jeden Weg, den du versucht hast, die genaue Anfrage und was zurückkam.",
+ "Open the browser": "Browser öffnen",
+ "Running in the background with no window, so it doesn't get in your way. Click to show it.": "Läuft im Hintergrund ohne Fenster und stört dich nicht. Klicken, um ihn zu zeigen.",
+ "Open in a window of its own. Click to bring it to the front.": "In einem eigenen Fenster offen. Klicken, um es nach vorn zu holen.",
+ "Click to open Resume Studio's browser": "Klicken, um den Browser von Resume Studio zu öffnen"
 }

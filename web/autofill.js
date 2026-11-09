@@ -812,21 +812,32 @@ function browserTip(mode) {
     : mode === "window" ? t("Open in a window of its own") : "";
 }
 
+// The browser's state is the button that shows it (user, 2026-11-09): one chip, right of the bar, the status and
+// what it does in one place; its ▾ holds the rest and is always there, greyed while the browser is off, so nothing
+// moves when the browser opens or closes. The dot pulses only while the AI works in it.
 function renderFillTools(el) {
   const b = F.browser || {};
   const mode = browserMode(b);
   const page = pageName(b) || t("Resume Studio's browser");
-  el.replaceChildren(...[
-    h("span", { class: "ws-here", id: "browser-here", "data-mode": mode, title: browserTip(mode) }, browserDot(mode),
-      mode === "off" || mode === "starting" ? h("span", null, mode === "starting" ? t("starting…") : t("The browser isn't open"))
-        : [h("span", { class: "bh-mode" }, mode === "window" ? t("In a window") : t("In the background")), h("b", null, page)]),
+  const running = b.state === "running";
+  const tip = mode === "working" || mode === "background" ? t("Running in the background with no window, so it doesn't get in your way. Click to show it.")
+    : mode === "window" ? t("Open in a window of its own. Click to bring it to the front.")
+    : mode === "starting" ? "" : t("Click to open Resume Studio's browser");
+  const items = [
+    /^https?:/.test(b.url || "") && { label: t("Sign in here without remote control"), icon: "user", onClick: () => signInMode(b.url) },
+    running && { label: t("Close the browser"), icon: "x", onClick: async () => { F.browser = await api("POST", "/api/browser/stop", {}); paintFillBrowser(); renderWsTools(); } },
+  ].filter(Boolean);
+  el.replaceChildren(
     h("span", { class: "spacer" }),
-    h("button", { class: "btn ghost", id: "browser-show", disabled: b.found === false, title: t("Bring the browser window to the front"), onclick: showBrowser },
-      icon("external"), h("span", { class: "lbl" }, mode === "window" ? t("Switch to the browser") : t("Show the browser"))),
-    b.state === "running" && h("button", { class: "btn icon ghost", title: t("More"), onclick: (e) => openMenu(e.currentTarget, [
-      /^https?:/.test(b.url || "") && { label: t("Sign in here without remote control"), icon: "user", onClick: () => signInMode(b.url) },
-      { label: t("Close the browser"), icon: "x", onClick: async () => { F.browser = await api("POST", "/api/browser/stop", {}); paintFillBrowser(); renderWsTools(); } },
-    ], { align: "end", onClose: () => setTimeout(renderWsTools, 0) }) }, icon("more"))].filter(Boolean));
+    h("div", { class: "bchip", id: "browser-here", "data-mode": mode, role: "group", "aria-label": t("Resume Studio's browser") },
+      h("button", { class: "bchip-main", id: "browser-show", disabled: b.found === false || mode === "starting", title: tip,
+        "aria-label": mode === "window" ? t("Switch to the browser") : running ? t("Show the browser") : t("Open the browser"), onclick: showBrowser },
+        browserDot(mode),
+        mode === "off" || mode === "starting" ? h("span", { class: "bchip-mode" }, mode === "starting" ? t("starting…") : t("The browser isn't open"))
+          : [h("span", { class: "bchip-mode" }, mode === "window" ? t("In a window") : t("In the background")),
+            h("span", { class: "bchip-sep", "aria-hidden": "true" }, "·"), h("span", { class: "bchip-page" }, page)]),
+      h("button", { class: "bchip-menu", title: t("More"), "aria-label": t("More"), disabled: !items.length,
+        onclick: (e) => openMenu(e.currentTarget, items, { align: "end", onClose: () => setTimeout(renderWsTools, 0) }) }, icon("chev"))));
 }
 
 function fillWelcome() {

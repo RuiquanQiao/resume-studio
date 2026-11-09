@@ -2124,5 +2124,11 @@
  "In the background": "后台",
  "Switch to the browser": "切到浏览器",
  "In a window: {page}": "已显示：{page}",
- "In the background: {page}": "后台：{page}"
+ "In the background: {page}": "后台：{page}",
+ "Not done yet, so {agent} goes on: {missing}": "还没做完，{agent} 接着做：{missing}",
+ "Don't stop until it is done, or until you have shown it can't be: each way you tried, the exact request and what came back.": "做完之前不要停；要停，就先证明它做不到：列出你试过的每一种办法、发出的确切请求和得到的结果。",
+ "Open the browser": "打开浏览器",
+ "Running in the background with no window, so it doesn't get in your way. Click to show it.": "在后台运行，没有窗口，不会打扰你。点一下显示浏览器。",
+ "Open in a window of its own. Click to bring it to the front.": "在它自己的窗口里打开着。点一下切到浏览器。",
+ "Click to open Resume Studio's browser": "点一下打开 Resume Studio 的浏览器"
 }

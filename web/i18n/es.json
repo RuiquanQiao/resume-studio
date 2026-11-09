@@ -2298,5 +2298,11 @@
  "In the background": "En segundo plano",
  "Switch to the browser": "Ir al navegador",
  "In a window: {page}": "Visible: {page}",
- "In the background: {page}": "En segundo plano: {page}"
+ "In the background: {page}": "En segundo plano: {page}",
+ "Not done yet, so {agent} goes on: {missing}": "Aún no está hecho, {agent} sigue: {missing}",
+ "Don't stop until it is done, or until you have shown it can't be: each way you tried, the exact request and what came back.": "No pares hasta que esté hecho, o hasta mostrar que no se puede: cada forma que probaste, la petición exacta y lo que volvió.",
+ "Open the browser": "Abrir el navegador",
+ "Running in the background with no window, so it doesn't get in your way. Click to show it.": "Funciona en segundo plano, sin ventana, para no molestarte. Haz clic para mostrarlo.",
+ "Open in a window of its own. Click to bring it to the front.": "Abierto en su propia ventana. Haz clic para traerlo al frente.",
+ "Click to open Resume Studio's browser": "Haz clic para abrir el navegador de Resume Studio"
 }

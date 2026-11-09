@@ -1581,7 +1581,11 @@ function aiRunDone(chatId, error) {
 }
 
 // the chat ended: what it was asked to do is looked for in the data, never taken on its word. Done says what
-// was done; not done says what is missing and offers to ask again in the same chat, checked the same way.
+// was done; not done is sent back to the AI by itself, in the same chat with what is missing, up to AI_AGAIN times
+// ("AI老是不负责任地撂挑子", user, 2026-11-09: 小米's chat ended with 10 of its 783 roles); after that the window says
+// what is missing and offers to ask again, checked the same way.
+const AI_AGAIN = 2;
+const aiAgain = new Map();   // button's key -> times sent back by itself
 async function aiCheck(chatId, checks) {
   const results = [];
   for (const [key, w] of checks) {
@@ -1591,7 +1595,18 @@ async function aiCheck(chatId, checks) {
   }
   if (!results.length) return;
   const miss = results.find((r) => !r.ok);
-  if (!miss) { toast(results.map((r) => r.say).join(" · "), { ms: 6000 }); return; }
+  if (!miss) { results.forEach((r) => aiAgain.delete(r.key)); toast(results.map((r) => r.say).join(" · "), { ms: 6000 }); return; }
+  const sent = aiAgain.get(miss.key) || 0;
+  if (miss.again && sent < AI_AGAIN) {
+    aiAgain.set(miss.key, sent + 1);
+    toast(t("Not done yet, so {agent} goes on: {missing}", { agent: agentShortOf(chatId), missing: miss.say }), { ms: 8000 });
+    const text = miss.again + " " + t("Don't stop until it is done, or until you have shown it can't be: each way you tried, the exact request and what came back.");
+    // in its own chat, never switching the one the user has open
+    aiRun(miss.key, () => chatId === ui.chat.id ? sendChat(text)
+      : api("POST", `/api/chats/${chatId}/send`, { text, subset_id: ui.subsetId, screen: screenLine() }).then(() => ({ chat: { id: chatId } })), miss.check);
+    return;
+  }
+  aiAgain.delete(miss.key);
   toast(miss.say, { ms: 15000, warn: true, action: miss.again && { label: t("Ask again"), fn: async () => {
     if (chatId !== ui.chat.id) await openChat(chatId);
     showChat();

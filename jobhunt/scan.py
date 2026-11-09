@@ -26,6 +26,7 @@ import re
 import shutil
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit
@@ -34,7 +35,7 @@ from core.browser import BrowserError, PageNotOpened
 from core.cdp import CdpError
 from core.i18n import t
 
-from . import beisen
+from . import beisen, feishu
 from .postings import Postings
 from .store import Hunt, site_host, site_key
 
@@ -144,7 +145,11 @@ class Scanner:
         # 北森 sites, read by the scan itself (jobhunt/beisen.py); tests hand in their own
         self.beisen_detect: Callable[[str], bool] = beisen.detect
         self.beisen_read: Callable[[str], dict] = beisen.read
+        # Feishu tenants on any domain (jobhunt/feishu.py): career-ops' provider knows only *.jobs.feishu.cn
+        self.feishu_detect: Callable[[str], bool | None] = feishu.detect
+        self.feishu_read: Callable[[str], dict] = feishu.read
         self._not_beisen: set[str] = set()     # asked once per run of the app
+        self._not_feishu: set[str] = set()
         self._fresh: dict[str, dict] = {}      # company id -> what a route just tried (try_route) read, for its scan
 
     # ---- which sites, read how ----
@@ -226,6 +231,15 @@ class Scanner:
                 self._providers[u] = beisen.PROVIDER
             elif got is False:   # None: the site didn't answer; asked again at the next scan
                 self._not_beisen.add(u)
+        # then Feishu under the company's own domain (小米集团's xiaomi.jobs.f.mioffice.cn, 2026-11-09), the same way
+        for u in dict.fromkeys(urls):
+            if self._providers.get(u) or u in self._not_feishu:
+                continue
+            got = self.feishu_detect(u)
+            if got:
+                self._providers[u] = feishu.PROVIDER
+            elif got is False:
+                self._not_feishu.add(u)
 
     def live_state(self, c: dict) -> dict:
         """The company's scan state as its sites are now: a site that can't be scanned is warned about only while it
@@ -449,9 +463,12 @@ class Scanner:
             scripts = [p for p in scripts if not self._providers.get(p["url"])]
             # one list read once: two sites fronting the same board (its own page and the board itself) are one read
             lists = list(dict.fromkeys([*(self.list_of(s) for s in api), *via_api]))
-            ours = beisen.lists([u for u in lists if self._providers.get(u) == beisen.PROVIDER])
+            # the lists the scan reads itself (北森, Feishu on any domain); the rest through career-ops' providers
+            readers = {beisen.PROVIDER: (beisen.lists, self.beisen_read), feishu.PROVIDER: (feishu.lists, self.feishu_read)}
+            ours = [(prov, u) for prov, (each, _) in readers.items()
+                    for u in each([x for x in lists if self._providers.get(x) == prov])]
             for r in self._bridge([{"key": u, "name": c["name"], "url": u} for u in lists
-                                   if self._providers.get(u) != beisen.PROVIDER]):
+                                   if self._providers.get(u) not in readers]):
                 if r.get("error"):
                     errors.append(f"{r['url']}: {r['error']}")
                 else:
@@ -461,11 +478,17 @@ class Scanner:
             if ours:
                 keep = self._known_links(c["id"])
                 portals: set[str] = set()
-                for u in ours:
+                # two lists at a time: 小米's four Feishu portals took 4 to 12 minutes each from Australia (2026-11-09)
+                def one(pu: tuple[str, str]) -> dict | Exception:
                     try:
-                        r = self.beisen_read(u)
-                    except Exception as e:  # noqa: BLE001  (beisen.ReadFailed, or anything else the site does)
-                        errors.append(f"{u}: {e}")
+                        return readers[pu[0]][1](pu[1])
+                    except Exception as e:  # noqa: BLE001  (ReadFailed, or anything else the site does)
+                        return e
+                with ThreadPoolExecutor(2) as pool:
+                    got = list(pool.map(one, ours))
+                for (prov, u), r in zip(ours, got):
+                    if isinstance(r, Exception):
+                        errors.append(f"{u}: {r}")
                         continue
                     # one portal under two addresses (job.imou.com and imou.zhiye.com) is one list: read once
                     if r.get("portal") and r["portal"] in portals:
@@ -479,7 +502,7 @@ class Scanner:
                     counted += jobs
                     if isinstance(r.get("total"), int):
                         totals[u] = max(totals.get(u, 0), r["total"])
-                    hows.append(beisen.PROVIDER)
+                    hows.append(prov)
             if scripts:
                 if allow_route:
                     self.running[c["id"]] = "route"

@@ -49,6 +49,8 @@ os.environ["STUDIO_LOGOS"] = "off"
 os.environ["STUDIO_PLACES"] = "off"
 # whether a careers site is on 北森 is asked of the site itself; tests' made-up sites are never asked
 os.environ["STUDIO_BEISEN_DETECT"] = "off"
+# and whether it is a Feishu tenant on its own domain, the same way
+os.environ["STUDIO_FEISHU_DETECT"] = "off"
 # the user's own Claude Code settings (a model picked there, say) never reach the fake one's answers
 os.environ["CLAUDE_CONFIG_DIR"] = str(ROOT / ".cache" / "claude-config")
 os.environ.pop("ANTHROPIC_MODEL", None)

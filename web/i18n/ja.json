@@ -2124,5 +2124,11 @@
  "In the background": "バックグラウンド",
  "Switch to the browser": "ブラウザーに切り替え",
  "In a window: {page}": "表示中：{page}",
- "In the background: {page}": "バックグラウンド：{page}"
+ "In the background: {page}": "バックグラウンド：{page}",
+ "Not done yet, so {agent} goes on: {missing}": "まだ終わっていないので、{agent} が続けます：{missing}",
+ "Don't stop until it is done, or until you have shown it can't be: each way you tried, the exact request and what came back.": "終わるまで止めないでください。止めるなら、できないことを示してください：試した方法ごとに、送った正確なリクエストと返ってきた内容を。",
+ "Open the browser": "ブラウザーを開く",
+ "Running in the background with no window, so it doesn't get in your way. Click to show it.": "ウィンドウなしでバックグラウンドで動いているので、作業の邪魔をしません。クリックすると表示します。",
+ "Open in a window of its own. Click to bring it to the front.": "専用のウィンドウで開いています。クリックすると前面に出します。",
+ "Click to open Resume Studio's browser": "クリックすると Resume Studio のブラウザーを開きます"
 }

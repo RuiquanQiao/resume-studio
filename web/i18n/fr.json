@@ -2298,5 +2298,11 @@
  "In the background": "Arrière-plan",
  "Switch to the browser": "Aller au navigateur",
  "In a window: {page}": "Affiché : {page}",
- "In the background: {page}": "Arrière-plan : {page}"
+ "In the background: {page}": "Arrière-plan : {page}",
+ "Not done yet, so {agent} goes on: {missing}": "Pas encore fini, {agent} continue : {missing}",
+ "Don't stop until it is done, or until you have shown it can't be: each way you tried, the exact request and what came back.": "Ne t'arrête pas avant que ce soit fait, ou que tu aies montré que c'est impossible : chaque approche essayée, la requête exacte et ce qui est revenu.",
+ "Open the browser": "Ouvrir le navigateur",
+ "Running in the background with no window, so it doesn't get in your way. Click to show it.": "Il tourne en arrière-plan, sans fenêtre, pour ne pas vous déranger. Cliquez pour l'afficher.",
+ "Open in a window of its own. Click to bring it to the front.": "Ouvert dans sa propre fenêtre. Cliquez pour l'amener au premier plan.",
+ "Click to open Resume Studio's browser": "Cliquez pour ouvrir le navigateur de Resume Studio"
 }

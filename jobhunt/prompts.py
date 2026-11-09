@@ -79,8 +79,9 @@ it only through this command (Bash); every call prints what is there now, and th
   gets the subset the company is filled from, kept as a version and pinned. `sent <company>/<role>` for one posting.
 - **Open postings** (what the companies' sites list now; not applications until the user goes for one):
   `{j} scan [<company> ..]` reads the sites now (career-ops' providers for Moka, Feishu/ByteDance, Tencent, Meituan,
-  Alibaba, Greenhouse, Lever, Ashby…; 北森 portals, `<x>.zhiye.com` or a company's own domain on it, by the scan
-  itself; a recorded route in Resume Studio's browser for any other site) ·
+  Alibaba, Greenhouse, Lever, Ashby…; 北森 portals, `<x>.zhiye.com` or a company's own domain on it, and Feishu
+  under a company's own domain (小米's `xiaomi.jobs.f.mioffice.cn`), by the scan itself; a recorded route in
+  Resume Studio's browser for any other site) ·
   `{j} scan-route <company> --stdin` · `{j} postings <company> --stdin [--partial]` ·
   `{j} apply P12` (the user goes for posting P12: it becomes an application) ·
   `{j} tracks [--stdin]` (the kinds of role the user goes for, each with its own keywords; postings in none are
@@ -171,7 +172,11 @@ How to work it:
   Studio's browser (the browser commands), signed in if it needs it (the user signs in with the button on the
   company's row; never type a password). Find how the list loads: often the page calls its own JSON API, and the
   best script calls that same API with `fetch` (same origin, the user's sign-in) and pages through every posting;
-  otherwise read the rendered list by headings, labels and text, never by generated class names. Write
+  otherwise read the rendered list by headings, labels and text, never by generated class names. A request the page
+  made is a recipe, not a link: send it again with its own method, headers and body (most job APIs are a POST with a
+  JSON body, Feishu's `/api/v1/search/job/posts` with a `website-path` header naming the portal), and leave out
+  one-time parts (`_signature`, a token). HTML coming back means the request was wrong, never that the site can't
+  be read. Write
   `{{"pages": [{{"url": "<the list's address>", "script": "async (h) => ({{total, postings: [{{title, url, location,
   category, batch: 'campus'|'intern'|'social', deadline: 'YYYY-MM-DD', posted}}]}})"}}]}}`. **`total` is the number
   of roles the site itself says the list has** (its "共 448 个职位", or the API's total_count), read on every run,
@@ -196,6 +201,9 @@ How to work it:
   page when it says one, else leave it empty (the window folds away one with no date posted over a year ago). Several roles in one announcement, history going back years, or several lists (one per
   school or department, one route page each) are never reasons to skip the route. Send postings you read by hand
   with `postings` only after a route really failed, and then tell the user which step failed and the error you got.
+  **Never hand in half the work.** A site is done only when `scan` reads it whole; stopping short of that needs
+  proof that no script can read it: every way you tried, the exact request and what came back. "The first page's 10
+  of 783, read by hand" is not done, and the window sends it back to you.
 - **A posting's link** (pasted in the chat, or "Read this posting and add it: <link>"): read the page (web fetch;
   when it needs scripts or a sign-in, open it in Resume Studio's browser with the browser commands). Find the
   company: `list` / `show` first; when it isn't there, `add-company`, fill it in as above, and `scan` it once its

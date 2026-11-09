@@ -2124,5 +2124,11 @@
  "In the background": "백그라운드",
  "Switch to the browser": "브라우저로 전환",
  "In a window: {page}": "표시 중: {page}",
- "In the background: {page}": "백그라운드: {page}"
+ "In the background: {page}": "백그라운드: {page}",
+ "Not done yet, so {agent} goes on: {missing}": "아직 끝나지 않아 {agent}이(가) 계속합니다: {missing}",
+ "Don't stop until it is done, or until you have shown it can't be: each way you tried, the exact request and what came back.": "끝날 때까지 멈추지 마세요. 멈추려면 할 수 없다는 것을 보여 주세요: 시도한 방법마다 보낸 정확한 요청과 돌아온 결과를.",
+ "Open the browser": "브라우저 열기",
+ "Running in the background with no window, so it doesn't get in your way. Click to show it.": "창 없이 백그라운드에서 실행되므로 방해하지 않습니다. 클릭하면 브라우저를 보여 줍니다.",
+ "Open in a window of its own. Click to bring it to the front.": "자체 창에 열려 있습니다. 클릭하면 앞으로 가져옵니다.",
+ "Click to open Resume Studio's browser": "클릭하면 Resume Studio의 브라우저를 엽니다"
 }
