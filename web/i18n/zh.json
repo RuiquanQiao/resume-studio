@@ -449,6 +449,7 @@
  "Filter by": "按此筛选",
  "Find files": "查找文件",
  "Find new postings": "找新的招聘信息",
+ "{company} ({id}) was just added to the companies list by the user; it wasn't on it before, so its row is new, not one that was already there. Use {id} for it.": "{company}（{id}）是用户刚加进公司表的，之前表里没有它，所以这一行是新建的，不是原本就有的。写它的时候用 {id}。",
  "Find out about {company} and fill in all its fields: industry, strength, headquarters, the cities it hires in, size, its careers sites, its logo and the About, each with a source.": "查一下 {company}，把它的所有字段都填上：行业、实力、总部、在哪些城市招人、规模、招聘官网、logo 和简介，每一项都附上来源。",
  "Find postings": "找岗位",
  "Finish setting up": "完成设置",

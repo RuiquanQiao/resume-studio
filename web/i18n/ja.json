@@ -449,6 +449,7 @@
  "Filter by": "フィルターの対象",
  "Find files": "ファイルを検索",
  "Find new postings": "新しい求人票を探す",
+ "{company} ({id}) was just added to the companies list by the user; it wasn't on it before, so its row is new, not one that was already there. Use {id} for it.": "{company}（{id}）はユーザーが今会社リストに追加したばかりで、以前はリストにありませんでした。この行は新しく作られたもので、元からあったものではありません。この会社には {id} を使ってください。",
  "Find out about {company} and fill in all its fields: industry, strength, headquarters, the cities it hires in, size, its careers sites, its logo and the About, each with a source.": "{company} について調べて、すべての項目を埋めてください：業界、実力、本社、採用している都市、規模、採用サイト、ロゴ、概要。それぞれに出典を付けてください。",
  "Find postings": "求人を探す",
  "Finish setting up": "セットアップを完了",

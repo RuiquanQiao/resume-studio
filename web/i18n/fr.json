@@ -452,6 +452,7 @@
  "Filter by": "Filtrer par",
  "Find files": "Chercher des fichiers",
  "Find new postings": "Trouver de nouvelles offres",
+ "{company} ({id}) was just added to the companies list by the user; it wasn't on it before, so its row is new, not one that was already there. Use {id} for it.": "{company} ({id}) vient d'être ajoutée à la liste des entreprises par l'utilisateur ; elle n'y figurait pas avant, sa ligne est donc nouvelle et n'existait pas déjà. Utilise {id} pour elle.",
  "Find out about {company} and fill in all its fields: industry, strength, headquarters, the cities it hires in, size, its careers sites, its logo and the About, each with a source.": "Renseignez-vous sur {company} et remplissez tous ses champs : secteur, solidité, siège, les villes où elle recrute, taille, sites carrières, logo et la présentation, chacun avec une source.",
  "Find postings": "Trouver des offres",
  "Finish setting up": "Terminer l'installation",

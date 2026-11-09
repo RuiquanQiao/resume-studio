@@ -1918,7 +1918,10 @@ function askFill(cs, { adding = false } = {}) {
     let ok = false;
     let fresh = true;   // one new chat for them all: the rest queue in it
     for (const c of cs) {
-      ok = await sendChat(t("Find out about {company} and fill in all its fields: industry, strength, headquarters, the cities it hires in, size, its careers sites, its logo and the About, each with a source.", { company: c.name })
+      // the window has written its row before the chat starts: told nothing, the AI found it on the list and said
+      // the company "was already there" (小米集团, 2026-11-09)
+      const isNew = adding ? t("{company} ({id}) was just added to the companies list by the user; it wasn't on it before, so its row is new, not one that was already there. Use {id} for it.", { company: c.name, id: c.id }) + " " : "";
+      ok = await sendChat(isNew + t("Find out about {company} and fill in all its fields: industry, strength, headquarters, the cities it hires in, size, its careers sites, its logo and the About, each with a source.", { company: c.name })
         + " " + t("Then bring its open roles in: scan it, learn every careers site the scan can't read yet, and scan again until its roles are on the list. It is done only when they are, or when you've shown it has no careers site that lists roles."), { fresh, title }) || ok;
       fresh = false;
     }

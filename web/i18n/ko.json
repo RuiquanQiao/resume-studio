@@ -449,6 +449,7 @@
  "Filter by": "필터 기준",
  "Find files": "파일 찾기",
  "Find new postings": "새 채용 공고 찾기",
+ "{company} ({id}) was just added to the companies list by the user; it wasn't on it before, so its row is new, not one that was already there. Use {id} for it.": "{company}({id})는 사용자가 방금 회사 목록에 추가한 회사입니다. 전에는 목록에 없었으므로 이 행은 새로 만든 것이지 원래 있던 것이 아닙니다. 이 회사에는 {id}를 사용하세요.",
  "Find out about {company} and fill in all its fields: industry, strength, headquarters, the cities it hires in, size, its careers sites, its logo and the About, each with a source.": "{company}에 대해 알아보고 모든 항목을 채워 주세요: 업종, 규모감, 본사, 채용 도시, 인원, 채용 사이트, 로고, 소개. 각각 출처를 달아 주세요.",
  "Find postings": "공고 찾기",
  "Finish setting up": "설정 마무리",

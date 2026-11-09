@@ -2822,6 +2822,13 @@ def test_every_hunt_ai_button_checks_its_own_result(page_all):
     # its roles are part of filling it in (user, 2026-11-04): asked for in the same message, and a site the scan
     # still can't read is not done
     assert "扫进来" in out["sent"][0] and "学会读" in out["sent"][0], out["sent"]
+    assert "刚加进" not in out["sent"][0], out["sent"]
+    # added from the window: its row is written before the chat starts, and the AI is told it is new, with its id, or
+    # it finds the row and says the company was already on the list (小米集团, 2026-11-09)
+    pg.evaluate("() => AI_WORK.clear()")
+    out = pg.evaluate(AI_CHECK, {"run": "askFill([{id: 'C92', name: '星河'}], {adding: true})", "data": data})
+    assert out["sent"][0].startswith("星河（C92）是用户刚加进公司表的"), out["sent"]
+    assert "扫进来" in out["sent"][0], out["sent"]
     full = {**co, "kept": ["size", "hq", "places", "logo"], "sources": {k: "https://a.example" for k in ("industry", "strength", "hq", "size")},
             "postings": {"needs": "claude", "unrouted": ["https://campus.example.com/"]}}
     pg.evaluate("() => AI_WORK.clear()")
