@@ -2116,5 +2116,12 @@
  "{entry}: answer a question": "{entry} 回答问题",
  "{subset}: all into {lang}": "{subset} 全部翻译成{lang}",
  "{subset}: fit every line": "{subset} 全部压成一行",
- "Every changed project: update": "有进展的项目 全部更新"
+ "Every changed project: update": "有进展的项目 全部更新",
+ "Running in the background with no window, so it doesn't get in your way. Show the browser to watch it.": "在后台运行，没有窗口，不会打扰你。点「显示浏览器」可以看它在做什么。",
+ "Open in a window of its own": "在自己的窗口里打开着",
+ "In a window": "已显示",
+ "In the background": "后台",
+ "Switch to the browser": "切到浏览器",
+ "In a window: {page}": "已显示：{page}",
+ "In the background: {page}": "后台：{page}"
 }

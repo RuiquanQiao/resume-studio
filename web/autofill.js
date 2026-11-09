@@ -39,7 +39,7 @@ const fieldName = (section, name) => {
 };
 const fillView = () => F.view[F.site] || null;
 // what the browser shows, in a few words ("" for an empty tab)
-const pageName = (b) => (b && b.url && b.url !== "about:blank" ? b.title || b.url : "");
+const pageName = (b) => (b && b.url && b.url !== "about:blank" ? b.title || b.url.replace(/^https?:\/\/(www\.)?/, "") : "");
 const SITE_NAMES = { linkedin: "LinkedIn", boss: "BOSS直聘" };   // before the list has loaded
 const fillSite = () => ((F.sites || []).find((s) => s.id === F.site)) || { id: F.site, name: SITE_NAMES[F.site] || F.site };
 // an item in a few words, the way autofill/profile.py label_of says it
@@ -190,7 +190,7 @@ function listenFill(es) {
     const was = F.browser;
     F.browser = JSON.parse(m.data || "{}");
     // a browser work started closes itself when the work is done; a few seconds before, the user may keep it
-    if (F.browser.closing && !(was && was.closing)) {
+    if (F.browser.closing && F.browser.shown && !(was && was.closing)) {
       toast(t("Resume Studio's browser closes in a few seconds: the work in it is done."),
         { ms: 14000, action: { label: t("Keep it open"), fn: () => api("POST", "/api/browser/keep", {}).catch((e) => toast(e.message)) } });
     }
@@ -733,11 +733,14 @@ function paintFillBrowser() {
       h("button", { class: "btn sm", onclick: showBrowser }, icon("refresh"), t("Try again"))));
   }
   const running = b.state === "running";
-  out.push(h("div", { class: "fill-browser" },
-    h("span", { class: "fb-dot" + (running ? " on" : b.state === "starting" ? " busy" : "") }),
+  const mode = browserMode(b);
+  out.push(h("div", { class: "fill-browser", title: browserTip(mode) },
+    browserDot(mode),
     h("span", { class: "fb-text" },
       h("b", null, b.browser ? t("Resume Studio's browser ({browser})", { browser: b.browser }) : t("Resume Studio's browser")),
-      h("span", { class: "muted" }, running ? (pageName(b) || t("open")) : b.state === "starting" ? t("starting…")
+      h("span", { class: "muted" }, running ? (mode === "window" ? t("In a window: {page}", { page: pageName(b) || t("open") })
+        : t("In the background: {page}", { page: pageName(b) || t("open") }))
+        : b.state === "starting" ? t("starting…")
         : b.state === "signin" ? t("open for you to sign in, without remote control")
         : t("a window of its own; your sign-ins stay in it, apart from your everyday browser"))),
     h("span", { class: "spacer" }),
@@ -776,14 +779,50 @@ function paintFillFoot() {
       icon("sparkle"), t("Make these changes on {site}", { site: site.name }))].filter(Boolean));
 }
 // ================================================================ the workspace frame
+// What the browser is doing, the same everywhere it is shown: off; in the background (no window), working or idle;
+// in a window. Working keeps showing a moment after the last command, so a chat's commands one after another
+// read as one stretch of work rather than a flicker.
+let browserWorkUntil = 0, browserWorkTimer = 0;
+function browserMode(b) {
+  b = b || {};
+  if (b.state === "starting") return "starting";
+  if (b.state !== "running") return "off";
+  if (b.shown) return "window";
+  const now = Date.now();
+  if (b.working) browserWorkUntil = now + 3000;
+  if (b.working || now < browserWorkUntil) {
+    clearTimeout(browserWorkTimer);
+    // the dots themselves, not a repaint: the bar isn't redrawn while a tip or menu hangs off it
+    if (!b.working) browserWorkTimer = setTimeout(() => {
+      if (browserMode(F.browser) !== "background") return;
+      document.querySelectorAll(".fb-dot.work").forEach((d) => d.classList.remove("work"));
+      const here = $("#browser-here");
+      if (here) here.dataset.mode = "background";
+    }, browserWorkUntil - now + 50);
+    return "working";
+  }
+  return "background";
+}
+function browserDot(mode) {
+  return h("span", { class: "fb-dot " + ({ starting: "busy", working: "on bg work", background: "on bg", window: "on win" }[mode] || "") });
+}
+function browserTip(mode) {
+  return mode === "working" || mode === "background"
+    ? t("Running in the background with no window, so it doesn't get in your way. Show the browser to watch it.")
+    : mode === "window" ? t("Open in a window of its own") : "";
+}
+
 function renderFillTools(el) {
   const b = F.browser || {};
+  const mode = browserMode(b);
+  const page = pageName(b) || t("Resume Studio's browser");
   el.replaceChildren(...[
-    h("span", { class: "ws-here" }, h("span", { class: "fb-dot" + (b.state === "running" ? " on" : "") }),
-      h("b", null, b.state === "running" ? (pageName(b) || t("Resume Studio's browser")) : t("The browser isn't open"))),
+    h("span", { class: "ws-here", id: "browser-here", "data-mode": mode, title: browserTip(mode) }, browserDot(mode),
+      mode === "off" || mode === "starting" ? h("span", null, mode === "starting" ? t("starting…") : t("The browser isn't open"))
+        : [h("span", { class: "bh-mode" }, mode === "window" ? t("In a window") : t("In the background")), h("b", null, page)]),
     h("span", { class: "spacer" }),
-    h("button", { class: "btn ghost", disabled: b.found === false, title: t("Bring the browser window to the front"), onclick: showBrowser },
-      icon("external"), h("span", { class: "lbl" }, t("Show the browser"))),
+    h("button", { class: "btn ghost", id: "browser-show", disabled: b.found === false, title: t("Bring the browser window to the front"), onclick: showBrowser },
+      icon("external"), h("span", { class: "lbl" }, mode === "window" ? t("Switch to the browser") : t("Show the browser"))),
     b.state === "running" && h("button", { class: "btn icon ghost", title: t("More"), onclick: (e) => openMenu(e.currentTarget, [
       /^https?:/.test(b.url || "") && { label: t("Sign in here without remote control"), icon: "user", onClick: () => signInMode(b.url) },
       { label: t("Close the browser"), icon: "x", onClick: async () => { F.browser = await api("POST", "/api/browser/stop", {}); paintFillBrowser(); renderWsTools(); } },

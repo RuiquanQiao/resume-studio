@@ -676,7 +676,7 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px va
 
 @media (prefers-reduced-motion: reduce) {
   .float, .tip, .select > svg.i, .cp-sw, input[type=range]::-webkit-slider-thumb { transition: none; }
-  .tab-dot, .wk-t { animation: none; }
+  .tab-dot, .wk-t, .fb-dot.work { animation: none; }
   .wk-t { color: var(--text-2); background: none; }
 }
 
@@ -1072,6 +1072,9 @@ body[data-ws="fill"] .workspace { grid-template-columns: var(--w-left, 340px) 5p
 .fb-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
 .fb-dot.on { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
 .fb-dot.busy { background: var(--warn); }
+.fb-dot.on.win { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.fb-dot.on.work { animation: pulse 1.2s ease-in-out infinite; }
+.ws-tools .ws-here .bh-mode { flex: none; color: var(--text-3); }
 .fb-text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 220px; font-size: 12.5px; line-height: 1.4; }
 .fb-text b { font-weight: 600; }
 .fb-text .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -2116,5 +2116,12 @@
  "{entry}: answer a question": "{entry} 질문에 답하기",
  "{subset}: all into {lang}": "{subset} 모두 {lang}로 번역",
  "{subset}: fit every line": "{subset} 모두 한 줄로 줄이기",
- "Every changed project: update": "진행된 프로젝트 모두 업데이트"
+ "Every changed project: update": "진행된 프로젝트 모두 업데이트",
+ "Running in the background with no window, so it doesn't get in your way. Show the browser to watch it.": "창 없이 백그라운드에서 실행되므로 방해하지 않습니다. 지켜보려면 '브라우저 보기'를 누르세요.",
+ "Open in a window of its own": "자체 창에서 열려 있습니다",
+ "In a window": "표시 중",
+ "In the background": "백그라운드",
+ "Switch to the browser": "브라우저로 전환",
+ "In a window: {page}": "표시 중: {page}",
+ "In the background: {page}": "백그라운드: {page}"
 }

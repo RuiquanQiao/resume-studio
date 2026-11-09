@@ -2290,5 +2290,12 @@
  "{entry}: answer a question": "{entry}: eine Frage beantworten",
  "{subset}: all into {lang}": "{subset}: alles auf {lang}",
  "{subset}: fit every line": "{subset}: jede Zeile kürzen",
- "Every changed project: update": "Alle geänderten Projekte aktualisieren"
+ "Every changed project: update": "Alle geänderten Projekte aktualisieren",
+ "Running in the background with no window, so it doesn't get in your way. Show the browser to watch it.": "Läuft im Hintergrund ohne Fenster und stört dich nicht. Mit „Browser zeigen“ kannst du zusehen.",
+ "Open in a window of its own": "In einem eigenen Fenster geöffnet",
+ "In a window": "Angezeigt",
+ "In the background": "Im Hintergrund",
+ "Switch to the browser": "Zum Browser wechseln",
+ "In a window: {page}": "Angezeigt: {page}",
+ "In the background: {page}": "Im Hintergrund: {page}"
 }

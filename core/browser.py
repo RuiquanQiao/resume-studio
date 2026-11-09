@@ -13,6 +13,7 @@ them like a person's. Nothing here submits anything by itself; callers decide wh
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import os
 import random
@@ -320,14 +321,14 @@ class ManagedBrowser:
             self.before = self.b.work
             self.b.local.work = self.key
             if self.key is not None:
-                with self.b.lock:
+                with self.b.working_flip():
                     self.b.acting_now[self.key] = self.b.acting_now.get(self.key, 0) + 1
             return self.b
 
         def __exit__(self, *exc):
             self.b.local.work = self.before
             if self.key is not None:
-                with self.b.lock:
+                with self.b.working_flip():
                     n = self.b.acting_now.get(self.key, 1) - 1
                     if n:
                         self.b.acting_now[self.key] = n
@@ -404,7 +405,22 @@ class ManagedBrowser:
         return {"state": self.state, "error": self.error, "browser": NAMES.get(self.kind or (found or ("", ""))[0], ""),
                 "found": bool(found), "url": page.get("url", ""), "title": page.get("title", ""),
                 "tabs": sum(1 for p in self.pages.values() if p.get("type") == "page"), "signin_url": self.signin_url,
-                "owner": self.owner, "closing": self.closing, "shown": self.shown}
+                "owner": self.owner, "closing": self.closing, "shown": self.shown, "working": self.working}
+
+    @property
+    def working(self) -> bool:
+        """Work is using the browser this moment (a scan's read, a chat's command): the window shows it busy."""
+        return bool(self.holds or self.acting_now)
+
+    @contextlib.contextmanager
+    def working_flip(self):
+        """The bookkeeping lock around a change to `holds` / `acting_now`; the window hears when `working` flips."""
+        with self.lock:
+            was = self.working
+            yield
+            now = self.working
+        if was != now:
+            self._changed()
 
     def _changed(self) -> None:
         if self.on_change:
@@ -754,12 +770,12 @@ class ManagedBrowser:
             self.b = b
 
         def __enter__(self):
-            with self.b.lock:
+            with self.b.working_flip():
                 self.b.holds += 1
             return self.b
 
         def __exit__(self, *exc):
-            with self.b.lock:
+            with self.b.working_flip():
                 self.b.holds -= 1
                 self.b.last_used = time.time()
             return False

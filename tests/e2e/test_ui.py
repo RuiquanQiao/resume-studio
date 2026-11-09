@@ -1690,144 +1690,106 @@ def test_a_browser_about_to_close_itself_can_be_kept_open(page, server):
     """A browser work started says so a few seconds before it closes itself; Keep it open makes it the user's."""
     b = server.inst.browser
     page.wait_for_function("() => typeof F !== 'undefined' && F.browser")
+    # a windowless one closing is nothing to see: no toast (2026-11-09)
     b.closing = True
     b._changed()
-    page.wait_for_selector("#toast.show:has-text('几秒后关闭')")
-    page.wait_for_timeout(300)                                          # the toast's slide-in
-    page.screenshot(path=str(ART / "browser-closing-toast.png"))
-    page.click("#toast button:has-text('保持打开')")
-    wait_until(lambda: not b.closing, msg="kept")
-    page.wait_for_selector("#toast.show", state="hidden")
+    page.wait_for_function("() => F.browser.closing")
+    page.wait_for_timeout(300)
+    assert not page.is_visible("#toast.show:has-text('几秒后关闭')")
+    b.closing = False
+    b._changed()
+    b.shown = True
+    try:
+        b.closing = True
+        b._changed()
+        page.wait_for_selector("#toast.show:has-text('几秒后关闭')")
+        page.wait_for_timeout(300)                                          # the toast's slide-in
+        page.screenshot(path=str(ART / "browser-closing-toast.png"))
+        page.click("#toast button:has-text('保持打开')")
+        wait_until(lambda: not b.closing, msg="kept")
+        page.wait_for_selector("#toast.show", state="hidden")
+    finally:
+        b.shown = False
 
 
-def test_a_company_with_several_roles_goes_out_with_a_pinned_version(page, server):
+def test_the_browser_chip_says_whether_it_runs_in_the_background_or_a_window(page, server):
+    """The 网申 bar's chip: off; 后台 (no window), pulsing while work uses it; 窗口 once shown, where the button
+    switches to it instead of showing it (2026-11-09). Each state comes the way it does live: pushed by the server."""
     pg = page
-    pg.keyboard.press("Control+3")
-    pg.wait_for_selector(".hunt-tab.on[data-tab=apps]")
-    pg.wait_for_selector("#fillspace :text('还没有投递')")   # once loaded (it says "loading" first)
-    pg.click(".hunt-tab[data-tab=companies]")
-    pg.click("#hunt-new-company")
-    pg.fill("#fm-name", "星河科技")
-    pg.fill("#fm-site", "careers.example.com/campus")
-    pg.click(".modal .btn.primary")
-    pg.wait_for_selector(".hunt-wrap.is-page .ed-head h1:text('星河科技')")
-    assert pg.input_value(".hunt-wrap input[placeholder^='https://careers']") == "https://careers.example.com/campus"
-    # the chat that fills it in is named for the button, not after its prompt (user, 2026-11-08)
-    pg.wait_for_selector("#chat-select .sel-label:text-is('星河科技 添加')")
-    choose(pg, "#company-subset", "RES-TECH-EN")
-    pg.wait_for_selector("#company-subset[data-value='RES-TECH-EN']")
-    pg.fill("#company-add-role", "服务端研发工程师，算法工程师")
-    pg.press("#company-add-role", "Enter")
-    pg.wait_for_selector(".su-role:nth-child(2) .su-name:text('算法工程师')")
-    pg.locator(".su-role:nth-child(2) .su-acts .btn").first.click()           # the order of preference is the user's
-    pg.wait_for_selector(".su-role:nth-child(1) .su-name:text('算法工程师')")
-    assert pg.locator(".su-role .s-saved").count() == 2                        # listed, not sent yet
-    pg.click("#company-send")
-    pg.wait_for_selector(".modal:has-text('v1')")
-    pg.click(".modal .btn.primary")
-    pg.wait_for_selector(".su-role .s-applied >> nth=1")
-    assert state(server)["subset_versions"]["RES-TECH-EN"]["latest"] == 1
-    assert pg.is_disabled("#company-send")                                    # every role there has gone out
-    for scheme in ("light", "dark"):
-        pg.emulate_media(color_scheme=scheme)
-        pg.screenshot(path=str(ART / f"hunt-company-{scheme}.png"), full_page=True)
-    pg.emulate_media(color_scheme="light")
+    b = server.inst.browser
+    real = b.status
+    base = {**real(), "found": True, "browser": "Microsoft Edge", "error": "", "closing": False, "title": ""}
+    now = {"state": {"state": "off"}}
+    b.status = lambda: {**base, **now["state"]}   # from the start: a load still under way answers with these states too
 
-    # added again, forgetting it's there: the form stays open and names the one on the list
-    pg.click(".hunt-tab[data-tab=companies]")
-    pg.click("#hunt-new-company")
-    pg.fill("#fm-name", "星河科技有限公司")
-    pg.fill("#fm-site", "careers.example.com/social")
-    pg.click(".modal .btn.primary")
-    pg.wait_for_selector(".modal .fm-notice li:has-text('星河科技')")
-    assert pg.input_value("#fm-site") == "careers.example.com/social"         # nothing typed is lost
-    # the main button says the way on (2026-11-04: "Add" did nothing, the way on hid inside the notice)
-    assert pg.inner_text(".modal .acts .btn.primary") == "仍然添加"
-    pg.click(".modal .acts .btn.primary")                                      # the double-click's second half: nothing
-    assert len(server.req("GET", "/api/hunt")[1]["companies"]) == 1
-    for scheme in ("light", "dark"):
-        pg.emulate_media(color_scheme=scheme)
-        pg.wait_for_timeout(200)                                                # past the buttons' color transition
-        pg.locator(".modal").screenshot(path=str(ART / f"hunt-same-company-{scheme}.png"))
-    pg.emulate_media(color_scheme="light")
-    pg.fill("#fm-name", "星河 科技")                                          # its very name: no "add it anyway"
-    pg.wait_for_selector(".modal .fm-notice", state="detached")
-    pg.click(".modal .btn.primary")
-    pg.wait_for_selector(".modal .fm-notice li")
-    assert "仍然添加" not in pg.inner_text(".modal")                          # its very name: the button opens it
-    assert pg.inner_text(".modal .acts .btn.primary") == "打开星河科技"
-    pg.wait_for_timeout(500)                                                   # a click, not the second half of a double-click
-    pg.click(".modal .acts .btn.primary")
-    pg.wait_for_selector(".hunt-wrap.is-page .ed-head h1:text('星河科技')")
-    assert len(server.req("GET", "/api/hunt")[1]["companies"]) == 1
-    # a close name that is another company: "Add anyway" adds it; changing the name puts "Add" back
-    pg.click(".hunt-tab[data-tab=companies]")
-    pg.click("#hunt-new-company")
-    pg.fill("#fm-name", "星河科技控股")
-    pg.click(".modal .btn.primary")
-    pg.wait_for_selector(".modal .acts .btn.primary:text('仍然添加')")
-    pg.fill("#fm-name", "星河科技控股集团")
-    assert pg.inner_text(".modal .acts .btn.primary") == "添加"
-    pg.click(".modal .btn.primary")
-    pg.wait_for_selector(".modal .acts .btn.primary:text('仍然添加')")
-    pg.wait_for_timeout(500)
-    pg.click(".modal .acts .btn.primary")
-    pg.wait_for_selector(".modal", state="detached")
-    pg.wait_for_selector(".hunt-wrap.is-page .ed-head h1:text('星河科技控股集团')")      # added, and opened
-    other = next(c for c in server.req("GET", "/api/hunt")[1]["companies"] if c["name"] == "星河科技控股集团")
-    pg.click(".hunt-tab[data-tab=companies]")                                  # off its page before it goes
-    pg.wait_for_selector(".hunt-wrap:not(.is-page) .htable")
-    server.req("DELETE", f"/api/hunt/companies/{other['id']}")
+    def show(state: dict, mode: str) -> None:
+        now["state"] = state
+        b._changed()
+        pg.wait_for_function(f"() => document.querySelector('#browser-here').dataset.mode === '{mode}'")
 
-    # the progress table: both roles, in the company's order, with what went out
-    pg.click(".hunt-tab[data-tab=apps]")
-    pg.wait_for_selector(".htable tbody tr >> nth=1")
-    rows = pg.locator(".htable tbody tr").all_inner_texts()
-    assert "算法工程师" in rows[0] and "服务端研发工程师" in rows[1] and all("v1" in r for r in rows)
-    for scheme in ("light", "dark"):
-        pg.emulate_media(color_scheme=scheme)
-        pg.screenshot(path=str(ART / f"hunt-progress-{scheme}.png"))
-    pg.emulate_media(color_scheme="light")
-    # one application: its status, a note dated back, the timeline
-    pg.click(".htable tbody tr >> nth=0 >> .dbv-title")
-    pg.wait_for_selector("#app-status")
-    choose(pg, "#app-status", "interview")
-    pg.wait_for_selector(".timeline .tl-status")
-    pg.fill("#app-note-new", "一面：项目深挖 + 两道题")
-    pg.fill("#app-note-on", "2026-10-15")
-    pg.click("#app-note-add")
-    pg.wait_for_selector(".timeline .tl-note:text('一面：项目深挖 + 两道题')")
-    a = server.req("GET", "/api/hunt")[1]["applications"]
-    mine = next(x for x in a if x["role"] == "算法工程师")
-    assert mine["status"] == "interview" and mine["sent"][0]["n"] == 1
-    assert server.req("GET", f"/api/hunt/apps/{mine['id']}")[1]["events"][-1]["kind"] == "status"   # the dated note sorts before
-    # the posting's text has its own place, apart from the notes
-    jd = "算法工程师｜北京\n\n任职要求：\n· 熟悉 PyTorch"
-    pg.fill("#app-jd", jd)
-    pg.click(".hunt-wrap .ed-head h1")                                         # leaving the box saves it
-    pg.wait_for_function("(id) => fetch('/api/hunt/apps/' + id).then((r) => r.json()).then((v) => v.application.jd.includes('PyTorch'))", arg=mine["id"])
-    assert server.req("GET", f"/api/hunt/apps/{mine['id']}")[1]["application"]["jd"] == jd
-    pg.screenshot(path=str(ART / "hunt-application-light.png"), full_page=True)
-    no_native(pg)
-    # what went out, as it was
-    pg.click(".su-sent-row .btn")
-    pg.wait_for_selector("#viewing:not(.hidden)")
-    pg.wait_for_selector("#pages img[src*='/versions/1/page/1']")
-    # and from the version's side: the roles v1 went to, each one a way back to its application
-    pg.wait_for_selector(".vrow[data-n='1'] .vsent .role-chip >> nth=1")
-    chips = pg.locator(".vrow[data-n='1'] .vsent .role-chip").all_inner_texts()
-    assert sorted(chips) == ["星河科技 / 服务端研发工程师", "星河科技 / 算法工程师"]
-    assert "2" in pg.inner_text(".vrow[data-n='1'] .vsent-label")
-    pg.screenshot(path=str(ART / "versions-sent-light.png"))
-    pg.click(".vrow[data-n='1'] .vsent .role-chip:has-text('算法工程师')")
-    pg.wait_for_selector("body[data-ws=fill] #app-jd")
-    assert pg.input_value("#app-jd") == jd
-    # a role's Resume button opens the subset it goes out with
-    pg.keyboard.press("Control+3")
-    pg.click(".hunt-tab[data-tab=apps]")
-    pg.click(".htable .hunt-resume >> nth=0")
-    pg.wait_for_selector("body[data-ws=resume]")
-    assert value_of(pg, "#subset-select") == "RES-TECH-EN"
+    try:
+        pg.keyboard.press("Control+3")
+        pg.wait_for_selector("#browser-here")
+        show({"state": "off"}, "off")
+        assert "浏览器没打开" in pg.inner_text("#browser-here") and "显示浏览器" in pg.inner_text("#browser-show")
+        page_url = "https://campus.tj-sports.com/apply"
+        show({"state": "running", "shown": False, "working": True, "url": page_url}, "working")
+        assert pg.inner_text("#browser-here .bh-mode") == "后台"
+        assert pg.evaluate("getComputedStyle(document.querySelector('#browser-here .fb-dot')).animationName") == "pulse"
+        pg.screenshot(path=str(ART / "browser-chip-background.png"), clip=pg.locator("#browser-here").bounding_box())
+        show({"state": "running", "shown": False, "working": False, "url": page_url}, "working")   # a moment after the last command
+        pg.wait_for_function("() => document.querySelector('#browser-here').dataset.mode === 'background'", timeout=6000)
+        assert pg.evaluate("getComputedStyle(document.querySelector('#browser-here .fb-dot')).animationName") == "none"
+        show({"state": "running", "shown": True, "working": True, "url": page_url}, "window")
+        assert pg.inner_text("#browser-here .bh-mode") == "已显示" and "切到浏览器" in pg.inner_text("#browser-show")
+        # a long address stays inside the bar
+        show({"state": "running", "shown": False, "working": False, "url": page_url + "?source=university&" + "x" * 300}, "background")
+        for size, scheme in (((2000, 1000), "light"), ((900, 800), "dark"), ((1440, 900), "light")):
+            pg.set_viewport_size({"width": size[0], "height": size[1]})
+            pg.emulate_media(color_scheme=scheme)
+            pg.wait_for_timeout(150)
+            over = pg.evaluate("""() => { const c = document.querySelector('#browser-here'), bar = c.closest('.ws-tools'),
+                btn = document.querySelector('#browser-show').getBoundingClientRect(), r = c.getBoundingClientRect();
+                return r.right > bar.getBoundingClientRect().right + 1 || bar.scrollWidth > bar.clientWidth + 1
+                  || document.documentElement.scrollWidth > innerWidth || (r.right > btn.left && r.top < btn.bottom && r.bottom > btn.top); }""")
+            assert not over, (size, scheme)
+            bar = pg.locator("#browser-here").evaluate("(c) => { const r = c.closest('.topbar, header, .ws-tools').getBoundingClientRect(); "
+                                                       "return {x: r.x, y: r.y, width: r.width, height: r.height}; }")
+            pg.screenshot(path=str(ART / f"browser-chip-{size[0]}-{scheme}.png"), clip=bar)
+        # every state, light and dark, in the bar and in a platform's browser line (for looking at)
+        pg.set_viewport_size({"width": 2000, "height": 1000})
+        titled = {"url": page_url + "?source=university", "title": "campus.tj-sports.com/apply?source=university"}
+        states = [("off", {"state": "off"}), ("working", {"state": "running", "shown": False, "working": True, **titled}),
+                  ("background", {"state": "running", "shown": False, "working": False, **titled}),
+                  ("window", {"state": "running", "shown": True, "working": False, **titled})]
+        for scheme in ("light", "dark"):
+            pg.emulate_media(color_scheme=scheme)
+            for mode, st in states:
+                if mode == "background":
+                    browser_mode_reset = "() => { browserWorkUntil = 0; }"
+                    pg.evaluate(browser_mode_reset)
+                show(st, mode)
+                pg.screenshot(path=str(ART / f"browser-chip-{mode}-{scheme}.png"),
+                              clip={**pg.locator("#ws-tools").bounding_box(), "height": 40, "y": 8})
+        open_platform(pg)
+        for scheme in ("light", "dark"):
+            pg.emulate_media(color_scheme=scheme)
+            for mode, st in states[1:]:
+                if mode == "background":
+                    pg.evaluate("() => { browserWorkUntil = 0; }")
+                show(st, mode)
+                pg.wait_for_selector("#fill-browser .fill-browser")
+                pg.screenshot(path=str(ART / f"browser-line-{mode}-{scheme}.png"), clip=pg.locator("#fill-browser .fill-browser").bounding_box())
+        pg.emulate_media(color_scheme="light")
+        pg.set_viewport_size({"width": 1440, "height": 900})
+    finally:
+        b.status = real
+        b._changed()
+    # the server says when work is using the browser
+    assert b.status()["working"] is False
+    with b.hold():
+        assert b.status()["working"] is True
+    assert b.status()["working"] is False
 
 
 def test_versions_show_where_they_went_while_the_roles_still_load(page, server):

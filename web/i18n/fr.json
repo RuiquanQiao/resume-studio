@@ -2290,5 +2290,12 @@
  "{entry}: answer a question": "{entry} : répondre à une question",
  "{subset}: all into {lang}": "{subset} : tout en {lang}",
  "{subset}: fit every line": "{subset} : chaque puce sur une ligne",
- "Every changed project: update": "Mettre à jour tous les projets modifiés"
+ "Every changed project: update": "Mettre à jour tous les projets modifiés",
+ "Running in the background with no window, so it doesn't get in your way. Show the browser to watch it.": "Il tourne en arrière-plan, sans fenêtre, pour ne pas vous déranger. « Afficher le navigateur » pour le regarder.",
+ "Open in a window of its own": "Ouvert dans sa propre fenêtre",
+ "In a window": "Affiché",
+ "In the background": "Arrière-plan",
+ "Switch to the browser": "Aller au navigateur",
+ "In a window: {page}": "Affiché : {page}",
+ "In the background: {page}": "Arrière-plan : {page}"
 }

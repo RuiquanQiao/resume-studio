@@ -2116,5 +2116,12 @@
  "{entry}: answer a question": "{entry} 質問に回答",
  "{subset}: all into {lang}": "{subset} すべて{lang}に翻訳",
  "{subset}: fit every line": "{subset} すべて 1 行に収める",
- "Every changed project: update": "進捗のあったプロジェクト すべて更新"
+ "Every changed project: update": "進捗のあったプロジェクト すべて更新",
+ "Running in the background with no window, so it doesn't get in your way. Show the browser to watch it.": "ウィンドウなしでバックグラウンドで動いているので、作業の邪魔をしません。様子を見るには「ブラウザーを表示」を押してください。",
+ "Open in a window of its own": "専用のウィンドウで開いています",
+ "In a window": "表示中",
+ "In the background": "バックグラウンド",
+ "Switch to the browser": "ブラウザーに切り替え",
+ "In a window: {page}": "表示中：{page}",
+ "In the background: {page}": "バックグラウンド：{page}"
 }
