@@ -600,7 +600,8 @@ function entryRow(e, isIn, idx, nIn, hasSubset) {
     }),
     h("span", { class: "e-no" }, localNo(e)),
     h("span", { class: "e-main" },
-      h("span", { class: "e-title" }, display(e.title) || t("(untitled)"),
+      // the dot sits beside the title, not in it: a long title ends in an ellipsis and the dot stays in sight
+      h("span", { class: "e-head" }, h("span", { class: "e-title" }, display(e.title) || t("(untitled)")),
         ev === "changed" && h("span", { class: "e-dot", title: t("The project folder changed since the last sync") }),
         ev === "missing" && h("span", { class: "e-dot bad", title: t("The evidence folder can't be found") })),
       (meta || gaps.length > 0) && h("span", { class: "e-meta" }, meta && h("span", { class: "e-when" }, meta),
