@@ -71,22 +71,25 @@ def _list_of(d: Any) -> list | None:
     return rows if isinstance(rows, list) and d.get("code") == 0 else None
 
 
-def detect(url: str, timeout: float = 30) -> bool | None:
+def detect(url: str, timeout: float = 60, tries: int = 2) -> bool | None:
     """Whether the site is a Feishu tenant whose list answers, asked of the site: its job API answers with a list.
     False: it answered something else (another system, an error). None: it didn't answer, so nobody knows yet
-    (asked again next time, never kept as "no")."""
+    (asked again next time, never kept as "no"). 小米's API took over 30 s for one role, now and then (2026-11-10)."""
     # tests' made-up sites never go out on the network (tests/conftest.py)
     if not url.startswith(("http://", "https://")) or os.environ.get("STUDIO_FEISHU_DETECT") == "off":
         return False
-    try:
-        d = _post(url, {"limit": 1, "offset": 0, "keyword": ""}, portal(url), timeout)
-    except urllib.error.HTTPError:
-        return False   # it answered, with an error: no Feishu list there
-    except json.JSONDecodeError:
-        return False   # it answered with a page, not a list
-    except NET:
-        return None
-    return _list_of(d) is not None
+    for attempt in range(tries):
+        try:
+            d = _post(url, {"limit": 1, "offset": 0, "keyword": ""}, portal(url), timeout)
+            return _list_of(d) is not None
+        except urllib.error.HTTPError:
+            return False   # it answered, with an error: no Feishu list there
+        except json.JSONDecodeError:
+            return False   # it answered with a page, not a list
+        except NET:
+            if attempt == tries - 1:
+                return None
+    return None
 
 
 def lists(urls: list[str]) -> list[str]:

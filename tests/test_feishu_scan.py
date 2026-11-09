@@ -123,6 +123,22 @@ def test_whether_a_site_is_on_feishu_is_asked_of_its_api(hunt, monkeypatch):
         site.close()
 
 
+def test_one_portal_found_on_feishu_makes_the_sites_other_portals_feishu(hunt):
+    """小米's first scan (2026-11-10): its intern and new-retail portals answered the check, its campus and social
+    ones timed out, so the scan read 688 roles and said the rest needed the AI. One API serves every portal of a
+    site: the others are read too, with no check of their own."""
+    base = "https://xiaomi.jobs.f.mioffice.cn"
+    urls = [f"{base}/{p}/position/list" for p in ("index", "campus", "internship", "newretailing")]
+    hunt.add_company({"name": "小米集团", "sites": [{"url": u} for u in urls]})
+    sc = Scanner(hunt, Postings(hunt), NoTool(), FakeBrowser({}), lambda: None)
+    asked = []
+    sc.feishu_detect = lambda u: asked.append(u) or (True if "internship" in u else None)   # the rest time out
+    assert [s["how"] for s in sc.plan(hunt.company("C1"))] == ["feishu"] * 4
+    # asked until one answered; and a site elsewhere is still asked about on its own
+    assert asked == urls[:3]
+    assert sc.unrouted(sc.plan(hunt.company("C1"))) == []
+
+
 def test_roles_the_ai_read_by_hand_are_kept_when_the_scan_reads_the_site(hunt):
     """小米集团's 10 roles the AI copied off the page have the links the API gives: read by the scan, they stay the
     same roles, never closed and opened anew; and no route may be recorded for a list the scan reads."""

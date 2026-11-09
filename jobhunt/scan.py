@@ -232,14 +232,20 @@ class Scanner:
             elif got is False:   # None: the site didn't answer; asked again at the next scan
                 self._not_beisen.add(u)
         # then Feishu under the company's own domain (小米集团's xiaomi.jobs.f.mioffice.cn, 2026-11-09), the same way
+        # one portal of a site found on Feishu makes them all: its API is the site's, whichever portal is asked
+        # (小米's campus and social portals didn't answer the check in 30 s from Australia, its intern one did)
+        on_feishu = lambda u: any(feishu.origin(k) == feishu.origin(u) for k, v in self._providers.items() if v == feishu.PROVIDER)
         for u in dict.fromkeys(urls):
             if self._providers.get(u) or u in self._not_feishu:
                 continue
-            got = self.feishu_detect(u)
+            got = True if on_feishu(u) else self.feishu_detect(u)
             if got:
                 self._providers[u] = feishu.PROVIDER
             elif got is False:
                 self._not_feishu.add(u)
+        for u in dict.fromkeys(urls):   # the ones asked before a later portal of their site answered
+            if not self._providers.get(u) and u not in self._not_feishu and on_feishu(u):
+                self._providers[u] = feishu.PROVIDER
 
     def live_state(self, c: dict) -> dict:
         """The company's scan state as its sites are now: a site that can't be scanned is warned about only while it
