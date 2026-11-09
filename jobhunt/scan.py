@@ -500,6 +500,8 @@ class Scanner:
                     if r.get("portal") and r["portal"] in portals:
                         continue
                     portals.add(r.get("portal") or u)
+                    if r.get("failed"):   # read in part: what came is kept, the error said, nothing closed
+                        errors.append(f"{u}: {r['failed']}")
                     # a role already kept under another spelling of its link (a route the AI wrote linked it
                     # /campus/jobs?jobAdId=<number>) keeps that link: a role's link is its key
                     jobs = [{**j, "url": keep.get(j.get("id") or "") or keep.get(j.get("number") or "") or j["url"]}

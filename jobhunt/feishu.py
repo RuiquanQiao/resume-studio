@@ -28,11 +28,15 @@ API = "/api/v1/search/job/posts"
 PAGE = 100
 MAX_PAGES = 100        # 10,000 roles; 小米's experienced portal, the biggest seen, has 2,053
 # read from Australia, 小米's API took 5-70 s a page whatever its size and now and then dropped the connection
-# (2026-11-09): each page gets 90 s and four tries, and four pages are asked at once (career-ops: 4 is fine on Feishu)
+# (2026-11-09): each page gets 90 s and four tries. Two pages at a time per portal: the scan reads two portals at once,
+# and eight requests open together had 小米 reset the connection (WinError 10054) four times running on one page
+# (2026-11-10); four in all is what career-ops checked live on Feishu.
+# The resets come in bad patches, at any page size (the same page failed, then answered in 21 s, 2026-11-10): six tries
+# over about four minutes ride one out.
 TIMEOUT = 90
-TRIES = 4
-WAITS = (5, 15, 30)
-AT_ONCE = 4
+TRIES = 6
+WAITS = (5, 15, 30, 60, 120)
+AT_ONCE = 2
 # jobs.bytedance.com turns a Windows Chrome UA away (career-ops' notes, verified live); a macOS one passes everywhere
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/130.0 Safari/537.36")
@@ -126,7 +130,9 @@ def posting(base: str, path: str, p: dict) -> dict | None:
 
 def read(url: str, *, timeout: float = TIMEOUT, waits: tuple[float, ...] = WAITS) -> dict:
     """Every role of the portal's list: {"jobs": [...], "total": the list's own count, "portal"}. Raises ReadFailed
-    when the site doesn't answer or answers with something that isn't its list."""
+    when its first page doesn't come, or comes as something that isn't its list. A later page that doesn't come
+    leaves the rest read: {"failed": why} with what came, never all of the portal lost for one page (小米's intern
+    portal, 2026-11-10); the scan keeps them, says so, and closes nothing on a read that wasn't whole."""
     base, path = origin(url), portal(url)
 
     def page(n: int) -> tuple[list[dict], int | None]:
@@ -146,19 +152,35 @@ def read(url: str, *, timeout: float = TIMEOUT, waits: tuple[float, ...] = WAITS
         count = (d.get("data") or {}).get("count")
         return got, count if isinstance(count, int) else None
 
+    def later(n: int) -> list[dict] | ReadFailed:
+        try:
+            return page(n)[0]
+        except ReadFailed as e:
+            return e
+
     rows, total = page(0)
+    failed: list[str] = []
     if total is None:   # no count: page on until a short page
         n = 1
         while len(rows) == n * PAGE and n < MAX_PAGES:
-            got, _ = page(n)
+            got = later(n)
+            if isinstance(got, ReadFailed):
+                failed.append(str(got))
+                break
             rows += got
             n += 1
     else:
         pages = min(MAX_PAGES, -(-total // PAGE))
         if pages > 1:
             with ThreadPoolExecutor(AT_ONCE) as pool:
-                for got, _ in pool.map(page, range(1, pages)):   # in order; the first failure raises
-                    rows += got
+                for got in pool.map(later, range(1, pages)):
+                    if isinstance(got, ReadFailed):
+                        failed.append(str(got))
+                    else:
+                        rows += got
     jobs = [x for x in (posting(base, path, p) for p in rows) if x]
     jobs = list({j["url"]: j for j in jobs}.values())   # a role that moved up a page between two reads, once
-    return {"jobs": jobs, "total": total, "portal": f"{base}/{path}"}
+    out = {"jobs": jobs, "total": total, "portal": f"{base}/{path}"}
+    if failed:
+        out["failed"] = "; ".join(failed[:3]) + (f" (and {len(failed) - 3} more pages)" if len(failed) > 3 else "")
+    return out

@@ -101,6 +101,41 @@ def test_a_feishu_site_on_its_own_domain_is_read_whole_by_the_scan_itself(hunt, 
         site.close()
 
 
+def test_a_page_that_never_comes_loses_only_itself(hunt, monkeypatch):
+    """小米's intern portal (2026-11-10): page 2 of 6 was cut off four tries running, and the portal's 590 roles were
+    all thrown away for it. Now the other pages are kept, the scan says what didn't come, and nothing is closed on a
+    read that wasn't whole."""
+    site = FeishuSite({"internship": [role(i, "实习") for i in range(30)]})
+    monkeypatch.setattr(feishu, "PAGE", 10)
+    monkeypatch.setattr(feishu, "WAITS", (0,))
+    monkeypatch.setattr(feishu, "AT_ONCE", 1)   # pages in order, so the cut-off one is known
+    monkeypatch.setenv("STUDIO_FEISHU_DETECT", "on")
+    try:
+        ps = Postings(hunt)
+        hunt.add_company({"name": "小米集团", "sites": [{"url": site.url + "/internship/position/list"}]})
+        sc = Scanner(hunt, ps, NoTool(), FakeBrowser({}), lambda: None)
+        assert sc.scan("小米集团")["found"] == 30
+        # every try of page 2 is cut off (the detect check, page 1 and page 3 answer)
+        real = site.srv.RequestHandlerClass.do_POST
+        def flaky(self):
+            n = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            if n["offset"] == 10:
+                self.send_response(200); self.send_header("Content-Length", "100000"); self.end_headers(); self.wfile.write(b"{")
+                return
+            self.rfile = __import__("io").BytesIO(json.dumps(n).encode())
+            self.headers.replace_header("Content-Length", str(len(json.dumps(n))))
+            real(self)
+        site.srv.RequestHandlerClass.do_POST = flaky
+        r = feishu.read(site.url + "/internship/position/list", waits=(0,))
+        assert len(r["jobs"]) == 20 and r["total"] == 30 and "page 2" in r["failed"], r.get("failed")
+        res = sc.scan("小米集团")
+        assert (res["found"], res["closed"]) == (20, 0) and res["errors"] and "page 2" in res["errors"][0], res
+        assert res["short"] == [20, 30]
+        assert sum(1 for p in ps.all() if not p["closed"]) == 30
+    finally:
+        site.close()
+
+
 def test_whether_a_site_is_on_feishu_is_asked_of_its_api(hunt, monkeypatch):
     """A site whose API answers with a job list is Feishu; one answering a page or an error isn't; one that doesn't
     answer is asked again at the next scan, never written off."""
