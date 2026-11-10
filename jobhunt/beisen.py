@@ -20,6 +20,8 @@ import urllib.request
 from typing import Any
 from urllib.parse import urlsplit
 
+from . import patience
+
 PROVIDER = "beisen"
 API = "/api/Jobad/GetJobAdPageList"
 PAGE = 50              # a page of 100 with every description is 300 KB, and big sites cut it off midway (传音, 长鑫)
@@ -39,19 +41,22 @@ class ReadFailed(Exception):
     pass
 
 
-def _get(url: str, timeout: float, tries: int = 1, waits: tuple[float, ...] = ()) -> str:
-    for attempt in range(tries):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "text/html,*/*"})
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                # read() whole: read(n) hands back what came before a cut-off answer as if it were all of it
-                # (IncompleteRead is raised only on a whole read), and a cut page has no portal in it
-                return r.read().decode("utf-8", "replace")
-        except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException):
-            if attempt == tries - 1:
-                raise
-            time.sleep(waits[min(attempt, len(waits) - 1)] if waits else 0)
-    raise ValueError("no tries")
+def wait_for(url: str, timeout: float | None = None, waits: tuple[float, ...] | None = None) -> patience.Patience:
+    """How long to wait for this 北森 site (jobhunt/patience.py): its servers are in China. The module's numbers,
+    looked up when called so a test's shorter ones reach it, are what a site near the user gets."""
+    return patience.of(url, TIMEOUT if timeout is None else timeout, TRIES, WAITS if waits is None else waits, cn=True)
+
+
+def _asked(url: str, call: Any, p: patience.Patience, *, answered_is_final: bool = False) -> Any:
+    return patience.ask(url, call, p, net=NET, answered=(urllib.error.HTTPError,), answered_is_final=answered_is_final)
+
+
+def _get(url: str, timeout: float) -> str:
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "text/html,*/*"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        # read() whole: read(n) hands back what came before a cut-off answer as if it were all of it
+        # (IncompleteRead is raised only on a whole read), and a cut page has no portal in it
+        return r.read().decode("utf-8", "replace")
 
 
 def _post(url: str, body: dict, timeout: float) -> dict:
@@ -75,27 +80,30 @@ def is_beisen(url: str, page: str | None = None) -> bool:
     return bool(page) and bool(_PORTAL.search(page)) and any(m in page for m in _MARKS)
 
 
-def detect(url: str, timeout: float = 15) -> bool | None:
+def detect(url: str, timeout: float | None = None, waits: tuple[float, ...] | None = None) -> bool | None:
     """Whether the site is a 北森 portal whose list answers. A zhiye.com address is, by its name. A company's own
     domain on 北森 (career.pxwsemi.com) is when its page names a portal and the list API gives a count for it; one
     that only looks it (job.vanchen.com, whose API answers 500) is not, and stays with the route that reads it.
-    None: the site didn't answer, so nobody knows yet (asked again next time, never kept as "no")."""
+    None: the site didn't answer, so nobody knows yet (asked again next time, never kept as "no").
+    Asked with the patience a read gets: join.huolala.cn took 19-28 s from Australia, and its 15 s check marked it
+    "can't be scanned" after every restart of the window (2026-11-11)."""
     host = (urlsplit(url).hostname or "").lower()
     if host == "zhiye.com" or host.endswith(".zhiye.com"):
         return True
     # tests' made-up sites never go out on the network (tests/conftest.py)
     if not url.startswith(("http://", "https://")) or os.environ.get("STUDIO_BEISEN_DETECT") == "off":
         return False
+    p = wait_for(url, timeout, waits)
     try:
-        page = _get(url, timeout)
+        page = _asked(url, lambda t: _get(url, t), p)
     except NET:
         return None
     if not is_beisen(url, page):
         return False
     m = _PORTAL.search(page)
     try:
-        d = _post(origin(url) + API, {"PageIndex": 0, "PageSize": 1, "KeyWords": "", "SpecialType": 0,
-                                      "PortalId": m.group(1) if m else ""}, timeout)
+        d = _asked(url, lambda t: _post(origin(url) + API, {"PageIndex": 0, "PageSize": 1, "KeyWords": "", "SpecialType": 0,
+                                                          "PortalId": m.group(1) if m else ""}, t), p, answered_is_final=True)
     except urllib.error.HTTPError:
         return False   # it answered, with an error: its list isn't there
     except NET:
@@ -150,13 +158,12 @@ def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | N
     """Every role of the portal's list: {"jobs": [...], "total": the list's own count}. Raises ReadFailed when the
     site or its first page doesn't answer, or answers with something that isn't its list. A later page that doesn't
     come leaves the rest read: {"failed": why} with what came; the scan keeps them and closes nothing."""
-    timeout = TIMEOUT if timeout is None else timeout   # looked up when called, so a test's shorter ones reach it
-    waits = WAITS if waits is None else waits
+    p = wait_for(url, timeout, waits)
     base = origin(url)
     try:
-        page = _get(url, timeout, TRIES, waits)   # 北森 drops a connection now and then (WinError 10054)
+        page = _asked(url, lambda t: _get(url, t), p)   # 北森 drops a connection now and then (WinError 10054)
     except NET as e:
-        raise ReadFailed(f"{url} didn't open in {TRIES} tries: {e}") from e
+        raise ReadFailed(f"{url} didn't open in {p.tries} tries: {e}") from e
     m = _PORTAL.search(page)
     if not m and not is_beisen(url):
         raise ReadFailed(f"{url} names no 北森 portal any more")
@@ -168,15 +175,10 @@ def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | N
     def page(index: int) -> dict:
         body = {"PageIndex": index, "PageSize": PAGE, "KeyWords": "", "SpecialType": 0, "PortalId": portal,
                 "DisplayFields": ["Category", "Kind", "LocId", "PostDate", "EndTime", "ClassificationOne"]}
-        d = None
-        for attempt in range(TRIES):
-            try:
-                d = _post(base + API, body, timeout)
-                break
-            except NET as e:
-                if attempt == TRIES - 1:
-                    raise ReadFailed(f"its list gave no answer for page {index + 1}: {e}") from e
-                time.sleep(waits[min(attempt, len(waits) - 1)] if waits else 0)
+        try:
+            d = _asked(url, lambda t: _post(base + API, body, t), p)
+        except NET as e:
+            raise ReadFailed(f"its list gave no answer for page {index + 1} in {p.tries} tries: {e}") from e
         if not isinstance(d, dict) or d.get("Code") != 200 or not isinstance(d.get("Data"), list):
             raise ReadFailed(f"its list answered with something else: {str(d)[:200]}")
         return d

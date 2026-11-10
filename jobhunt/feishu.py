@@ -23,6 +23,8 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from urllib.parse import urlsplit
 
+from . import patience
+
 PROVIDER = "feishu"
 API = "/api/v1/search/job/posts"
 PAGE = 100
@@ -78,22 +80,20 @@ def _list_of(d: Any) -> list | None:
 def detect(url: str, timeout: float = 60, tries: int = 2) -> bool | None:
     """Whether the site is a Feishu tenant whose list answers, asked of the site: its job API answers with a list.
     False: it answered something else (another system, an error). None: it didn't answer, so nobody knows yet
-    (asked again next time, never kept as "no"). 小米's API took over 30 s for one role, now and then (2026-11-10)."""
+    (asked again next time, never kept as "no"). 小米's API took over 30 s for one role, now and then (2026-11-10).
+    `timeout`, `tries`: for a site near the user; jobhunt/patience.py waits longer for one far away or slow before."""
     # tests' made-up sites never go out on the network (tests/conftest.py)
     if not url.startswith(("http://", "https://")) or os.environ.get("STUDIO_FEISHU_DETECT") == "off":
         return False
-    for attempt in range(tries):
-        try:
-            d = _post(url, {"limit": 1, "offset": 0, "keyword": ""}, portal(url), timeout)
-            return _list_of(d) is not None
-        except urllib.error.HTTPError:
-            return False   # it answered, with an error: no Feishu list there
-        except json.JSONDecodeError:
-            return False   # it answered with a page, not a list
-        except NET:
-            if attempt == tries - 1:
-                return None
-    return None
+    p = patience.of(url, timeout, tries, (), cn=True)
+    try:
+        d = patience.ask(url, lambda t: _post(url, {"limit": 1, "offset": 0, "keyword": ""}, portal(url), t), p,
+                         net=NET, answered=(urllib.error.HTTPError, json.JSONDecodeError), answered_is_final=True)
+        return _list_of(d) is not None
+    except (urllib.error.HTTPError, json.JSONDecodeError):
+        return False   # it answered, with an error or a page: no Feishu list there
+    except NET:
+        return None
 
 
 def lists(urls: list[str]) -> list[str]:
@@ -135,21 +135,18 @@ def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | N
     portal, 2026-11-10); the scan keeps them, says so, and closes nothing on a read that wasn't whole."""
     # looked up when called, not when defined: a test's shorter waits reached only the calls that passed them, and
     # the scan's own call slept 230 s through its six tries
-    timeout = TIMEOUT if timeout is None else timeout
-    waits = WAITS if waits is None else waits
+    # the near-site numbers; jobhunt/patience.py waits longer for a site far from the user or slow before
+    p = patience.of(url, TIMEOUT if timeout is None else timeout, TRIES, WAITS if waits is None else waits, cn=True)
     base, path = origin(url), portal(url)
 
     def page(n: int) -> tuple[list[dict], int | None]:
-        for attempt in range(TRIES):
-            try:
-                d = _post(url, {"limit": PAGE, "offset": n * PAGE, "keyword": ""}, path, timeout)
-                break
-            except urllib.error.HTTPError as e:
-                raise ReadFailed(f"its job list answered HTTP {e.code} for page {n + 1}") from e
-            except NET as e:   # a page cut off midway is no JSON: tried again too
-                if attempt == TRIES - 1:
-                    raise ReadFailed(f"its job list gave no answer for page {n + 1} in {TRIES} tries: {e}") from e
-                time.sleep(waits[min(attempt, len(waits) - 1)] if waits else 0)
+        try:   # a page cut off midway is no JSON: tried again too
+            d = patience.ask(url, lambda t: _post(url, {"limit": PAGE, "offset": n * PAGE, "keyword": ""}, path, t), p,
+                             net=NET, answered=(urllib.error.HTTPError,), answered_is_final=True)
+        except urllib.error.HTTPError as e:
+            raise ReadFailed(f"its job list answered HTTP {e.code} for page {n + 1}") from e
+        except NET as e:
+            raise ReadFailed(f"its job list gave no answer for page {n + 1} in {p.tries} tries: {e}") from e
         got = _list_of(d)
         if got is None:
             raise ReadFailed(f"its job list answered with something else: {str(d)[:200]}")

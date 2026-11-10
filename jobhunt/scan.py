@@ -35,11 +35,12 @@ from core.browser import BrowserError, PageNotOpened
 from core.cdp import CdpError
 from core.i18n import t
 
-from . import beisen, feishu
+from . import beisen, feishu, patience
 from .postings import Postings
 from .store import Hunt, site_host, site_key
 
 BRIDGE = Path(__file__).resolve().parent.parent / "jobs" / "co_scan.mjs"
+KNOWN = "providers.json"   # hunt/providers.json  {"<list address>": "beisen"}: the systems found reading each
 MAX_PAGES = 20   # of a recorded route, each with 2 minutes
 # a scan has no one waiting on it, and a user abroad reads sites on the far side of the world (user, 2026-11-02):
 # a page gets 90 s to open, and two more tries after a pause, before it counts as unread
@@ -150,6 +151,17 @@ class Scanner:
         self.feishu_read: Callable[[str], dict] = feishu.read
         self._not_beisen: set[str] = set()     # asked once per run of the app
         self._not_feishu: set[str] = set()
+        # asked, and the site didn't answer: nobody knows yet whether a system reads it. Never "the AI has to learn
+        # it" (join.huolala.cn after every restart, 2026-11-11): said as "didn't connect", asked again next scan
+        self._unreached: set[str] = set()
+        # how long to wait for each site, by how far it is and how it answered before, kept across restarts
+        patience.use(hunt.dir / "net.json")
+        # the systems found reading each address, kept across restarts: a slow site found on 北森 once stays on it
+        try:
+            known = json.loads(self.hunt._load(KNOWN) or "{}")
+        except ValueError:
+            known = {}
+        self._providers.update({u: p for u, p in known.items() if isinstance(p, str) and p})
         self._fresh: dict[str, dict] = {}      # company id -> what a route just tried (try_route) read, for its scan
 
     # ---- which sites, read how ----
@@ -211,11 +223,15 @@ class Scanner:
         out = []
         for s in sites:
             prov = self._providers.get(self.list_of(s))
-            out.append({**s, "how": prov or ("route" if self.covers(route, s["url"]) else "claude")})
+            # "unreached": asked whether a system reads it and the site didn't answer: read next scan, never the AI's
+            out.append({**s, "how": prov or ("route" if self.covers(route, s["url"])
+                                             else "unreached" if self.list_of(s) in self._unreached else "claude")})
         return out
 
     def detect(self, urls: list[str], name: str = "") -> None:
         """Which provider reads each address (None: none does), asked once per address and kept."""
+        had = {u: p for u, p in self._providers.items() if p}
+        silent: set[str] = set()   # 北森 or Feishu asked and no answer came: nobody knows yet
         unknown = list(dict.fromkeys(u for u in urls if u not in self._providers))
         for r in self._bridge([{"key": u, "name": name, "url": u} for u in unknown], detect=True):
             if not r.get("error"):
@@ -231,6 +247,8 @@ class Scanner:
                 self._providers[u] = beisen.PROVIDER
             elif got is False:   # None: the site didn't answer; asked again at the next scan
                 self._not_beisen.add(u)
+            else:
+                silent.add(u)
         # then Feishu under the company's own domain (小米集团's xiaomi.jobs.f.mioffice.cn, 2026-11-09), the same way
         # one portal of a site found on Feishu makes them all: its API is the site's, whichever portal is asked
         # (小米's campus and social portals didn't answer the check in 30 s from Australia, its intern one did)
@@ -243,9 +261,24 @@ class Scanner:
                 self._providers[u] = feishu.PROVIDER
             elif got is False:
                 self._not_feishu.add(u)
+            else:
+                silent.add(u)
         for u in dict.fromkeys(urls):   # the ones asked before a later portal of their site answered
             if not self._providers.get(u) and u not in self._not_feishu and on_feishu(u):
                 self._providers[u] = feishu.PROVIDER
+        for u in dict.fromkeys(urls):
+            if self._providers.get(u) or u not in silent:
+                self._unreached.discard(u)
+            else:
+                self._unreached.add(u)
+        now = {u: p for u, p in self._providers.items() if p}
+        if now != had:   # kept for the next run of the app: what was found, never "none" (that is asked again)
+            with self.hunt.lock:
+                try:
+                    known = json.loads(self.hunt._load(KNOWN) or "{}")
+                except ValueError:
+                    known = {}
+                self.hunt._write(KNOWN, {**known, **now})
 
     def live_state(self, c: dict) -> dict:
         """The company's scan state as its sites are now: a site that can't be scanned is warned about only while it
@@ -290,7 +323,9 @@ class Scanner:
         out = {}
         for s in self.sites_of(c):
             url, lst = s["url"], self.list_of(s)
+            # a site that didn't answer the check: not known yet, never "can't be scanned" (its row says it didn't connect)
             out[url] = ("no" if url in unrouted else "api" if self._providers.get(lst) else route_how if self.covers(route, url)
+                        else "" if lst in self._unreached
                         else "" if lst in self._providers or not st.get("at") else "api")
         return out
 
@@ -434,7 +469,14 @@ class Scanner:
 
     def _read_pages(self, url: str, scripts: list[str]) -> list[Any]:
         try:
-            return self.browser.read_pages(url, scripts, timeout=120, open_timeout=OPEN_TIMEOUT)
+            # 90 s for a page near the user; longer across the Great Firewall or for a site slow before (patience.py)
+            wait = patience.of(url, OPEN_TIMEOUT, 3).timeout
+            got = self.browser.read_pages(url, scripts, timeout=max(120, wait), open_timeout=wait)
+            # a page that didn't open counts toward more tries next time; its time, all its scripts' together, isn't
+            # how long the site took to answer, so isn't kept
+            if any(isinstance(x, PageNotOpened) for x in got or []):
+                patience.missed(url)
+            return got
         except (BrowserError, CdpError) as e:   # the tab itself didn't open: every script on it is unread
             return [e] * len(scripts)
 
@@ -481,7 +523,7 @@ class Scanner:
             hows, errors, needs, unread = [], [], [], []
             totals: dict[str, int] = {}
             routed: list[dict] = []
-            api = [s for s in plan if s["how"] not in ("route", "claude")]
+            api = [s for s in plan if s["how"] not in ("route", "claude", "unreached")]
             # a route page on a list a provider reads (a Moka or Workday board the AI recorded a script for) is read
             # through the provider: the AI's script only for what no provider reads (8 companies, 2026-11-03)
             route = self.postings.route(c["id"]) or {}
@@ -504,6 +546,12 @@ class Scanner:
                 for s in plan:
                     if key(self.list_of(s)) == key(u) and missed.get(s["url"]) != "none":
                         missed[s["url"]] = what
+            # a site that didn't answer whether a system reads it: not read, said, nothing of it closed
+            for s in plan:
+                if s["how"] == "unreached":
+                    missed[s["url"]] = "unreached"
+                    errors.append(f"{s['url']}: didn't answer when asked which recruiting system it runs on; "
+                                  "asked again at the next scan")
             for r in self._bridge([{"key": u, "name": c["name"], "url": u} for u in lists
                                    if self._providers.get(u) not in readers]):
                 if r.get("error"):

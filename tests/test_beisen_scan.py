@@ -116,6 +116,7 @@ def test_a_site_that_only_looks_like_beisen_stays_with_its_route(hunt, monkeypat
     its route reads it. A site that doesn't answer at all is asked again at the next scan, never written off."""
     site = BeisenSite([role(1)])
     monkeypatch.setenv("STUDIO_BEISEN_DETECT", "on")
+    monkeypatch.setattr(beisen, "WAITS", (0, 0, 0))   # a site that never answers is asked a few times, not waited on
     try:
         assert beisen.detect(site.url + "/") is True
         site.srv.RequestHandlerClass.do_POST = lambda self: self._send(500, b"{}", "application/json")
@@ -227,6 +228,75 @@ def test_a_beisen_page_that_never_comes_loses_only_itself(hunt, monkeypatch):
         assert not ps.scan_state("C1").get("missed")
     finally:
         site.close()
+
+
+def test_the_wait_grows_with_distance_and_with_how_slow_a_site_was(tmp_path, monkeypatch):
+    """User, 2026-11-11: patience by how far the user is, the Great Firewall above all. Each reader's own numbers
+    are what a near site gets; across the firewall, and for a site that answered slowly before, it waits longer,
+    and a restart remembers."""
+    from jobhunt import patience
+    patience.use(tmp_path / "net.json")
+    monkeypatch.setattr(patience, "_home", "")       # the user in Australia
+    near, cn = "https://careers.example.com/jobs", "https://join.huolala.cn/#/"
+    assert patience.of(near, 60, 4, (3, 10)) == patience.Patience(60, 4, (3, 10))
+    assert patience.of(cn, 60, 4, (3, 10)) == patience.Patience(90, 6, (3, 10, 20, 40))
+    assert patience.of("https://career.pxwsemi.com/", 60, 4, cn=True).tries == 6   # 北森 on its own domain
+    monkeypatch.setattr(patience, "_home", "cn")     # the user in China: its sites are near, the others far
+    assert patience.of(cn, 60, 4).timeout == 60 and patience.of(near, 60, 4).timeout == 90
+    monkeypatch.setattr(patience, "_home", "")
+    patience.took(cn, 28.0)                         # answered after 28 s once: waited for three times that
+    patience.missed(cn)                             # and didn't answer lately: two more tries
+    patience.use(tmp_path / "net.json")             # the window restarted
+    assert (patience.of(cn, 60, 4).timeout, patience.of(cn, 60, 4).tries) == (90, 8)
+    patience.took(cn, 70.0)
+    assert patience.of(cn, 60, 4).timeout == 210
+    patience.took(cn, 500.0)
+    assert patience.of(cn, 60, 4).timeout == patience.MAX_WAIT
+    assert patience.of("http://127.0.0.1:9/", 60, 4, cn=True).tries == 4   # a test's own site is never far
+    patience.use(None)
+
+
+def test_the_beisen_check_is_as_patient_as_a_read(hunt, monkeypatch):
+    """join.huolala.cn, 2026-11-11: the check that a site is on 北森 had 15 s and one try, and the site (19-28 s
+    from Australia) was marked "can't be scanned: the AI has to learn it" after every restart. It now gets the
+    tries a read gets, and what it found is kept, so a restart doesn't ask a slow site from scratch."""
+    site = BeisenSite([role(1)])
+    monkeypatch.setattr(beisen, "WAITS", (0, 0, 0))
+    monkeypatch.setenv("STUDIO_BEISEN_DETECT", "on")
+    try:
+        site.drops = 1   # the first answer is cut off: asked again, not "nobody knows"
+        assert beisen.detect(site.url + "/") is True
+    finally:
+        site.close()
+    url = "https://join.huolala.example/#/"
+    hunt.add_company({"name": "货拉拉", "sites": [{"url": url, "kind": "social"}]})
+    sc = Scanner(hunt, Postings(hunt), NoTool(), FakeBrowser({}), lambda: None)
+    sc.beisen_detect = lambda u: True
+    assert [s["how"] for s in sc.plan(hunt.company("C1"))] == ["beisen"]
+    again = Scanner(hunt, Postings(hunt), NoTool(), FakeBrowser({}), lambda: None)   # the window restarted
+    again.beisen_detect = again.feishu_detect = lambda u: None                      # and the site is slow today
+    assert [s["how"] for s in again.plan(hunt.company("C1"))] == ["beisen"]
+
+
+def test_a_site_that_doesnt_answer_the_check_is_never_sent_to_the_ai(hunt):
+    """No answer to "which system reads you?" is "nobody knows yet": the scan says the site didn't connect and asks
+    again next time. It never says the AI has to learn it, never offers that, and closes none of its roles."""
+    ps = Postings(hunt)
+    url = "https://join.huolala.example/#/"
+    hunt.add_company({"name": "货拉拉", "sites": [{"url": url, "kind": "social"}]})
+    ps.merge("C1", [{"title": "海外销售岗", "url": "https://join.huolala.example/social/detail?jobAdId=1"}], how="beisen")
+    sc = Scanner(hunt, ps, NoTool(), FakeBrowser({}), lambda: None)
+    sc.beisen_detect = sc.feishu_detect = lambda u: None
+    res = sc.scan("货拉拉")
+    assert res["needs"] != "claude" and not res.get("unrouted"), res
+    st = sc.live_state(hunt.company("C1"))
+    assert st["missed"] == {url: "unreached"} and st.get("needs") != "claude"
+    assert sc.site_status(hunt.company("C1")) == {url: ""}
+    assert [bool(p["closed"]) for p in ps.all()] == [False]
+    sc.beisen_detect = lambda u: True                 # it answers next time: read, and nothing is missed
+    sc.beisen_read = lambda u: {"jobs": [beisen.posting("https://join.huolala.example", role(1))], "total": 1}
+    res = sc.scan("货拉拉")
+    assert res["found"] == 1 and not ps.scan_state("C1").get("missed"), res
 
 
 def test_a_route_is_tried_before_it_is_kept(hunt):

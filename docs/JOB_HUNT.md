@@ -134,6 +134,14 @@ the company (creating and filling it when new), adds the posting with its detail
   the other pages read is kept, closing nothing. A user abroad reads sites on the far side of the world
   (2026-11-02): a page gets 90 s to open and two more tries after 5 s and 15 s, pages in a row on one address
   share one opened page, and the company says how many of the route's pages didn't read.
+- **How long a scan waits** is decided in one place, `jobhunt/patience.py`, for every reader (北森, Feishu, a
+  route's pages): each reader's numbers are what a site near the user gets; across the Great Firewall (the
+  computer's time zone outside mainland China and the site in it, or the other way round) a request waits at
+  least 90 s with two more tries, and a site that answered slowly before is waited for three times its slowest
+  recent answer (up to 5 minutes), with two more tries if it missed lately. Its answers are kept in
+  `hunt/net.json`, and the system found reading each address in `hunt/providers.json`, so a restart forgets
+  neither. A site that doesn't answer which system it runs on is "didn't connect, the next scan tries again",
+  never "the AI has to learn it" (join.huolala.cn, 2026-11-11).
 - Postings are matched across scans by a fingerprint (company, title, location, link; after career-ops'
   `listing-fingerprint.mjs`): new ones are marked **new**, gone ones **closed**, changed deadlines shown. A
   posting kept without a link that a later scan finds with one stays the same posting.

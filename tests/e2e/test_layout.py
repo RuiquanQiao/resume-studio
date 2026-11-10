@@ -665,7 +665,8 @@ CONNECTED = [s for s in STATES if "connected" in s.needs]
 
 @pytest.mark.parametrize("st", PLAIN, ids=[s.name for s in PLAIN])
 def test_layout(st, win, server):
-    problems = run_state(win, server, st)    assert not problems, "\n" + "\n".join(problems)
+    problems = run_state(win, server, st)
+    assert not problems, "\n" + "\n".join(problems)
 
 
 @pytest.mark.parametrize("st", CONNECTED, ids=[s.name for s in CONNECTED])

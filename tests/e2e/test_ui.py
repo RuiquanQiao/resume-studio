@@ -2971,8 +2971,15 @@ def test_a_site_the_scan_missed_is_named_on_the_status_and_its_row(page_all):
       const ed = sitesEditor({id: 'C86', sites: sites.map((url) => ({url, kind: 'social'}))},
         {[sites[0]]: 'api', [sites[1]]: 'api'}, {}, {[sites[0]]: 'none'});
       const rows = [...ed.querySelectorAll('.co-site-edit')].map((r) => [...r.querySelectorAll('.site-scan')].map((s) => s.textContent));
-      return {none: say({[sites[0]]: 'none'}), part: say({[sites[0]]: 'part'}), old: say(null), rows};
+      const off = sitesEditor({id: 'C86', sites: sites.map((url) => ({url, kind: 'social'}))},
+        {[sites[0]]: '', [sites[1]]: 'api'}, {}, {[sites[0]]: 'unreached'});
+      const offRow = [...off.querySelector('.co-site-edit').querySelectorAll('.site-scan')].map((s) => s.textContent);
+      return {none: say({[sites[0]]: 'none'}), part: say({[sites[0]]: 'part'}), old: say(null), rows,
+              unreached: say({[sites[0]]: 'unreached'}), offRow};
     }""")
+    # it didn't answer which system it runs on (join.huolala.cn, 2026-11-11): never "the AI has to learn it"
+    assert out["unreached"].endswith("读取方式：mokahr · join.huolala.example 这次没连上，下次扫描再试"), out
+    assert out["offRow"] == ["还没检查", "这次没连上"], out
     assert out["none"].endswith("读取方式：mokahr · join.huolala.example 这次没读到"), out
     assert out["part"].endswith("读取方式：mokahr · join.huolala.example 有的页面没读出来"), out
     assert out["old"].endswith("读取方式：mokahr · 有的页面没读出来"), out   # a route's page: as before

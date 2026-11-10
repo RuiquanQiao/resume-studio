@@ -1276,7 +1276,8 @@ const BATCH_NAMES = { campus: "Campus", intern: "Internship", social: "Experienc
 // the sites a scan read nothing of, or only some pages of, by name: "join.huolala.cn wasn't read this time"
 function missedSay(missed) {
   const of = (w) => Object.entries(missed || {}).filter(([, x]) => x === w).map(([u]) => siteName(u)).join(", ");
-  return [of("none") && t("{sites} wasn't read this time", { sites: of("none") }),
+  return [of("unreached") && t("{sites} didn't connect this time; the next scan tries again", { sites: of("unreached") }),
+    of("none") && t("{sites} wasn't read this time", { sites: of("none") }),
     of("part") && t("some pages of {sites} didn't read", { sites: of("part") })].filter(Boolean).join(" · ");
 }
 
@@ -1806,8 +1807,11 @@ function sitesEditor(c, scans = {}, tried = {}, missed = {}) {
     x.system && h("span", { class: "muted" }, x.system.replace(/^own site\b/i, t("Built by the company"))),
     siteScanChip(scans[x.url], x.list, tried[x.url]),
     // readable, but the last scan read nothing or only some pages of it: said beside the tick, never hidden by it
-    missed[x.url] && h("span", { class: "site-scan warn site-missed", title: t("The last scan's red bar says which page and why") },
-      icon("alert"), missed[x.url] === "none" ? t("Nothing read this time") : t("Not all read this time")),
+    missed[x.url] && h("span", { class: "site-scan warn site-missed", title: missed[x.url] === "unreached"
+      ? t("It didn't answer when asked which recruiting system it runs on; the next scan asks again")
+      : t("The last scan's red bar says which page and why") },
+      icon("alert"), missed[x.url] === "unreached" ? t("Didn't connect this time")
+        : missed[x.url] === "none" ? t("Nothing read this time") : t("Not all read this time")),
     h("button", { class: "btn icon sm ghost", title: t("Open it in your everyday browser"), "aria-label": t("Open it in your everyday browser"), onclick: () => openInBrowser(x.url) }, icon("external")),
     h("button", { class: "btn icon sm ghost", title: t("Remove this site"), "aria-label": t("Remove this site"), onclick: () => { sites.splice(i, 1); save(); } }, icon("x"))));
   const add = h("input", { class: "su-add-input", id: "company-add-site", spellcheck: "false", placeholder: t("Add a careers site: paste its address and press Enter"),
