@@ -902,13 +902,19 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 return {**look_at(str(a.get("ref") or "")), "text": "looked"}
             if cmd == "scan":
                 refs = a.get("companies") or []
-                return {"scanned": scanner.scan_many(scan_ids({"companies": refs})), "text": "scanned"}
+                # one being scanned already (the window starts a scan once a company's sites are in) is waited for:
+                # the AI gets its result, never "still being scanned" to end its turn on
+                out = [scanner.wait_scan(x["company"]) if x.get("busy") else x for x in scanner.scan_many(scan_ids({"companies": refs}))]
+                return {"scanned": out, "text": "scanned"}
             if cmd == "scan-route":
                 c = hunt.company(str(a.get("ref") or ""))
                 r, errs = scanner.save_route(c["id"], a.get("route"))
                 if errs:
                     raise HttpError(400, "the route has problems:\n- " + "\n- ".join(errs))
                 res = scanner.scan(c["id"], just_tried=True)
+                if res.get("busy"):   # a scan of it was running: its end is waited for, then the new route is run
+                    scanner.wait_scan(c["id"])
+                    res = scanner.scan(c["id"], just_tried=True)
                 # a route that never says the site's count can't be checked: told, so the AI adds it
                 if "found" in res and not any(re.search(r"\btotal\b", p.get("script") or "") for p in r.get("pages") or []):
                     res["no_total"] = True

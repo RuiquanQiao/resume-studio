@@ -443,6 +443,25 @@ class Scanner:
             self.postings.set_scan_state(res["company"], needs=res.get("needs") or "", unrouted=res.get("unrouted") or [])
         return res
 
+    def wait_scan(self, cid: str, timeout: float = 3300) -> dict:
+        """A scan that was already running when one was asked for: waits for it to end and answers with its result,
+        as if this scan had read it. Told "still being scanned, wait", the AI ended its turn there and called the
+        company done before the scan said a site couldn't be read (货拉拉, 2026-11-10)."""
+        end = time.time() + timeout
+        while time.time() < end:
+            with self.lock:
+                if cid not in self.running:
+                    break
+            time.sleep(1)
+        else:
+            return {"company": cid, "busy": True, "since": round(time.time() - self.started.get(cid, time.time()))}
+        st = self.live_state(self.hunt.company(cid))
+        if not st.get("ok", True) and st.get("error"):
+            return {"company": cid, "error": st["error"], "signed_out": st.get("signed_out", False)}
+        return {"company": cid, "found": st.get("found", 0), "new": len(st.get("new") or []), "closed": len(st.get("closed") or []),
+                "changed": len(st.get("changed") or []), "needs": st.get("needs") or "", "unrouted": st.get("unrouted") or [],
+                "short": st.get("short") or None}
+
     def _scan(self, ref: str, *, allow_route: bool = True, just_tried: bool = False) -> dict:
         c = self.hunt.company(ref)
         with self.lock:

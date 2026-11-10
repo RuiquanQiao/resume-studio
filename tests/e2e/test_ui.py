@@ -2854,13 +2854,15 @@ def test_every_hunt_ai_button_checks_its_own_result(page_all):
     assert "规模" not in out["say"]
     # its roles are part of filling it in (user, 2026-11-04): asked for in the same message, and a site the scan
     # still can't read is not done
-    assert "扫进来" in out["sent"][0] and "学会读" in out["sent"][0], out["sent"]
-    assert "刚加进" not in out["sent"][0], out["sent"]
+    assert "扫进来" in out["sent"][0] and "先学会再扫" in out["sent"][0], out["sent"]
+    assert out["sent"][0].startswith("填好 星河（C92）"), out["sent"]
+    # short (user, 2026-11-10): one line for the fields, one for its roles; the check names any field left empty
+    assert len(out["sent"][0]) < 90, out["sent"]
     # added from the window: its row is written before the chat starts, and the AI is told it is new, with its id, or
     # it finds the row and says the company was already on the list (小米集团, 2026-11-09)
     pg.evaluate("() => AI_WORK.clear()")
     out = pg.evaluate(AI_CHECK, {"run": "askFill([{id: 'C92', name: '星河'}], {adding: true})", "data": data})
-    assert out["sent"][0].startswith("星河（C92）是用户刚加进公司表的"), out["sent"]
+    assert out["sent"][0].startswith("填好刚加的公司 星河（C92）"), out["sent"]
     assert "扫进来" in out["sent"][0], out["sent"]
     full = {**co, "kept": ["size", "hq", "places", "logo"], "sources": {k: "https://a.example" for k in ("industry", "strength", "hq", "size")},
             "postings": {"needs": "claude", "unrouted": ["https://campus.example.com/"]}}
@@ -2871,6 +2873,29 @@ def test_every_hunt_ai_button_checks_its_own_result(page_all):
     pg.evaluate("() => AI_WORK.clear()")
     out = pg.evaluate(AI_CHECK, {"run": "askFill([{id: 'C92', name: '星河'}])", "data": {"companies": [full], "applications": []}})
     assert not out["warn"] and out["say"] == "已填好，每项都有出处，岗位也已扫进来：星河", out
+    # the chat ended while its scan still ran (货拉拉, 2026-11-10): judged then, it had no "can't read" yet and passed.
+    # Now the button keeps spinning, and the work is judged once the scan ends, so the site it can't read goes back
+    pg.evaluate("() => AI_WORK.clear()")
+    mid = {**full, "postings": {"needs": "", "unrouted": [], "open": 0}}
+    out = pg.evaluate("""async ({mid, after}) => {
+      ui.chat.available = true; ui.chat.id = 'check-chat';
+      window.sent = [];
+      sendChat = async (m) => { window.sent.push(m); return true; };
+      chatState = () => 'running';
+      window.huntAfter = {companies: [mid], applications: [], scan: {running: {C92: 'scan'}}};
+      loadHunt = async () => { H.data = window.huntAfter; };
+      askFill([{id: 'C92', name: '星河'}]);
+      for (let i = 0; i < 100 && !window.sent.length; i++) await new Promise((r) => setTimeout(r, 30));
+      await new Promise((r) => setTimeout(r, 30));   // the button learns its chat once the send answers
+      aiRunDone('check-chat', null);
+      await new Promise((r) => setTimeout(r, 2500));
+      const during = {sent: window.sent.length, spinning: AI_WORK.has('fill:C92')};
+      window.huntAfter = {companies: [after], applications: [], scan: {running: {}}};
+      for (let i = 0; i < 200 && window.sent.length === during.sent; i++) await new Promise((r) => setTimeout(r, 50));
+      return {during, sent: window.sent, chat: ui.chat.id, work: [...AI_WORK.keys()], toast: document.querySelector('#toast span').textContent};
+    }""", {"mid": mid, "after": {**full, "postings": {"needs": "claude", "unrouted": ["https://join.example.cn/#"], "open": 0}}})
+    assert out["during"] == {"sent": 1, "spinning": True}, out
+    assert len(out["sent"]) == 2 and "join.example.cn" in out["sent"][1], out
     # reading a posting: done only once the role has a description
     pg.evaluate("() => AI_WORK.clear()")
     run = "askRead({id: 'A9', role: '芯片验证', url: '" + url + "', jd: ''}, {name: '星河'})"

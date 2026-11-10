@@ -1572,9 +1572,10 @@ async function aiRun(key, start, check = null) {
 function aiRunDone(chatId, error) {
   const done = [...AI_WORK].filter(([, w]) => w.chat === chatId);
   if (!done.length) return;
-  done.forEach(([k]) => AI_WORK.delete(k));
-  paintAiWorking();
   const checks = done.filter(([, w]) => w.check);
+  // checked work keeps spinning until it is judged: a check may wait for a scan to end first
+  done.forEach(([k, w]) => (!error && w.check ? (w.chat = null) : AI_WORK.delete(k)));
+  paintAiWorking();
   if (!error && checks.length) { aiCheck(chatId, checks); return; }
   if (!error && (!chatShown() || document.hidden || chatId !== ui.chat.id))
     toast(t("{agent} is done; see the chat", { agent: agentShortOf(chatId) }), { ms: 6000, action: { label: t("Show me"), fn: async () => { if (chatId !== ui.chat.id) await openChat(chatId); showChat(); } } });
@@ -1593,6 +1594,8 @@ async function aiCheck(chatId, checks) {
     try { r = await w.check(); } catch (e) { r = null; }
     if (r) results.push({ key, check: w.check, ...r });
   }
+  checks.forEach(([key, w]) => { if (AI_WORK.get(key) === w) AI_WORK.delete(key); });
+  paintAiWorking();
   if (!results.length) return;
   const miss = results.find((r) => !r.ok);
   if (!miss) { results.forEach((r) => aiAgain.delete(r.key)); toast(results.map((r) => r.say).join(" · "), { ms: 6000 }); return; }

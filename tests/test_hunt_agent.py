@@ -949,6 +949,33 @@ def test_a_second_scan_of_a_company_still_being_read_says_for_how_long(hunt):
     assert res["busy"] and 94 <= res["since"] <= 97
 
 
+def test_a_scan_asked_for_while_one_runs_answers_with_that_scans_result(hunt):
+    """货拉拉 (2026-11-10): the AI's scan found the window's scan running, was told "still being scanned, wait", and
+    ended its turn there; the scan then said a site couldn't be read, after the work had been judged done. The
+    command now waits for the running scan and answers with what it found."""
+    import threading
+    ps = Postings(hunt)
+    hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
+    sc = Scanner(hunt, ps, NoTool(), FakeBrowser({}), lambda: None)
+    sc.running["C1"], sc.started["C1"] = "scan", time.time()
+
+    def end():
+        time.sleep(1.2)
+        ps.set_scan_state("C1", ok=True, error="", found=56, new=["P1", "P2"], closed=[], changed=[],
+                          needs="claude", unrouted=["https://careers.xinghe.example/campus"])
+        with sc.lock:
+            sc.running.pop("C1")
+    threading.Thread(target=end).start()
+    t0 = time.time()
+    res = sc.wait_scan("C1")
+    assert time.time() - t0 >= 1
+    assert res == {"company": "C1", "found": 56, "new": 2, "closed": 0, "changed": 0, "needs": "claude",
+                   "unrouted": ["https://careers.xinghe.example/campus"], "short": None}
+    sc.running["C1"] = "scan"                                  # one that never ends still answers, as busy
+    assert sc.wait_scan("C1", timeout=0.5)["busy"]
+    sc.running.pop("C1")
+
+
 def test_a_scan_holds_the_browser_while_it_reads_and_says_what_it_found(hunt):
     """The browser closes itself when nothing holds it (core/browser.py close_if_idle): a scan holds it from the first
     company to the last, so it is never closed between them, and lets go when it is done."""

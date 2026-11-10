@@ -943,7 +943,18 @@ const aiKey = (what, cs) => what + ":" + cs.map((c) => c.id).join(",");
 const siteName = (url) => String(url || "").replace(/^https?:\/\/(www\.)?/i, "").replace(/\/$/, "");
 
 // what a hunt button asked the AI for, looked for in fresh data once its chat ends (aiRun's check)
-const huntCheck = (fn) => async () => { await loadHunt({ quiet: true }); return H.data ? fn(H.data) : null; };
+// `ids`: the companies whose scan the work waits on. A chat that ended while one of them was still being scanned is
+// judged once that scan ends: judged before, it had no "can't read this site" yet and passed (货拉拉, 2026-11-10)
+const SCAN_SETTLE_MS = 60 * 60 * 1000;
+const huntCheck = (fn, ids = []) => async () => {
+  await loadHunt({ quiet: true });
+  const scanning = () => H.data && ids.some((id) => ((H.data.scan || {}).running || {})[id]);
+  for (const end = Date.now() + SCAN_SETTLE_MS; scanning() && Date.now() < end;) {
+    await new Promise((ok) => setTimeout(ok, 2000));
+    await loadHunt({ quiet: true });
+  }
+  return H.data ? fn(H.data) : null;
+};
 const huntOf = (d, ids) => d.companies.filter((c) => ids.includes(c.id));
 
 function askLearn(cs) {
@@ -958,7 +969,7 @@ function askLearn(cs) {
     for (const c of left) api("POST", `/api/hunt/companies/${encodeURIComponent(c.id)}/learn-tried`, { sites: c.postings.unrouted || [] }).catch(() => {});
     return { ok: false, say: t("The AI tried, but the scan still can't read: {sites}. Its chat says what it found.", { sites }),
       again: t("{sites} still can't be scanned automatically. Record how to read each with scan-route, or tell me which step failed and the error you got.", { sites }) };
-  });
+  }, ids);
   // the sites no scan reads, named: a site the scan reads already is never handed to the AI (星河科技, 2026-11-03:
   // asked for "its careers sites", the AI recorded its Feishu list too, and every role there came in twice)
   const named = cs.map((c) => [c, c.unrouted || (c.postings || {}).unrouted || []]);
@@ -980,7 +991,7 @@ function askShort(c, sh) {
     if (!x || !s2.short) return { ok: true, say: t("Every role {name}'s site lists is read now", { name: c.name }) };
     return { ok: false, say: t("{name}: the scan still reads {n} of {all}. Its chat says what the AI found.", { name: c.name, n: s2.short[0], all: s2.short[1] }),
       again: t("{name}'s scan still reads {n} of the {all} roles its site lists. Find where the rest go missing, fix the route and send it with scan-route, or tell me which step failed and the error.", { name: c.name, n: s2.short[0], all: s2.short[1] }) };
-  });
+  }, [c.id]);
   aiRun(aiKey("short", [c]), () => sendChat(t("{name}'s scan read {n} of the {all} roles its careers site says it lists. Find where the rest go missing (pages it stops before, a filter, roles kept as one, a page that timed out), fix its scan route and send it again with scan-route, until the counts agree.",
     { name: c.name, n: sh[0], all: sh[1] }), { fresh: true, title: t("Fix the scan of {company}", { company: c.name }) }), check);
 }
@@ -1910,7 +1921,7 @@ function askFill(cs, { adding = false } = {}) {
     if (!gaps.length) return { ok: true, say: t("Filled in, each with a source, and its roles brought in: {names}", { names: huntOf(d, ids).map((c) => c.name).join(", ") }) };
     return { ok: false, say: gaps.join("\n"),
       again: t("Some of it is still not done. {gaps}. Fill each field in with a source and bring its roles in (learn every site the scan can't read), or tell me which step failed and the error you got.", { gaps: gaps.join("; ") }) };
-  });
+  }, ids);
   // one click does the whole company (user, 2026-11-04: "getting a company's information must never take two
   // clicks"): its fields, its careers sites, every site the scan can't read learnt, and its roles brought in
   const title = adding ? t("Add {company}", { company: cs.map((c) => c.name).join(", ") }) : t("Fill in {names}", { names: cs.map((c) => c.name).join(", ") });
@@ -1919,10 +1930,11 @@ function askFill(cs, { adding = false } = {}) {
     let fresh = true;   // one new chat for them all: the rest queue in it
     for (const c of cs) {
       // the window has written its row before the chat starts: told nothing, the AI found it on the list and said
-      // the company "was already there" (小米集团, 2026-11-09)
-      const isNew = adding ? t("{company} ({id}) was just added to the companies list by the user; it wasn't on it before, so its row is new, not one that was already there. Use {id} for it.", { company: c.name, id: c.id }) + " " : "";
-      ok = await sendChat(isNew + t("Find out about {company} and fill in all its fields: industry, strength, headquarters, the cities it hires in, size, its careers sites, its logo and the About, each with a source.", { company: c.name })
-        + " " + t("Then bring its open roles in: scan it, learn every careers site the scan can't read yet, and scan again until its roles are on the list. It is done only when they are, or when you've shown it has no careers site that lists roles."), { fresh, title }) || ok;
+      // the company "was already there" (小米集团, 2026-11-09). Kept short (user, 2026-11-10): the check below names
+      // any field left empty, so the prompt doesn't list them
+      const fill = adding ? t("Fill in {company} ({id}), which the user has just added: every field, each with a source.", { company: c.name, id: c.id })
+        : t("Fill in {company} ({id}): every field, each with a source.", { company: c.name, id: c.id });
+      ok = await sendChat(fill + " " + t("Then bring its open roles in, learning any careers site the scan can't read and scanning again, until they're on the list or you've shown it has no careers site that lists roles."), { fresh, title }) || ok;
       fresh = false;
     }
     return ok;
