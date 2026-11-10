@@ -18,8 +18,8 @@ Each site is read the cheapest way that works, never by Claude once it has been 
 3. Neither yet: the site **needs Claude** to record its route; the window offers that (an automatic daily
    scan never starts Claude).
 
-北森 (jobhunt/beisen.py), Feishu on any domain (jobhunt/feishu.py) and HotJob (jobhunt/hotjob.py) are read by the
-scan itself, career-ops or not. Routes of several companies that call one API are found by jobhunt/systems.py, so a
+北森 (jobhunt/beisen.py), Feishu on any domain (jobhunt/feishu.py), HotJob (jobhunt/hotjob.py) and 阿里's talent
+sites (jobhunt/alitalent.py) are read by the scan itself, career-ops or not. Routes of several companies that call one API are found by jobhunt/systems.py, so a
 system the AI keeps learning one site at a time gets a built-in scan of its own.
 """
 from __future__ import annotations
@@ -39,13 +39,14 @@ from core.browser import BrowserError, PageNotOpened
 from core.cdp import CdpError
 from core.i18n import t
 
-from . import beisen, feishu, hotjob, patience, systems
+from . import alitalent, beisen, feishu, hotjob, patience, systems
 from .postings import Postings
 from .store import Hunt, site_host, site_key
 
 BRIDGE = Path(__file__).resolve().parent.parent / "jobs" / "co_scan.mjs"
 # the job APIs the scan reads itself, whatever the site: a route calling one predates that scan
-BUILT_IN_APIS = {beisen.API.lower(), feishu.API.lower(), hotjob.API.lower().rstrip("/")}
+BUILT_IN_APIS = {beisen.API.lower(), feishu.API.lower(), hotjob.API.lower().rstrip("/"),
+                 alitalent.API.lower(), alitalent.BATCHES.lower()}
 KNOWN = "providers.json"   # hunt/providers.json  {"<list address>": "beisen"}: the systems found reading each
 MAX_PAGES = 20   # of a recorded route, each with 2 minutes
 # a scan has no one waiting on it, and a user abroad reads sites on the far side of the world (user, 2026-11-02):
@@ -161,6 +162,10 @@ class Scanner:
         self.hotjob_detect: Callable[[str], bool | None] = hotjob.detect
         self.hotjob_read: Callable[[str], dict] = hotjob.read
         self._not_hotjob: set[str] = set()
+        # 阿里's talent sites (jobhunt/alitalent.py): a company's talent.<x> domain, or its part of the group's campus site
+        self.alitalent_detect: Callable[[str], bool | None] = alitalent.detect
+        self.alitalent_read: Callable[[str], dict] = alitalent.read
+        self._not_alitalent: set[str] = set()
         # asked, and the site didn't answer: nobody knows yet whether a system reads it. Never "the AI has to learn
         # it" (join.huolala.cn after every restart, 2026-11-11): said as "didn't connect", asked again next scan
         self._unreached: set[str] = set()
@@ -241,7 +246,7 @@ class Scanner:
     def detect(self, urls: list[str], name: str = "") -> None:
         """Which provider reads each address (None: none does), asked once per address and kept."""
         had = {u: p for u, p in self._providers.items() if p}
-        silent: set[str] = set()   # HotJob, 北森 or Feishu asked and no answer came: nobody knows yet
+        silent: set[str] = set()   # a built-in reader asked and no answer came: nobody knows yet
         unknown = list(dict.fromkeys(u for u in urls if u not in self._providers))
         for r in self._bridge([{"key": u, "name": name, "url": u} for u in unknown], detect=True):
             if not r.get("error"):
@@ -288,6 +293,18 @@ class Scanner:
         for u in dict.fromkeys(urls):   # the ones asked before a later portal of their site answered
             if not self._providers.get(u) and u not in self._not_feishu and on_feishu(u):
                 self._providers[u] = feishu.PROVIDER
+        # last, 阿里's talent sites: asked of what nothing else reads (one POST, as for Feishu)
+        for u in dict.fromkeys(urls):
+            if self._providers.get(u) or u in self._not_alitalent:
+                continue
+            got = self.alitalent_detect(u)
+            if got:
+                self._providers[u] = alitalent.PROVIDER
+                silent.discard(u)
+            elif got is False:
+                self._not_alitalent.add(u)
+            else:
+                silent.add(u)
         for u in dict.fromkeys(urls):
             if self._providers.get(u) or u not in silent:
                 self._unreached.discard(u)
@@ -557,12 +574,13 @@ class Scanner:
             lists = list(dict.fromkeys([*(self.list_of(s) for s in api), *via_api]))
             # the lists the scan reads itself (北森, Feishu on any domain); the rest through career-ops' providers
             readers = {beisen.PROVIDER: (beisen.lists, self.beisen_read), feishu.PROVIDER: (feishu.lists, self.feishu_read),
-                       hotjob.PROVIDER: (hotjob.lists, self.hotjob_read)}
+                       hotjob.PROVIDER: (hotjob.lists, self.hotjob_read),
+                       alitalent.PROVIDER: (alitalent.lists, self.alitalent_read)}
             ours = [(prov, u) for prov, (each, _) in readers.items()
                     for u in each([x for x in lists if self._providers.get(x) == prov])]
             # which of the company's sites a list stands for: 北森 reads a whole domain as one list, Feishu a portal
             same = {beisen.PROVIDER: beisen.origin, feishu.PROVIDER: lambda u: (feishu.origin(u), feishu.portal(u)),
-                    hotjob.PROVIDER: hotjob.key}
+                    hotjob.PROVIDER: hotjob.key, alitalent.PROVIDER: alitalent.key}
             missed: dict[str, str] = {}   # site -> "none" (nothing read off it this time) or "part" (some pages)
 
             def miss(u: str, what: str) -> None:

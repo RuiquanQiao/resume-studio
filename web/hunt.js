@@ -1284,6 +1284,7 @@ function missedSay(missed) {
 function howName(how) {
   return String(how || "").split("+").map((x) => (x === "route" ? t("its recorded route") : x === "claude" ? t("read by AI")
     : x === "beisen" ? t("北森's job list") : x === "feishu" ? t("Feishu's job list") : x === "hotjob" ? t("HotJob's job list")
+    : x === "alitalent" ? t("阿里's talent sites' job list")
     : x)).join(" + ");
 }
 

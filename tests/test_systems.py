@@ -21,6 +21,10 @@ ALIBABA = """async (h) => { const t = document.cookie; const r = await fetch('/p
   return {postings: rows.map(j => ({title: j.name, url: location.origin + '/off-campus/position-detail?positionId=' + j.id}))} }"""
 FANRUAN_LINKS = """async (h) => { const config = {campus: [1, 'campus', '/campus/detail?id='], trainee: [3, 'intern', '/intern/detail?id=']};
   const r = await fetch('/api/search.php', {method: 'POST'}); return {postings: []} }"""
+# a recruiting system no built-in scan reads (made up): what the next one found will look like
+VENDOR = """async (h) => { const r = await fetch('/openapi/v2/recruit/job-list', {method: 'POST',
+  body: JSON.stringify({page: 1})}); const rows = (await r.json()).data;
+  return {postings: rows.map(j => ({title: j.name, url: location.origin + '/job/detail?id=' + j.id}))} }"""
 BEISEN_LINKS = """async (h) => { const path = "/campus/detail";
   const r = await fetch('/api/Jobad/GetJobAdPageList', {method: 'POST'});
   return {postings: rows.map(j => ({title: j.JobAdName, url: new URL(({"1": "/social/detail", "2": "/campus/detail"})[j.c], location.href).href}))} }"""
@@ -71,11 +75,11 @@ def test_a_route_that_joins_two_others_on_one_api_says_so(hunt):
              "兰亭游戏": "https://talent.lanting.example/campus/position", "星河科技": "https://careers.xinghe.example/jobs"}
     sc = _scanner(hunt, sites)
     for name in ("青松物流", "百合到家"):
-        assert not sc.save_route(name, {"pages": [{"url": sites[name], "script": ALIBABA}]})[1]
+        assert not sc.save_route(name, {"pages": [{"url": sites[name], "script": VENDOR}]})[1]
     assert sc.kin("百合到家") == [] and sc.shared_systems() == []
-    assert not sc.save_route("兰亭游戏", {"pages": [{"url": sites["兰亭游戏"], "script": ALIBABA}]})[1]
+    assert not sc.save_route("兰亭游戏", {"pages": [{"url": sites["兰亭游戏"], "script": VENDOR}]})[1]
     (k,) = sc.kin("兰亭游戏")
-    assert k["companies"] == sorted(["百合到家", "青松物流"]) and k["paths"] == ["/position/search"]
+    assert k["companies"] == sorted(["百合到家", "青松物流"]) and k["paths"] == ["/openapi/v2/recruit/job-list"]
     assert [g["companies"] for g in sc.shared_systems()] == [sorted(["百合到家", "青松物流", "兰亭游戏"])]
     # a site on its own API is kin to nobody
     assert not sc.save_route("星河科技", {"pages": [{"url": sites["星河科技"], "script": FANRUAN_LINKS}]})[1]
@@ -93,10 +97,11 @@ def test_routes_on_a_system_a_built_in_scan_reads_are_no_group(hunt):
     assert sc.shared_systems() == [] and sc.kin("华宝能源") == []
 
 
-def test_hotjob_routes_are_no_group_now_the_scan_reads_hotjob(hunt):
+def test_routes_on_hotjob_or_the_groups_talent_sites_are_no_group_now_the_scan_reads_them(hunt):
     sites = {"云帆科技": "https://careers.yunfan.example/SU1/pb/school.html", "远山能源": "https://wecruit.hotjob.cn/SU2/pb/school.html",
              "青松集团": "https://yuanshan.hotjob.cn/SU3/pb/social.html"}
     sc = _scanner(hunt, sites)
     for (name, u), script in zip(sites.items(), (HOTJOB_INLINE, HOTJOB_JOINED, HOTJOB_TEMPLATE)):
-        sc.postings.set_scan_state(hunt.company(name)["id"], route={"pages": [{"url": u, "script": script}], "sites": [u]})
+        sc.postings.set_scan_state(hunt.company(name)["id"], route={"pages": [{"url": u, "script": script},
+                                                                            {"url": u + "#talent", "script": ALIBABA}], "sites": [u]})
     assert sc.shared_systems() == []

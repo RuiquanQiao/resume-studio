@@ -138,6 +138,14 @@ the company (creating and filling it when new), adds the posting with its detail
   no built-in scan reads, is a system worth one. `scan-route` says so when a new route joins such a group, and
   the AI passes it on to the user; `hunt.py systems` lists every group. On 2026-11-11 that found HotJob (7
   companies, read by the scan since) and one group's own talent sites (`/position/search`, 5 companies).
+- **阿里's talent sites** (`jobhunt/alitalent.py`, 2026-11-11, the second system `systems.py` found): a company's
+  `talent.<x>` domain for its social list, and the group's shared `campus-talent.alibaba.com` for campus and
+  intern lists. Read with no page opened: the API's CSRF check is double-submit, so any token sent as both the
+  `XSRF-TOKEN` cookie and the `x-xsrf-token` header passes. A site whose addresses start with a language asks
+  that language's API (`/zh/position/search`: 301 roles where the plain one gave 8). The shared campus site is
+  read only for a company its address names (`circleCode=`, or a `filterParams` department), in every batch,
+  a role in two batches once; one with no company named stays with its route, and the AI is told to name it.
+  A list whose every page came, the last not full, is whole at what it gave (one said 8 and gave 7).
 - Any other site (Xinghe's own site…) is read in Resume Studio's browser by a **recorded route**,
   as profiles are (`autofill/route.py`): the first scan lets Claude find the job list, sign-in included (the
   user signs in with the row's button), and record read-only page scripts; later scans replay them with no

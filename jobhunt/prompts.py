@@ -156,7 +156,9 @@ How to work it:
   provider reads (`show` says so on its line) is the scan's, never touched, never read again by a route: its roles
   would come in twice. First find where the site's list really is. An own page that redirects to, embeds or links
   its list on a recruiting system (Feishu `<x>.jobs.feishu.cn/<portal>`, Moka `app.mokahr.com/..`, Greenhouse,
-  Lever, Workday…) gets that list's address as the site's `list` (`fill` with every site `show` lists, that one as
+  Lever, Workday…; for a company of 阿里's group, its part of the group's shared campus site,
+  `campus-talent.alibaba.com/campus/position?circleCode=<its code>`, the code its own campus page filters by)
+  gets that list's address as the site's `list` (`fill` with every site `show` lists, that one as
   `{{"url": "<the site>", "list": "<the list's address>"}}`: `fill` sites is the whole list), then `scan`: a provider reads it with no route and no AI. A route is only for
   a list no provider reads; `scan-route` refuses a page a provider reads. `scan-route` runs the route once before
   keeping it and keeps it only when it reads roles, as many as the site says it lists: when it refuses, nothing
