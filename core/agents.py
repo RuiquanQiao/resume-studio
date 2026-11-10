@@ -167,10 +167,12 @@ class AgentInfo:
         self.cwd = cwd
         self.cache = cache
         self.lock = threading.Lock()
+        self.save_lock = threading.Lock()
         self.data: dict | None = None
         self.error: str | None = None
         self.fetched = 0.0
         self.loading = False
+        self.stopped = False   # its data file was switched away from: what it learns after is not written
         try:
             saved = json.loads(cache.read_text(encoding="utf-8"))
             self.data, self.fetched = saved["data"], float(saved.get("fetched") or 0)
@@ -229,8 +231,12 @@ class AgentInfo:
             return True
 
     def _save(self) -> None:
-        self.cache.parent.mkdir(parents=True, exist_ok=True)
-        self.cache.write_text(json.dumps({"data": self.data, "fetched": self.fetched}, ensure_ascii=False), encoding="utf-8")
+        # a probe that answers after the data moved would make its old folder again, with only this cache in it
+        with self.save_lock:
+            if self.stopped:
+                return
+            self.cache.parent.mkdir(parents=True, exist_ok=True)
+            self.cache.write_text(json.dumps({"data": self.data, "fetched": self.fetched}, ensure_ascii=False), encoding="utf-8")
 
 
 def empty_info(agent: Agent) -> dict:
@@ -253,6 +259,12 @@ class AgentHub:
 
     def info(self, agent_id: Any) -> AgentInfo:
         return self.infos[get(agent_id).id]
+
+    def stop(self) -> None:
+        """Its data file is switched away from (opened another, or moved): nothing more is written to its folder."""
+        for i in self.infos.values():
+            with i.save_lock:   # a write under way ends first (never the fetch, which can take 20 s), so a move takes it along
+                i.stopped = True
 
     def listing(self) -> list[dict]:
         out = []

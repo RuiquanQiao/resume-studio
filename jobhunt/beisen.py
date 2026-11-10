@@ -146,9 +146,11 @@ def posting(base: str, j: dict) -> dict | None:
             "id": str(j["Id"]).lower(), "number": str(j.get("JobAdId") or "")}
 
 
-def read(url: str, *, timeout: float = TIMEOUT, waits: tuple[float, ...] = WAITS) -> dict:
+def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | None = None) -> dict:
     """Every role of the portal's list: {"jobs": [...], "total": the list's own count}. Raises ReadFailed when the
     site doesn't answer or answers with something that isn't its list."""
+    timeout = TIMEOUT if timeout is None else timeout   # looked up when called, so a test's shorter ones reach it
+    waits = WAITS if waits is None else waits
     base = origin(url)
     try:
         page = _get(url, timeout, TRIES, waits)   # 北森 drops a connection now and then (WinError 10054)

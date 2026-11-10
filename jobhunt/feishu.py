@@ -128,11 +128,15 @@ def posting(base: str, path: str, p: dict) -> dict | None:
             "batch": _batch(p.get("recruit_type")), "posted": posted, "deadline": "", "id": str(p["id"])}
 
 
-def read(url: str, *, timeout: float = TIMEOUT, waits: tuple[float, ...] = WAITS) -> dict:
+def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | None = None) -> dict:
     """Every role of the portal's list: {"jobs": [...], "total": the list's own count, "portal"}. Raises ReadFailed
     when its first page doesn't come, or comes as something that isn't its list. A later page that doesn't come
     leaves the rest read: {"failed": why} with what came, never all of the portal lost for one page (小米's intern
     portal, 2026-11-10); the scan keeps them, says so, and closes nothing on a read that wasn't whole."""
+    # looked up when called, not when defined: a test's shorter waits reached only the calls that passed them, and
+    # the scan's own call slept 230 s through its six tries
+    timeout = TIMEOUT if timeout is None else timeout
+    waits = WAITS if waits is None else waits
     base, path = origin(url), portal(url)
 
     def page(n: int) -> tuple[list[dict], int | None]:

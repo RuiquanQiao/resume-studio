@@ -60,6 +60,8 @@ class Instance:
     def stop(self) -> None:
         """Before switching to another data file (the hosted web interface keeps running)."""
         self.chats.cancel_all()
+        if self.agents:
+            self.agents.stop()
         self.watcher.stop()
         if self.jobs_watcher:
             self.jobs_watcher.stop()

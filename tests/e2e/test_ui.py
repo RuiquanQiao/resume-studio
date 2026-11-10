@@ -27,7 +27,9 @@ needs_tex = pytest.mark.skipif(not shutil.which("xelatex"), reason="xelatex not 
 def browser_ctx():
     from playwright.sync_api import sync_playwright
 
-    profile = ROOT / ".cache" / "pw-profile"
+    # one browser profile per group: scripts/check.py runs ui, ai_review and session_ui side by side
+    group = os.environ.get("STUDIO_TEST_GROUP")
+    profile = ROOT / ".cache" / ("pw-profile-" + group if group else "pw-profile")
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(str(profile), channel="msedge", headless=True,
                                                    viewport={"width": 1440, "height": 900})
