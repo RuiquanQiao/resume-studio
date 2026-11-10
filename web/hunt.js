@@ -942,7 +942,7 @@ async function openCompanyAt(cid, pid = null) {
 // a button's key for asking the AI about these companies: one company's buttons share it, wherever they are
 const aiKey = (what, cs) => what + ":" + cs.map((c) => c.id).join(",");
 // a site as the user knows it: its address without the scheme, www or a trailing slash
-const siteName = (url) => String(url || "").replace(/^https?:\/\/(www\.)?/i, "").replace(/\/$/, "");
+const siteName = (url) => String(url || "").replace(/^https?:\/\/(www\.)?/i, "").replace(/\/?#?\/?$/, "");   // and a bare "/#/"
 
 // what a hunt button asked the AI for, looked for in fresh data once its chat ends (aiRun's check)
 // `ids`: the companies whose scan the work waits on. A chat that ended while one of them was still being scanned is
@@ -1209,7 +1209,9 @@ function postingsCard(v) {
     : !sc.at ? h("span", { class: "muted" }, t("not scanned yet"))
     // read in part (a slow page timed out): what it read is kept, and the bar below says which page didn't
     // with how it read: a route that timed out on a page is still a route, never "not set up"
-    : sc.ok && sc.error ? h("span", { class: "fs-status warn", id: "company-read-in-part" }, icon("alert"), sc.unread
+    : sc.ok && sc.error ? h("span", { class: "fs-status warn", id: "company-read-in-part" }, icon("alert"), missedSay(sc.missed)
+      ? t("scanned {when} · {how} · {what}", { when: huntWhen(sc.at), how: howName(sc.how), what: missedSay(sc.missed) })
+      : sc.unread
       ? t("scanned {when} · {how} · {n} of {all} pages didn't read; the roles they had last time are kept", { when: huntWhen(sc.at), how: howName(sc.how), n: sc.unread[0], all: sc.unread[1] })
       : t("scanned {when} · {how} · some pages didn't read", { when: huntWhen(sc.at), how: howName(sc.how) }))
     // read, but fewer roles than the site says it has: never shown as a whole read
@@ -1271,6 +1273,13 @@ function postingsCard(v) {
 }
 
 const BATCH_NAMES = { campus: "Campus", intern: "Internship", social: "Experienced", other: "Other" };
+// the sites a scan read nothing of, or only some pages of, by name: "join.huolala.cn wasn't read this time"
+function missedSay(missed) {
+  const of = (w) => Object.entries(missed || {}).filter(([, x]) => x === w).map(([u]) => siteName(u)).join(", ");
+  return [of("none") && t("{sites} wasn't read this time", { sites: of("none") }),
+    of("part") && t("some pages of {sites} didn't read", { sites: of("part") })].filter(Boolean).join(" · ");
+}
+
 function howName(how) {
   return String(how || "").split("+").map((x) => (x === "route" ? t("its recorded route") : x === "claude" ? t("read by AI")
     : x === "beisen" ? t("北森's job list") : x)).join(" + ");
@@ -1731,7 +1740,7 @@ function companyPage(v) {
     ], { fold: "company-roles" }),
     postingsCard(v),
     card(t("Its careers site"), t("one profile there, filled from a subset"), [
-      h("div", { class: "field" }, h("label", null, t("Its careers sites"), h("span", { class: "hint" }, keptHint(c, "sites") || t("scanned for open roles"))), sitesEditor(c, (v.scan || {}).sites || {}, (v.scan || {}).tried || {})),
+      h("div", { class: "field" }, h("label", null, t("Its careers sites"), h("span", { class: "hint" }, keptHint(c, "sites") || t("scanned for open roles"))), sitesEditor(c, (v.scan || {}).sites || {}, (v.scan || {}).tried || {}, (v.scan || {}).missed || {})),
       h("div", { class: "grid2" }, hfield(t("Where you sign up"), c.site, save("site"), { placeholder: "https://careers.example.com/campus", hint: keptHint(c, "site"), link: true }),
         hfield(t("Account"), c.account, save("account"), { placeholder: t("e.g. the phone or email you signed up with"), hint: t("never a password") })),
       h("div", { class: "field" }, h("label", null, t("Filled from"), h("span", { class: "hint" }, t("the subset this site gets"))), h("div", { class: "su-subset" }, pick.el,
@@ -1784,7 +1793,7 @@ function siteScanChip(how, list, tried = "") {
 const SITE_KINDS = { campus: "Campus", intern: "Internships", social: "Experienced", other: "Other" };
 
 // the company's careers sites, each one changeable: its kind, its address (emptied, it goes), or gone; and more
-function sitesEditor(c, scans = {}, tried = {}) {
+function sitesEditor(c, scans = {}, tried = {}, missed = {}) {
   const sites = (c.sites || []).map((x) => ({ ...x }));
   const save = () => editCompany(c.id, { sites });
   const kinds = Object.entries(SITE_KINDS).map(([value, label]) => ({ value, label: t(label) }));
@@ -1796,6 +1805,9 @@ function sitesEditor(c, scans = {}, tried = {}) {
     // "own site" is the value the AI is told to write (jobhunt/prompts.py): said in the interface's language
     x.system && h("span", { class: "muted" }, x.system.replace(/^own site\b/i, t("Built by the company"))),
     siteScanChip(scans[x.url], x.list, tried[x.url]),
+    // readable, but the last scan read nothing or only some pages of it: said beside the tick, never hidden by it
+    missed[x.url] && h("span", { class: "site-scan warn site-missed", title: t("The last scan's red bar says which page and why") },
+      icon("alert"), missed[x.url] === "none" ? t("Nothing read this time") : t("Not all read this time")),
     h("button", { class: "btn icon sm ghost", title: t("Open it in your everyday browser"), "aria-label": t("Open it in your everyday browser"), onclick: () => openInBrowser(x.url) }, icon("external")),
     h("button", { class: "btn icon sm ghost", title: t("Remove this site"), "aria-label": t("Remove this site"), onclick: () => { sites.splice(i, 1); save(); } }, icon("x"))));
   const add = h("input", { class: "su-add-input", id: "company-add-site", spellcheck: "false", placeholder: t("Add a careers site: paste its address and press Enter"),

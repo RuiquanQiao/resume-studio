@@ -148,7 +148,8 @@ def posting(base: str, j: dict) -> dict | None:
 
 def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | None = None) -> dict:
     """Every role of the portal's list: {"jobs": [...], "total": the list's own count}. Raises ReadFailed when the
-    site doesn't answer or answers with something that isn't its list."""
+    site or its first page doesn't answer, or answers with something that isn't its list. A later page that doesn't
+    come leaves the rest read: {"failed": why} with what came; the scan keeps them and closes nothing."""
     timeout = TIMEOUT if timeout is None else timeout   # looked up when called, so a test's shorter ones reach it
     waits = WAITS if waits is None else waits
     base = origin(url)
@@ -162,7 +163,9 @@ def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | N
     portal = m.group(1) if m else ""
     rows: list[dict] = []
     total = None
-    for index in range(MAX_PAGES):
+    failed: list[str] = []
+
+    def page(index: int) -> dict:
         body = {"PageIndex": index, "PageSize": PAGE, "KeyWords": "", "SpecialType": 0, "PortalId": portal,
                 "DisplayFields": ["Category", "Kind", "LocId", "PostDate", "EndTime", "ClassificationOne"]}
         d = None
@@ -176,9 +179,32 @@ def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | N
                 time.sleep(waits[min(attempt, len(waits) - 1)] if waits else 0)
         if not isinstance(d, dict) or d.get("Code") != 200 or not isinstance(d.get("Data"), list):
             raise ReadFailed(f"its list answered with something else: {str(d)[:200]}")
-        total = d.get("Count") if isinstance(d.get("Count"), int) else total
-        rows += d["Data"]
-        if not d["Data"] or len(d["Data"]) < PAGE or (total is not None and len(rows) >= total):
-            break
+        return d
+
+    # the first page says how many roles there are; a later page that doesn't come is skipped, the rest read:
+    # 货拉拉's page 6 of 7 timing out lost the 250 roles of pages 1 to 5 with it (2026-11-10)
+    first = page(0)
+    total = first.get("Count") if isinstance(first.get("Count"), int) else None
+    rows += first["Data"]
+    if total is not None:
+        for index in range(1, min(MAX_PAGES, -(-total // PAGE))):
+            try:
+                rows += page(index)["Data"]
+            except ReadFailed as e:
+                failed.append(str(e))
+    elif len(first["Data"]) == PAGE:   # no count: page on until a short page; a page that doesn't come ends it
+        for index in range(1, MAX_PAGES):
+            try:
+                got = page(index)["Data"]
+            except ReadFailed as e:
+                failed.append(str(e))
+                break
+            rows += got
+            if len(got) < PAGE:
+                break
     jobs = [p for p in (posting(base, j) for j in rows) if p]
-    return {"jobs": jobs, "total": total, "portal": portal}
+    jobs = list({j["url"]: j for j in jobs}.values())   # a role that moved up a page between two reads, once
+    out = {"jobs": jobs, "total": total, "portal": portal}
+    if failed:
+        out["failed"] = "; ".join(failed[:3]) + (f" (and {len(failed) - 3} more pages)" if len(failed) > 3 else "")
+    return out

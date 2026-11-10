@@ -2958,6 +2958,27 @@ def test_postings_read_by_hand_say_the_site_has_no_scan_route(page_all):
     assert out["route"] == {"warn": None, "learn": False}
 
 
+def test_a_site_the_scan_missed_is_named_on_the_status_and_its_row(page_all):
+    """货拉拉, 2026-11-10: its 北森 site read nothing, and the card said "read by mokahr · some pages didn't read"
+    while the site's row showed a green "scanned automatically". Now both say which site, and how much was missed."""
+    pg = page_all
+    out = pg.evaluate("""() => {
+      const at = new Date(Date.now() - 60e3).toISOString();
+      const sites = ['https://join.huolala.example/#/', 'https://app.mokahr.example/campus-recruitment/huolala/1'];
+      const say = (missed) => postingsCard({company: {id: 'C86', name: '货拉拉'}, postings: [],
+        scan: {at, ok: true, how: 'mokahr', error: 'https://join.huolala.example/#/: its list gave no answer', missed}})
+        .querySelector('#company-read-in-part').textContent;
+      const ed = sitesEditor({id: 'C86', sites: sites.map((url) => ({url, kind: 'social'}))},
+        {[sites[0]]: 'api', [sites[1]]: 'api'}, {}, {[sites[0]]: 'none'});
+      const rows = [...ed.querySelectorAll('.co-site-edit')].map((r) => [...r.querySelectorAll('.site-scan')].map((s) => s.textContent));
+      return {none: say({[sites[0]]: 'none'}), part: say({[sites[0]]: 'part'}), old: say(null), rows};
+    }""")
+    assert out["none"].endswith("读取方式：mokahr · join.huolala.example 这次没读到"), out
+    assert out["part"].endswith("读取方式：mokahr · join.huolala.example 有的页面没读出来"), out
+    assert out["old"].endswith("读取方式：mokahr · 有的页面没读出来"), out   # a route's page: as before
+    assert out["rows"] == [["能自动扫描", "这次没读到"], ["能自动扫描"]], out
+
+
 def test_scan_wording_names_sites_never_a_company(page_all):
     """User, 2026-11-03: "1 家公司还没有扫描路线" for a company whose Feishu site scans and whose two own sites
     don't. Every scan message names the sites; every site's row says whether it is scanned automatically."""

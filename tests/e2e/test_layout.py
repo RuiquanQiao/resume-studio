@@ -312,6 +312,18 @@ def scan_read_in_part(c):
                                                        error=f"the page {url} didn't open in 3 tries: Page.navigate timed out")
 
 
+def a_site_read_nothing(c):
+    """货拉拉, 2026-11-10: one site read nothing this scan, another only some pages, both with long addresses: the
+    status names them, and their rows say it beside "scanned automatically"."""
+    filled_companies(c)
+    hunt = c.server.inst.hunt
+    none = "https://join.xinghe-technology-group-holdings.example/#/" + "y" * 80
+    part = "https://xinghe-technology-group-holdings.zhiye.example/social/jobs/" + "z" * 80
+    hunt.update_company("C1", {"sites": [*hunt.company("C1")["sites"], {"url": none, "kind": "social"}, {"url": part, "kind": "intern"}]})
+    hunt.scanner.postings.set_scan_state("C1", how="mokahr", missed={none: "none", part: "part"},
+                                         error=f"{none}: its list gave no answer for page 1: The read operation timed out")
+
+
 def sites_the_ai_tried(c):
     """A company with open roles whose other sites can't be read: one the AI was asked to learn and couldn't (思摩尔国际,
     2026-11-04), one never tried, with a long address. The table says so beside the count, every place tells them apart."""
@@ -572,6 +584,8 @@ STATES = [
           ["#company-no-route", ".co-sites .site-scan.warn", ".post-row"], prepare=sites_the_ai_tried),
     State("applying, a company whose scan read only some pages", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
           [".card-acts .fs-status.warn", ".note-bar.warn", ".post-row"], prepare=scan_read_in_part),
+    State("applying, a company whose scan read nothing off one site", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
+          ["#company-read-in-part", ".co-sites .site-missed"], prepare=a_site_read_nothing),
     State("applying, a long table scrolled both ways, two columns frozen", then(applying("apps"),
           js("""() => { const tb = DBV.tables.apps, v = tb.views[0]; v.freeze = 2; paintHunt(); }"""),
           js("() => { document.querySelector('.hunt-scroll').scrollTop = 400; document.querySelector('.dbv-body').scrollLeft = 300; }")),
@@ -651,8 +665,7 @@ CONNECTED = [s for s in STATES if "connected" in s.needs]
 
 @pytest.mark.parametrize("st", PLAIN, ids=[s.name for s in PLAIN])
 def test_layout(st, win, server):
-    problems = run_state(win, server, st)
-    assert not problems, "\n" + "\n".join(problems)
+    problems = run_state(win, server, st)    assert not problems, "\n" + "\n".join(problems)
 
 
 @pytest.mark.parametrize("st", CONNECTED, ids=[s.name for s in CONNECTED])

@@ -187,6 +187,48 @@ def test_a_beisen_portal_that_reads_short_of_its_count_is_not_done(hunt):
     assert res["short"] == [20, 24] and res["closed"] == 0 and sum(1 for p in ps.all() if not p["closed"]) == 24
 
 
+def test_a_beisen_page_that_never_comes_loses_only_itself(hunt, monkeypatch):
+    """货拉拉, 2026-11-10: page 6 of join.huolala.cn timed out, and the roles of pages 1 to 5 went with it, while the
+    window said "read by mokahr · some pages didn't read". Now the pages that came are kept, nothing is closed, the
+    scan says it read 北森, and which site was read only in part; a site read not at all is said as that."""
+    site = BeisenSite([role(i) for i in range(25)])
+    monkeypatch.setattr(beisen, "PAGE", 10)   # three pages
+    monkeypatch.setattr(beisen, "WAITS", (0, 0, 0))
+    bad: set[int] = set()
+    answer = site.srv.RequestHandlerClass.do_POST
+
+    def do_post(self):
+        n = int(self.headers["Content-Length"])
+        body = self.rfile.read(n)
+        if json.loads(body)["PageIndex"] in bad:
+            return self._send(500, b"{}", "application/json")
+        self.rfile = __import__("io").BytesIO(body)
+        answer(self)
+    site.srv.RequestHandlerClass.do_POST = do_post
+    try:
+        ps = Postings(hunt)
+        url = site.url + "/#/"
+        hunt.add_company({"name": "货拉拉", "sites": [{"url": url, "kind": "social", "system": "北森"}]})
+        sc = Scanner(hunt, ps, NoTool(), FakeBrowser({}), lambda: None)
+        sc._providers[url] = "beisen"
+        assert sc.scan("货拉拉")["found"] == 25
+        bad.add(1)   # the middle page doesn't come
+        res = sc.scan("货拉拉")
+        assert (res["found"], res["closed"]) == (15, 0) and "page 2" in res["errors"][0], res
+        st = sc.live_state(hunt.company("C1"))
+        assert st["how"] == "beisen" and st["missed"] == {url: "part"} and st["error"]
+        assert sum(1 for p in ps.all() if not p["closed"]) == 25
+        bad.add(0)   # its first page doesn't come either: nothing read off it, said as that
+        sc.scan("货拉拉")
+        assert ps.scan_state("C1")["missed"] == {url: "none"}
+        assert sum(1 for p in ps.all() if not p["closed"]) == 25
+        bad.clear()   # read whole again: nothing missed
+        sc.scan("货拉拉")
+        assert not ps.scan_state("C1").get("missed")
+    finally:
+        site.close()
+
+
 def test_a_route_is_tried_before_it_is_kept(hunt):
     """A route is run once before it is kept: one that reads no roles, or fewer than its site says, goes back to
     the AI with why, and the company keeps the route it had."""

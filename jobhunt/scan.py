@@ -260,6 +260,9 @@ class Scanner:
                 st["needs"] = ""
         # `tried`: when the AI was asked to learn a site and the scan still couldn't read it after: only while it can't
         st["tried"] = {u: at for u, at in (st.get("tried") or {}).items() if u in (st.get("unrouted") or [])}
+        if st.get("missed"):   # only the sites the company still has
+            now = {s["url"] for s in self.sites_of(c)}
+            st["missed"] = {u: w for u, w in st["missed"].items() if u in now} or None
         return st
 
     def learn_tried(self, ref: str, urls: list[str]) -> dict[str, str]:
@@ -492,10 +495,20 @@ class Scanner:
             readers = {beisen.PROVIDER: (beisen.lists, self.beisen_read), feishu.PROVIDER: (feishu.lists, self.feishu_read)}
             ours = [(prov, u) for prov, (each, _) in readers.items()
                     for u in each([x for x in lists if self._providers.get(x) == prov])]
+            # which of the company's sites a list stands for: 北森 reads a whole domain as one list, Feishu a portal
+            same = {beisen.PROVIDER: beisen.origin, feishu.PROVIDER: lambda u: (feishu.origin(u), feishu.portal(u))}
+            missed: dict[str, str] = {}   # site -> "none" (nothing read off it this time) or "part" (some pages)
+
+            def miss(u: str, what: str) -> None:
+                key = same.get(self._providers.get(u) or "", lambda x: x)
+                for s in plan:
+                    if key(self.list_of(s)) == key(u) and missed.get(s["url"]) != "none":
+                        missed[s["url"]] = what
             for r in self._bridge([{"key": u, "name": c["name"], "url": u} for u in lists
                                    if self._providers.get(u) not in readers]):
                 if r.get("error"):
                     errors.append(f"{r['url']}: {r['error']}")
+                    miss(r["url"], "none")
                 else:
                     found += r.get("jobs") or []
                     hows.append(str(r.get("provider")))
@@ -514,6 +527,7 @@ class Scanner:
                 for (prov, u), r in zip(ours, got):
                     if isinstance(r, Exception):
                         errors.append(f"{u}: {r}")
+                        miss(u, "none")
                         continue
                     # one portal under two addresses (job.imou.com and imou.zhiye.com) is one list: read once
                     if r.get("portal") and r["portal"] in portals:
@@ -521,6 +535,7 @@ class Scanner:
                     portals.add(r.get("portal") or u)
                     if r.get("failed"):   # read in part: what came is kept, the error said, nothing closed
                         errors.append(f"{u}: {r['failed']}")
+                        miss(u, "part")
                     # a role already kept under another spelling of its link (a route the AI wrote linked it
                     # /campus/jobs?jobAdId=<number>) keeps that link: a role's link is its key
                     jobs = [{**j, "url": keep.get(j.get("id") or "") or keep.get(j.get("number") or "") or j["url"]}
@@ -559,6 +574,7 @@ class Scanner:
             if not hows:
                 if errors:
                     st = self.postings.failed(c["id"], "; ".join(errors), how=",".join(s["how"] for s in api) or "api")
+                    st = self.postings.set_scan_state(c["id"], missed=missed or None)
                     return {"company": c["id"], "error": "; ".join(errors), "scan": st, "needs": needs[0] if needs else "",
                             "unrouted": missing}
                 return {"company": c["id"], "needs": needs[0] if needs else "claude", "unrouted": missing}
@@ -568,7 +584,8 @@ class Scanner:
             complete = not errors and not needs and not short
             res = self.postings.merge(c["id"], found, how="+".join(dict.fromkeys(hows)), complete=complete)
             # short: [read, the site says] — kept until a scan reads them all, said wherever the count is shown
-            self.postings.set_scan_state(c["id"], short=short or None)
+            # missed: the sites this scan read nothing or only some pages of, for their rows and the status to say
+            self.postings.set_scan_state(c["id"], short=short or None, missed=missed or None)
             if errors:   # unread: how many of the route's pages didn't read, of how many ([17, 20]), for the window to say
                 self.postings.set_scan_state(c["id"], error="; ".join(errors), unread=unread or None)
             return {"company": c["id"], "found": res["found"], "new": len(res["new"]), "closed": len(res["closed"]),
