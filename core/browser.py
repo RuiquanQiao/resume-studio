@@ -463,6 +463,9 @@ class ManagedBrowser:
                 port = self._live_port(port_file)
                 if port is None:
                     port_file.unlink(missing_ok=True)
+                    # the one just closed may still be letting go of the profile (a busy machine, 2026-11-10): a new
+                    # one would hand its address to it and exit, and the start failed
+                    self._wait_free(profile, timeout=15)
                     self._launch(exe, profile, window)
                     started = True
                     port = self._wait_port(port_file)

@@ -468,7 +468,8 @@ def test_a_browser_work_started_closes_itself_when_the_work_is_done(live, fake_s
         b.open(fake_site + "/linkedin/profile.html")
         assert b.close_if_idle(after=0) and b.status()["state"] == "off"
         # the user opened it (or Claude showed it to them): it stays until they close it
-        live.req("POST", "/api/browser/start", {})
+        code, st = live.req("POST", "/api/browser/start", {})   # right after a close: it waits for that one to let go
+        assert code == 200, st
         assert b.status()["owner"] == "user" and not b.close_if_idle(after=0) and b.status()["state"] == "running"
         # and it closes by itself, with no one calling: the watcher started with it
         b.stop()
@@ -624,10 +625,14 @@ def test_a_slow_read_never_holds_up_another_chat(live, data_file, fake_site):
     reader.join(30)
     assert got["r"] == {"done": True}
     # waiting it can't avoid (its own earlier command still running) is said as waiting, never as the page's slowness
-    long = "async (h) => { await h.sleep(5000); return 1; }"
+    long = "async (h) => { await h.sleep(10000); return 1; }"   # long enough that the snapshot's own start-up fits
     first = threading.Thread(target=lambda: cli(data_file, "extract", "--stdin", stdin=long, chat="chat-a"))
     first.start()
-    time.sleep(1)
+    # until its command is in the browser: a fixed second was too short on a busy machine, where starting the
+    # command line took longer, so the snapshot ran first and had nothing to wait for (2026-11-10)
+    deadline = time.time() + 30
+    while not b.acting_now.get("chat-a") and time.time() < deadline:
+        time.sleep(0.05)
     r = out(cli(data_file, "snapshot", chat="chat-a"))
     first.join(30)
     assert "first waited" in r and "not this page being slow" in r, r

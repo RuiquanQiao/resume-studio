@@ -62,11 +62,25 @@ async function loadFill() {
   return F.loading;
 }
 
+// a site's view from the server, kept only if no request started after it has answered already: an edit's answer
+// that came after the reload a site reading set off drew the tabs from before the conflict (0 beside a conflict
+// on screen, 2026-11-10). One that comes too late is dropped and the site read again, so nothing is lost.
+let viewAsked = 0;
+const viewTaken = {};   // site id -> number of the newest request whose answer is shown
+async function takeView(site, call) {
+  const n = ++viewAsked;
+  const v = await call();
+  if (n < (viewTaken[site] || 0)) { setTimeout(() => loadFillSite(site, { quiet: true })); return null; }
+  viewTaken[site] = n;
+  F.view[site] = v;
+  return v;
+}
+
 async function loadFillSite(id = F.site, { quiet = false } = {}) {
   try {
-    const v = await api("GET", "/api/autofill/" + encodeURIComponent(id));
+    const v = await takeView(id, () => api("GET", "/api/autofill/" + encodeURIComponent(id)));
+    if (!v) return;
     F.browser = v.browser;
-    F.view[id] = v;
   } catch (e) { if (!quiet) toast(e.message); return; }
   if (id !== F.site) return;   // the user went on to another site meanwhile
   if (W.ws === "fill") { paintFill(); renderWsTools(); }
@@ -78,9 +92,8 @@ function editCopy(op, { repaint = true } = {}) {
   const site = F.site;
   const run = async () => {
     try {
-      const v = await api("PUT", `/api/autofill/${encodeURIComponent(site)}/local`, op);
-      F.view[site] = v;
-      if (site !== F.site || W.ws !== "fill") return v;
+      const v = await takeView(site, () => api("PUT", `/api/autofill/${encodeURIComponent(site)}/local`, op));
+      if (!v || site !== F.site || W.ws !== "fill") return v;
       if (repaint) paintFill(); else { paintFillFoot(); paintFillTabs(); }
       return v;
     } catch (e) { toast(e.message); return null; }
@@ -107,13 +120,14 @@ async function flushTyping() {
 
 async function saveTicks(ticks) {
   const site = F.site;
-  try { F.view[site] = await api("PUT", "/api/autofill/" + encodeURIComponent(site), { ticks }); }
+  try { await takeView(site, () => api("PUT", "/api/autofill/" + encodeURIComponent(site), { ticks })); }
   catch (e) { toast(e.message); }
   if (site === F.site && W.ws === "fill") paintFill();
 }
 
 async function chooseTarget(fields) {
-  try { F.view[F.site] = await api("PUT", "/api/autofill/" + encodeURIComponent(F.site), fields); }
+  const site = F.site;
+  try { await takeView(site, () => api("PUT", "/api/autofill/" + encodeURIComponent(site), fields)); }
   catch (e) { toast(e.message); }
   paintFill();
 }

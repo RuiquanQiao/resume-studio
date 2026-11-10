@@ -2709,6 +2709,29 @@ def test_autofill_sites_are_the_users_to_pick(page_all, server):
     no_native(pg)
 
 
+def test_an_answer_that_comes_late_never_draws_an_older_copy(page_all):
+    """2026-11-10: an edit's answer came after the reload a site reading set off, and the tabs were drawn from it:
+    a conflict on screen with 0 conflicts on its tab. The newer answer stays; the late one sets off a fresh read."""
+    out = page_all.evaluate("""async () => {
+      const old = {conflicts: {}, pending: [], local: {}, browser: null};
+      const now = {conflicts: {'basics.about': {}}, pending: [], local: {}, browser: null};
+      const realApi = api;
+      let release, gets = 0;
+      api = (method, path) => method === 'PUT' ? new Promise((ok) => { release = () => ok(old); })
+        : (gets++, Promise.resolve(now));
+      F.site = 'linkedin';
+      const edit = editCopy({op: 'set', item: 'basics', field: 'about', value: 'x'}, {repaint: false});
+      await new Promise((r) => setTimeout(r, 30));
+      await loadFillSite('linkedin', {quiet: true});      // the reading's reload answers first
+      release();                                           // then the edit's, from before it
+      await edit;
+      await new Promise((r) => setTimeout(r, 60));
+      api = realApi;
+      return {conflicts: Object.keys(F.view.linkedin.conflicts).length, gets};
+    }""")
+    assert out == {"conflicts": 1, "gets": 2}, out
+
+
 def test_the_plan_is_one_document_with_versions(page_all, server, data_file):
     """docs/PLAN.md: empty it says one line; Claude writes it from its command and the window follows; the
     user ticks a box, edits it with a reason, sees every version, compares one with now and goes back."""

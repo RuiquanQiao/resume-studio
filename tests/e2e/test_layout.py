@@ -123,8 +123,13 @@ def then(*steps):
     return run
 
 
+# a wait ends as soon as the thing shows, so its limit costs nothing when all is well; 60 s, because on a busy
+# machine (groups side by side, a game running) a render or a conflict took more than 20 (2026-11-10)
+WAIT_MS = 60000
+
+
 def wait(sel):
-    return lambda pg, c: pg.wait_for_selector(sel, timeout=20000)
+    return lambda pg, c: pg.wait_for_selector(sel, timeout=WAIT_MS)
 
 
 def click(sel):
@@ -628,7 +633,11 @@ def run_state(pg, server, st: State):
         open_window(pg, server, lang)
         st.show(pg, c)
         for sel in st.covers:
-            pg.wait_for_selector(sel, state="visible", timeout=20000)
+            try:
+                pg.wait_for_selector(sel, state="visible", timeout=WAIT_MS)
+            except Exception as e:  # noqa: BLE001  says what is on screen instead, so a red run explains itself
+                seen = {s: pg.locator(s).count() for s in st.covers}
+                raise AssertionError(f"{st.name} [{lang}]: {sel} never showed; on screen: {seen}") from e
         for (w, h), lg in LOOKS:
             if lg == lang:
                 pg.set_viewport_size({"width": w, "height": h})
