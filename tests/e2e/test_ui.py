@@ -2716,7 +2716,7 @@ def test_the_plan_is_one_document_with_versions(page_all, server, data_file):
     pg = page_all
     plan = lambda: server.req("GET", "/api/plan")[1]
     pg.keyboard.press("Control+4")
-    pg.wait_for_selector("#planspace .plan-empty")
+    pg.wait_for_selector("#planspace .plan-empty:not(.loading)")   # "Loading…" sits in the same place
     assert pg.inner_text("#planspace").strip() == "有什么焦虑，就跟 AI 说：它会帮你在这里理清。"   # one line, no template
     assert "跟 Claude 说说你在担心什么" in pg.inner_text("#chat .chat-welcome")
     assert pg.locator("#chat .chat-welcome .suggest").count() == 0

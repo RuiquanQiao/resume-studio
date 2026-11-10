@@ -224,6 +224,8 @@ function paintHunt() {
 function paintHuntNow(el) {
   const old = el.querySelector(".hunt-scroll");
   const key = pageKey();
+  // a table left for a page keeps where it was, read now: its last scroll event may not have come yet
+  if (old && old.dataset.page !== key && old.dataset.page.startsWith("table:") && H.data) HUNT_SCROLL[old.dataset.page] = old.scrollTop;
   // a table remembers where it was read to: back from a company's page, it opens there again (a page opens at its top)
   const scroll = old && old.dataset.page === key ? old.scrollTop : key.startsWith("table:") ? HUNT_SCROLL[key] || 0 : 0;
   let body;

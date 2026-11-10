@@ -38,7 +38,8 @@ function paintPlan() {
   if (!el) return;
   // a field being typed in keeps its focus and caret: only the bar above it follows
   if (P.editing && el.querySelector(".plan-text")) { paintPlanEditBar(); return; }
-  if (!P.data) { el.replaceChildren(h("div", { class: "plan-empty" }, h("p", { class: "muted" }, t("Loading…")))); return; }
+  // "loading" tells it from the plan that is empty: both sit in the middle the same way
+  if (!P.data) { el.replaceChildren(h("div", { class: "plan-empty loading" }, h("p", { class: "muted" }, t("Loading…")))); return; }
   let main;
   if (P.editing) main = planEditor();
   else if (P.view) main = planVersionView();

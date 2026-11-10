@@ -413,7 +413,7 @@ def plan_versions(c):
 
 def plan(pg, c):
     pg.keyboard.press("Control+4")
-    pg.wait_for_selector("#planspace .plan-empty, #planspace .plan-doc", timeout=20000)
+    pg.wait_for_selector("#planspace .plan-empty:not(.loading), #planspace .plan-doc", timeout=20000)
 
 
 STATES = [
@@ -658,6 +658,7 @@ def test_layout_with_career_ops(st, connected, win, server):   # noqa: F811  (co
 NOTICE = re.compile(r"(?:^|[\s.-])(banner|warn|warnings|update|conflict|empty|issue|error|strip|notice|toast|alert)(?:$|[\s-])")
 GENERIC = {"muted"}                     # styling words that say nothing about which piece it is
 NOT_SHOWN = {
+    "plan-empty loading": "the plan's 'Loading…' before it arrives: one muted line, drawn like the empty plan, which is covered",
     "muted vdiff-empty": "the comparison's 'Comparing…' / 'No differences' line: one muted sentence in a wide page",
     "fill-banner ok": "the 'done' line after Claude pushed changes: needs a full browser run (test_autofill_copy_edits_conflicts_and_push)",
     "fi-op op-update": "the 'Edited' tag on a copy item: a short chip, shown in the conflict state's neighbours",
