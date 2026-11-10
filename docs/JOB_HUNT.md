@@ -126,6 +126,18 @@ the company (creating and filling it when new), adds the posting with its detail
   once and whole, checked against the list's own `Count`. Before (2026-11-05) each needed an AI-written route,
   and 鹏芯微's read the drawn page, which shows 20 of its 24 roles and sometimes none. A role kept under a route's
   older spelling of its link keeps that link.
+- **飞书** tenants on any domain (`jobhunt/feishu.py`, 小米's `xiaomi.jobs.f.mioffice.cn`) and **HotJob** portals
+  (`jobhunt/hotjob.py`, 2026-11-11: `wecruit.hotjob.cn`, `<x>.hotjob.cn` or a company's own domain, any address
+  under a `/SU<24 hex>/` portal id) are read the same way. HotJob's school, social and interns pages are each a
+  list of its own (`recruitType` 1, 2, 12, as each page's script asks); its first page comes in the tenant's own
+  size whatever is asked, so later pages are asked in that size (asked for 50, one campus list lost 37 of its 49 roles).
+- **One system, many routes** (`jobhunt/systems.py`, 2026-11-11): the AI learns one site at a time, so it never
+  sees the site it is on is the seventh on the same system; 北森 got about 120 route pages, one company at a time,
+  before `beisen.py`. So the code compares: each route page's script comes down to the API paths it calls (a
+  tenant id as `*`, the pages a role's link is built on left out), and a path the routes of 3 companies call, that
+  no built-in scan reads, is a system worth one. `scan-route` says so when a new route joins such a group, and
+  the AI passes it on to the user; `hunt.py systems` lists every group. On 2026-11-11 that found HotJob (7
+  companies, read by the scan since) and one group's own talent sites (`/position/search`, 5 companies).
 - Any other site (Xinghe's own site…) is read in Resume Studio's browser by a **recorded route**,
   as profiles are (`autofill/route.py`): the first scan lets Claude find the job list, sign-in included (the
   user signs in with the row's button), and record read-only page scripts; later scans replay them with no

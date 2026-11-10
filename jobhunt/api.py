@@ -918,7 +918,11 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 # a route that never says the site's count can't be checked: told, so the AI adds it
                 if "found" in res and not any(re.search(r"\btotal\b", p.get("script") or "") for p in r.get("pages") or []):
                     res["no_total"] = True
+                # the AI sees one site; the code sees every route: one calling the API of others is likely one system
+                res["kin"] = scanner.kin(c["id"])
                 return {"scanned": [res], "company": company_view(c["id"]), "text": "route saved and run"}
+            if cmd == "systems":
+                return {"systems": scanner.shared_systems(), "text": "systems"}
             if cmd == "postings":
                 c = hunt.company(str(a.get("ref") or ""))
                 res = posts.merge(c["id"], a.get("postings") or [], how="claude", complete=not a.get("partial"))
@@ -952,8 +956,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             if cmd == "undo":
                 return {**history.undo(str(a.get("change") or ""), by="chat"), "text": "undone"}
             raise HttpError(400, f"unknown command {cmd!r}; one of: list, show, add-company, edit-company, fill, add-role, "
-                                 "edit-role, status, note, book, rebook, unbook, ics, about, sent, scan, scan-route, postings, apply, "
-                                 "keywords, tracks, history, undo")
+                                 "edit-role, status, note, book, rebook, unbook, ics, about, sent, scan, scan-route, systems, postings, "
+                                 "apply, keywords, tracks, history, undo")
 
         out = guard(run)
         if cmd in RECORDED:

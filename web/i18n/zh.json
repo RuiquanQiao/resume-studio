@@ -2106,6 +2106,8 @@
  "except {words}": "排除 {words}",
  "The AI builds them from your resume subsets and the titles your companies really use; you can change them after.": "AI 会根据你的简历子集和这些公司真实用的岗位标题来设，设好后随时可以改。",
  "北森's job list": "北森招聘接口",
+ "Feishu's job list": "飞书招聘接口",
+ "HotJob's job list": "HotJob 招聘接口",
  "the route's pages opened but its scripts read no roles on {pages}, twice, a while apart: the list may not show yet when they read it, or they read the wrong part of the page": "路线的页面打开了，但脚本在 {pages} 上隔一会儿读了两次都没读到岗位：可能读的时候列表还没显示出来，或者脚本读错了页面上的地方",
  "Add {company}": "{company} 添加",
  "Fill in {names}": "{names} 补全信息",

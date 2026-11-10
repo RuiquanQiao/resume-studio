@@ -17,6 +17,10 @@ Each site is read the cheapest way that works, never by Claude once it has been 
    (same origin, the user's sign-in) to page through every posting.
 3. Neither yet: the site **needs Claude** to record its route; the window offers that (an automatic daily
    scan never starts Claude).
+
+北森 (jobhunt/beisen.py), Feishu on any domain (jobhunt/feishu.py) and HotJob (jobhunt/hotjob.py) are read by the
+scan itself, career-ops or not. Routes of several companies that call one API are found by jobhunt/systems.py, so a
+system the AI keeps learning one site at a time gets a built-in scan of its own.
 """
 from __future__ import annotations
 
@@ -35,11 +39,13 @@ from core.browser import BrowserError, PageNotOpened
 from core.cdp import CdpError
 from core.i18n import t
 
-from . import beisen, feishu, patience
+from . import beisen, feishu, hotjob, patience, systems
 from .postings import Postings
 from .store import Hunt, site_host, site_key
 
 BRIDGE = Path(__file__).resolve().parent.parent / "jobs" / "co_scan.mjs"
+# the job APIs the scan reads itself, whatever the site: a route calling one predates that scan
+BUILT_IN_APIS = {beisen.API.lower(), feishu.API.lower(), hotjob.API.lower().rstrip("/")}
 KNOWN = "providers.json"   # hunt/providers.json  {"<list address>": "beisen"}: the systems found reading each
 MAX_PAGES = 20   # of a recorded route, each with 2 minutes
 # a scan has no one waiting on it, and a user abroad reads sites on the far side of the world (user, 2026-11-02):
@@ -151,6 +157,10 @@ class Scanner:
         self.feishu_read: Callable[[str], dict] = feishu.read
         self._not_beisen: set[str] = set()     # asked once per run of the app
         self._not_feishu: set[str] = set()
+        # HotJob portals on any domain (jobhunt/hotjob.py): an address under a portal id, `/SU<24 hex>/`
+        self.hotjob_detect: Callable[[str], bool | None] = hotjob.detect
+        self.hotjob_read: Callable[[str], dict] = hotjob.read
+        self._not_hotjob: set[str] = set()
         # asked, and the site didn't answer: nobody knows yet whether a system reads it. Never "the AI has to learn
         # it" (join.huolala.cn after every restart, 2026-11-11): said as "didn't connect", asked again next scan
         self._unreached: set[str] = set()
@@ -231,11 +241,23 @@ class Scanner:
     def detect(self, urls: list[str], name: str = "") -> None:
         """Which provider reads each address (None: none does), asked once per address and kept."""
         had = {u: p for u, p in self._providers.items() if p}
-        silent: set[str] = set()   # 北森 or Feishu asked and no answer came: nobody knows yet
+        silent: set[str] = set()   # HotJob, 北森 or Feishu asked and no answer came: nobody knows yet
         unknown = list(dict.fromkeys(u for u in urls if u not in self._providers))
         for r in self._bridge([{"key": u, "name": name, "url": u} for u in unknown], detect=True):
             if not r.get("error"):
                 self._providers[r["url"]] = r.get("provider")
+        # HotJob first: only an address under a portal id is asked, so the others' checks (a page fetched for
+        # 北森's marks, a POST for Feishu's list) never go to a HotJob site
+        for u in dict.fromkeys(urls):
+            if self._providers.get(u) or u in self._not_hotjob:
+                continue
+            got = self.hotjob_detect(u)
+            if got:
+                self._providers[u] = hotjob.PROVIDER
+            elif got is False:
+                self._not_hotjob.add(u)
+            else:
+                silent.add(u)
         # 北森 is read by the scan itself (jobhunt/beisen.py), career-ops or not: asked of what career-ops left
         # every address, not only the new ones: career-ops keeps "none reads it" (None) for an address, and one 北森
         # couldn't be asked about (the site didn't answer) is asked again
@@ -534,11 +556,13 @@ class Scanner:
             # one list read once: two sites fronting the same board (its own page and the board itself) are one read
             lists = list(dict.fromkeys([*(self.list_of(s) for s in api), *via_api]))
             # the lists the scan reads itself (北森, Feishu on any domain); the rest through career-ops' providers
-            readers = {beisen.PROVIDER: (beisen.lists, self.beisen_read), feishu.PROVIDER: (feishu.lists, self.feishu_read)}
+            readers = {beisen.PROVIDER: (beisen.lists, self.beisen_read), feishu.PROVIDER: (feishu.lists, self.feishu_read),
+                       hotjob.PROVIDER: (hotjob.lists, self.hotjob_read)}
             ours = [(prov, u) for prov, (each, _) in readers.items()
                     for u in each([x for x in lists if self._providers.get(x) == prov])]
             # which of the company's sites a list stands for: 北森 reads a whole domain as one list, Feishu a portal
-            same = {beisen.PROVIDER: beisen.origin, feishu.PROVIDER: lambda u: (feishu.origin(u), feishu.portal(u))}
+            same = {beisen.PROVIDER: beisen.origin, feishu.PROVIDER: lambda u: (feishu.origin(u), feishu.portal(u)),
+                    hotjob.PROVIDER: hotjob.key}
             missed: dict[str, str] = {}   # site -> "none" (nothing read off it this time) or "part" (some pages)
 
             def miss(u: str, what: str) -> None:
@@ -646,10 +670,12 @@ class Scanner:
             self.publish()
 
     def _known_links(self, cid: str) -> dict[str, str]:
-        """The links the company's postings are kept under, by the ids in them (a 北森 role's uuid or its number)."""
+        """The links the company's postings are kept under, by the ids in them (a 北森 role's uuid or its number, a
+        HotJob role's 24-hex postId: the routes the AI wrote linked them each its own way, postType=2 or =social)."""
         out: dict[str, str] = {}
         for p in self.postings.all(cid):
-            for tok in re.findall(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|\d{6,}", p.get("url") or ""):
+            for tok in re.findall(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+                                  r"|(?<![0-9a-zA-Z])[0-9a-fA-F]{24}(?![0-9a-fA-F])|\d{6,}", p.get("url") or ""):
                 out.setdefault(tok.lower(), p["url"])
         return out
 
@@ -724,6 +750,28 @@ class Scanner:
             raise
         finally:
             self.publish()
+
+    # ---- routes that look like one recruiting system (jobhunt/systems.py) ----
+    def _read_built_in(self, url: str, path: str) -> bool:
+        """A page or API path a built-in scan reads already: its route is old (written before that scan), not a
+        system still to be built."""
+        return bool(self._providers.get(url)) or beisen.is_beisen(url) or path in BUILT_IN_APIS
+
+    def _route_pages(self) -> list[tuple[str, str, str]]:
+        names = {c["id"]: c["name"] for c in self.hunt.companies()}
+        return [(names.get(cid, cid), p["url"], p["script"])
+                for cid, st in self.postings.scans()["companies"].items() if cid in names
+                for p in (st.get("route") or {}).get("pages") or []]
+
+    def shared_systems(self) -> list[dict]:
+        """Every API the routes of several companies call that no built-in scan reads yet."""
+        return systems.groups(self._route_pages(), self._read_built_in)
+
+    def kin(self, ref: str) -> list[dict]:
+        """The other companies whose routes call an API this company's route calls (no built-in scan reads it)."""
+        c = self.hunt.company(ref)
+        mine = [(c["name"], p["url"], p["script"]) for p in (self.postings.route(c["id"]) or {}).get("pages") or []]
+        return systems.kin(c["name"], mine, self._route_pages(), self._read_built_in)
 
     def save_route(self, ref: str, data: Any, *, check: bool = True) -> tuple[dict, list[str]]:
         """The route records the sites it was made for: every site of the company a provider doesn't read, unless it

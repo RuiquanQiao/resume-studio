@@ -2280,6 +2280,8 @@
  "except {words}": "excepto {words}",
  "The AI builds them from your resume subsets and the titles your companies really use; you can change them after.": "La IA los crea a partir de tus versiones del currículum y de los títulos que tus empresas usan de verdad; puedes cambiarlos después.",
  "北森's job list": "la lista de empleos de 北森 (Beisen)",
+ "Feishu's job list": "la lista de empleos de 飞书 (Feishu)",
+ "HotJob's job list": "la lista de empleos de HotJob",
  "the route's pages opened but its scripts read no roles on {pages}, twice, a while apart: the list may not show yet when they read it, or they read the wrong part of the page": "Las páginas de la ruta se abrieron, pero sus scripts no leyeron ninguna oferta en {pages}, dos veces y con un rato entre medias: puede que la lista aún no se viera al leerla, o que lean la parte equivocada de la página",
  "Add {company}": "Añadir {company}",
  "Fill in {names}": "Completar {names}",

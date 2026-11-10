@@ -160,7 +160,9 @@ How to work it:
   `{{"url": "<the site>", "list": "<the list's address>"}}`: `fill` sites is the whole list), then `scan`: a provider reads it with no route and no AI. A route is only for
   a list no provider reads; `scan-route` refuses a page a provider reads. `scan-route` runs the route once before
   keeping it and keeps it only when it reads roles, as many as the site says it lists: when it refuses, nothing
-  was kept; fix what it names and send it again.
+  was kept; fix what it names and send it again. When it says other companies' routes call the same API, pass
+  that on to the user in one line (`{j} systems` lists every such group): those sites are likely one recruiting
+  system that one built-in scan could read with no AI, as for 北森 and 飞书.
   Its "apply" / 立即投递 / 职位投递 links usually lead there. A page that shows nothing yet (an empty snapshot, or a
   note saying so) is still drawing itself: snapshot again and take a screenshot before deciding anything; "the
   snapshot came back empty" is never a reason to leave a site unlearned. Nor is a browser command that was slow,

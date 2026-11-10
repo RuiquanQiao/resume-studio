@@ -27,6 +27,7 @@
     python scripts/hunt.py sent 星河科技/服务端 [--subset SUB-002]
     python scripts/hunt.py scan [星河科技 ...]                # read the companies' sites for open postings now
     python scripts/hunt.py scan-route 星河科技 --stdin <<'JSON' ... JSON   # record how to read its job list, run it once
+    python scripts/hunt.py systems                         # APIs several companies' routes call: one system, to build a scan for
     python scripts/hunt.py postings 星河科技 --stdin [--partial]   # the postings you read yourself (no route possible)
     python scripts/hunt.py apply P12                        # the user goes for posting P12: it becomes an application
     python scripts/hunt.py keywords "算法, AI, Agent, 后端"  # the roles the user looks for (others are folded away)
@@ -348,6 +349,8 @@ def main() -> int:
     p = sub.add_parser("sent"); p.add_argument("ref"); p.add_argument("--subset")
     p = sub.add_parser("scan"); p.add_argument("companies", nargs="*")
     p = sub.add_parser("scan-route"); p.add_argument("ref"); p.add_argument("--file"); p.add_argument("--stdin", action="store_true")
+    sub.add_parser("systems", description="APIs the recorded routes of several companies call: likely one recruiting "
+                   "system, which one built-in scan could read for all of them with no AI (as for 北森 and 飞书).")
     p = sub.add_parser("postings"); p.add_argument("ref"); p.add_argument("--file"); p.add_argument("--stdin", action="store_true")
     p.add_argument("--partial", action="store_true", help="you read only some of the lists: nothing missing is closed")
     p = sub.add_parser("apply"); p.add_argument("ref")
@@ -512,6 +515,13 @@ def main() -> int:
                           "where the rest go missing (pages it stops before, a filter, two roles kept as one because "
                           "they share a title, a page that timed out), fix the route and send it again with "
                           "`scan-route`. Roles not read are not closed meanwhile.")
+                if c == "scan-route":
+                    for g in x.get("kin") or []:
+                        print(f"  same system as others, likely: this route calls {', '.join(g['paths'])}, as the routes of "
+                              f"{len(g['companies'])} other companies do ({', '.join(g['companies'][:8])}"
+                              f"{' …' if len(g['companies']) > 8 else ''}; on {', '.join(g['sites'][:4])}). Tell the user in "
+                              "one line: these companies are probably on one recruiting system, and one built-in scan "
+                              "could read all of them with no AI and no route (as for 北森 and 飞书).")
                 if c == "scan-route" and x.get("no_total"):
                     print("  not checked: no page of the route says how many roles the site lists. Return "
                           "`{postings, total}` with the number the site itself gives (its \"448 个职位\", or the "
@@ -523,6 +533,14 @@ def main() -> int:
                 print(f"{x['company']}: needs {x.get('needs') or 'claude'} (no site could be read without you)")
         if r.get("company"):
             show_company(r["company"])
+        return 0
+    elif c == "systems":
+        gs = call(url, "systems", {})["systems"]
+        if not gs:
+            print("no API is called by the routes of several companies: every shared system has a built-in scan")
+        for g in gs:
+            print(f"{len(g['companies'])} companies call {', '.join(g['paths'])}: {', '.join(g['companies'])}")
+            print(f"  on {', '.join(g['sites'])}")
         return 0
     elif c == "apply":
         r = call(url, "apply", {"ref": args.ref})

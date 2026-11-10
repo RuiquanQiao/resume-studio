@@ -2106,6 +2106,8 @@
  "except {words}": "{words} を除く",
  "The AI builds them from your resume subsets and the titles your companies really use; you can change them after.": "AI が履歴書のサブセットと企業が実際に使う求人タイトルから設定します。あとで自由に変えられます。",
  "北森's job list": "北森（Beisen）の求人一覧",
+ "Feishu's job list": "飛書（Feishu）の求人一覧",
+ "HotJob's job list": "HotJob の求人一覧",
  "the route's pages opened but its scripts read no roles on {pages}, twice, a while apart: the list may not show yet when they read it, or they read the wrong part of the page": "ルートのページは開きましたが、スクリプトは {pages} で時間をおいて 2 回読んでも求人を 1 件も読めませんでした。読んだ時点で一覧がまだ表示されていないか、ページの違う場所を読んでいる可能性があります",
  "Add {company}": "{company} 追加",
  "Fill in {names}": "{names} 情報を補完",
