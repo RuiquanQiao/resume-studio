@@ -421,6 +421,42 @@ class Hunt:
         data[key] = [x for x in data.get(key) or [] if isinstance(x, dict) and x.get("id")]
         return data
 
+    def _read_rows(self, name: str, key: str) -> dict:
+        """A file _write wrote with `rows=key`, read a record at a time. Parsing postings.json (27 MB) in one call
+        held Python's lock for a third of a second, and the window's own thread waits for that lock: the window
+        froze a moment after it opened (2026-11-11). Between records, other threads get their turn. A file in
+        another shape is read whole."""
+        path = self._file(name)
+        mark = json.dumps(key) + ":["
+        for attempt in range(40):
+            try:
+                with path.open(encoding="utf-8") as f:
+                    first = f.readline().rstrip("\n")
+                    if not first.endswith(mark):
+                        break
+                    head = first[: -len(mark)].rstrip(",")
+                    data = json.loads((head + "}") if head != "{" else "{}")
+                    rows = []
+                    for line in f:
+                        s = line.rstrip("\n").removesuffix(",")
+                        if s == "]}":
+                            break
+                        if s:
+                            rows.append(json.loads(s))
+                data = data if isinstance(data, dict) else {}
+                data.setdefault("next", 1)
+                data[key] = [x for x in rows if isinstance(x, dict) and x.get("id")]
+                return data
+            except FileNotFoundError:
+                break
+            except PermissionError:   # Windows: _write is replacing it
+                if attempt == 39:
+                    raise
+                time.sleep(0.025)
+            except ValueError:
+                break
+        return self._read(name, key)
+
     def _write(self, name: str, data: dict, *, rows: str = "") -> None:
         """`rows`: the key of a long list written one record per line, each without spaces (postings.json: 53,000
         records indented took 31 MB; a line each is still read and compared by eye, one record at a time)."""

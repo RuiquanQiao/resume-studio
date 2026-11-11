@@ -3120,3 +3120,39 @@ def test_tracks_are_set_in_a_dialog_and_pick_roles_from_every_company(page, serv
     assert pg.locator(".picked-row .pr-title").all_inner_texts() == ["AI 产品经理"]
     assert "星河科技" in pg.inner_text(".picked-tools ~ .note-bar.warn")    # read in part: roles may be missing
     posts.settings(tracks=[])
+
+
+def test_long_company_details_show_whole_and_push_no_neighbour_down(page, server):
+    """2026-11-11: 总部 (a place picker, tall) sat beside 规模, which sank to the bottom of its row; 实力 and 规模, a
+    sentence the AI wrote, were cut off in one-line boxes. Fields of varying height get a row each and wrap."""
+    pg = page
+    hunt = server.inst.hunt
+    hunt.add_company({"name": "TP-Link联洲"})
+    long_size = "联洲：1000-5000人（高校就业平台）；集团：超1.3万人（官网，2026-11-05 查询），两者口径不同，以签约主体为准"
+    hunt.fill("C1", {"industry": "网络通信设备、消费电子、企业网络与安防、软件及云服务",
+                     "strength": "TP-Link 集团覆盖 170 多个国家和地区；官网称员工超过 1.3 万人（查询于 2026-11-05，集团口径）",
+                     "size": long_size, "location": "深圳"})
+    pg.set_viewport_size({"width": 1100, "height": 900})
+    pg.keyboard.press("Control+3")
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.click(".dbv-view tr[data-id='C1'] .dbv-title")
+    pg.wait_for_selector("#company-hq")
+    out = pg.evaluate("""() => {
+        const card = document.querySelector('#company-hq').closest('.card');
+        const fields = [...card.querySelectorAll('.field')].filter((f) => f.querySelector(':scope > label'));
+        const box = (f) => f.getBoundingClientRect();
+        const cut = [...card.querySelectorAll('input, textarea')].filter((i) => i.scrollWidth > i.clientWidth + 1 || i.scrollHeight > i.clientHeight + 1)
+            .map((i) => i.closest('.field').querySelector('label').firstChild.textContent);
+        // in a row of fields, each one's label starts at the row's top
+        const sunk = fields.filter((f) => fields.some((g) => g !== f && Math.abs(box(g).top - box(f).top) < box(f).height
+            && box(g).left !== box(f).left && Math.abs(box(f).top - box(g).top) > 2)).map((f) => f.querySelector('label').firstChild.textContent);
+        const size = fields.find((f) => f.querySelector('label').firstChild.textContent === '规模');
+        return {cut, sunk, size: size.querySelector('textarea').value};
+    }""")
+    assert out["cut"] == [] and out["sunk"] == [], out
+    assert out["size"] == hunt.company("C1")["size"]                  # as kept, all of it
+    # Enter keeps the one value, as in an input: no second line
+    pg.click("#company-hq >> xpath=preceding::textarea[1]")
+    pg.keyboard.press("End")
+    pg.keyboard.press("Enter")
+    assert "\n" not in pg.evaluate("() => document.querySelector('#company-hq').previousElementSibling.querySelector('textarea').value")

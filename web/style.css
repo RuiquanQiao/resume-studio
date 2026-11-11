@@ -445,6 +445,8 @@ body[data-ws="resume"][data-preview="off"][data-chat="off"] .workspace { grid-te
 /* text boxes grow with their text, without a cap: the page scrolls, never a box inside it */
 .bullet textarea { min-height: 34px; }
 .field textarea[rows="6"], .field textarea[rows="5"] { min-height: 120px; }
+/* one value that wraps when long (a company's industry, strength, size): as tall as an input until it wraps */
+.field textarea.one-value { resize: none; line-height: 18px; }
 .bullet textarea:focus { outline: none; box-shadow: 0 0 0 3px var(--accent-ring); border-color: var(--accent); }
 .card.fact .field textarea, .card.fact .field input { background: color-mix(in srgb, var(--panel) 70%, transparent); }
 .lang-tag { font-size: 12.5px; padding: 0 5px; border-radius: 4px; background: var(--hover); color: var(--text-3); font-weight: 500; }

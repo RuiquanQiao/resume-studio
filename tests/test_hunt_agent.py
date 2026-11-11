@@ -729,6 +729,23 @@ def test_an_older_postings_file_is_written_short_once(hunt):
     assert ps.slim_file() is False and ps.all() == []                      # no file: nothing to do
 
 
+def test_a_row_file_is_read_a_record_at_a_time_and_reads_the_same(hunt, monkeypatch):
+    # 2026-11-11: postings.json parsed in one call held Python's lock long enough to freeze the window a moment
+    rows = [{"id": f"P{i}", "title": t, "note": "a,\nb"} for i, t in enumerate(["]}", "},{", "", "后端,\"引号\""])]
+    hunt._write("postings.json", {"next": 9, "postings": rows}, rows="postings")
+    calls = []
+    real = json.loads
+    monkeypatch.setattr(json, "loads", lambda s, *a, **k: calls.append(len(s)) or real(s, *a, **k))
+    got = hunt._read_rows("postings.json", "postings")
+    monkeypatch.setattr(json, "loads", real)
+    assert got == hunt._read("postings.json", "postings") == {"next": 9, "postings": rows}
+    assert len(calls) == 1 + len(rows)                                   # the head, then one record each
+    hunt._write("postings.json", {"next": 1, "postings": []}, rows="postings")
+    assert hunt._read_rows("postings.json", "postings") == {"next": 1, "postings": []}
+    (hunt.dir / "postings.json").unlink()
+    assert hunt._read_rows("postings.json", "postings") == {"next": 1, "postings": []}
+
+
 def test_the_table_matches_each_title_once_and_counts_again_only_on_a_change(hunt, monkeypatch):
     """53,000 postings took 12 s a look at the table (2026-11-08): every keyword folded the title again, and every
     look counted them all again. A title is folded once per set of tracks; an unchanged count is kept."""
@@ -790,8 +807,8 @@ def test_postings_are_parsed_once_per_change_and_never_changed_by_a_reader(hunt,
     hunt.add_company({"name": "网易"})
     ps.merge("C1", [{"title": "游戏策划", "url": "https://hr.163.example/1"}], how="route")
     reads = []
-    real = hunt._read
-    monkeypatch.setattr(hunt, "_read", lambda name, key: reads.append(name) or real(name, key))
+    real = hunt._read_rows                                                 # postings.json is read a record at a time
+    monkeypatch.setattr(hunt, "_read_rows", lambda name, key: reads.append(name) or real(name, key))
     ps.all(); ps.summary(); ps.changes(); ps.get("P1"); ps.by_url("https://hr.163.example/1")
     assert reads.count("postings.json") == 0                               # the merge kept what it wrote: no parse
     other = Postings(hunt)                                                 # another reader (the app started again)

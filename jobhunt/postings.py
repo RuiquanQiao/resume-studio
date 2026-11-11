@@ -280,7 +280,7 @@ class Postings:
             v = kept[1]
             return {**{k: x for k, x in v.items() if k != "postings"},
                     "postings": [{**p, "changed": dict(p["changed"])} for p in v["postings"]]}
-        data = self.hunt._read("postings.json", "postings")
+        data = self.hunt._read_rows("postings.json", "postings")
         for p in data["postings"]:
             _full(p)
         return data

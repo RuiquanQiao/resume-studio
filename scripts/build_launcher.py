@@ -1,4 +1,4 @@
-"""Build Resume Studio.exe and assets/icon.ico (Windows only).
+"""Build Resume Studio.exe, native/TitleBar.dll and assets/icon.ico (Windows only).
 
     python scripts/build_launcher.py
 
@@ -101,6 +101,20 @@ def find_csc() -> Path:
     sys.exit("csc.exe of .NET Framework 4 (part of Windows) was not found.")
 
 
+TITLEBAR_SRC = ROOT / "native" / "TitleBar.cs"
+TITLEBAR_DLL = ROOT / "native" / "TitleBar.dll"
+
+
+def build_titlebar() -> None:
+    """The window's own title bar, loaded by scripts/_titlebar.py into pywebview's .NET runtime."""
+    cmd = [str(find_csc()), "/nologo", "/target:library", "/optimize+", "/codepage:65001",
+           "/r:System.Windows.Forms.dll", "/r:System.Drawing.dll", f"/out:{TITLEBAR_DLL}", str(TITLEBAR_SRC)]
+    proc = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
+    if proc.returncode:
+        sys.exit(proc.stdout + proc.stderr)
+    print(f"wrote {TITLEBAR_DLL.relative_to(ROOT)}")
+
+
 def build_exe() -> None:
     cmd = [str(find_csc()), "/nologo", "/target:winexe", "/optimize+", "/codepage:65001", f"/win32icon:{ICON}",
            "/r:System.Windows.Forms.dll", "/r:System.Drawing.dll", f"/out:{EXE}", str(SOURCE)]
@@ -114,3 +128,4 @@ if __name__ == "__main__":
     write_icon()
     if os.name == "nt":
         build_exe()
+        build_titlebar()

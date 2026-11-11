@@ -1,48 +1,64 @@
-"""The window's own title bar: geometry and hit test (pure), the page's switch (window.js), and that a failure
-leaves the system title bar."""
+"""The window's own title bar: geometry and hit test, its message handling (native/TitleBar.cs, run here through
+pythonnet with no window), the page's switch (window.js), and that a failure leaves the system title bar."""
+import ctypes
 import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import _titlebar as tb  # noqa: E402
 
+if sys.platform != "win32":
+    pytest.skip("the title bar is Windows' own", allow_module_level=True)
+
+TB = tb.load()
+
+
+def box(r):
+    return (r.Left, r.Top, r.Right, r.Bottom)
+
+
+def test_the_title_bar_is_compiled_from_its_source():
+    # the dll is committed: a change to TitleBar.cs that wasn't built would silently not run
+    assert tb.DLL.stat().st_mtime >= (ROOT / "native" / "TitleBar.cs").stat().st_mtime - 2
+
 
 def test_buttons_sit_flush_top_right_at_windows_width():
-    r = tb.button_rects(1000, 1.0)
-    assert r["close"] == (954, 0, 1000, 50)
-    assert r["max"] == (908, 0, 954, 50)
-    assert r["min"] == (862, 0, 908, 50)
+    r = TB.ButtonRects(1000, 1.0, 1.0)
+    assert [box(x) for x in r] == [(862, 0, 908, 50), (908, 0, 954, 50), (954, 0, 1000, 50)]
 
 
 def test_buttons_scale_with_dpi_and_follow_page_zoom_in_height_only():
-    r = tb.button_rects(2000, 1.5, zoom=1.2)
-    assert r["close"] == (2000 - 69, 0, 2000, 90)     # 46 DIP wide, 50 CSS px * 1.2 zoom * 1.5 tall
-    assert r["min"][0] == 2000 - 3 * 69
+    r = TB.ButtonRects(2000, 1.5, 1.2)
+    assert box(r[2]) == (2000 - 69, 0, 2000, 90)     # 46 DIP wide, 50 CSS px * 1.2 zoom * 1.5 tall
+    assert r[0].Left == 2000 - 3 * 69
 
 
 def test_hit_test_answers_like_the_system_title_bar():
     w, s, edge = 1000, 1.0, 8
-    assert tb.hit_test(500, 3, w, s, edge, maximized=False) == tb.HTTOP
-    assert tb.hit_test(5, 3, w, s, edge, maximized=False) == tb.HTTOPLEFT
-    assert tb.hit_test(995, 3, w, s, edge, maximized=False) == tb.HTTOPRIGHT
-    assert tb.hit_test(880, 25, w, s, edge, maximized=False) == tb.HTMINBUTTON
-    assert tb.hit_test(930, 25, w, s, edge, maximized=False) == tb.HTMAXBUTTON
-    assert tb.hit_test(999, 49, w, s, edge, maximized=False) == tb.HTCLOSE
-    assert tb.hit_test(500, 25, w, s, edge, maximized=False) == tb.HTCAPTION
+    assert TB.HitTest(500, 3, w, s, edge, False, 1.0) == TB.HTTOP
+    assert TB.HitTest(5, 3, w, s, edge, False, 1.0) == TB.HTTOPLEFT
+    assert TB.HitTest(995, 3, w, s, edge, False, 1.0) == TB.HTTOPRIGHT
+    assert TB.HitTest(880, 25, w, s, edge, False, 1.0) == TB.HTMINBUTTON
+    assert TB.HitTest(930, 25, w, s, edge, False, 1.0) == TB.HTMAXBUTTON
+    assert TB.HitTest(999, 49, w, s, edge, False, 1.0) == TB.HTCLOSE
+    assert TB.HitTest(500, 25, w, s, edge, False, 1.0) == TB.HTCAPTION
 
 
 def test_maximized_window_has_no_top_resize_edge_and_the_corner_closes():
     # maximized, the very top-right pixel must be the close button (throw the mouse into the corner)
-    assert tb.hit_test(999, 0, 1000, 1.0, 8, maximized=True) == tb.HTCLOSE
-    assert tb.hit_test(500, 0, 1000, 1.0, 8, maximized=True) == tb.HTCAPTION
+    assert TB.HitTest(999, 0, 1000, 1.0, 8, True, 1.0) == TB.HTCLOSE
+    assert TB.HitTest(500, 0, 1000, 1.0, 8, True, 1.0) == TB.HTCAPTION
 
 
 def test_header_keeps_room_for_the_buttons_at_any_zoom():
-    assert tb.caption_css_width(1.0) == 138
-    assert tb.caption_css_width(1.25) == 110.4
-    assert tb.caption_css_width(0) == 138
+    assert TB.CaptionCssWidth(1.0) == 138
+    assert TB.CaptionCssWidth(1.25) == 110.4
+    assert TB.CaptionCssWidth(0) == 138
+    assert "138px" in tb.css_script(1.0)
 
 
 def test_page_keeps_room_only_when_the_title_bar_is_installed(server):
@@ -62,80 +78,54 @@ def test_window_js_runs_in_head_before_anything_is_drawn():
     assert head.index("window.js") < head.index("style.css")
 
 
-def _bare_bar():
-    """A TitleBar with no window: its message handling, with Windows' own handling recorded."""
-    bar = object.__new__(tb.TitleBar)
-    passed = []
-
-    class C:
-        @staticmethod
-        def DefSubclassProc(hwnd, msg, wp, lp):
-            passed.append(msg)
-            return 0
-
-    class U:
-        @staticmethod
-        def TrackMouseEvent(_):
-            return 1
-
-        @staticmethod
-        def InvalidateRect(*_):
-            return 1
-    bar.c, bar.u, bar.hwnd = C, U, 1
-    bar.hover = bar.down = None
-    bar.tracking = False
-    return bar, passed
+def test_the_hit_test_is_answered_on_the_header_with_windows_own_borders_kept():
+    bar = TB.Detached()
+    lp = lambda x, y: (y << 16) | x                       # noqa: E731
+    assert bar.Send(TB.WM_NCHITTEST, 0, lp(930, 25)).Result.ToInt64() == TB.HTMAXBUTTON
+    assert bar.Send(TB.WM_NCHITTEST, 0, lp(500, 30)).Result.ToInt64() == TB.HTCAPTION
+    assert list(bar.Passed).count(TB.WM_NCHITTEST) == 2   # Windows asked first: its borders come back as they are
 
 
 def test_pointing_at_maximize_reaches_windows_so_snap_layouts_open():
     # user report 2026-11-11: the snap layouts never showed; the pointer's move over the button was kept from
     # Windows, whose own handling of it is what opens them
-    bar, passed = _bare_bar()
-    bar._handle(1, tb.WM_NCMOUSEMOVE, tb.HTMAXBUTTON, 0)
-    assert bar.hover == "max"
-    assert tb.WM_NCMOUSEMOVE in passed
+    bar = TB.Detached()
+    bar.Send(TB.WM_NCMOUSEMOVE, TB.HTMAXBUTTON, 0)
+    assert bar.Hover == TB.MAX
+    assert TB.WM_NCMOUSEMOVE in list(bar.Passed)
 
 
 def test_windows_is_told_where_the_buttons_really_are():
     # user report 2026-11-11: restored, the snap layouts never opened. Windows locates the maximize button
     # through WM_GETTITLEBARINFOEX, and its own answer was a 1 px strip at the top edge (the removed top frame)
-    import ctypes
-    bar, passed = _bare_bar()
-    bar.zoom = 1.0
-
-    class U:
-        @staticmethod
-        def ClientToScreen(_, p):
-            p._obj.x, p._obj.y = 100, 200
-
-        @staticmethod
-        def GetClientRect(_, r):
-            r._obj.right, r._obj.bottom = 1000, 700
-
-        @staticmethod
-        def GetDpiForWindow(_):
-            return 96
-    bar.u = U
-    info = tb.TITLEBARINFOEX()
-    info.cbSize = ctypes.sizeof(info)
-    bar._handle(1, tb.WM_GETTITLEBARINFOEX, 0, ctypes.addressof(info))
-    rect = lambda r: (r.left, r.top, r.right, r.bottom)   # noqa: E731
-    assert rect(info.rgrect[3]) == (100 + 908, 200, 100 + 954, 250)      # maximize, as tall as the header
-    assert rect(info.rgrect[5]) == (100 + 954, 200, 1100, 250)
-    assert rect(info.rgrect[2]) == (100 + 862, 200, 100 + 908, 250)
-    assert rect(info.rcTitleBar) == (100, 200, 1100, 250)
-    assert tb.WM_GETTITLEBARINFOEX in passed                              # Windows still fills the rest
+    bar = TB.Detached()
+    from System.Drawing import Point
+    bar.TestOrigin = Point(100, 200)
+    buf = (ctypes.c_int32 * 35)()
+    buf[0] = ctypes.sizeof(buf)
+    bar.Send(TB.WM_GETTITLEBARINFOEX, 0, ctypes.addressof(buf))
+    rect = lambda i: tuple(buf[1 + 4 * 0:5]) if i == "bar" else tuple(buf[11 + 4 * i:15 + 4 * i])   # noqa: E731
+    assert rect(3) == (100 + 908, 200, 100 + 954, 250)      # maximize, as tall as the header
+    assert rect(5) == (100 + 954, 200, 1100, 250)
+    assert rect(2) == (100 + 862, 200, 100 + 908, 250)
+    assert rect("bar") == (100, 200, 1100, 250)
+    assert TB.WM_GETTITLEBARINFOEX in list(bar.Passed)      # Windows still fills the rest
 
 
 def test_a_click_on_a_button_is_the_bars_own():
     # Windows would draw its old-style buttons over ours on a press, and act on its own
-    bar, passed = _bare_bar()
-    acted = []
-    bar._act = acted.append
-    bar._handle(1, tb.WM_NCLBUTTONDOWN, tb.HTCLOSE, 0)
-    bar._handle(1, tb.WM_NCLBUTTONUP, tb.HTCLOSE, 0)
-    assert acted == ["close"] and tb.WM_NCLBUTTONDOWN not in passed and tb.WM_NCLBUTTONUP not in passed
+    bar = TB.Detached()
+    bar.Send(TB.WM_NCLBUTTONDOWN, TB.HTCLOSE, 0)
+    bar.Send(TB.WM_NCLBUTTONUP, TB.HTCLOSE, 0)
+    assert list(bar.Acted) == [TB.CLOSE]
+    assert TB.WM_NCLBUTTONDOWN not in list(bar.Passed) and TB.WM_NCLBUTTONUP not in list(bar.Passed)
 
+
+def test_a_press_dragged_off_the_button_does_nothing():
+    bar = TB.Detached()
+    bar.Send(TB.WM_NCLBUTTONDOWN, TB.HTCLOSE, 0)
+    bar.Send(TB.WM_NCLBUTTONUP, TB.HTMAXBUTTON, 0)
+    assert list(bar.Acted) == []
 
 class _Event(list):
     def __iadd__(self, fn):

@@ -135,3 +135,41 @@ def test_other_scripts_compile(data_file, lang, text):
         assert "FandolSong" not in src or default == "FandolSong"
     else:
         assert "SourceSerif4" in src   # a font that has these letters, not Latin Modern
+
+
+# Interface text is formal and in one register per language (user, 2026-11-11: "所有用语要专业、正式"; i18n keeps
+# one way of addressing the user): zh 未/尚未/无法/失败, de Sie, fr vous, ko 합니다체. What may stay casual are the
+# prompts the app sends to the AI in the user's own voice, listed here by their English text.
+INFORMAL = {"zh": r"没能|没法|还没|没打开|没读|没连上|点一下|弄清", "de": r"(?i)\b(du|dein\w*|dich|dir)\b",
+            "fr": r"(?i)\b(tu|ton|ta|tes|toi)\b|\bt['’]", "ko": r"(어요|아요|해요|돼요|예요|이에요|둬요|줘요)([.!)]|\s|$)"}
+PROMPTS_TO_THE_AI = {
+    "At the end, list what you filled in and where each part came from.",
+    "Don't stop until it is done, or until you have shown it can't be: each way you tried, the exact request and what came back.",
+    "I passed the first interview at {company}; the second is next Tuesday",
+    "In the entry “{name}”, the interviewer has just heard the answer to “{question}” (`{path}`). Add 2 or 3 follow-ups they would ask next to its `follow_ups`, each digging into that answer (why this way, what the alternatives were, how you know it worked, what went wrong), with answers.",
+    "In the entry “{name}”, write the answer to the interview question “{question}” (`{path}`), which has none yet.",
+    "Look at my project folders ({folders}) and pick the projects most worth putting on my resume, with your reasons. Don't change resume.yaml yet; once I confirm, add them one at a time.",
+    "Look at my project folders ({folders}) and pick the projects most worth putting on my resume; don't change anything until I confirm",
+    "Look at these changes (commits, changed files, README), decide what is worth putting on the resume, then update the visible layer (bullets, tech, subtitle if needed). Update every language ({langs}), each written its own way rather than translated from another. If the changes aren't worth adding, don't change anything and tell me why. Leave notes and evidence alone.",
+    "My Resume Studio data changed since career-ops' profile was last filled from it: update the profile to match, and keep what I told you in earlier chats unless the data now says otherwise.",
+    "No role with the link {url} is on the list yet. Add it with add-role, or tell me why it can't be added.",
+    "Predict the questions an interviewer is most likely to ask about the entry “{name}”. Start from what the resume claims (every bullet, number and technology is something they can drill into), then the reasons behind the decisions, the hardest problem, what you'd do differently, and the basics of the technology it names. Add about 8 new questions to its `interview`, most likely first, each with an answer and the one or two follow-ups an interviewer would ask after hearing that answer (with answers too).",
+    "Run career-ops' {mode} mode ({file}: {purpose}). Ask me with AskUserQuestion for anything it needs from me.",
+    "Set up my tracks: one per kind of role I go for, from my resume subsets and what you know about what I want, each with the words real postings use in their titles and the resume subset it goes out with. Then check them against one company's titles and tell me what you set up.",
+    "The fact layer is private: use it to target and score postings, and never copy it word for word into anything an employer could read.",
+    "The git history was rewritten, so the new commits can't be listed; look at git log and the code directly.",
+    "Then bring its open roles in, learning any careers site the scan can't read and scanning again, until they're on the list or you've shown it has no careers site that lists roles.",
+    "{path} (not read yet, please go through all of it)",
+    "{sites} still can't be scanned automatically. Record how to read each with scan-route, or tell me which step failed and the error you got.",
+}
+
+
+def test_interface_text_is_formal_in_every_language():
+    import json as _json
+    import re as _re
+    found = []
+    for lang, pat in INFORMAL.items():
+        d = _json.loads((ROOT / "web" / "i18n" / f"{lang}.json").read_text(encoding="utf-8"))
+        found += [f"{lang}: {k!r} -> {v!r}" for k, v in d.items()
+                  if isinstance(v, str) and k not in PROMPTS_TO_THE_AI and _re.search(pat, v)]
+    assert not found, "\n".join(found)

@@ -10,6 +10,14 @@
       "env": { "RESUME_STUDIO_PREFS": ".cache/trial/local" }
     },
     {
+      "name": "perf",
+      "runtimeExecutable": ".venv/Scripts/python",
+      "runtimeArgs": ["scripts/studio.py", "--data", ".cache/perf-test/resume.yaml", "--no-browser", "--port", "8796"],
+      "port": 8796,
+      "autoPort": true,
+      "env": { "RESUME_STUDIO_PREFS": ".cache/perf-test/prefs", "STUDIO_NO_SHELL": "1" }
+    },
+    {
       "name": "review",
       "runtimeExecutable": ".venv/Scripts/python",
       "runtimeArgs": ["scripts/studio.py", "--data", ".cache/review/resume.yaml", "--no-browser", "--port", "8791"],

@@ -510,7 +510,9 @@ STATES = [
                                           wait("#chat-queue:not(.hidden)")), ["#chat-tasks", "#chat-queue"]),
     # the agent picker (in Settings since 2026-10-28) with one agent not installed (its npm command) and one
     # signed out (how to sign in)
-    State("settings, the agent picker", then(js("""() => {
+    State("settings, the agent picker", then(js("""async () => {
+            // the agents load once the window is on screen (app.js onScreen), a moment after the page
+            while (!(ui.claude && ui.claude.agents)) await new Promise((r) => setTimeout(r, 50));
             ui.claude.agents = ui.claude.agents.map((a) => a.id === "pi" ? { ...a, installed: false } : a.id === "qwen" ? { ...a, signed_in: false } : a);
             openSettings(); }"""), click(".modal .agent-provider-select"), wait(".listbox .lb-hint.warn")),
           [".listbox .lb-hint.warn", ".listbox .lb-desc"]),

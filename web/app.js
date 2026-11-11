@@ -2651,6 +2651,23 @@ function wire() {
   setInterval(() => { if (!document.hidden) checkEvidence(); }, 5 * 60 * 1000);
 }
 
+// resolves a moment after the page is on screen (two frames drawn); at most 3 s when it never says so
+function onScreen() {
+  return new Promise((done) => {
+    let went = false;
+    const go = () => {
+      if (went) return;
+      went = true;
+      requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(done, 120)));
+      setTimeout(done, 400);   // a page the browser keeps hidden draws no frames: it must not wait forever
+    };
+    const t = setTimeout(go, 3000);
+    const on = () => { if (document.visibilityState === "visible") { clearTimeout(t); document.removeEventListener("visibilitychange", on); go(); } };
+    document.addEventListener("visibilitychange", on);
+    on();
+  });
+}
+
 (async function main() {
   ui.zoom = store("zoom") && store("zoom") !== "fit" ? parseFloat(store("zoom")) : "fit";
   ui.layoutOpen = store("layoutOpen") === "1";
@@ -2667,8 +2684,11 @@ function wire() {
   }
   select("profile");
   initWorkspaces();
-  // the first screen is drawn: the window, hidden until now, shows (resume/app.py /api/drawn)
-  api("POST", "/api/drawn").catch(() => {});
+  // the first screen is drawn: the window, hidden until now, shows (resume/app.py /api/drawn). What loads next
+  // (jobs, chats, the preview) waits until it is on screen: that work keeps Python busy, and a window shown
+  // meanwhile drew its title bar late (2026-11-11)
+  await api("POST", "/api/drawn").catch(() => {});
+  await onScreen();
   connect();
   loadChats().catch(() => {});
   loadJobs({ quiet: true });

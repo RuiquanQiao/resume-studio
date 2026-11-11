@@ -1667,10 +1667,13 @@ async function editCompany(id, fields, { repaint = true } = {}) {
 }
 
 // a text field on a page: saved when it changes, without repainting (the caret stays)
-function hfield(label, value, save, { placeholder = "", hint = "", multiline = false, type = "text", id = null, link = false } = {}) {
+function hfield(label, value, save, { placeholder = "", hint = "", multiline = false, rows = 2, type = "text", id = null, link = false } = {}) {
   const attrs = { value: value || "", placeholder, spellcheck: "false", id,
     onchange: (e) => { const v = e.target.value.trim(); if (v !== (value || "")) { value = v; save(v); } } };
-  const input = multiline ? h("textarea", { ...attrs, rows: 2 }, value || "") : h("input", { ...attrs, type });
+  // rows 1: one value that wraps when long; Enter keeps it, like an input, rather than starting a second line
+  const keep = (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); e.target.blur(); } };
+  const input = multiline ? h("textarea", { ...attrs, rows, ...(rows === 1 ? { class: "one-value", onkeydown: keep } : {}) }, value || "")
+    : h("input", { ...attrs, type });
   return h("div", { class: "field" }, h("label", null, label, hint && h("span", { class: "hint" }, hint)), link ? linkOpen(input) : input);
 }
 
@@ -1766,11 +1769,13 @@ function companyPage(v) {
     ], { fold: "company-about" }),
     card(t("Company details"), t("filled by AI, each with its source; what you edit stays yours"), [
       h("div", { class: "grid2" }, hfield(t("Name"), c.name, save("name")), hfield(t("Also called"), (c.aliases || []).join(", "), save("aliases"), { placeholder: "Xinghe, Nebula", hint: keptHint(c, "aliases") || t("The AI knows it by these too") })),
-      h("div", { class: "grid2" }, hfield(t("Industry"), c.industry, save("industry"), { hint: keptHint(c, "industry") }),
-        hfield(t("Strength"), c.strength, save("strength"), { placeholder: t("e.g. market cap, or the latest valuation"), hint: keptHint(c, "strength") })),
-      h("div", { class: "grid2" }, h("div", { class: "field", id: "company-hq" }, h("label", null, t("Headquarters"), keptHint(c, "hq") && h("span", { class: "hint" }, keptHint(c, "hq"))),
+      // short fields pair up; a field whose height varies (a place picker, a sentence the AI wrote) has a row of its
+      // own and wraps: side by side, the taller one pushed its neighbour down and cut long text off (2026-11-11)
+      hfield(t("Industry"), c.industry, save("industry"), { hint: keptHint(c, "industry"), multiline: true, rows: 1 }),
+      hfield(t("Strength"), c.strength, save("strength"), { placeholder: t("e.g. market cap, or the latest valuation"), hint: keptHint(c, "strength"), multiline: true, rows: 1 }),
+      hfield(t("Size"), c.size, save("size"), { hint: keptHint(c, "size"), multiline: true, rows: 1 }),
+      h("div", { class: "field", id: "company-hq" }, h("label", null, t("Headquarters"), keptHint(c, "hq") && h("span", { class: "hint" }, keptHint(c, "hq"))),
         placesEditor(c.hq ? [c.hq] : [], (v) => { c.hq = v[0] || null; save("hq")(v[0] || ""); }, { single: true })),
-        hfield(t("Size"), c.size, save("size"), { hint: keptHint(c, "size") })),
       h("div", { class: "field", id: "company-places" }, h("label", null, t("Hires in"), h("span", { class: "hint" }, keptHint(c, "places") || t("the cities it hires in: they put it on the map"))),
         placesEditor(c.places, (v) => { c.places = v; save("places")(v); })),
       hfield(t("Notes"), c.note, save("note"), { multiline: true, placeholder: t("e.g. which batch (提前批 / 正式批), what you heard") }),

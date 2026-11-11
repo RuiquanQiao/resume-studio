@@ -275,10 +275,11 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
     @app.route("POST", "/api/drawn")
     def drawn(req):
         """The page has drawn its first screen. The window starts hidden and shows now, so it never opens as an
-        empty frame (scripts/studio.py); in the browser it's nothing."""
+        empty frame (scripts/studio.py); in the browser it's nothing. Answered once the window is on screen: the
+        page holds its heavier loads until then (they kept the window from drawing its title bar)."""
         fn: Callable | None = inst.ready.get("fn")
         if fn:
-            threading.Thread(target=fn, daemon=True, name="window-show").start()
+            fn()
         return {"ok": bool(fn)}
 
     @app.route("POST", "/api/attention")
