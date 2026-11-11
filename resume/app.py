@@ -49,6 +49,7 @@ class Instance:
     agents: AgentHub | None = None
     # {"fn": callable(old_studio, new_studio)} — the launcher moves its server.json along
     switched: dict = field(default_factory=dict)
+    titlebar: dict = field(default_factory=dict)   # {"on": True} once the window's header row is its title bar
     window: bool = False
     prefs: i18n.Prefs | None = None
     jobtool: JobTool | None = None             # the job-posting tool (per computer, survives data switches)
@@ -241,6 +242,14 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
         data = {"lang": lang, "dict": i18n.catalog(lang), "chosen": prefs.load().get("ui_lang"),
                 "system": i18n.system_lang(), "langs": i18n.UI_LANGS}
         return TextResponse("window.I18N = " + json.dumps(data, ensure_ascii=False) + ";\n", "application/javascript")
+
+    @app.route("GET", "/window.js")
+    def window_js(req):
+        """Loaded in the page's <head>: in the window with its own title bar, the header keeps room on its
+        right for the minimize / maximize / close buttons before anything is drawn."""
+        on = bool(inst.titlebar.get("on"))
+        return TextResponse("document.documentElement.classList.toggle('own-titlebar', %s);\n"
+                            % ("true" if on else "false"), "application/javascript")
 
     @app.route("PUT", "/api/prefs")
     def set_prefs(req):

@@ -120,6 +120,8 @@ def main() -> None:
     write_state(url)
     window = webview.create_window("Resume Studio", url, width=1480, height=920, min_size=(1100, 680),
                                    background_color="#F3F4F6", text_select=True)
+    import _titlebar
+    _titlebar.attach(window, inst.titlebar, log=LOCAL / "titlebar-error.txt")
 
     def bring_to_front() -> None:
         window.restore()

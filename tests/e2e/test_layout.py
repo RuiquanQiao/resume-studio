@@ -55,6 +55,9 @@ def layout_ctx():
 
 @pytest.fixture
 def win(layout_ctx, server):
+    # looked at as in the window (scripts/_titlebar.py): the header's right end belongs to the window's buttons,
+    # so the row has 138px less than in a browser tab
+    server.inst.titlebar["on"] = True
     pg = layout_ctx.new_page()
     errors: list[str] = []
     pg.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))

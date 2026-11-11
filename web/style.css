@@ -103,11 +103,19 @@ kbd { font: 11px var(--mono); padding: 1px 5px; border: 1px solid var(--line-str
 
 /* ---------- top bar ---------- */
 .topbar { height: 50px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 14px 0 16px; background: var(--bg); position: relative; z-index: 20; }
-.brand { display: flex; align-items: center; gap: 9px; font-weight: 600; letter-spacing: .1px; }
+/* In the window the header row is the title bar: its empty spots move the window, and its right end is left
+   to the window's minimize / maximize / close buttons, which the window paints itself (scripts/_titlebar.py). */
+.own-titlebar .topbar { padding-right: calc(var(--caption-w, 138px) + 6px); -webkit-app-region: drag; app-region: drag; }
+.own-titlebar .topbar > :not(.spacer):not(.brand):not(.save-status),
+.own-titlebar :is(.modal-back, .float, .tip, .chat-quote, .toast) { -webkit-app-region: no-drag; app-region: no-drag; }
+/* a narrow window keeps the logo and drops the name, so the row still fits beside the buttons */
+@media (max-width: 1399px) { .own-titlebar .ws-tools .btn.ghost:has(> svg) > .lbl { display: none; } }   /* icon only; the tip still names it */
+@media (max-width: 1439px) { .own-titlebar .brand > :not(.logo) { display: none; } }
+.brand { flex: none; display: flex; align-items: center; gap: 9px; font-weight: 600; letter-spacing: .1px; white-space: nowrap; }
 .logo { width: 24px; height: 24px; border-radius: 7px; background: linear-gradient(135deg, var(--accent), #8b5cf6); position: relative; box-shadow: var(--shadow-sm); }
 .logo::after { content: ""; position: absolute; inset: 6px 7px; border-radius: 2px; background: rgba(255,255,255,.92); box-shadow: inset 0 3px 0 -1px rgba(61,90,254,.55), inset 0 7px 0 -5px rgba(61,90,254,.35); }
-.subset-switch { display: flex; align-items: center; gap: 4px; position: relative; padding-left: 14px; }
-.subset-switch .select { width: 260px; font-weight: 500; }
+.subset-switch { display: flex; align-items: center; gap: 4px; position: relative; padding-left: 14px; min-width: 0; }
+.subset-switch .select { width: 260px; flex: 0 1 260px; min-width: 150px; font-weight: 500; }   /* gives way first when the row is tight */
 .save-status { font-size: 12.5px; color: var(--text-3); min-width: 56px; text-align: right; }
 .save-status.bad { color: var(--bad); }
 .offline { flex: none; display: flex; align-items: center; gap: 8px; padding: 7px 16px; background: var(--bad-soft); color: var(--bad); font-size: 12.5px; border-bottom: 1px solid var(--line); }
