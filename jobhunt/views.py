@@ -17,6 +17,8 @@ from typing import Any
 from core.i18n import t
 
 TABLES = ("apps", "companies", "platforms")
+# a plugin's collection: p.<plugin>.<collection> (docs/PLUGINS.md)
+PLUGIN_TABLE = re.compile(r"^p\.[a-z0-9-]{1,40}\.[a-z][a-z0-9_]{0,31}$")
 LAYOUTS = ("table", "board", "calendar", "gantt", "map")
 OPS = ("is", "is_not", "contains", "not_contains", "before", "after", "empty", "not_empty")
 KEY = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
@@ -91,7 +93,7 @@ class Views:
         except (OSError, ValueError):
             return {}
         out = {}
-        for k in TABLES:
+        for k in [*TABLES, *(x for x in data if isinstance(x, str) and PLUGIN_TABLE.match(x))]:
             try:
                 if k in data:
                     out[k] = clean_table(data[k])
@@ -100,7 +102,7 @@ class Views:
         return out
 
     def save(self, table: str, value: Any) -> dict:
-        if table not in TABLES:
+        if table not in TABLES and not PLUGIN_TABLE.match(table):
             raise KeyError(t("No table “{name}”", name=table))
         tb = clean_table(value)
         with self.lock:

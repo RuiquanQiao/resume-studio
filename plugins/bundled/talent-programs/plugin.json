@@ -1,0 +1,73 @@
+{
+  "id": "talent-programs",
+  "version": "1.0.0",
+  "app": ">=1",
+  "name": {"en": "Talent programmes", "zh": "人才引进", "ja": "人材誘致プログラム", "ko": "인재 유치 프로그램", "de": "Talentprogramme", "fr": "Programmes de talents", "es": "Programas de talento"},
+  "description": {
+    "en": "China's talent programmes: what a city, province, university or employer offers, who qualifies, and when to apply.",
+    "zh": "各地、高校和单位的人才引进政策：待遇、申报条件和申报时间。",
+    "ja": "中国の人材誘致プログラム：都市・省・大学・企業が提供する待遇、応募条件、応募時期。",
+    "ko": "중국의 인재 유치 프로그램: 도시·성·대학·기업이 제공하는 혜택, 자격 조건, 신청 시기.",
+    "de": "Chinas Talentprogramme: was eine Stadt, Provinz, Hochschule oder ein Arbeitgeber bietet, wer infrage kommt und wann man sich bewirbt.",
+    "fr": "Les programmes de talents en Chine : ce qu'offrent une ville, une province, une université ou un employeur, qui est éligible et quand postuler.",
+    "es": "Los programas de talento de China: qué ofrece una ciudad, provincia, universidad o empleador, quién puede optar y cuándo solicitarlo."
+  },
+  "author": "Resume Studio",
+  "homepage": "https://github.com/RuiquanQiao/resume-studio",
+  "guide": "GUIDE.md",
+  "collections": [{
+    "id": "programs",
+    "name": {"en": "Programmes", "zh": "人才项目", "ja": "プログラム", "ko": "프로그램", "de": "Programme", "fr": "Programmes", "es": "Programas"},
+    "item": {"en": "programme", "zh": "人才项目", "ja": "プログラム", "ko": "프로그램", "de": "Programm", "fr": "programme", "es": "programa"},
+    "status": "stage",
+    "dates": ["apply_by", "key_date"],
+    "properties": [
+      {"key": "title", "type": "title", "width": 260, "label": {"en": "Programme", "zh": "项目名称", "ja": "プログラム名", "ko": "프로그램명", "de": "Programm", "fr": "Programme", "es": "Programa"}},
+      {"key": "issuer", "type": "text", "width": 180, "label": {"en": "Issued by", "zh": "发布单位", "ja": "実施機関", "ko": "시행 기관", "de": "Herausgeber", "fr": "Émetteur", "es": "Emisor"}},
+      {"key": "region", "type": "text", "width": 120, "label": {"en": "Region", "zh": "地区", "ja": "地域", "ko": "지역", "de": "Region", "fr": "Région", "es": "Región"}},
+      {"key": "level", "type": "select", "width": 120, "label": {"en": "Level", "zh": "层级", "ja": "レベル", "ko": "단계", "de": "Ebene", "fr": "Niveau", "es": "Nivel"},
+       "options": [
+        {"value": "national", "color": "red", "label": {"en": "National", "zh": "国家级", "ja": "国家級", "ko": "국가급", "de": "National", "fr": "National", "es": "Nacional"}},
+        {"value": "provincial", "color": "orange", "label": {"en": "Provincial", "zh": "省级", "ja": "省級", "ko": "성급", "de": "Provinz", "fr": "Provincial", "es": "Provincial"}},
+        {"value": "city", "color": "yellow", "label": {"en": "City", "zh": "市级", "ja": "市級", "ko": "시급", "de": "Stadt", "fr": "Ville", "es": "Ciudad"}},
+        {"value": "university", "color": "blue", "label": {"en": "University", "zh": "高校", "ja": "大学", "ko": "대학", "de": "Hochschule", "fr": "Université", "es": "Universidad"}},
+        {"value": "institute", "color": "purple", "label": {"en": "Research institute", "zh": "科研院所", "ja": "研究機関", "ko": "연구 기관", "de": "Forschungsinstitut", "fr": "Institut de recherche", "es": "Instituto de investigación"}},
+        {"value": "employer", "color": "green", "label": {"en": "Employer", "zh": "企事业单位", "ja": "企業・事業単位", "ko": "기업·사업 단위", "de": "Arbeitgeber", "fr": "Employeur", "es": "Empleador"}}]},
+      {"key": "for", "type": "select", "free": true, "width": 130, "label": {"en": "For", "zh": "面向", "ja": "対象", "ko": "대상", "de": "Für", "fr": "Pour", "es": "Para"},
+       "options": [
+        {"value": "phd", "color": "blue", "label": {"en": "PhD holders", "zh": "博士", "ja": "博士", "ko": "박사", "de": "Promovierte", "fr": "Docteurs", "es": "Doctores"}},
+        {"value": "master", "color": "green", "label": {"en": "Master's graduates", "zh": "硕士", "ja": "修士", "ko": "석사", "de": "Masterabsolventen", "fr": "Diplômés de master", "es": "Titulados de máster"}},
+        {"value": "returnee", "color": "purple", "label": {"en": "Overseas graduates", "zh": "留学人员", "ja": "留学帰国者", "ko": "해외 유학생", "de": "Auslandsabsolventen", "fr": "Diplômés de l'étranger", "es": "Titulados en el extranjero"}},
+        {"value": "young", "color": "orange", "label": {"en": "Young talent", "zh": "青年人才", "ja": "若手人材", "ko": "청년 인재", "de": "Nachwuchstalente", "fr": "Jeunes talents", "es": "Talento joven"}},
+        {"value": "graduate", "color": "gray", "label": {"en": "New graduates", "zh": "应届毕业生", "ja": "新卒", "ko": "졸업 예정자", "de": "Berufseinsteiger", "fr": "Jeunes diplômés", "es": "Recién titulados"}}]},
+      {"key": "benefits", "type": "longtext", "width": 260, "label": {"en": "What it offers", "zh": "待遇", "ja": "待遇", "ko": "혜택", "de": "Leistungen", "fr": "Avantages", "es": "Beneficios"},
+       "hint": {"en": "e.g. settling-in allowance, housing subsidy, research funds, a permanent post (编制), hukou", "zh": "如安家费、购房补贴、科研启动经费、编制、落户", "ja": "例：定住手当、住宅補助、研究費、編制、戸籍", "ko": "예: 정착 지원금, 주택 보조금, 연구비, 편제, 호적", "de": "z. B. Ansiedlungszuschuss, Wohnzuschuss, Forschungsmittel, Planstelle (编制), Hukou", "fr": "p. ex. prime d'installation, aide au logement, fonds de recherche, poste titulaire (编制), hukou", "es": "p. ej., ayuda de instalación, subsidio de vivienda, fondos de investigación, plaza fija (编制), hukou"}},
+      {"key": "requirements", "type": "longtext", "width": 260, "hidden": true, "label": {"en": "Who qualifies", "zh": "申报条件", "ja": "応募条件", "ko": "자격 조건", "de": "Voraussetzungen", "fr": "Conditions", "es": "Requisitos"}},
+      {"key": "apply_by", "type": "date", "width": 120, "label": {"en": "Apply by", "zh": "申报截止", "ja": "応募締切", "ko": "신청 마감", "de": "Bewerbungsschluss", "fr": "Date limite", "es": "Plazo"}},
+      {"key": "key_date", "type": "date", "width": 120, "hidden": true, "label": {"en": "Next key date", "zh": "下一关键日期", "ja": "次の重要日", "ko": "다음 주요 일정", "de": "Nächster Termin", "fr": "Prochaine échéance", "es": "Próxima fecha clave"},
+       "hint": {"en": "an interview, a defence, a materials check", "zh": "如面试、答辩、材料审核", "ja": "面接、審査、書類確認など", "ko": "면접, 심사, 서류 검토 등", "de": "ein Gespräch, eine Verteidigung, eine Unterlagenprüfung", "fr": "un entretien, une soutenance, un contrôle des pièces", "es": "una entrevista, una defensa, una revisión de documentos"}},
+      {"key": "notice", "type": "url", "width": 160, "label": {"en": "Official notice", "zh": "公告链接", "ja": "公式告知", "ko": "공식 공고", "de": "Offizielle Bekanntmachung", "fr": "Avis officiel", "es": "Aviso oficial"}},
+      {"key": "stage", "type": "select", "width": 130, "label": {"en": "Stage", "zh": "进度", "ja": "進捗", "ko": "진행 상황", "de": "Stand", "fr": "Étape", "es": "Etapa"},
+       "options": [
+        {"value": "watching", "color": "gray", "label": {"en": "Watching", "zh": "关注中", "ja": "注目中", "ko": "관심", "de": "Beobachtet", "fr": "Suivi", "es": "En seguimiento"}},
+        {"value": "preparing", "color": "yellow", "label": {"en": "Preparing materials", "zh": "准备材料", "ja": "書類準備中", "ko": "서류 준비 중", "de": "Unterlagen in Vorbereitung", "fr": "Dossier en préparation", "es": "Preparando documentos"}},
+        {"value": "applied", "color": "blue", "label": {"en": "Applied", "zh": "已申报", "ja": "応募済み", "ko": "신청 완료", "de": "Beworben", "fr": "Candidature déposée", "es": "Solicitado"}},
+        {"value": "review", "color": "purple", "label": {"en": "Under review", "zh": "审核中", "ja": "審査中", "ko": "심사 중", "de": "In Prüfung", "fr": "En cours d'examen", "es": "En revisión"}},
+        {"value": "interview", "color": "orange", "label": {"en": "Interview or defence", "zh": "面试/答辩", "ja": "面接・審査会", "ko": "면접·심사", "de": "Gespräch oder Verteidigung", "fr": "Entretien ou soutenance", "es": "Entrevista o defensa"}},
+        {"value": "selected", "color": "green", "label": {"en": "Selected", "zh": "已入选", "ja": "採択", "ko": "선정", "de": "Ausgewählt", "fr": "Retenu", "es": "Seleccionado"}},
+        {"value": "not_selected", "color": "red", "label": {"en": "Not selected", "zh": "未入选", "ja": "不採択", "ko": "미선정", "de": "Nicht ausgewählt", "fr": "Non retenu", "es": "No seleccionado"}},
+        {"value": "dropped", "color": "gray", "label": {"en": "Dropped", "zh": "已放弃", "ja": "辞退", "ko": "포기", "de": "Verworfen", "fr": "Abandonné", "es": "Descartado"}}]},
+      {"key": "notes", "type": "longtext", "width": 220, "hidden": true, "label": {"en": "Notes", "zh": "备注", "ja": "メモ", "ko": "메모", "de": "Notizen", "fr": "Notes", "es": "Notas"}}
+    ],
+    "views": [
+      {"id": "v1", "name": {"en": "All programmes", "zh": "全部项目", "ja": "すべてのプログラム", "ko": "모든 프로그램", "de": "Alle Programme", "fr": "Tous les programmes", "es": "Todos los programas"}},
+      {"id": "v2", "layout": "board", "group": "stage", "name": {"en": "By stage", "zh": "按进度", "ja": "進捗別", "ko": "진행 상황별", "de": "Nach Stand", "fr": "Par étape", "es": "Por etapa"}},
+      {"id": "v3", "layout": "calendar", "name": {"en": "Deadlines", "zh": "截止日期", "ja": "締切", "ko": "마감일", "de": "Fristen", "fr": "Échéances", "es": "Plazos"}}
+    ]
+  }],
+  "suggestions": [
+    {"en": "Find the talent programmes I qualify for, from my resume", "zh": "根据我的简历，找出我符合条件的人才引进项目", "ja": "履歴書をもとに、応募資格のある人材誘致プログラムを探して", "ko": "내 이력서를 바탕으로 자격이 되는 인재 유치 프로그램을 찾아 줘", "de": "Finde anhand meines Lebenslaufs die Talentprogramme, für die ich infrage komme", "fr": "Trouve, d'après mon CV, les programmes de talents auxquels je suis éligible", "es": "Encuentra, a partir de mi currículum, los programas de talento a los que puedo optar"},
+    {"en": "Compare what Shanghai, Shenzhen and Hangzhou offer overseas master's graduates", "zh": "对比上海、深圳、杭州给海外硕士的落户和补贴政策", "ja": "上海・深圳・杭州が海外修士に提供する戸籍と補助を比較して", "ko": "상하이·선전·항저우가 해외 석사에게 주는 호적·보조금 정책을 비교해 줘", "de": "Vergleiche, was Shanghai, Shenzhen und Hangzhou Masterabsolventen aus dem Ausland bieten", "fr": "Compare ce que Shanghai, Shenzhen et Hangzhou offrent aux diplômés de master de l'étranger", "es": "Compara lo que ofrecen Shanghái, Shenzhen y Hangzhou a los titulados de máster en el extranjero"},
+    {"en": "Which deadlines are coming up, and what materials do I still need?", "zh": "哪些申报快截止了？我还缺哪些材料？", "ja": "締切が近いのはどれ？まだ足りない書類は？", "ko": "곧 마감되는 것은? 아직 부족한 서류는?", "de": "Welche Fristen stehen an, und welche Unterlagen fehlen mir noch?", "fr": "Quelles échéances approchent, et quelles pièces me manquent encore ?", "es": "¿Qué plazos se acercan y qué documentos me faltan todavía?"}
+  ]
+}

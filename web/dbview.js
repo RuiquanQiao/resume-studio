@@ -48,7 +48,12 @@ async function loadViews() {
 
 // an editor or a view panel is open: a repaint would close it, so it waits
 const dbvBusy = () => !!(Float.cur && Float.cur.panel.classList.contains("dbv-pop"));
-function dbvAfterClose() { if (DBV.pending) { DBV.pending = false; if (typeof paintFill === "function" && W.ws === "fill") paintFill(); } }
+function dbvAfterClose() {
+  if (!DBV.pending) return;
+  DBV.pending = false;
+  if (typeof paintFill === "function" && W.ws === "fill") paintFill();
+  else if (typeof isPluginWs === "function" && isPluginWs()) paintPluginspace();
+}
 
 // ---------------------------------------------------------------- views: reading and saving
 function dbvTable(table, defaults) {

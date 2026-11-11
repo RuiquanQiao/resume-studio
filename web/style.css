@@ -1964,3 +1964,47 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .pk-fit.hi { background: var(--ok-soft); color: var(--ok); }
 .pk-fit.lo { color: var(--text-3); }
 .select.pk-sort { height: 28px; font-size: 12.5px; }
+
+/* ---- plugins (web/plugins.js, docs/PLUGINS.md) ---- */
+/* a plugin's option colours, from the app's own tokens: quiet, like the job hunt's states */
+.state-chip.pc-blue, .state-chip.pc-purple { background: var(--accent-soft); color: var(--accent); }
+.state-chip.pc-green { background: var(--ok-soft); color: var(--ok); }
+.state-chip.pc-yellow, .state-chip.pc-orange { background: var(--warn-soft); color: var(--warn); }
+.state-chip.pc-red { background: var(--bad-soft); color: var(--bad); }
+.plugin-empty { display: grid; gap: 4px; justify-items: center; text-align: center; }
+.plugin-empty p { margin: 0; }
+/* Settings → Plugins: one row each, the switch and its text on the left, Uninstall on the right */
+.plugin-list { display: grid; gap: 2px; margin: 2px 0 8px; }
+.plugin-row { display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
+.plugin-row:first-child { border-top: 0; }
+.plugin-row > .check-row { flex: 1; min-width: 0; }
+.plugin-row > .btn { flex: none; }
+.plugin-meta { display: block; margin-top: 2px; font-size: 12px; color: var(--text-3); }
+/* the market: a layer over Settings */
+.modal-back.over { z-index: 95; }
+.modal.market { width: min(560px, 94vw); max-height: 86vh; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
+.market-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; align-content: start; margin: 6px 0 4px; }
+.market-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.market-row:first-child { border-top: 0; }
+.market-text { flex: 1; min-width: 0; display: grid; gap: 2px; font-size: 13px; }
+.market-text .hint { font-size: 12.5px; color: var(--text-2); }
+.market-row > .btn, .market-row > .state-chip { flex: none; }
+.grid2.plugin-pair > .field { justify-content: flex-start; }
+/* with plugins on, the tabs can outgrow a narrow window: the row scrolls sideways (a thin bar), the tab on keeps in view */
+.hunt-tabs { scrollbar-width: thin; }
+.hunt-tabs > .hunt-tab { flex: none; }
+/* a plugin's workspace (W.ws "p.<id>"): laid out as Plan's, its tables in the job hunt's frame */
+body:not([data-ws="plugin"]) .plugin-only { display: none !important; }
+body[data-ws="plugin"] .topbar > .spacer { display: none; }
+body[data-ws="plugin"] .rs-only, body[data-ws="plugin"] .pane.middle, body[data-ws="plugin"] .pane.right,
+body[data-ws="plugin"] .gutter[data-gutter="right"] { display: none !important; }
+body[data-ws="plugin"] .workspace { grid-template-columns: var(--w-left, 340px) 5px minmax(0, 1fr); }
+body[data-ws="plugin"][data-chat="off"] .workspace { grid-template-columns: minmax(0, 1fr); }
+.pluginspace { position: relative; display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--panel); }
+.pluginspace > .hunt-scroll:first-child > .hunt-wrap { padding-top: 22px; }
+/* its button in the top bar: the name's first character stands for it where the labels give way to icons */
+.ws-mono { flex: none; display: inline-grid; place-items: center; width: 15px; height: 15px; border: 1.5px solid currentColor; border-radius: 4px;
+  font-size: 9.5px; font-weight: 600; line-height: 1; }
+.ws-btn.on .ws-mono { color: var(--accent); }
+.ws-btn.plugin-ws { white-space: nowrap; }
+.ws-btn.ws-more { padding: 0 8px; }

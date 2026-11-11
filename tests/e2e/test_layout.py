@@ -13,6 +13,7 @@ Each finding saves a screenshot of the window as it was to tests/artifacts/layou
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -167,7 +168,10 @@ def long_entry(c):
 
 def evidence(states: dict):
     """The project-folder state the library shows for some entries (normally from git; set here)."""
-    return js(f"""() => {{ const st = {json.dumps(states)};
+    # the window's own first check would overwrite these: wait until it has run
+    return js(f"""async () => {{ const st = {json.dumps(states)};
+        while (!ui.started) await new Promise(r => setTimeout(r, 20));
+        if (evidenceBusy) await evidenceBusy;
         for (const [id, s] of Object.entries(st)) ui.evidence[id] = {{state: s, paths: [{{path: 'E:/Forge/demo', state: s}}]}};
         renderLibrary(); }}""")
 
@@ -426,6 +430,31 @@ for (let i = 0; i < n; i++) { /* 一行很长的代码，看它在代码块里�
 """
 
 
+def plugin_records(c):
+    """Two plugins on, records at their longest; the market at an address that refuses (nothing goes out)."""
+    os.environ["RESUME_STUDIO_MARKET"] = "http://127.0.0.1:9/market.json"
+    s = c.server
+    for pid in ("civil-service", "phd-applications"):
+        s.req("PUT", f"/api/plugins/{pid}", {"on": True})
+    long_unit = "中华人民共和国某某部某某司局下属某某某某某某某某事业单位（含二级机构及派出机构）"
+    for i, (title, exam, stage) in enumerate([
+            ("综合管理岗（一级主任科员及以下）——统计数据处理与分析方向，需熟悉 Python、R、SQL 与抽样调查方法", "national", "registered"),
+            ("信息技术岗", "selected", "watching"), ("数据分析岗", "institution", "written"), ("Data officer", "other", "dropped")]):
+        st, _ = s.req("POST", "/api/plugins/civil-service/records/positions", {
+            "title": title, "exam": exam, "stage": stage, "unit": long_unit if i == 0 else "江苏省委组织部", "region": "南京",
+            "code": "300110001001" + str(i), "quota": 2 + i, "apply_by": f"2026-1{i % 2}-2{i}", "written": "2026-11-29",
+            "notice": "https://bm.scs.gov.cn/pp/gkweb/core/web/ui/business/home/gkhome.html?very=long&query=" + "x" * 80,
+            "requirements": "硕士研究生及以上；" + "统计学类、计算机科学与技术类、数学类、应用经济学类；" * 6})
+        assert st == 200
+
+
+def plugin_ws(pid="civil-service", collection="positions"):
+    """A plugin's own workspace (a button in the top bar), at one of its tables."""
+    tab = f"p.{pid}.{collection}"
+    return then(lambda pg, c: pg.wait_for_function(f"() => wsPlugin('p.{pid}')"), js(f"() => setWorkspace('p.{pid}')"),
+                lambda pg, c: pg.wait_for_function(f"() => typeof DBV !== 'undefined' && DBV.tables && DBV.tables['{tab}']"))
+
+
 def plan_versions(c):
     st = c.server.req("GET", "/api/plan")[1]
     st = c.server.req("PUT", "/api/plan", {"text": PLAN_DOC, "why": "第一次盘点：定下全栈 / AI 应用方向", "base": st["digest"]})[1]
@@ -525,7 +554,7 @@ STATES = [
           ["#chat-log .msg-help"]),
     # every kind of step a reply shows, opened, with names and output too long for the pane (a URL as a tool's
     # name, four browser actions in one card): each stays inside the pane and reads top to bottom
-    State("chat, long steps opened", then(wait("#chat-log"), js("""() => {
+    State("chat, long steps opened", then(wait("#chat-log"), lambda pg, c: pg.wait_for_function("() => ui.started"), js("""() => {
             const url = "https://cxmt.zhiye.com/campus-recruitment/metax-tech/58123/jobs?page=1&size=100&verylongparameter=abcdefghijklmnopqrstuvwxyz";
             const res = "ok: 长鑫存储技术有限公司 – " + url + "\\n" + "x".repeat(300);
             ui.chat.messages = [{ role: "user", text: "看看 " + url, files: [] }, { role: "assistant", blocks: [
@@ -642,6 +671,19 @@ STATES = [
           prepare=plan_versions),
     State("plan, its versions and a comparison", then(plan, click("#plan-versions"), click(".plan-side .ps-item >> nth=2"),
           wait(".plan-vbar"), click(".plan-vbar [role=radio] >> nth=1")), [".plan-side .ps-why", ".plan-diff .dl-add"], prepare=plan_versions),
+    # ---- plugins (docs/PLUGINS.md): last, since turning them on adds workspaces to the top bar
+    State("plugins, a table with long records", plugin_ws(), ["#pluginspace .dbv-view[data-table='p.civil-service.positions'] tbody tr"],
+          prepare=plugin_records),
+    State("plugins, a table as a board", then(plugin_ws(), js("() => { DBV.tables['p.civil-service.positions'].active = 'v2'; paintPluginspace(); }"),
+          wait("#pluginspace .dbv-view[data-layout=board]")), ["#pluginspace .dbv-view[data-layout=board] .dbv-card"], prepare=plugin_records),
+    State("plugins, a record's page", then(plugin_ws(), click("#pluginspace .dbv-title >> nth=0"), wait("#pluginspace .plugin-pair")),
+          ["#pluginspace .plugin-pair .select", "#pluginspace .plugin-pair input[type=date]"], prepare=plugin_records),
+    State("plugins, a plugin's empty table", then(plugin_ws("phd-applications", "programs")), ["#pluginspace .plugin-empty"], prepare=plugin_records),
+    State("plugins, in Settings", then(js("() => openSettings()"), wait("#plugins-settings .plugin-row"),
+          js("() => document.querySelector('#plugins-settings').scrollIntoView()")), ["#plugins-settings .plugin-row .check-row"],
+          prepare=plugin_records),
+    State("plugins, the market while it can't be reached", then(js("() => openSettings()"), click("#plugin-market-open"),
+          wait(".modal.market .market-row")), [".modal.market .market-row", ".modal.market .fs-status.warn"], prepare=plugin_records),
 ]
 
 
@@ -705,6 +747,53 @@ def test_every_empty_spot_of_the_header_moves_the_window(win, server):
         win.set_viewport_size({"width": w, "height": 900})
         settle(win)
         problems += win.evaluate(DRAG_MAP)
+    assert not problems, "\n" + "\n".join(problems)
+
+
+MANY_PLUGINS = r"""
+async () => {
+  // fifteen plugins on, with long names: each a workspace with its button in the top bar
+  const base = PL.list.find((p) => p.manifest);
+  const names = ['各国博士申请（欧洲方向）', '海外人才计划', '选调生', '教师编制考试', '国企校招', '军队文职', '银行秋招', '研究生推免',
+                 '博士后进站', '高校人才招聘', '医疗卫生系统招聘', '事业单位联考'];
+  PL.list = [...PL.list.map((p) => ({ ...p, on: !!p.manifest })), ...names.map((n, i) => ({ ...base, id: 'many-' + i, on: true,
+    manifest: { ...base.manifest, id: 'many-' + i, name: { zh: n, en: n } } }))];
+  paintPluginButtons();
+  const out = [];
+  const bar = document.querySelector('.topbar');
+  const last = pluginsOn()[pluginsOn().length - 1];
+  for (const ws of ['resume', 'jobs', 'fill', 'plan', 'p.' + base.id, 'p.' + last.id]) {
+    setWorkspace(ws);
+    await new Promise((r) => setTimeout(r, 300));
+    // the empty width along the bar's middle line: points with no control under them
+    let room = 0;
+    const end = innerWidth - parseFloat(getComputedStyle(bar).paddingRight);
+    for (let x = 0; x < end; x += 2) {
+      const el = document.elementFromPoint(x, 25);
+      if (el && !el.closest('button, a, input, select, textarea, [role=button], [role=tab], [role=combobox], .select, .save-status:not(:empty)')) room += 2;
+    }
+    const on = document.querySelector(`.ws-btn[data-ws="${ws}"]`);
+    if (room < 120) out.push(`${ws} ${innerWidth}: only ${room}px of the title bar left to drag the window by`);
+    if (bar.scrollWidth > bar.clientWidth + 1) out.push(`${ws} ${innerWidth}: the top bar overflows`);
+    if (!on || !on.getClientRects().length) out.push(`${ws} ${innerWidth}: the workspace on screen has no button`);
+    const hidden = document.querySelectorAll('.plugin-ws.hidden').length;
+    if (hidden && !document.querySelector('.ws-more:not(.hidden)')) out.push(`${ws} ${innerWidth}: ${hidden} plugins hidden, no menu for them`);
+  }
+  return out;
+}
+"""
+
+
+def test_many_plugins_keep_room_to_drag_the_window(win, server):
+    """Each plugin is a workspace in the top bar, which is the window's title bar: however many are on, what doesn't
+    fit goes into a menu, the one on screen keeps its button, and room to drag the window stays (user 2026-11-12)."""
+    open_window(win, server, "zh")
+    win.wait_for_function("() => PL.loaded")
+    problems = []
+    for w in (1100, 1440, 1920):
+        win.set_viewport_size({"width": w, "height": 900})
+        settle(win)
+        problems += win.evaluate(MANY_PLUGINS)
     assert not problems, "\n" + "\n".join(problems)
 
 

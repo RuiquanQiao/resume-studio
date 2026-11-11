@@ -23,6 +23,7 @@ from jobhunt import api as hunt_api
 from jobs import api as jobs_api
 from jobs import career_ops
 from jobs.base import JobTool
+from plugins import api as plugins_api
 from studyplan import api as plan_api
 
 from . import api, datafolder, prompts
@@ -56,6 +57,8 @@ class Instance:
     jobtool: JobTool | None = None             # the job-posting tool (per computer, survives data switches)
     jobs_watcher: SignatureWatcher | None = None
     plan_watcher: SignatureWatcher | None = None   # the plan's files (Claude writes them straight)
+    plugins: Any = None                            # plugins.registry.Registry (docs/PLUGINS.md)
+    plugins_watcher: SignatureWatcher | None = None   # the plugins' records (the AI writes them straight)
     web: WebHost | None = None                 # the tool's own web interface, hosted in the window
     browser: ManagedBrowser | None = None      # the browser Autofill drives (its own profile, per computer)
 
@@ -69,6 +72,8 @@ class Instance:
             self.jobs_watcher.stop()
         if self.plan_watcher:
             self.plan_watcher.stop()
+        if self.plugins_watcher:
+            self.plugins_watcher.stop()
         hunt = getattr(self, "hunt", None)   # set once the job hunt is registered
         if hunt and hunt.logo_watcher:
             hunt.logo_watcher.stop()
@@ -370,3 +375,8 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
 
     # ---- the plan: one document Claude helps the user write, with its versions (docs/PLAN.md) ----
     inst.plan, inst.plan_watcher = plan_api.register(app, studio, chats, watch_interval=watch_interval)
+
+    # ---- plugins: other kinds of applying, described as data, and the plugin market (docs/PLUGINS.md) ----
+    # installed from the market: per computer, next to the app's own preferences (git-ignored)
+    inst.plugins, inst.plugins_watcher = plugins_api.register(app, studio, chats, prefs, prefs.path.parent / "plugins",
+                                                              watch_interval=watch_interval)

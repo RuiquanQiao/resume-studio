@@ -1,0 +1,81 @@
+{
+  "id": "phd-applications",
+  "version": "1.0.0",
+  "app": ">=1",
+  "name": {"en": "PhD applications", "zh": "博士申请", "ja": "博士課程出願", "ko": "박사 지원", "de": "Promotionsbewerbungen", "fr": "Candidatures en doctorat", "es": "Solicitudes de doctorado"},
+  "description": {
+    "en": "PhD programmes and supervisors in any country: funding, deadlines, contact with the supervisor, and each application's stage.",
+    "zh": "各国的博士项目和导师：资助、截止日期、套磁进展和申请进度。",
+    "ja": "各国の博士課程と指導教員：資金、締切、教員とのコンタクト、出願の進捗。",
+    "ko": "각국의 박사 과정과 지도 교수: 장학금, 마감일, 교수 컨택, 지원 진행 상황.",
+    "de": "Promotionsprogramme und Betreuende in jedem Land: Finanzierung, Fristen, Kontakt zur Betreuung und der Stand jeder Bewerbung.",
+    "fr": "Programmes doctoraux et directeurs de thèse dans tous les pays : financement, échéances, contact avec le directeur et l'étape de chaque candidature.",
+    "es": "Programas de doctorado y directores en cualquier país: financiación, plazos, contacto con el director y la etapa de cada solicitud."
+  },
+  "author": "Resume Studio",
+  "homepage": "https://github.com/RuiquanQiao/resume-studio",
+  "guide": "GUIDE.md",
+  "collections": [{
+    "id": "programs",
+    "name": {"en": "Programmes", "zh": "博士项目", "ja": "博士課程", "ko": "박사 과정", "de": "Programme", "fr": "Programmes", "es": "Programas"},
+    "item": {"en": "programme", "zh": "博士项目", "ja": "博士課程", "ko": "박사 과정", "de": "Programm", "fr": "programme", "es": "programa"},
+    "status": "stage",
+    "dates": ["apply_by", "funding_by", "interview"],
+    "properties": [
+      {"key": "title", "type": "title", "width": 260, "label": {"en": "Programme or supervisor", "zh": "项目/导师", "ja": "課程・指導教員", "ko": "과정·지도 교수", "de": "Programm oder Betreuung", "fr": "Programme ou directeur", "es": "Programa o director"}},
+      {"key": "university", "type": "text", "width": 180, "label": {"en": "University", "zh": "学校", "ja": "大学", "ko": "대학", "de": "Hochschule", "fr": "Université", "es": "Universidad"}},
+      {"key": "country", "type": "text", "width": 110, "label": {"en": "Country", "zh": "国家/地区", "ja": "国・地域", "ko": "국가·지역", "de": "Land", "fr": "Pays", "es": "País"}},
+      {"key": "supervisor", "type": "text", "width": 150, "label": {"en": "Supervisor", "zh": "导师", "ja": "指導教員", "ko": "지도 교수", "de": "Betreuung", "fr": "Directeur de thèse", "es": "Director"}},
+      {"key": "field", "type": "text", "width": 180, "label": {"en": "Research area", "zh": "研究方向", "ja": "研究分野", "ko": "연구 분야", "de": "Forschungsgebiet", "fr": "Domaine de recherche", "es": "Área de investigación"}},
+      {"key": "kind", "type": "select", "width": 140, "label": {"en": "Admission model", "zh": "录取模式", "ja": "入学方式", "ko": "선발 방식", "de": "Zulassungsmodell", "fr": "Mode d'admission", "es": "Modelo de admisión"},
+       "options": [
+        {"value": "programme", "color": "blue", "label": {"en": "Programme (cohort)", "zh": "项目制", "ja": "プログラム制", "ko": "프로그램제", "de": "Programm (Jahrgang)", "fr": "Programme (promotion)", "es": "Programa (promoción)"}},
+        {"value": "supervisor", "color": "green", "label": {"en": "Supervisor first", "zh": "导师制", "ja": "指導教員制", "ko": "지도 교수제", "de": "Betreuung zuerst", "fr": "Directeur d'abord", "es": "Director primero"}},
+        {"value": "position", "color": "purple", "label": {"en": "Advertised position", "zh": "职位制", "ja": "公募ポジション", "ko": "공모 포지션", "de": "Ausgeschriebene Stelle", "fr": "Poste publié", "es": "Plaza convocada"}},
+        {"value": "assessment", "color": "orange", "label": {"en": "Application and assessment (China)", "zh": "申请考核制", "ja": "申請審査制（中国）", "ko": "신청 심사제(중국)", "de": "Bewerbung und Prüfung (China)", "fr": "Candidature et évaluation (Chine)", "es": "Solicitud y evaluación (China)"}},
+        {"value": "joint", "color": "yellow", "label": {"en": "Joint or sponsored", "zh": "联合培养/公派", "ja": "共同指導・公費派遣", "ko": "공동 지도·국비 파견", "de": "Gemeinsam oder gefördert", "fr": "Cotutelle ou boursier", "es": "Conjunto o patrocinado"}}]},
+      {"key": "funding", "type": "select", "width": 140, "label": {"en": "Funding", "zh": "资助", "ja": "資金", "ko": "재정 지원", "de": "Finanzierung", "fr": "Financement", "es": "Financiación"},
+       "options": [
+        {"value": "funded", "color": "green", "label": {"en": "Fully funded", "zh": "全奖", "ja": "全額支給", "ko": "전액 지원", "de": "Voll finanziert", "fr": "Entièrement financé", "es": "Financiado por completo"}},
+        {"value": "partial", "color": "yellow", "label": {"en": "Partly funded", "zh": "部分资助", "ja": "一部支給", "ko": "일부 지원", "de": "Teilfinanziert", "fr": "Financé en partie", "es": "Financiado en parte"}},
+        {"value": "scholarship", "color": "blue", "label": {"en": "Scholarship to apply for", "zh": "需申请奖学金", "ja": "奨学金の申請が必要", "ko": "장학금 별도 신청", "de": "Stipendium zu beantragen", "fr": "Bourse à demander", "es": "Beca por solicitar"}},
+        {"value": "self", "color": "red", "label": {"en": "Self-funded", "zh": "自费", "ja": "自費", "ko": "자비", "de": "Selbstfinanziert", "fr": "Autofinancé", "es": "Autofinanciado"}},
+        {"value": "unknown", "color": "gray", "label": {"en": "Unknown", "zh": "未知", "ja": "不明", "ko": "미확인", "de": "Unbekannt", "fr": "Inconnu", "es": "Desconocido"}}]},
+      {"key": "contact", "type": "select", "width": 140, "label": {"en": "Supervisor contact", "zh": "套磁进展", "ja": "教員とのコンタクト", "ko": "교수 컨택", "de": "Kontakt zur Betreuung", "fr": "Contact avec le directeur", "es": "Contacto con el director"},
+       "options": [
+        {"value": "none", "color": "gray", "label": {"en": "Not contacted", "zh": "未联系", "ja": "未連絡", "ko": "미연락", "de": "Nicht kontaktiert", "fr": "Pas contacté", "es": "Sin contactar"}},
+        {"value": "emailed", "color": "blue", "label": {"en": "Emailed", "zh": "已发邮件", "ja": "メール送信済み", "ko": "메일 발송", "de": "Angeschrieben", "fr": "Courriel envoyé", "es": "Correo enviado"}},
+        {"value": "replied", "color": "yellow", "label": {"en": "Replied", "zh": "导师已回复", "ja": "返信あり", "ko": "답장 받음", "de": "Antwort erhalten", "fr": "Réponse reçue", "es": "Ha respondido"}},
+        {"value": "meeting", "color": "orange", "label": {"en": "Meeting held", "zh": "已面谈", "ja": "面談済み", "ko": "면담 완료", "de": "Gespräch geführt", "fr": "Entretien eu", "es": "Reunión hecha"}},
+        {"value": "supportive", "color": "green", "label": {"en": "Will supervise", "zh": "导师愿意接收", "ja": "受け入れ可", "ko": "지도 수락", "de": "Sagt Betreuung zu", "fr": "Accepte de diriger", "es": "Acepta dirigir"}},
+        {"value": "declined", "color": "red", "label": {"en": "Declined", "zh": "导师婉拒", "ja": "辞退された", "ko": "거절", "de": "Abgesagt", "fr": "Refus", "es": "Ha declinado"}}]},
+      {"key": "apply_by", "type": "date", "width": 120, "label": {"en": "Apply by", "zh": "申请截止", "ja": "出願締切", "ko": "지원 마감", "de": "Bewerbungsschluss", "fr": "Date limite", "es": "Plazo"}},
+      {"key": "funding_by", "type": "date", "width": 130, "label": {"en": "Scholarship deadline", "zh": "奖学金截止", "ja": "奨学金締切", "ko": "장학금 마감", "de": "Stipendienfrist", "fr": "Échéance de bourse", "es": "Plazo de beca"}},
+      {"key": "interview", "type": "date", "width": 120, "hidden": true, "label": {"en": "Interview", "zh": "面试", "ja": "面接", "ko": "면접", "de": "Vorstellungsgespräch", "fr": "Entretien", "es": "Entrevista"}},
+      {"key": "requirements", "type": "longtext", "width": 260, "hidden": true, "label": {"en": "Requirements", "zh": "申请要求", "ja": "出願要件", "ko": "지원 요건", "de": "Anforderungen", "fr": "Exigences", "es": "Requisitos"},
+       "hint": {"en": "language scores, research proposal, references, writing sample", "zh": "语言成绩、研究计划、推荐信、写作样本", "ja": "語学スコア、研究計画書、推薦状、ライティングサンプル", "ko": "어학 점수, 연구 계획서, 추천서, 글쓰기 샘플", "de": "Sprachnachweise, Forschungsexposé, Gutachten, Schreibprobe", "fr": "scores de langue, projet de recherche, lettres de recommandation, échantillon d'écriture", "es": "certificados de idioma, propuesta de investigación, cartas de referencia, muestra de escritura"}},
+      {"key": "link", "type": "url", "width": 160, "label": {"en": "Link", "zh": "链接", "ja": "リンク", "ko": "링크", "de": "Link", "fr": "Lien", "es": "Enlace"}},
+      {"key": "stage", "type": "select", "width": 130, "label": {"en": "Stage", "zh": "进度", "ja": "進捗", "ko": "진행 상황", "de": "Stand", "fr": "Étape", "es": "Etapa"},
+       "options": [
+        {"value": "researching", "color": "gray", "label": {"en": "Researching", "zh": "调研中", "ja": "調査中", "ko": "조사 중", "de": "In Recherche", "fr": "En recherche", "es": "Investigando"}},
+        {"value": "contacting", "color": "blue", "label": {"en": "Contacting", "zh": "套磁中", "ja": "コンタクト中", "ko": "컨택 중", "de": "In Kontakt", "fr": "Prise de contact", "es": "Contactando"}},
+        {"value": "preparing", "color": "yellow", "label": {"en": "Preparing materials", "zh": "准备材料", "ja": "書類準備中", "ko": "서류 준비 중", "de": "Unterlagen in Vorbereitung", "fr": "Dossier en préparation", "es": "Preparando documentos"}},
+        {"value": "applied", "color": "blue", "label": {"en": "Applied", "zh": "已申请", "ja": "出願済み", "ko": "지원 완료", "de": "Beworben", "fr": "Candidature envoyée", "es": "Solicitado"}},
+        {"value": "interview", "color": "orange", "label": {"en": "Interview", "zh": "面试", "ja": "面接", "ko": "면접", "de": "Vorstellungsgespräch", "fr": "Entretien", "es": "Entrevista"}},
+        {"value": "offer", "color": "green", "label": {"en": "Offer", "zh": "已录取", "ja": "合格", "ko": "합격", "de": "Zusage", "fr": "Admis", "es": "Admitido"}},
+        {"value": "rejected", "color": "red", "label": {"en": "Not successful", "zh": "未录取", "ja": "不合格", "ko": "불합격", "de": "Absage", "fr": "Refusé", "es": "No admitido"}},
+        {"value": "dropped", "color": "gray", "label": {"en": "Dropped", "zh": "已放弃", "ja": "辞退", "ko": "포기", "de": "Verworfen", "fr": "Abandonné", "es": "Descartado"}}]},
+      {"key": "notes", "type": "longtext", "width": 220, "hidden": true, "label": {"en": "Notes", "zh": "备注", "ja": "メモ", "ko": "메모", "de": "Notizen", "fr": "Notes", "es": "Notas"}}
+    ],
+    "views": [
+      {"id": "v1", "name": {"en": "All programmes", "zh": "全部项目", "ja": "すべての課程", "ko": "모든 과정", "de": "Alle Programme", "fr": "Tous les programmes", "es": "Todos los programas"}},
+      {"id": "v2", "layout": "board", "group": "stage", "name": {"en": "By stage", "zh": "按进度", "ja": "進捗別", "ko": "진행 상황별", "de": "Nach Stand", "fr": "Par étape", "es": "Por etapa"}},
+      {"id": "v3", "layout": "calendar", "name": {"en": "Deadlines", "zh": "截止日期", "ja": "締切", "ko": "마감일", "de": "Fristen", "fr": "Échéances", "es": "Plazos"}}
+    ]
+  }],
+  "suggestions": [
+    {"en": "Find supervisors whose research fits my projects, with their recent papers", "zh": "根据我的项目经历，找研究方向匹配的导师，并列出他们近期的论文", "ja": "私のプロジェクトに合う研究をしている指導教員を、最近の論文と一緒に探して", "ko": "내 프로젝트에 맞는 연구를 하는 지도 교수를 최근 논문과 함께 찾아 줘", "de": "Finde Betreuende, deren Forschung zu meinen Projekten passt, mit ihren neuesten Arbeiten", "fr": "Trouve des directeurs dont la recherche correspond à mes projets, avec leurs articles récents", "es": "Encuentra directores cuya investigación encaje con mis proyectos, con sus artículos recientes"},
+    {"en": "Draft a first email to the supervisor of my top programme", "zh": "给我最想去的项目的导师写一封套磁邮件初稿", "ja": "第一志望の課程の指導教員への最初のメールを下書きして", "ko": "1지망 과정 지도 교수에게 보낼 첫 메일 초안을 써 줘", "de": "Entwirf eine erste E-Mail an die Betreuung meines Wunschprogramms", "fr": "Rédige un premier courriel au directeur de mon programme préféré", "es": "Redacta un primer correo al director de mi programa preferido"},
+    {"en": "Which application and scholarship deadlines are next?", "zh": "接下来有哪些申请和奖学金截止？", "ja": "次に来る出願と奨学金の締切は？", "ko": "다음에 다가오는 지원·장학금 마감은?", "de": "Welche Bewerbungs- und Stipendienfristen kommen als Nächstes?", "fr": "Quelles sont les prochaines échéances de candidature et de bourse ?", "es": "¿Cuáles son los próximos plazos de solicitud y de beca?"}
+  ]
+}

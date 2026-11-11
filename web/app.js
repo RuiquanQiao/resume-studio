@@ -1599,14 +1599,14 @@ function openSettings(section = null) {
   if (root.firstChild) return;
   pendingUiLang = undefined;
   const done = async () => {
-    try { await applyAgentSetting(); await applyAiNewChat(); await applyJobsSettings(); await applyTracker(); } catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
+    try { await applyAgentSetting(); await applyAiNewChat(); await applyJobsSettings(); await applyTracker(); await applyPlugins(); } catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
     try { if (await applyUiLang()) { await saveDraft(); location.reload(); return; } }
     catch (e) { toast(t("Save failed: {error}", { error: e.message })); return; }
     close();
   };
   const close = () => {
     for (const k of Object.keys(jobsPending)) delete jobsPending[k];
-    pendingTracker = undefined; pendingDaily = undefined;
+    pendingTracker = undefined; pendingDaily = undefined; pendingPlugins = {};
     pendingUiLang = undefined; pendingAgentSetting = undefined; pendingAiNewChat = undefined; closeSettings = () => {}; root.replaceChildren(); document.removeEventListener("keydown", onKey); $("#settings-btn").focus(); };
   closeSettings = close;
   // bubble phase: an open dropdown takes Escape first (it stops the event in the capture phase)
@@ -1630,6 +1630,7 @@ function openSettings(section = null) {
           h("button", { class: "btn sm", onclick: exportData }, icon("download"), t("Export all as a zip…")),
           h("button", { class: "btn sm", onclick: () => changeDataFile("move") }, icon("folder"), t("Move to another folder…")))),
       trackerField(),
+      pluginsSettingsField(),
       jobsSettingsSection()),
       h("div", { class: "acts" }, h("button", { class: "btn primary", onclick: done }, t("Done"))))));
   setTimeout(() => {
@@ -2607,6 +2608,7 @@ function connect() {
   listenFill(es);
   listenHunt(es);
   listenPlan(es);
+  listenPlugins(es);
 }
 
 function wire() {
@@ -2639,6 +2641,8 @@ function wire() {
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "j") { e.preventDefault(); setChatPane(!chatShown()); }
     if ((e.ctrlKey || e.metaKey) && e.key === ",") { e.preventDefault(); openSettings(); }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && ["1", "2", "3", "4"].includes(e.key)) { e.preventDefault(); setWorkspace({ 1: "resume", 2: "jobs", 3: "fill", 4: "plan" }[e.key]); }
+    // Ctrl+5…9: the plugins' workspaces, in the top bar's order (web/plugins.js)
+    else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && /^[5-9]$/.test(e.key) && pluginsOn()[e.key - 5]) { e.preventDefault(); setWorkspace("p." + pluginsOn()[e.key - 5].id); }
     if (e.key === "Escape" && !Float.cur && ui.layoutOpen) { ui.layoutOpen = false; renderPreviewToolbar(); }
   });
   window.addEventListener("beforeunload", () => { saveDraft(); if (ui.headPending) ui.headPending(); });
@@ -2674,6 +2678,7 @@ function onScreen() {
   wire();
   initGutters();
   applyState(await api("GET", "/api/state"));
+  await loadPlugins();   // their tabs are part of the first screen (web/plugins.js)
   const switched = store("dataSwitched");
   if (switched) {
     store("dataSwitched", null);
@@ -2690,9 +2695,11 @@ function onScreen() {
   await api("POST", "/api/drawn").catch(() => {});
   await onScreen();
   connect();
-  loadChats().catch(() => {});
+  const chats = loadChats().catch(() => {});
   loadJobs({ quiet: true });
   loadClaudeInfo();
   checkEvidence();
   scheduleRender(0);
+  // tests wait for this before setting a state that the first loads (chats, the evidence check) would overwrite
+  chats.finally(() => { ui.started = true; });
 })();

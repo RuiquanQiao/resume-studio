@@ -140,7 +140,7 @@ def test_other_scripts_compile(data_file, lang, text):
 # Interface text is formal and in one register per language (user, 2026-11-11: "所有用语要专业、正式"; i18n keeps
 # one way of addressing the user): zh 未/尚未/无法/失败, de Sie, fr vous, ko 합니다체. What may stay casual are the
 # prompts the app sends to the AI in the user's own voice, listed here by their English text.
-INFORMAL = {"zh": r"没能|没法|还没|没打开|没读|没连上|点一下|弄清", "de": r"(?i)\b(du|dein\w*|dich|dir)\b",
+INFORMAL = {"zh": r"没能|没法|还没|没打开|没读|没连上|点一下|弄清", "de": r"(?i)\b(du|dein(?!stall)\w*|dich|dir)\b",
             "fr": r"(?i)\b(tu|ton|ta|tes|toi)\b|\bt['’]", "ko": r"(어요|아요|해요|돼요|예요|이에요|둬요|줘요)([.!)]|\s|$)"}
 PROMPTS_TO_THE_AI = {
     "At the end, list what you filled in and where each part came from.",

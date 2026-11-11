@@ -731,7 +731,7 @@ function webBase() {
 function setWorkspace(ws, { path = null } = {}) {
   if (ws === "jobs" && path) W.pendingPath = path;
   W.ws = ws;
-  document.body.dataset.ws = ws;
+  document.body.dataset.ws = isPluginWs(ws) ? "plugin" : ws;   // a plugin's workspace: "p.<id>" (web/plugins.js)
   store("ws", ws);
   for (const b of document.querySelectorAll(".ws-btn")) {
     b.classList.toggle("on", b.dataset.ws === ws);
@@ -751,6 +751,8 @@ function setWorkspace(ws, { path = null } = {}) {
   } else if (ws === "plan") {
     paintPlan();
     loadPlan();
+  } else if (isPluginWs(ws)) {
+    paintPluginspace();
   } else if (typeof applyZoom === "function" && ui.zoom === "fit") applyZoom();
   renderWsTools();
 }
@@ -892,7 +894,11 @@ function webRoute(kind, id) {
 function renderWsTools() {
   const el = $("#ws-tools");
   if (!el) return;
-  if (W.ws === "resume") { el.replaceChildren(); return; }
+  renderWsToolsNow(el);
+  fitWsSwitch();   // what the tools take decides how many plugins' buttons fit (web/plugins.js)
+}
+function renderWsToolsNow(el) {
+  if (W.ws === "resume" || isPluginWs()) { el.replaceChildren(); return; }
   if (Float.cur && el.contains(Float.cur.anchor)) return;   // a menu hangs off these buttons: redrawn when it closes
   if (W.ws === "fill") { renderFillTools(el); return; }
   if (W.ws === "plan") { renderPlanTools(el); return; }
@@ -1027,5 +1033,8 @@ function initWorkspaces() {
   F.site = store("fill-site") || F.site;
   F.tab = store("fill-tab") === "push" ? "push" : "copy";
   restoreHunt();
-  setWorkspace(["jobs", "fill", "plan"].includes(store("ws")) ? store("ws") : "resume");
+  restorePw();
+  paintPluginButtons();   // the plugins are loaded by now (app.js main)
+  const last = store("ws");
+  setWorkspace(["jobs", "fill", "plan"].includes(last) || wsPlugin(last) ? last : "resume");
 }

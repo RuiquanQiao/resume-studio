@@ -1,0 +1,70 @@
+{
+  "id": "civil-service",
+  "version": "1.0.0",
+  "app": ">=1",
+  "name": {"en": "Civil service exams", "zh": "考公考编", "ja": "公務員試験", "ko": "공무원 시험", "de": "Öffentlicher Dienst", "fr": "Concours de la fonction publique", "es": "Oposiciones"},
+  "description": {
+    "en": "China's civil service and public institution exams: positions from the position tables, their requirements, and the exam calendar.",
+    "zh": "国考、省考、选调生、事业单位和教师编：职位表里的职位、报考条件和考试日程。",
+    "ja": "中国の公務員・事業単位試験：職位表の職位、応募条件、試験日程。",
+    "ko": "중국 공무원·사업 단위 시험: 직위표의 직위, 응시 조건, 시험 일정.",
+    "de": "Chinas Prüfungen für den öffentlichen Dienst und öffentliche Einrichtungen: Stellen aus den Stellentabellen, ihre Voraussetzungen und der Prüfungskalender.",
+    "fr": "Les concours chinois de la fonction publique et des établissements publics : les postes des tableaux de postes, leurs conditions et le calendrier des épreuves.",
+    "es": "Las oposiciones chinas a la administración y a instituciones públicas: las plazas de las tablas de puestos, sus requisitos y el calendario de exámenes."
+  },
+  "author": "Resume Studio",
+  "homepage": "https://github.com/RuiquanQiao/resume-studio",
+  "guide": "GUIDE.md",
+  "collections": [{
+    "id": "positions",
+    "name": {"en": "Positions", "zh": "报考职位", "ja": "職位", "ko": "직위", "de": "Stellen", "fr": "Postes", "es": "Plazas"},
+    "item": {"en": "position", "zh": "职位", "ja": "職位", "ko": "직위", "de": "Stelle", "fr": "poste", "es": "plaza"},
+    "status": "stage",
+    "dates": ["apply_by", "written", "interview"],
+    "properties": [
+      {"key": "title", "type": "title", "width": 240, "label": {"en": "Position", "zh": "职位名称", "ja": "職位名", "ko": "직위명", "de": "Stelle", "fr": "Poste", "es": "Plaza"}},
+      {"key": "exam", "type": "select", "width": 120, "label": {"en": "Exam", "zh": "考试类型", "ja": "試験区分", "ko": "시험 유형", "de": "Prüfung", "fr": "Concours", "es": "Examen"},
+       "options": [
+        {"value": "national", "color": "red", "label": {"en": "National exam", "zh": "国考", "ja": "国家公務員試験", "ko": "국가 공무원 시험", "de": "Nationale Prüfung", "fr": "Concours national", "es": "Oposición nacional"}},
+        {"value": "provincial", "color": "orange", "label": {"en": "Provincial exam", "zh": "省考", "ja": "省公務員試験", "ko": "성 공무원 시험", "de": "Provinzprüfung", "fr": "Concours provincial", "es": "Oposición provincial"}},
+        {"value": "selected", "color": "purple", "label": {"en": "Selected graduates", "zh": "选调生", "ja": "選調生", "ko": "선조생", "de": "Auswahlverfahren für Absolventen", "fr": "Sélection de diplômés", "es": "Selección de titulados"}},
+        {"value": "institution", "color": "blue", "label": {"en": "Public institution", "zh": "事业单位", "ja": "事業単位", "ko": "사업 단위", "de": "Öffentliche Einrichtung", "fr": "Établissement public", "es": "Institución pública"}},
+        {"value": "teacher", "color": "green", "label": {"en": "Teaching post", "zh": "教师编", "ja": "教員", "ko": "교사", "de": "Lehrerstelle", "fr": "Poste d'enseignant", "es": "Plaza docente"}},
+        {"value": "military", "color": "yellow", "label": {"en": "Military civilian post", "zh": "军队文职", "ja": "軍隊文職", "ko": "군 문직", "de": "Zivilstelle im Militär", "fr": "Poste civil militaire", "es": "Puesto civil militar"}},
+        {"value": "other", "color": "gray", "label": {"en": "Other", "zh": "其他", "ja": "その他", "ko": "기타", "de": "Sonstige", "fr": "Autre", "es": "Otro"}}]},
+      {"key": "unit", "type": "text", "width": 200, "label": {"en": "Hiring body", "zh": "招录机关/用人单位", "ja": "採用機関", "ko": "채용 기관", "de": "Einstellende Behörde", "fr": "Organisme recruteur", "es": "Organismo convocante"}},
+      {"key": "region", "type": "text", "width": 110, "label": {"en": "Where", "zh": "工作地点", "ja": "勤務地", "ko": "근무지", "de": "Ort", "fr": "Lieu", "es": "Lugar"}},
+      {"key": "code", "type": "text", "width": 110, "label": {"en": "Position code", "zh": "职位代码", "ja": "職位コード", "ko": "직위 코드", "de": "Stellencode", "fr": "Code du poste", "es": "Código de plaza"}},
+      {"key": "quota", "type": "number", "width": 80, "label": {"en": "Places", "zh": "招录人数", "ja": "採用人数", "ko": "채용 인원", "de": "Plätze", "fr": "Places", "es": "Plazas"}},
+      {"key": "requirements", "type": "longtext", "width": 260, "hidden": true, "label": {"en": "Requirements", "zh": "报考条件", "ja": "応募条件", "ko": "응시 조건", "de": "Voraussetzungen", "fr": "Conditions", "es": "Requisitos"},
+       "hint": {"en": "degree, majors, political status, grassroots experience, others in the table", "zh": "学历、专业、政治面貌、基层工作经历、职位表的其他条件", "ja": "学歴、専攻、政治面貌、基層経験、職位表のその他の条件", "ko": "학력, 전공, 정치 면모, 기층 경력, 직위표의 기타 조건", "de": "Abschluss, Fächer, politischer Status, Basiserfahrung, weitere Angaben der Tabelle", "fr": "diplôme, spécialités, statut politique, expérience de terrain, autres conditions du tableau", "es": "titulación, especialidades, filiación política, experiencia de base, otras condiciones de la tabla"}},
+      {"key": "apply_by", "type": "date", "width": 120, "label": {"en": "Register by", "zh": "报名截止", "ja": "出願締切", "ko": "접수 마감", "de": "Anmeldeschluss", "fr": "Inscription avant", "es": "Inscripción hasta"}},
+      {"key": "written", "type": "date", "width": 120, "label": {"en": "Written exam", "zh": "笔试", "ja": "筆記試験", "ko": "필기시험", "de": "Schriftliche Prüfung", "fr": "Écrit", "es": "Examen escrito"}},
+      {"key": "interview", "type": "date", "width": 120, "label": {"en": "Interview", "zh": "面试", "ja": "面接", "ko": "면접", "de": "Vorstellungsgespräch", "fr": "Entretien", "es": "Entrevista"}},
+      {"key": "notice", "type": "url", "width": 160, "label": {"en": "Notice and table", "zh": "公告/职位表", "ja": "公告・職位表", "ko": "공고·직위표", "de": "Bekanntmachung und Tabelle", "fr": "Avis et tableau", "es": "Convocatoria y tabla"}},
+      {"key": "stage", "type": "select", "width": 130, "label": {"en": "Stage", "zh": "进度", "ja": "進捗", "ko": "진행 상황", "de": "Stand", "fr": "Étape", "es": "Etapa"},
+       "options": [
+        {"value": "watching", "color": "gray", "label": {"en": "Watching", "zh": "关注中", "ja": "注目中", "ko": "관심", "de": "Beobachtet", "fr": "Suivi", "es": "En seguimiento"}},
+        {"value": "registered", "color": "blue", "label": {"en": "Registered", "zh": "已报名", "ja": "出願済み", "ko": "접수 완료", "de": "Angemeldet", "fr": "Inscrit", "es": "Inscrito"}},
+        {"value": "qualified", "color": "blue", "label": {"en": "Eligibility confirmed", "zh": "资格审查通过", "ja": "資格審査通過", "ko": "자격 심사 통과", "de": "Zulassung bestätigt", "fr": "Éligibilité confirmée", "es": "Admisión confirmada"}},
+        {"value": "written", "color": "yellow", "label": {"en": "Written exam", "zh": "笔试", "ja": "筆記試験", "ko": "필기시험", "de": "Schriftliche Prüfung", "fr": "Écrit", "es": "Examen escrito"}},
+        {"value": "interview", "color": "orange", "label": {"en": "Interview", "zh": "面试", "ja": "面接", "ko": "면접", "de": "Vorstellungsgespräch", "fr": "Entretien", "es": "Entrevista"}},
+        {"value": "medical", "color": "purple", "label": {"en": "Medical check", "zh": "体检", "ja": "健康診断", "ko": "신체검사", "de": "Gesundheitsprüfung", "fr": "Visite médicale", "es": "Reconocimiento médico"}},
+        {"value": "vetting", "color": "purple", "label": {"en": "Background check", "zh": "考察/政审", "ja": "考察・政治審査", "ko": "고찰·정치 심사", "de": "Überprüfung", "fr": "Enquête", "es": "Investigación de antecedentes"}},
+        {"value": "hired", "color": "green", "label": {"en": "To be appointed", "zh": "拟录用", "ja": "採用予定", "ko": "채용 예정", "de": "Zur Einstellung vorgesehen", "fr": "Admis", "es": "Pendiente de nombramiento"}},
+        {"value": "failed", "color": "red", "label": {"en": "Not successful", "zh": "未通过", "ja": "不合格", "ko": "불합격", "de": "Nicht erfolgreich", "fr": "Non retenu", "es": "No superado"}},
+        {"value": "dropped", "color": "gray", "label": {"en": "Dropped", "zh": "已放弃", "ja": "辞退", "ko": "포기", "de": "Verworfen", "fr": "Abandonné", "es": "Descartado"}}]},
+      {"key": "notes", "type": "longtext", "width": 220, "hidden": true, "label": {"en": "Notes", "zh": "备注", "ja": "メモ", "ko": "메모", "de": "Notizen", "fr": "Notes", "es": "Notas"}}
+    ],
+    "views": [
+      {"id": "v1", "name": {"en": "All positions", "zh": "全部职位", "ja": "すべての職位", "ko": "모든 직위", "de": "Alle Stellen", "fr": "Tous les postes", "es": "Todas las plazas"}},
+      {"id": "v2", "layout": "board", "group": "stage", "name": {"en": "By stage", "zh": "按进度", "ja": "進捗別", "ko": "진행 상황별", "de": "Nach Stand", "fr": "Par étape", "es": "Por etapa"}},
+      {"id": "v3", "layout": "calendar", "name": {"en": "Exam calendar", "zh": "考试日程", "ja": "試験日程", "ko": "시험 일정", "de": "Prüfungskalender", "fr": "Calendrier des épreuves", "es": "Calendario de exámenes"}}
+    ]
+  }],
+  "suggestions": [
+    {"en": "Find positions in this year's national exam that my degree and major qualify for", "zh": "从今年国考职位表里，找出我的学历和专业能报的职位", "ja": "今年の国家公務員試験の職位表から、私の学歴と専攻で応募できる職位を探して", "ko": "올해 국가 공무원 시험 직위표에서 내 학력과 전공으로 응시할 수 있는 직위를 찾아 줘", "de": "Finde in der diesjährigen nationalen Prüfung die Stellen, für die mein Abschluss und Fach zugelassen sind", "fr": "Trouve dans le concours national de cette année les postes ouverts à mon diplôme et ma spécialité", "es": "Encuentra en la oposición nacional de este año las plazas a las que puedo optar con mi titulación y especialidad"},
+    {"en": "Can an overseas master's graduate apply as a new graduate (应届生)? Check the current rules", "zh": "海外硕士能否以应届生身份报考？请核实今年的规定", "ja": "海外修士は新卒（应届生）として出願できる？今年の規定を確認して", "ko": "해외 석사가 졸업 예정자(应届生) 자격으로 응시할 수 있는지 올해 규정을 확인해 줘", "de": "Kann sich ein Masterabsolvent aus dem Ausland als 应届生 bewerben? Prüfe die aktuellen Regeln", "fr": "Un diplômé de master de l'étranger peut-il postuler comme 应届生 ? Vérifie les règles actuelles", "es": "¿Puede un titulado de máster en el extranjero presentarse como 应届生? Comprueba las normas vigentes"},
+    {"en": "When are this year's provincial exams and selected-graduate rounds?", "zh": "今年的省考和选调生什么时候报名、什么时候考试？", "ja": "今年の省公務員試験と選調生の出願・試験はいつ？", "ko": "올해 성 공무원 시험과 선조생 접수·시험은 언제야?", "de": "Wann finden dieses Jahr die Provinzprüfungen und Auswahlverfahren statt?", "fr": "Quand ont lieu cette année les concours provinciaux et les sélections de diplômés ?", "es": "¿Cuándo son este año las oposiciones provinciales y las selecciones de titulados?"}
+  ]
+}
