@@ -31,7 +31,9 @@ CHECK = (Path(__file__).resolve().parent / "layout_check.js").read_text(encoding
 
 # The window sizes and interface languages every state is looked at in. German has the longest words,
 # Chinese the narrowest lines; 1280 is a laptop, 1920 a desktop.
-LOOKS = [((1280, 800), "zh"), ((1440, 900), "zh"), ((1280, 800), "en"), ((1920, 1080), "en"), ((1280, 800), "de")]
+# 800 is half a screen (the window snapped beside another): the narrow layout, the chat floating closed.
+LOOKS = [((1280, 800), "zh"), ((1440, 900), "zh"), ((800, 860), "zh"), ((1280, 800), "en"), ((1920, 1080), "en"),
+         ((1280, 800), "de")]
 
 # Meant to break a rule, with the reason. Keep this short: each line is a place the checker can't see.
 SKIP = {
@@ -664,6 +666,62 @@ def run_state(pg, server, st: State):
 
 PLAIN = [s for s in STATES if not s.needs]
 CONNECTED = [s for s in STATES if "connected" in s.needs]
+
+
+DRAG_MAP = r"""
+async () => {
+  const out = [];
+  for (const ws of ['resume', 'jobs', 'fill', 'plan']) {
+    document.querySelector(`.ws-btn[data-ws=${ws}]`).click();
+    await new Promise(r => setTimeout(r, 400));
+    // app-region is inherited: what a point does is what the box drawn on top there says
+    const end = innerWidth - parseFloat(getComputedStyle(document.querySelector('.topbar')).paddingRight);
+    const dead = new Set(), grabbed = new Set();
+    for (let y = 2; y < 50; y += 6) for (let x = 2; x < end; x += 4) {
+      const el = document.elementFromPoint(x, y);
+      if (!el) continue;
+      const control = el.closest('button, a, input, select, textarea, [role=button], [role=tab], [role=combobox], .select');
+      const moves = getComputedStyle(el).appRegion === 'drag';
+      const name = (control || el).id || String((control || el).className).split(' ')[0] || el.tagName;
+      if (!control && !moves) dead.add(name);
+      if (control && moves) grabbed.add(name);
+    }
+    if (dead.size) out.push(`${ws} ${innerWidth}: empty spots that don't move the window, over ${[...dead].join(', ')}`);
+    if (grabbed.size) out.push(`${ws} ${innerWidth}: controls that would move the window: ${[...grabbed].join(', ')}`);
+  }
+  return out;
+}
+"""
+
+
+def test_every_empty_spot_of_the_header_moves_the_window(win, server):
+    """The header row is the title bar: anywhere between its controls drags the window, a control never does
+    (user report 2026-11-11: most of 网申's header couldn't be dragged)."""
+    open_window(win, server, "zh")
+    problems = []
+    for w in (1100, 1440, 1920):
+        win.set_viewport_size({"width": w, "height": 900})
+        settle(win)
+        problems += win.evaluate(DRAG_MAP)
+    assert not problems, "\n" + "\n".join(problems)
+
+
+def test_right_hand_tools_sit_next_to_the_settings_button(win, server):
+    """Applying's browser chip stood halfway along the header, neither left nor right (user report 2026-11-11):
+    the workspace's tools and the row each had a spacer, and they split the free room."""
+    open_window(win, server, "zh")
+    gaps = {}
+    for w in (1100, 1920):
+        win.set_viewport_size({"width": w, "height": 900})
+        for ws in ("jobs", "fill"):
+            win.click(f".ws-btn[data-ws={ws}]")
+            settle(win)
+            gaps[f"{ws} {w}"] = win.evaluate("""() => {
+                const tools = [...document.querySelectorAll('#ws-tools > *')].filter(e => e.getBoundingClientRect().width);
+                const last = tools[tools.length - 1].getBoundingClientRect();
+                return Math.round(document.querySelector('#settings-btn').getBoundingClientRect().left - last.right);
+            }""")
+    assert all(g <= 24 for g in gaps.values()), gaps
 
 
 @pytest.mark.parametrize("st", PLAIN, ids=[s.name for s in PLAIN])

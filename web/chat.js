@@ -94,8 +94,12 @@ function relTime(epoch) {
   if (d < 60 * 24) return rtf.format(-Math.floor(d / 60), "hour");
   return new Date(epoch * 1000).toLocaleDateString(LOCALE);
 }
-// the chat is on screen: its tab in Resume, or the left pane of Autofill and Job search (where it has no tab)
-const chatShown = () => W.chat === "on";
+// a narrow window (half a screen, down to the window's 760px): the chat floats over the work instead of taking
+// a column, opened and closed from the same Claude button; the docked choice (W.chat) is kept for a wide window
+const NARROW = matchMedia("(max-width: 1099px)");
+const chatFloats = () => NARROW.matches;
+// the chat is on screen: the left pane, docked or floating
+const chatShown = () => chatFloats() ? document.body.dataset.chatFloat === "open" : W.chat === "on";
 const fileUrl = (path) => `/api/chats/${ui.chat.id}/file?path=${encodeURIComponent(path)}`;
 
 // ---------------------------------------------------------------- the agent and what it offers

@@ -310,8 +310,8 @@ class TitleBar:
             if kind != self.hover:
                 self.hover = kind
                 self._repaint()
-            if kind:
-                return 0
+            # and on to Windows: its own handling of the pointer over HTMAXBUTTON is what opens the snap layouts
+            # (swallowing it here kept them from ever showing, user report 2026-11-11)
         elif msg == WM_NCMOUSELEAVE:
             self.tracking = False
             if self.hover or self.down:

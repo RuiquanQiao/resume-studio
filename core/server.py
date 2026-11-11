@@ -22,6 +22,11 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from .events import EventBus
 
+# a static file whose name carries a hash of its content ("03-1a2b3c4d5e.woff2") never changes under that
+# name: the browser keeps it without asking again (each ask is a round trip through this Python server)
+IMMUTABLE_NAME = re.compile(r"-[0-9a-f]{10}\.(woff2|woff|ttf|png|svg)$")
+IMMUTABLE_CACHE = "public, max-age=31536000, immutable"
+
 
 class HttpError(Exception):
     def __init__(self, status: int, message: str, data: Any = None):
@@ -120,10 +125,11 @@ class App:
                     self._send_json(404, {"error": "not found"})
                     return
                 etag = f'"{st.st_mtime_ns:x}-{st.st_size:x}"'
+                cache = IMMUTABLE_CACHE if IMMUTABLE_NAME.search(fr.path.name) else "no-cache"
                 if self.headers.get("If-None-Match") == etag:
                     self.send_response(304)
                     self.send_header("ETag", etag)
-                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("Cache-Control", cache)
                     self.end_headers()
                     return
                 try:
@@ -137,7 +143,7 @@ class App:
                 self.send_response(200)
                 self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(data)))
-                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Cache-Control", cache)
                 self.send_header("ETag", etag)
                 self.end_headers()
                 self.wfile.write(data)

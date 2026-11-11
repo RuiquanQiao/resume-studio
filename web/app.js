@@ -512,7 +512,7 @@ async function revealExports() {
 // ================================================================ left: the chat (every workspace)
 // the chat pane, shown if it was hidden, with the composer focused
 function showChat() {
-  if (W.chat !== "on") setChatPane(true);
+  if (!chatShown()) setChatPane(true);
   else renderChat();
   setTimeout(() => $("#chat-input").focus(), 0);
 }
@@ -890,7 +890,17 @@ function hereName() {
 }
 
 // ---- the outline: pinned as a rail, or collapsed into a strip that opens it on hover ----
-const outlinePinned = () => store("outline") !== "strip";
+// a narrow window has no room for the rail beside the document: the strip, without touching the choice
+const outlinePinned = () => !NARROW.matches && store("outline") !== "strip";
+NARROW.addEventListener("change", () => {
+  if (chatFloats()) document.body.dataset.chatFloat = "closed";
+  else delete document.body.dataset.chatFloat;
+  paintChatToggle();
+  document.body.dataset.outline = outlinePinned() ? "rail" : "strip";
+  closeFloat();
+  renderLibrary();
+  if (docMode()) paintDocument(); else paintEditor({ keepScroll: true });
+});
 function setOutline(pinned) {
   store("outline", pinned ? null : "strip");
   document.body.dataset.outline = pinned ? "rail" : "strip";
@@ -2626,7 +2636,7 @@ function wire() {
 
   document.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveDraft(); }
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "j") { e.preventDefault(); setChatPane(W.chat !== "on"); }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "j") { e.preventDefault(); setChatPane(!chatShown()); }
     if ((e.ctrlKey || e.metaKey) && e.key === ",") { e.preventDefault(); openSettings(); }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && ["1", "2", "3", "4"].includes(e.key)) { e.preventDefault(); setWorkspace({ 1: "resume", 2: "jobs", 3: "fill", 4: "plan" }[e.key]); }
     if (e.key === "Escape" && !Float.cur && ui.layoutOpen) { ui.layoutOpen = false; renderPreviewToolbar(); }

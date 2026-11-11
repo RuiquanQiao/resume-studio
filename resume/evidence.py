@@ -30,7 +30,9 @@ SKIP_DIRS = {
 }
 MAX_FILES = 20000          # a folder bigger than this is summarised by its newest files only
 LISTING_KEEP = 4000        # file listing stored in the baseline (for "which files changed")
-CACHE_SECONDS = 3         # only absorbs bursts (focus + visibilitychange fire together)
+# a look at 10 git folders takes 4-14 s: the page asks on load and again on focus, which within half a
+# minute shows the same answer (the "check again" button still forces a fresh look)
+CACHE_SECONDS = 30
 
 
 def _git(path: Path, *args: str, timeout: float = 8) -> str | None:
@@ -98,6 +100,22 @@ def signature(path_str: str) -> dict:
             "truncated": truncated, "mtime": newest or None, "listing": listing}
 
 
+def _stamp(path_str: str) -> tuple | None:
+    """What a commit, a checkout or a `git add` touches in a repo, read without running git: a cached look is
+    redone at once when this moves (a new commit shows the moment the user comes back to the window)."""
+    git = Path(os.path.expanduser(path_str)) / ".git"
+    if not git.is_dir():
+        return None
+    out = []
+    for name in ("HEAD", "index", "logs/HEAD", "packed-refs"):
+        try:
+            st = (git / name).stat()
+            out.append((name, st.st_mtime_ns, st.st_size))
+        except OSError:
+            out.append((name, None))
+    return tuple(out)
+
+
 def changes(base: dict, cur: dict, path_str: str) -> dict:
     """What changed between a baseline and now, in a form both the UI and the prompt can use."""
     out: dict[str, Any] = {}
@@ -131,6 +149,7 @@ class EvidenceTracker:
         self.path = state_dir / "evidence.json"
         self.lock = threading.RLock()
         self._cache: dict[str, tuple[float, dict]] = {}
+        self._looking = threading.Lock()   # two asks at once share one look instead of running git twice
 
     # ---- baseline store ------------------------------------------------
     def _load(self) -> dict:
@@ -147,10 +166,11 @@ class EvidenceTracker:
 
     def _sig(self, path: str, force: bool) -> dict:
         hit = self._cache.get(path)
-        if hit and not force and time.time() - hit[0] < CACHE_SECONDS:
+        stamp = _stamp(path)
+        if hit and not force and time.time() - hit[0] < CACHE_SECONDS and hit[2] == stamp:
             return hit[1]
         sig = signature(path)
-        self._cache[path] = (time.time(), sig)
+        self._cache[path] = (time.time(), sig, stamp)
         return sig
 
     def mark_synced(self, entry_id: str, paths: list[str]) -> None:
@@ -183,9 +203,16 @@ class EvidenceTracker:
             data = self._load()
         # each git folder takes three git calls: look at all the folders at once, not one after another
         wanted = list(dict.fromkeys(str(p) for e in entries for p in e.get("evidence") or [] if str(p).strip()))
-        if len(wanted) > 1:   # _sig's cache is a plain dict: one writer per key, safe across threads
-            with ThreadPoolExecutor(min(len(wanted), 8)) as pool:
-                list(pool.map(lambda p: self._sig(p, force), wanted))
+        started = time.time()
+        with self._looking:
+            # an ask that waited here for another one's look takes that look, forced or not
+            force = force and not all(self._cache.get(p, (0,))[0] >= started for p in wanted)
+            if len(wanted) > 1:   # _sig's cache is a plain dict: one writer per key, safe across threads
+                with ThreadPoolExecutor(min(len(wanted), 8)) as pool:
+                    list(pool.map(lambda p: self._sig(p, force), wanted))
+            else:
+                for p in wanted:
+                    self._sig(p, force)
             force = False   # just looked: the cache holds every path now
         out = {}
         for e in entries:

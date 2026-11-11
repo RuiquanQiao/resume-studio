@@ -118,7 +118,10 @@ def main() -> None:
     set_app_id()
     httpd, url = inst.app.start_background(port=args.port)
     write_state(url)
-    window = webview.create_window("Resume Studio", url, width=1480, height=920, min_size=(1100, 680),
+    # 760 wide: half of a 2560 screen at 150 %, or of a 1920 one at 125 %, so the window snaps to half a screen
+    # (it was 1100, wider than half: snapped, it ran under the window beside it, 2026-11-11). web/style.css's
+    # narrow layout takes over below 1100.
+    window = webview.create_window("Resume Studio", url, width=1480, height=920, min_size=(760, 560),
                                    background_color="#F3F4F6", text_select=True)
     import _titlebar
     _titlebar.attach(window, inst.titlebar, log=LOCAL / "titlebar-error.txt")

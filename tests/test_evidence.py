@@ -64,6 +64,38 @@ def test_git_project_lifecycle(tmp_path, repo):
 
 
 @needs_git
+def test_a_second_look_reuses_the_first_until_a_commit(tmp_path, repo, monkeypatch):
+    """The page asks on load and again on focus; with 10 repos each look ran ~45 git commands for 4-14 s
+    (2026-11-11). A look within half a minute is reused, unless the repo got a commit in between."""
+    import threading
+
+    from resume import evidence
+    looks = []
+    real = evidence.signature
+    monkeypatch.setattr(evidence, "signature", lambda p: (looks.append(p), real(p))[1])
+    tr = EvidenceTracker(tmp_path / "resume-studio-data")
+    p = str(repo).replace("\\", "/")
+    tr.mark_synced("E1", [p])
+    looks.clear()
+    entries = [{"id": "E1", "evidence": [p]}]
+    assert tr.status(entries)["E1"]["state"] == "same"
+    assert tr.status(entries)["E1"]["state"] == "same"
+    assert looks == []                                                   # both answered from the first look
+
+    (repo / "app.py").write_text("print(1)\n", encoding="utf-8")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "feat: new")
+    assert tr.status(entries)["E1"]["state"] == "changed"               # a commit shows at once, unforced
+    assert len(looks) == 1
+
+    looks.clear()
+    threads = [threading.Thread(target=tr.status, args=(entries,), kwargs={"force": True}) for _ in range(2)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert len(looks) <= 2 and len(looks) >= 1                          # forced: looked, at most once each
+
+
+@needs_git
 def test_reading_never_writes_into_the_users_repo(tmp_path, repo):
     index = repo / ".git" / "index"
     os.utime(index, (1_000_000_000, 1_000_000_000))

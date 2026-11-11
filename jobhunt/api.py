@@ -203,9 +203,23 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         except (KeyError, ValueError):
             pass
 
+    def lacks_logo(c: dict) -> bool:
+        return not c.get("logo") and "logo" not in (c.get("kept") or []) and bool(logo_sites(c))
+
     def want_logos(*cids: str) -> None:
-        ids = list(cids) or [c["id"] for c in hunt.companies()]
-        threading.Thread(target=lambda: [find_logo(i) for i in ids], name="hunt-logos", daemon=True).start()
+        def run() -> None:
+            if not cids:
+                # the pass over every company waits for the window: it is no hurry, and a window is what
+                # looks at a logo before it is kept (inspect). Python work here also slows the window's start.
+                until = time.monotonic() + hunt.logo_wait
+                while time.monotonic() < until and not app.bus.listeners():
+                    time.sleep(0.1)
+            # one read of the companies picks those still without a logo; find_logo reads each again, fresh.
+            # (It read the whole file once per company: 226 companies x 20 ms held up the window, 2026-11-11.)
+            ids = list(cids) or [c["id"] for c in hunt.companies() if lacks_logo(c)]
+            for i in ids:
+                find_logo(i)
+        threading.Thread(target=run, name="hunt-logos", daemon=True).start()
 
     hunt.find_logo = (lambda sites, check: logos.from_sites(sites, types=LOGO_TYPES, check=check)) \
         if os.environ.get("STUDIO_LOGOS") != "off" else None
@@ -265,6 +279,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         p.write_bytes(base64.b64decode(png.split(",", 1)[1]))
         return str(p)
     hunt.want_logos = want_logos
+    hunt.logo_wait = 30.0   # seconds the startup pass waits for a window before it goes without one
     want_logos()   # the companies that have a site and no logo yet
 
     def logo_files() -> list[tuple[str, int, int]]:

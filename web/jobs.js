@@ -757,9 +757,13 @@ function setWorkspace(ws, { path = null } = {}) {
 
 // the chat pane on the left, in every workspace: shown or hidden from the Claude button in the top bar
 function setChatPane(on) {
-  W.chat = on ? "on" : "off";
-  document.body.dataset.chat = W.chat;
-  store("chat-pane", W.chat);
+  if (chatFloats()) {
+    document.body.dataset.chatFloat = on ? "open" : "closed";   // floating: the docked choice stays as it was
+  } else {
+    W.chat = on ? "on" : "off";
+    document.body.dataset.chat = W.chat;
+    store("chat-pane", W.chat);
+  }
   if (on) { renderChat(); setTimeout(() => $("#chat-input").focus(), 0); }
   paintChatToggle();
   if (typeof applyZoom === "function" && ui.zoom === "fit") applyZoom();
@@ -768,8 +772,8 @@ function setChatPane(on) {
 function paintChatToggle() {
   const b = $("#chat-toggle");
   if (!b) return;
-  b.classList.toggle("on", W.chat === "on");
-  b.setAttribute("aria-pressed", String(W.chat === "on"));
+  b.classList.toggle("on", chatShown());
+  b.setAttribute("aria-pressed", String(chatShown()));
   const lbl = b.querySelector(".lbl");   // the open chat's agent (Claude, Codex, Qwen…)
   if (lbl && typeof agentOf === "function") lbl.textContent = agentOf().short;
   const m = ui.chat.meta || {};
@@ -916,7 +920,7 @@ function renderWsTools() {
         : t("Your fact layer or resume subsets changed since {name}'s profile was filled from them.", { name: st.tool.name }) + " ")
         + t("The AI fills it from your profile's fact layer and your resume subsets, and asks only for what's missing")
         + (ui.chat.available ? "" : " " + missingAgentText()),
-      onclick: () => setupProfile(!st.needs_setup) }, icon("user"), st.needs_setup ? t("Fill its profile from my resume") : t("Update its profile")));
+      onclick: () => setupProfile(!st.needs_setup) }, icon("user"), h("span", { class: "lbl" }, st.needs_setup ? t("Fill its profile from my resume") : t("Update its profile"))));
   }
   if (jobsReady()) out.push(h("button", { class: "btn icon ghost", title: t("More"), onclick: (e) => webMenu(e.currentTarget) }, icon("more")));
   el.replaceChildren(...out);
@@ -1015,9 +1019,10 @@ function initWorkspaces() {
   W.path = store("jobs-path") || "/";
   W.chat = store("chat-pane") === "off" ? "off" : "on";
   document.body.dataset.chat = W.chat;
+  if (chatFloats()) document.body.dataset.chatFloat = "closed";   // opened narrow: the work first
   const toggle = $("#chat-toggle");
   toggle.prepend(icon("chat"));
-  toggle.onclick = () => setChatPane(W.chat !== "on");
+  toggle.onclick = () => setChatPane(!chatShown());
   paintChatToggle();
   F.site = store("fill-site") || F.site;
   F.tab = store("fill-tab") === "push" ? "push" : "copy";

@@ -1,11 +1,7 @@
 /* Resume Studio: quiet panels floating on a grey window. Light + dark via tokens.
    Type scale 12.5 / 14 / 16 / 21px, weights 400 / 500 / 600. Things are told apart by fill and space, not outlines. */
-@font-face {
-  font-family: "Noto Sans SC";   /* bundled (SIL OFL, fonts/OFL.txt): Chinese looks the same on every machine instead of falling to Microsoft YaHei */
-  src: url("fonts/NotoSansSC-VF.ttf") format("truetype");
-  font-weight: 100 900;
-  font-display: swap;
-}
+/* "Noto Sans SC" is bundled (SIL OFL, fonts/OFL.txt) so Chinese looks the same on every machine instead of
+   falling to Microsoft YaHei; fonts/noto-sc.css serves it in pieces (scripts/build_fonts.py) */
 :root {
   --bg: #efeff1;            /* the window: the panels float on it */
   --panel: #ffffff;
@@ -106,7 +102,8 @@ kbd { font: 11px var(--mono); padding: 1px 5px; border: 1px solid var(--line-str
 /* In the window the header row is the title bar: its empty spots move the window, and its right end is left
    to the window's minimize / maximize / close buttons, which the window paints itself (scripts/_titlebar.py). */
 .own-titlebar .topbar { padding-right: calc(var(--caption-w, 138px) + 6px); -webkit-app-region: drag; app-region: drag; }
-.own-titlebar .topbar > :not(.spacer):not(.brand):not(.save-status),
+/* only the controls keep the mouse; every gap between them, inside any group, moves the window */
+.own-titlebar .topbar :is(button, a, input, select, textarea, label, [contenteditable], [role=button], [role=tab], [role=combobox], [role=menu], .select, .bchip, .vchip),
 .own-titlebar :is(.modal-back, .float, .tip, .chat-quote, .toast) { -webkit-app-region: no-drag; app-region: no-drag; }
 /* a narrow window keeps the logo and drops the name, so the row still fits beside the buttons */
 @media (max-width: 1399px) { .own-titlebar .ws-tools .btn.ghost:has(> svg) > .lbl { display: none; } }   /* icon only; the tip still names it */
@@ -139,6 +136,23 @@ body.resizing iframe, body.resizing img { pointer-events: none; }
 .chat-pane { flex: 1; min-height: 0; }
 body[data-chat="off"] .pane.left, body[data-chat="off"] .gutter[data-gutter="left"] { display: none !important; }
 body[data-chat="off"] .workspace { grid-template-columns: minmax(600px, 1fr) 5px minmax(280px, var(--w-right, 40%)); }
+/* ---------- a narrow window (half a screen, down to the window's 760px) ----------
+   the work takes the columns; the chat floats over it from the left, opened from the Claude button (chat.js
+   NARROW); Resume keeps the document and the preview side by side, the outline folded into its strip */
+@media (max-width: 1099px) {
+  .workspace { position: relative; }
+  body .workspace { grid-template-columns: minmax(0, 1fr) !important; }
+  body[data-ws="resume"]:not([data-preview="off"]) .workspace { grid-template-columns: minmax(400px, 1fr) 5px minmax(280px, var(--w-right, 42%)) !important; }
+  .workspace > .gutter[data-gutter="left"] { display: none !important; }
+  .workspace > .pane.left { position: absolute; z-index: 40; top: 0; bottom: 8px; left: 8px; width: min(380px, calc(100% - 56px));
+    box-shadow: var(--shadow-lg); }
+  body[data-chat-float="closed"] .workspace > .pane.left { display: none !important; }
+  body[data-chat-float="open"] .workspace > .pane.left { display: flex !important; }
+  .topbar { gap: 10px; }
+  .subset-switch { padding-left: 4px; }
+  .subset-switch .select { min-width: 120px; }
+  .topbar .ws-btn > .lbl, .topbar .chat-toggle > .lbl { display: none; }   /* icons; each keeps its tip */
+}
 .chat-toggle { padding: 0 10px; }
 .chat-toggle .tab-dot { margin-left: 2px; }
 .tab-dot { display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--accent); vertical-align: 2px; animation: pulse 1.2s ease-in-out infinite; }
@@ -973,6 +987,13 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px va
 .ws-btn.on svg.i { color: var(--accent); }
 .ws-btn .tab-dot { margin-left: 0; }
 .ws-tools { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; padding-left: 14px; }
+/* a workspace's tools that end on the right (Applying's browser, Job search's main action) sit right next
+   to the settings button: the row's own spacer would split the free room and leave them halfway */
+.ws-tools:has(> .spacer) ~ .spacer { display: none; }
+/* the main action gives way last: in a tight row its words end in "…" rather than run under the next button */
+.ws-tools > .btn.primary { min-width: 0; flex-shrink: 1; }
+.ws-tools > .btn.primary > .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body:not([data-ws=resume]) .save-status:empty { display: none; }
 .ws-tools .ws-here { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; color: var(--text-2); }
 .ws-tools .ws-here b { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
 .ws-tools .btn .tab-dot { margin-left: 2px; }

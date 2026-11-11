@@ -176,6 +176,32 @@ def test_a_company_with_a_site_gets_its_logo_by_itself(live, data_file):
     assert looked == [["https://careers.xinghe.example/campus"], ["https://nothing.example.com"]]
 
 
+def test_the_startup_logo_pass_reads_the_companies_once(live):
+    """It read the whole companies file once per company: with 226 companies that was 4 s of Python holding the
+    window's start (2026-11-11). Now one read picks the companies without a logo, and only those are read again."""
+    hunt = live.inst.hunt
+    for i in range(40):
+        hunt.add_company({"name": f"公司{i}"})                                   # no site: nothing to look for
+    hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
+    looked, reads = [], []
+    hunt.find_logo = lambda sites, check: looked.append(sites)
+    real = hunt._companies
+    hunt._companies = lambda: (reads.append(1), real())[1]
+    hunt.logo_wait = 0
+    try:
+        hunt.want_logos()
+        for _ in range(100):
+            if looked:
+                break
+            time.sleep(0.02)
+        time.sleep(0.2)
+    finally:
+        hunt._companies = real
+    assert looked == [["https://careers.xinghe.example/campus"]]
+    # a few, not one per company (the app's own startup pass also runs once logo_wait is 0)
+    assert len(reads) <= 6, f"{len(reads)} reads of companies.json for 41 companies"
+
+
 def test_a_companys_deadline_moves_to_its_roles(hunt):
     hunt.add_company({"name": "星河科技"})
     hunt.add_application("星河科技", {"role": "服务端"})

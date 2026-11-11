@@ -62,6 +62,50 @@ def test_window_js_runs_in_head_before_anything_is_drawn():
     assert head.index("window.js") < head.index("style.css")
 
 
+def _bare_bar():
+    """A TitleBar with no window: its message handling, with Windows' own handling recorded."""
+    bar = object.__new__(tb.TitleBar)
+    passed = []
+
+    class C:
+        @staticmethod
+        def DefSubclassProc(hwnd, msg, wp, lp):
+            passed.append(msg)
+            return 0
+
+    class U:
+        @staticmethod
+        def TrackMouseEvent(_):
+            return 1
+
+        @staticmethod
+        def InvalidateRect(*_):
+            return 1
+    bar.c, bar.u, bar.hwnd = C, U, 1
+    bar.hover = bar.down = None
+    bar.tracking = False
+    return bar, passed
+
+
+def test_pointing_at_maximize_reaches_windows_so_snap_layouts_open():
+    # user report 2026-11-11: the snap layouts never showed; the pointer's move over the button was kept from
+    # Windows, whose own handling of it is what opens them
+    bar, passed = _bare_bar()
+    bar._handle(1, tb.WM_NCMOUSEMOVE, tb.HTMAXBUTTON, 0)
+    assert bar.hover == "max"
+    assert tb.WM_NCMOUSEMOVE in passed
+
+
+def test_a_click_on_a_button_is_the_bars_own():
+    # Windows would draw its old-style buttons over ours on a press, and act on its own
+    bar, passed = _bare_bar()
+    acted = []
+    bar._act = acted.append
+    bar._handle(1, tb.WM_NCLBUTTONDOWN, tb.HTCLOSE, 0)
+    bar._handle(1, tb.WM_NCLBUTTONUP, tb.HTCLOSE, 0)
+    assert acted == ["close"] and tb.WM_NCLBUTTONDOWN not in passed and tb.WM_NCLBUTTONUP not in passed
+
+
 class _Event(list):
     def __iadd__(self, fn):
         self.append(fn)
