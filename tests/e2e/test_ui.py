@@ -419,7 +419,7 @@ def test_jobs_create_switch_delete(page, server):
 
 def test_subset_versions_keep_compare_preview_and_go_back(page, server):
     chip = page.locator("#subset-version")
-    assert chip.inner_text().strip() == "还没定稿"
+    assert chip.inner_text().strip() == "尚未定稿"
     chip.click()
     page.click(".float .menu-item:has-text('定稿为 v1')")
     page.fill(".modal input", "秋招第一批")
@@ -735,7 +735,7 @@ def test_mock_interview_predicts_hides_answers_and_follows_up(page, server, data
     assert page.is_visible(f"{q2} .mq-answer") and not page.is_visible(f"{q2} .mq-probe")
     page.click(f"{q2} .mq-answer")
     page.wait_for_selector(".msg-user .msg-action:has-text('回答')")
-    page.wait_for_selector("#active .card.diff h3:text('AI 没有改动这一条')", timeout=15000)   # the fake one changes nothing
+    page.wait_for_selector("#active .card.diff h3:text('AI 未修改此条')", timeout=15000)   # the fake one changes nothing
     page.click("#active .card.diff button:text('知道了')")
     wait_until(lambda: "最难的问题是什么？" in data_file.read_text(encoding="utf-8"), msg="my question saved")
     page.fill(f"{q2} .mq-ans", "把课件切块。")
@@ -1032,7 +1032,7 @@ def test_project_folder_pick_sync_and_update(page, server, data_file, fake_claud
     row.wait_for()
     assert row.locator(".ev-name b").inner_text() == "demo"
     wait_until(lambda: str(repo).replace("\\", "/") in data_file.read_text(encoding="utf-8"), msg="path saved")
-    page.wait_for_selector("#evidence .ev-chip:text('AI 还没读过')")
+    page.wait_for_selector("#evidence .ev-chip:text('AI 尚未读取')")
     page.click("#evidence .sync-bar button:text('标记为已同步')")
     page.wait_for_selector("#evidence .ev-chip.ok:text('已同步')")
 
@@ -1191,7 +1191,7 @@ def test_signed_out_claude_explains_how_to_sign_in(page, server, fake_claude):
     help_ = page.locator(".msg-help")
     help_.wait_for(timeout=10000)
     text = help_.inner_text()
-    assert "Claude Code（命令行）没有登录" in text and "/login" in text
+    assert "Claude Code（命令行）未登录" in text and "/login" in text
     assert help_.locator("code:has-text('claude')").count() >= 1
 
 
@@ -1381,7 +1381,7 @@ def test_screenshots_of_new_parts(page, server, fake_claude, monkeypatch, tmp_pa
     open_entry(page, "EXP-002")
     open_facts(page)
     page.click("#evidence button:has-text('选择项目文件夹')")
-    page.wait_for_selector("#evidence .ev-chip:text('AI 还没读过')")
+    page.wait_for_selector("#evidence .ev-chip:text('AI 尚未读取')")
     page.wait_for_selector("#bullets .line-chip.long", timeout=40000)
     page.screenshot(path=str(ART / f"new-entry-{scheme}.png"))
     page.locator("#evidence").scroll_into_view_if_needed()
@@ -1734,7 +1734,7 @@ def test_the_browser_chip_says_whether_it_runs_in_the_background_or_a_window(pag
         pg.wait_for_selector("#browser-here")
         show({"state": "off"}, "off")
         # the state is the button (user, 2026-11-09): no "Show the browser" or ⋯ of its own at the far end of the bar
-        assert "浏览器没打开" in pg.inner_text("#browser-here") and pg.get_attribute("#browser-show", "aria-label") == "打开浏览器"
+        assert "浏览器未启动" in pg.inner_text("#browser-here") and pg.get_attribute("#browser-show", "aria-label") == "打开浏览器"
         assert pg.locator("#ws-tools button").count() == 2 and "显示浏览器" not in pg.inner_text("#ws-tools")
         assert pg.is_disabled("#browser-here .bchip-menu")   # there, greyed: nothing in it while the browser is off
         # read in one go: the chip is drawn again as the state comes in, and a locator can land between two drawings
@@ -1743,7 +1743,7 @@ def test_the_browser_chip_says_whether_it_runs_in_the_background_or_a_window(pag
         page_url = "https://campus.tj-sports.com/apply"
         show({"state": "running", "shown": False, "working": True, "url": page_url}, "working")
         assert pg.inner_text("#browser-here .bchip-mode") == "后台" and pg.get_attribute("#browser-show", "aria-label") == "显示浏览器"
-        assert "点一下显示浏览器" in pg.get_attribute("#browser-show", "data-tip")
+        assert "点击可显示浏览器" in pg.get_attribute("#browser-show", "data-tip")
         assert pg.evaluate("getComputedStyle(document.querySelector('#browser-here .fb-dot')).animationName") == "pulse"
         # the ▾ stays where it was: the bar doesn't move when the browser opens
         assert abs(pg.evaluate(menu_right) - menu_off) < 1 and not pg.is_disabled("#browser-here .bchip-menu")
@@ -2740,7 +2740,7 @@ def test_the_plan_is_one_document_with_versions(page_all, server, data_file):
     plan = lambda: server.req("GET", "/api/plan")[1]
     pg.keyboard.press("Control+4")
     pg.wait_for_selector("#planspace .plan-empty:not(.loading)")   # "Loading…" sits in the same place
-    assert pg.inner_text("#planspace").strip() == "有什么焦虑，就跟 AI 说：它会帮你在这里理清。"   # one line, no template
+    assert pg.inner_text("#planspace").strip() == "有任何顾虑，都可以告诉 AI，它会协助你在此梳理清楚。"   # one line, no template
     assert "跟 Claude 说说你在担心什么" in pg.inner_text("#chat .chat-welcome")
     assert pg.locator("#chat .chat-welcome .suggest").count() == 0
     assert "你的计划" in pg.inner_text("#chat-context")
@@ -2839,14 +2839,14 @@ def test_an_ai_button_checks_its_work_when_the_chat_ends(page_all):
     out = pg.evaluate(AI_CHECK, {"run": "askLearn([{id: 'C91', name: '测试大学', unrouted: ['https://join.test.example/Default.aspx']}])",
                                  "data": {"companies": [c], "applications": []}})
     # it says what is so, never whose fault it is (思摩尔国际, 2026-11-04: the AI found the list, the scan didn't know it)
-    assert out["warn"] and out["say"] == "AI 试过了，扫描还是读不了：join.test.example/Default.aspx。它在对话里说了查到什么。", out
+    assert out["warn"] and out["say"] == "AI 已尝试，扫描仍无法读取：join.test.example/Default.aspx。其调查结果见对话。", out
     assert pg.evaluate("window.tried") == [["/api/hunt/companies/C91/learn-tried", {"sites": ["https://join.test.example/Default.aspx"]}]] * 3
     # the AI is handed the sites no scan reads, by name, and told to leave the others alone (星河科技, 2026-11-03)
     assert "只学这些：测试大学（https://join.test.example/Default.aspx）" in out["sent"][0] and "不要动" in out["sent"][0], out["sent"]
     # not done is never handed in ("AI老是不负责任地撂挑子", 2026-11-09): sent back by itself twice, with what is
     # missing and that stopping needs proof, before the window asks the user
     assert len(out["sent"]) == 3 and len(out["autos"]) == 2, out
-    assert all(a.startswith("还没做完，") and "join.test.example" in a for a in out["autos"]), out["autos"]
+    assert all(a.startswith("尚未完成，") and "join.test.example" in a for a in out["autos"]), out["autos"]
     assert all("scan-route" in m and "做完之前不要停" in m for m in out["sent"][1:]), out["sent"]
     assert out["again"] == "再让 AI 做一次"
     pg.click("#toast button")
@@ -2867,7 +2867,7 @@ def test_every_hunt_ai_button_checks_its_own_result(page_all):
     data = {"companies": [co], "applications": []}
     # a pasted link with no role added
     out = pg.evaluate(AI_CHECK, {"run": f"formModal = async () => ({{url: '{url}'}}); addFromLink()", "data": data})
-    assert out["warn"] and out["say"] == "没有加上这个链接的岗位" and url in out["sent"][0], out
+    assert out["warn"] and out["say"] == "未添加该链接对应的岗位" and url in out["sent"][0], out
     data["applications"] = [{"id": "A9", "company": "C92", "role": "芯片验证", "url": url + "/", "jd": ""}]
     pg.evaluate("() => AI_WORK.clear()")
     out = pg.evaluate(AI_CHECK, {"run": f"formModal = async () => ({{url: '{url}'}}); addFromLink()", "data": data})
@@ -2875,7 +2875,7 @@ def test_every_hunt_ai_button_checks_its_own_result(page_all):
     # fill in: empty fields and a field with no source, never the one the user keeps
     pg.evaluate("() => AI_WORK.clear()")
     out = pg.evaluate(AI_CHECK, {"run": "askFill([{id: 'C92', name: '星河'}])", "data": data})
-    assert out["warn"] and "星河：还空着：总部, 招聘城市, Logo" in out["say"] and "星河：没有出处：实力" in out["say"], out
+    assert out["warn"] and "星河：尚未填写：总部, 招聘城市, Logo" in out["say"] and "星河：缺少出处：实力" in out["say"], out
     assert "规模" not in out["say"]
     # its roles are part of filling it in (user, 2026-11-04): asked for in the same message, and a site the scan
     # still can't read is not done
@@ -2893,7 +2893,7 @@ def test_every_hunt_ai_button_checks_its_own_result(page_all):
             "postings": {"needs": "claude", "unrouted": ["https://campus.example.com/"]}}
     pg.evaluate("() => AI_WORK.clear()")
     out = pg.evaluate(AI_CHECK, {"run": "askFill([{id: 'C92', name: '星河'}])", "data": {"companies": [full], "applications": []}})
-    assert out["warn"] and out["say"] == "星河：岗位还没扫进来，扫描仍读不了 campus.example.com", out
+    assert out["warn"] and out["say"] == "星河：岗位尚未导入，扫描仍无法读取 campus.example.com", out
     full["postings"] = {"needs": "", "unrouted": [], "open": 12}
     pg.evaluate("() => AI_WORK.clear()")
     out = pg.evaluate(AI_CHECK, {"run": "askFill([{id: 'C92', name: '星河'}])", "data": {"companies": [full], "applications": []}})
@@ -2978,12 +2978,12 @@ def test_a_site_the_scan_missed_is_named_on_the_status_and_its_row(page_all):
               unreached: say({[sites[0]]: 'unreached'}), offRow};
     }""")
     # it didn't answer which system it runs on (join.huolala.cn, 2026-11-11): never "the AI has to learn it"
-    assert out["unreached"].endswith("读取方式：mokahr · join.huolala.example 这次没连上，下次扫描再试"), out
-    assert out["offRow"] == ["还没检查", "这次没连上"], out
-    assert out["none"].endswith("读取方式：mokahr · join.huolala.example 这次没读到"), out
-    assert out["part"].endswith("读取方式：mokahr · join.huolala.example 有的页面没读出来"), out
-    assert out["old"].endswith("读取方式：mokahr · 有的页面没读出来"), out   # a route's page: as before
-    assert out["rows"] == [["能自动扫描", "这次没读到"], ["能自动扫描"]], out
+    assert out["unreached"].endswith("读取方式：mokahr · join.huolala.example 本次连接失败，将在下次扫描时重试"), out
+    assert out["offRow"] == ["未检查", "本次连接失败"], out
+    assert out["none"].endswith("读取方式：mokahr · join.huolala.example 本次未能读取"), out
+    assert out["part"].endswith("读取方式：mokahr · join.huolala.example 部分页面未能读取"), out
+    assert out["old"].endswith("读取方式：mokahr · 部分页面未能读取"), out   # a route's page: as before
+    assert out["rows"] == [["能自动扫描", "本次未能读取"], ["能自动扫描"]], out
 
 
 def test_scan_wording_names_sites_never_a_company(page_all):
@@ -3007,7 +3007,7 @@ def test_scan_wording_names_sites_never_a_company(page_all):
     assert out["toastSay"] == "扫描完成：0 个新 · 0 个已关闭 · 2 个网址还不能自动扫描：campus.xinghe.example, careers.xinghe.example", out
     assert out["cell"] == "campus.xinghe.example, careers.xinghe.example 还不能自动扫描：要先让 AI 学会读", out
     assert out["rows"] == [["还不能自动扫描", "site-scan warn"], ["能自动扫描", "site-scan ok"],
-                           ["能自动扫描", "site-scan ok"], ["还没检查", "site-scan "]], out
+                           ["能自动扫描", "site-scan ok"], ["未检查", "site-scan "]], out
     assert out["system"] == "公司自建"                                       # never the AI's English "own site"
 
 

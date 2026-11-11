@@ -134,6 +134,11 @@ def _load() -> dict:
         heads |= {h + "省" for h in heads}   # 广东 and 广东省
         _db = {"cities": cities, "index": index, "prefix": prefix, "pkeys": [x[0] for x in prefix], "states": states,
                "terr": terr, "regions": regions, "heads": heads, "langs": json.loads((DATA / "languages.json").read_text(encoding="utf-8"))}
+        for pid, e in _found["places"].items():   # those found for the open data folder (use())
+            try:
+                _insert(_db, pid, e)
+            except (KeyError, TypeError, ValueError):
+                continue
         return _db
 
 
@@ -317,16 +322,20 @@ def _add(pid: str, e: dict) -> None:
     """A found place joins the list: shown, found and suggested like the others."""
     db = _load()
     with _lock:
-        if pid in db["cities"]:
-            return
-        db["cities"][pid] = (float(e["lat"]), float(e["lon"]), 0, e.get("country") or "", e.get("state") or "", dict(e["names"]))
-        for k in {_key(n) for n in e["names"].values() if n} | {_key(n) for n in e.get("asked") or []}:
-            if not k:
-                continue
-            db["index"].setdefault(k, pid)
-            i = bisect.bisect_left(db["prefix"], (k, pid, 0))
-            db["prefix"].insert(i, (k, pid, 0))
-            db["pkeys"].insert(i, k)
+        _insert(db, pid, e)
+
+
+def _insert(db: dict, pid: str, e: dict) -> None:
+    if pid in db["cities"]:
+        return
+    db["cities"][pid] = (float(e["lat"]), float(e["lon"]), 0, e.get("country") or "", e.get("state") or "", dict(e["names"]))
+    for k in {_key(n) for n in e["names"].values() if n} | {_key(n) for n in e.get("asked") or []}:
+        if not k:
+            continue
+        db["index"].setdefault(k, pid)
+        i = bisect.bisect_left(db["prefix"], (k, pid, 0))
+        db["prefix"].insert(i, (k, pid, 0))
+        db["pkeys"].insert(i, k)
 
 
 def _state(cc: str, lat: float, lon: float) -> str:
@@ -351,14 +360,19 @@ def _save_found() -> None:
 
 
 def use(hunt_dir: Path) -> None:
-    """The places found for this data folder join the list (read once a data folder opens)."""
+    """The places found for this data folder join the list (read once a data folder opens). The list itself is
+    read when something first needs it, not here: reading it takes a second, and this runs before the window
+    opens (2026-11-11)."""
     path = Path(hunt_dir) / "places.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         data = {}
     data = data if isinstance(data, dict) else {}
-    _found.update(path=path, places=dict(data.get("places") or {}), asked=dict(data.get("asked") or {}))
+    with _lock:
+        _found.update(path=path, places=dict(data.get("places") or {}), asked=dict(data.get("asked") or {}))
+        if _db is None:
+            return          # _load adds them
     for pid, e in _found["places"].items():
         try:
             _add(pid, e)

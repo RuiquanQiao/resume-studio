@@ -2667,6 +2667,8 @@ function wire() {
   }
   select("profile");
   initWorkspaces();
+  // the first screen is drawn: the window, hidden until now, shows (resume/app.py /api/drawn)
+  api("POST", "/api/drawn").catch(() => {});
   connect();
   loadChats().catch(() => {});
   loadJobs({ quiet: true });

@@ -50,6 +50,7 @@ class Instance:
     # {"fn": callable(old_studio, new_studio)} — the launcher moves its server.json along
     switched: dict = field(default_factory=dict)
     titlebar: dict = field(default_factory=dict)   # {"on": True} once the window's header row is its title bar
+    ready: dict = field(default_factory=dict)      # {"fn": callable} — the page has drawn: show the window
     window: bool = False
     prefs: i18n.Prefs | None = None
     jobtool: JobTool | None = None             # the job-posting tool (per computer, survives data switches)
@@ -270,6 +271,15 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
         if fn:
             fn()
         return {"ok": True}
+
+    @app.route("POST", "/api/drawn")
+    def drawn(req):
+        """The page has drawn its first screen. The window starts hidden and shows now, so it never opens as an
+        empty frame (scripts/studio.py); in the browser it's nothing."""
+        fn: Callable | None = inst.ready.get("fn")
+        if fn:
+            threading.Thread(target=fn, daemon=True, name="window-show").start()
+        return {"ok": bool(fn)}
 
     @app.route("POST", "/api/attention")
     def attention(req):

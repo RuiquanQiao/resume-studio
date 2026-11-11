@@ -102,9 +102,9 @@ def find_csc() -> Path:
 
 
 def build_exe() -> None:
-    cmd = [str(find_csc()), "/nologo", "/target:winexe", "/optimize+", f"/win32icon:{ICON}",
-           "/r:System.Windows.Forms.dll", f"/out:{EXE}", str(SOURCE)]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    cmd = [str(find_csc()), "/nologo", "/target:winexe", "/optimize+", "/codepage:65001", f"/win32icon:{ICON}",
+           "/r:System.Windows.Forms.dll", "/r:System.Drawing.dll", f"/out:{EXE}", str(SOURCE)]
+    proc = subprocess.run(cmd, capture_output=True, text=True, errors="replace")   # csc writes the console's code page
     if proc.returncode:
         sys.exit(proc.stdout + proc.stderr)
     print(f"wrote {EXE.name}")

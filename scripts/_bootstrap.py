@@ -95,6 +95,8 @@ def _install_with_splash() -> None:
     import threading
     import tkinter as tk
 
+    splash_done()        # this window says more than the launcher's "Starting…"
+
     errors: list[BaseException] = []
     worker = threading.Thread(target=lambda: _run_catching(_install, errors), daemon=True)
     root = tk.Tk()
@@ -126,6 +128,36 @@ def _run_catching(fn: Callable[[], None], errors: list[BaseException]) -> None:
         fn()
     except BaseException as exc:  # handed back to the main thread
         errors.append(exc)
+
+
+SPLASH_ENV = "RESUME_STUDIO_SPLASH"
+
+
+def splash_done(wait: float = 3.0) -> None:
+    """Resume Studio.exe shows a startup window from the click on (launcher/Launcher.cs). Tell it the app is
+    ready (`.ready`), then wait until it has handed the foreground over (`.go`), so what shows next comes up in
+    front. Once per run; nothing when not started by it."""
+    name = os.environ.pop(SPLASH_ENV, "")
+    if not name or os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+    k = ctypes.windll.kernel32
+    k.OpenEventW.restype = wintypes.HANDLE
+    k.OpenEventW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+    k.SetEvent.argtypes = k.CloseHandle.argtypes = [wintypes.HANDLE]
+    k.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    access = 0x0002 | 0x00100000      # EVENT_MODIFY_STATE | SYNCHRONIZE
+    ready, go = k.OpenEventW(access, False, name + ".ready"), k.OpenEventW(access, False, name + ".go")
+    try:
+        if ready:
+            k.SetEvent(ready)
+            if go:
+                k.WaitForSingleObject(go, int(wait * 1000))
+    finally:
+        for h in (ready, go):
+            if h:
+                k.CloseHandle(h)
 
 
 def reexec_in_venv(windowed: bool = False, detach: bool = False) -> None:

@@ -13,10 +13,11 @@ import argparse
 import json
 import os
 import sys
+import threading
 import urllib.request
 import webbrowser
 
-from _bootstrap import LOCAL, PREFS_DIR, ROOT, reexec_in_venv, resolve_data
+from _bootstrap import LOCAL, PREFS_DIR, ROOT, reexec_in_venv, resolve_data, splash_done
 
 ICON = ROOT / "assets" / "icon.ico"
 
@@ -36,6 +37,7 @@ def show_startup_error(exc: BaseException) -> None:
     import tkinter as tk
     from tkinter import messagebox
 
+    splash_done()   # the launcher's startup window gives way to the error
     log = LOCAL / "last-error.txt"
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text("".join(traceback.format_exception(exc)), encoding="utf-8")
@@ -76,6 +78,7 @@ def main() -> None:
         print(f"  already running: {url}")
         print(f"  UI running at {url}")
         if not args.no_browser:
+            splash_done()   # the launcher hands the foreground over, so the open window can come to front
             focus_existing(url)
         return
 
@@ -121,10 +124,30 @@ def main() -> None:
     # 760 wide: half of a 2560 screen at 150 %, or of a 1920 one at 125 %, so the window snaps to half a screen
     # (it was 1100, wider than half: snapped, it ran under the window beside it, 2026-11-11). web/style.css's
     # narrow layout takes over below 1100.
+    # hidden until the page has drawn its first screen (/api/drawn), so it never opens as an empty frame; until
+    # then the launcher's startup window is up (what Electron apps call ready-to-show)
     window = webview.create_window("Resume Studio", url, width=1480, height=920, min_size=(760, 560),
-                                   background_color="#F3F4F6", text_select=True)
+                                   background_color="#F3F4F6", text_select=True, hidden=True)
     import _titlebar
     _titlebar.attach(window, inst.titlebar, log=LOCAL / "titlebar-error.txt")
+
+    revealed = threading.Lock()
+
+    def reveal() -> None:
+        if not revealed.acquire(blocking=False):
+            return
+        splash_done()
+        window.show()
+
+    def reveal_after(seconds: float) -> None:
+        t = threading.Timer(seconds, reveal)
+        t.daemon = True     # never keeps a closed window's process alive
+        t.start()
+
+    inst.ready["fn"] = reveal
+    # a page that never says so (an error in it) must not keep the window hidden
+    window.events.loaded += lambda: reveal_after(8)
+    reveal_after(40)
 
     def bring_to_front() -> None:
         window.restore()

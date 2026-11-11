@@ -96,6 +96,37 @@ def test_pointing_at_maximize_reaches_windows_so_snap_layouts_open():
     assert tb.WM_NCMOUSEMOVE in passed
 
 
+def test_windows_is_told_where_the_buttons_really_are():
+    # user report 2026-11-11: restored, the snap layouts never opened. Windows locates the maximize button
+    # through WM_GETTITLEBARINFOEX, and its own answer was a 1 px strip at the top edge (the removed top frame)
+    import ctypes
+    bar, passed = _bare_bar()
+    bar.zoom = 1.0
+
+    class U:
+        @staticmethod
+        def ClientToScreen(_, p):
+            p._obj.x, p._obj.y = 100, 200
+
+        @staticmethod
+        def GetClientRect(_, r):
+            r._obj.right, r._obj.bottom = 1000, 700
+
+        @staticmethod
+        def GetDpiForWindow(_):
+            return 96
+    bar.u = U
+    info = tb.TITLEBARINFOEX()
+    info.cbSize = ctypes.sizeof(info)
+    bar._handle(1, tb.WM_GETTITLEBARINFOEX, 0, ctypes.addressof(info))
+    rect = lambda r: (r.left, r.top, r.right, r.bottom)   # noqa: E731
+    assert rect(info.rgrect[3]) == (100 + 908, 200, 100 + 954, 250)      # maximize, as tall as the header
+    assert rect(info.rgrect[5]) == (100 + 954, 200, 1100, 250)
+    assert rect(info.rgrect[2]) == (100 + 862, 200, 100 + 908, 250)
+    assert rect(info.rcTitleBar) == (100, 200, 1100, 250)
+    assert tb.WM_GETTITLEBARINFOEX in passed                              # Windows still fills the rest
+
+
 def test_a_click_on_a_button_is_the_bars_own():
     # Windows would draw its old-style buttons over ours on a press, and act on its own
     bar, passed = _bare_bar()
@@ -139,3 +170,22 @@ def test_a_failed_install_leaves_the_system_title_bar(tmp_path, monkeypatch):
     assert not on.get("on")            # window.js keeps the header as it was
     assert w.js == []                  # nothing pushed into the page
     assert "no form" in (tmp_path / "err.txt").read_text(encoding="utf-8")
+
+
+def test_the_window_shows_once_the_page_has_drawn(server):
+    # 2026-11-11: the window starts hidden and shows on the page's word, so it never opens as an empty frame
+    import threading
+    shown = threading.Event()
+    server.inst.ready["fn"] = shown.set
+    try:
+        assert server.req("POST", "/api/drawn", {})[0] == 200
+        assert shown.wait(3)
+    finally:
+        server.inst.ready.clear()
+    assert server.req("POST", "/api/drawn", {})[0] == 200            # in the browser: nothing to show
+
+
+def test_the_page_says_when_its_first_screen_is_drawn():
+    js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    main = js[js.index("(async function main()"):]
+    assert main.index('"/api/drawn"') > main.index("initWorkspaces();")

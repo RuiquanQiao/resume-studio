@@ -598,6 +598,20 @@ def test_a_city_the_list_doesnt_know_is_looked_up_on_openstreetmap_once(hunt, mo
     assert geo.look_up("嘉兴南湖") is None and len(asked) == 2
 
 
+def test_opening_a_data_folder_leaves_reading_the_place_list_for_later(tmp_path, monkeypatch):
+    # 2026-11-11: geo.use read the whole list (a second of the window's start) before the window could open
+    from jobhunt import geo
+    (tmp_path / "places.json").write_text(json.dumps({"places": {"o:R7157395": {
+        "lat": 39.0, "lon": 116.0, "country": "CN", "state": "", "names": {"en": "Xiong'an New Area", "zh": "雄安新区"},
+        "asked": ["雄安"]}}, "asked": {}}, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(geo, "_db", None)
+    monkeypatch.setattr(geo, "_found", {"path": None, "places": {}, "asked": {}})
+    geo.use(tmp_path)
+    assert geo._db is None                                   # nothing read yet
+    assert geo.find("雄安")["id"] == "o:R7157395"             # read on first need, with the folder's own places
+    assert geo.find("上海")["id"] == "g1796236"
+
+
 def test_places_read_wrong_by_the_first_lookup_are_looked_up_again(tmp_path):
     """2026-10-27: the first migration read 湖南长沙 as Konan (Japan); roles and companies not changed since are
     looked up again from the files it kept."""

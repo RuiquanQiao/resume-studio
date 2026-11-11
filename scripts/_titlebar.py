@@ -68,6 +68,16 @@ def hit_test(x: int, y: int, client_w: int, scale: float, resize_h: int, maximiz
     return HTCAPTION
 
 
+def screen_rects(origin: tuple[int, int], client_w: int, scale: float, zoom: float = 1.0
+                 ) -> dict[str, tuple[int, int, int, int]]:
+    """The buttons and the whole header in screen pixels, `origin` being the client area's top-left corner on
+    screen: what WM_GETTITLEBARINFOEX must answer."""
+    ox, oy = origin
+    out = {k: (l + ox, t + oy, r + ox, b + oy) for k, (l, t, r, b) in button_rects(client_w, scale, zoom).items()}
+    out["bar"] = (ox, oy, ox + client_w, out["close"][3])
+    return out
+
+
 def caption_css_width(zoom: float) -> float:
     """CSS px the header keeps free on its right for the buttons, at the page's zoom."""
     return round(BTN_W * len(KINDS) / (zoom or 1.0), 2)
@@ -90,7 +100,7 @@ def system_dark() -> bool:
 WM_SIZE, WM_ACTIVATE, WM_SETTINGCHANGE, WM_NCDESTROY = 0x0005, 0x0006, 0x001A, 0x0082
 WM_NCCALCSIZE, WM_NCHITTEST, WM_NCACTIVATE = 0x0083, 0x0084, 0x0086
 WM_NCMOUSEMOVE, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCLBUTTONDBLCLK = 0x00A0, 0x00A1, 0x00A2, 0x00A3
-WM_NCMOUSELEAVE, WM_DPICHANGED, WM_SYSCOMMAND = 0x02A2, 0x02E0, 0x0112
+WM_NCMOUSELEAVE, WM_DPICHANGED, WM_SYSCOMMAND, WM_GETTITLEBARINFOEX = 0x02A2, 0x02E0, 0x0112, 0x033F
 SC_MINIMIZE, SC_MAXIMIZE, SC_RESTORE, SC_CLOSE = 0xF020, 0xF030, 0xF120, 0xF060
 SM_CYSIZEFRAME, SM_CXPADDEDBORDER = 33, 92
 SWP_FRAMECHANGED = 0x0020 | 0x0001 | 0x0002 | 0x0004 | 0x0010   # + NOSIZE NOMOVE NOZORDER NOACTIVATE
@@ -104,6 +114,14 @@ SUBCLASSPROC = ctypes.WINFUNCTYPE(LRESULT, wintypes.HWND, wintypes.UINT, wintype
 
 class NCCALCSIZE_PARAMS(ctypes.Structure):
     _fields_ = [("rgrc", wintypes.RECT * 3), ("lppos", ctypes.c_void_p)]
+
+
+class TITLEBARINFOEX(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("rcTitleBar", wintypes.RECT), ("rgstate", wintypes.DWORD * 6),
+                ("rgrect", wintypes.RECT * 6)]
+
+
+RECT_INDEX = {"min": 2, "max": 3, "close": 5}     # TITLEBARINFOEX.rgrect: 0, 1 reserved, 4 the help button
 
 
 class TRACKMOUSEEVENT(ctypes.Structure):
@@ -124,6 +142,7 @@ def _api():
                                ctypes.c_int, wintypes.UINT]
     u.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
     u.ScreenToClient.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
+    u.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
     u.IsZoomed.argtypes = [wintypes.HWND]
     u.GetDpiForWindow.argtypes = [wintypes.HWND]
     u.TrackMouseEvent.argtypes = [ctypes.POINTER(TRACKMOUSEEVENT)]
@@ -304,6 +323,19 @@ class TitleBar:
             pt = wintypes.POINT(*_signed_xy(lp))
             self.u.ScreenToClient(hwnd, ctypes.byref(pt))
             return hit_test(pt.x, pt.y, self.client_w(), self.scale, self.resize_h(), self.maximized(), self.zoom)
+        if msg == WM_GETTITLEBARINFOEX and lp:
+            # Windows 11 finds the maximize button through this to open the snap layouts. Its own answer comes
+            # from the top frame we removed: restored, a 1 px strip at the top edge, so pointing at our button
+            # never opened them (maximized the strip happened to fall inside it; user report 2026-11-11)
+            res = dsp(hwnd, msg, wp, lp)
+            info = TITLEBARINFOEX.from_address(lp)
+            pt = wintypes.POINT(0, 0)
+            self.u.ClientToScreen(hwnd, ctypes.byref(pt))
+            rects = screen_rects((pt.x, pt.y), self.client_w(), self.scale, self.zoom)
+            info.rcTitleBar = wintypes.RECT(*rects["bar"])
+            for kind, i in RECT_INDEX.items():
+                info.rgrect[i] = wintypes.RECT(*rects[kind])
+            return res
         if msg == WM_NCMOUSEMOVE:
             kind = KIND_OF.get(wp)
             self._track_leave()

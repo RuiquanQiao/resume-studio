@@ -85,7 +85,12 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     def warm() -> None:
         """An older file written the short way once; then the postings parsed and every title matched against the
         tracks, so the window's first look at the table doesn't wait for 50,000 titles (3 s in 2026-11)."""
-        time.sleep(1.5)   # after the window's first page has its answers: parsing holds Python's lock meanwhile
+        # after the window is up and its first page has its answers: parsing holds Python's lock meanwhile, and
+        # a fixed wait fell right while the window was being built once the start got quicker (2026-11-11)
+        until = time.monotonic() + 30
+        while time.monotonic() < until and not app.bus.listeners():
+            time.sleep(0.1)
+        time.sleep(1.5)
         try:
             posts.slim_file()
             posts.summary()
