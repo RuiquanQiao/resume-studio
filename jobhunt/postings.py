@@ -210,7 +210,7 @@ def clean_tracks(v: Any) -> list[dict]:
         used.add(tid)
         out.append({"id": tid, "name": name, "keywords": kws, "exclude": _words(x.get("exclude")),
                     "subset": _text(x.get("subset"), 40)})
-    return out[:12]
+    return out[:40]   # was 12 (2026-11-13): a student weighing a dozen kinds of role hit the wall
 
 
 # 53,000 postings are matched against the tracks on every look at the table (12 s in 2026-11 when each keyword folded
