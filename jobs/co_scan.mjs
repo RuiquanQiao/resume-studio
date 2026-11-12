@@ -1,13 +1,14 @@
 // Run career-ops' own job providers for the careers sites Resume Studio's tracker knows (docs/JOB_HUNT.md, 2026-10-18).
 //
-//   node jobs/co_scan.mjs <career-ops folder> <entries.json> [--detect]
+//   node jobs/co_scan.mjs <providers folder> <entries.json> [--detect]
+//
+// <providers folder> is jobs/vendor/career-ops (career-ops' providers copied into this repository, 2026-11-12).
 //
 // entries.json: {"entries": [{"key": "C1#0", "name": "ByteDance", "url": "https://jobs.bytedance.com"}]}
 // Prints one JSON line: {"results": [{"key", "url", "provider": "feishu-jobs" | null, "jobs": [...] | "error": "..."}]}
 //
-// Nothing here is career-ops' code: it loads career-ops' providers/*.mjs from its own install (through its
-// providers/_registry.mjs, the same way its scan.mjs does) and calls them, so career-ops' updates keep
-// flowing in. Moka, Feishu (ByteDance), Tencent, Meituan, Alibaba, Greenhouse, Lever, Ashby, Workday and
+// This file is not career-ops' code: it loads career-ops' providers/*.mjs (through its providers/_registry.mjs,
+// the same way its scan.mjs does) and calls them. scripts/update_career_ops.py brings in a newer copy. Moka, Feishu (ByteDance), Tencent, Meituan, Alibaba, Greenhouse, Lever, Ashby, Workday and
 // the rest are career-ops' (MIT, Santiago Fernández de Valderrama and contributors).
 import { readFileSync } from 'fs';
 import path from 'path';

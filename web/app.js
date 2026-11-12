@@ -957,11 +957,18 @@ function langSwitch() {
 function card(title, sub, body, { cls = "", actions = null, fold = "", count = null } = {}) {
   const folded = !!fold && store("fold:" + fold) === "1";
   const head = [h("h3", null, title), count != null && h("span", { class: "card-n" }, String(count)), sub && h("span", { class: "sub" }, sub)];
-  const sec = h("section", { class: "card " + cls + (folded ? " folded" : "") },
+  const sec = h("section", { class: "card " + cls + (fold ? " card-foldable" : "") + (folded ? " folded" : "") },
     h("div", { class: "card-h" },
       fold ? h("button", { class: "card-fold", "aria-expanded": String(!folded), title: folded ? t("Show") : t("Hide"),
         onclick: (e) => {
+          // folded from its stuck head (the card's top scrolled away above it): the folded card is brought back to
+          // where the head was, or it would vanish above the view and the page would seem to jump
+          const headEl = e.currentTarget.parentElement;
+          const was = headEl.getBoundingClientRect().top;
+          const stuck = sec.getBoundingClientRect().top < was - 1;
           const now = sec.classList.toggle("folded");
+          const sc = now && stuck && sec.closest(".hunt-scroll");   // exactly there: scrollIntoView keeps scroll-padding
+          if (sc) sc.scrollTop += sec.getBoundingClientRect().top - was;
           e.currentTarget.setAttribute("aria-expanded", String(!now));
           e.currentTarget.title = now ? t("Show") : t("Hide");
           store("fold:" + fold, now ? "1" : null);

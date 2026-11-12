@@ -2,9 +2,10 @@
 
 Each site is read the cheapest way that works, never by Claude once it has been set up:
 
-1. **career-ops' providers**, when career-ops is installed: Moka, Feishu (ByteDance), Tencent, Meituan, Alibaba,
-   Greenhouse, Lever, Ashby, Workday and the rest read a site's public job API with no browser
-   (`jobs/co_scan.mjs` loads them from career-ops' own folder, so its updates keep coming).
+1. **career-ops' providers**, kept in this repository (`jobs/vendor/career-ops/`, MIT, its LICENSE beside them;
+   `scripts/update_career_ops.py` brings in a newer copy): Moka, Feishu (ByteDance), Tencent, Meituan, Alibaba,
+   Greenhouse, Lever, Ashby, Workday and some 150 more read a site's public job API with no browser and no AI.
+   They need only Node.js, never a career-ops install (2026-11-12: career-ops is to be removed).
 2. **A recorded route**, for any other site (Xinghe's own site, a site behind a sign-in): Claude finds the job list
    once in Resume Studio's browser and records read-only page scripts, as for profiles (autofill/route.py);
    scans replay them with no Claude:
@@ -26,8 +27,10 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import re
 import shutil
+import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -44,6 +47,8 @@ from .postings import Postings
 from .store import Hunt, site_host, site_key
 
 BRIDGE = Path(__file__).resolve().parent.parent / "jobs" / "co_scan.mjs"
+PROVIDERS = BRIDGE.parent / "vendor" / "career-ops"   # career-ops' providers, copied in (MIT)
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # the job APIs the scan reads itself, whatever the site: a route calling one predates that scan
 BUILT_IN_APIS = {beisen.API.lower(), feishu.API.lower(), hotjob.API.lower().rstrip("/"),
                  alitalent.API.lower(), alitalent.BATCHES.lower()}
@@ -143,6 +148,7 @@ class Scanner:
         self.started: dict[str, float] = {}    # company id -> when that reading began
         self.lock = threading.Lock()
         self._providers: dict[str, str | None] = {}   # url -> career-ops provider id (or None), per run of the app
+        self.providers_dir = PROVIDERS
         self.last_run: dict = {}               # the last scan_many: {at, auto, companies, new, closed, failed}
         # the run started from the window (start): the companies still waiting, and how far it got, so the window
         # can say "3 of 12" from the click to the end, between one company and the next too
@@ -204,10 +210,11 @@ class Scanner:
         return site_host(url) in {site_host(p.get("url") or "") for p in route.get("pages") or []}
 
     def providers_ready(self) -> bool:
-        try:
-            return bool(self.tool.installed()) and bool(shutil.which("node"))
-        except Exception:  # noqa: BLE001
+        # STUDIO_PROVIDERS=off: tests' made-up sites are never asked of the copied providers (each ask starts node);
+        # a test that wants them hands in its own folder (providers_dir), or asks the copy itself
+        if self.providers_dir == PROVIDERS and os.environ.get("STUDIO_PROVIDERS") == "off":
             return False
+        return (Path(self.providers_dir) / "providers" / "_registry.mjs").is_file() and bool(shutil.which("node"))
 
     def _bridge(self, entries: list[dict], detect: bool = False) -> list[dict]:
         if not entries or not self.providers_ready():
@@ -216,8 +223,10 @@ class Scanner:
         self.hunt.dir.mkdir(parents=True, exist_ok=True)
         tmp.write_text(json.dumps({"entries": entries}, ensure_ascii=False), encoding="utf-8")
         try:
-            proc = self.tool.node(str(BRIDGE), str(self.tool.root), str(tmp), *(["--detect"] if detect else []), timeout=600)
-        except Exception as e:  # noqa: BLE001  (ToolError: node missing, too slow)
+            proc = subprocess.run([shutil.which("node") or "node", str(BRIDGE), str(self.providers_dir), str(tmp),
+                                   *(["--detect"] if detect else [])], cwd=str(BRIDGE.parent), capture_output=True,
+                                  text=True, encoding="utf-8", errors="replace", timeout=600, creationflags=_NO_WINDOW)
+        except Exception as e:  # noqa: BLE001  (node missing, too slow)
             return [{"key": x["key"], "url": x["url"], "provider": None, "error": str(e)} for x in entries]
         finally:
             tmp.unlink(missing_ok=True)
@@ -542,6 +551,10 @@ class Scanner:
         st = self.live_state(self.hunt.company(cid))
         if not st.get("ok", True) and st.get("error"):
             return {"company": cid, "error": st["error"], "signed_out": st.get("signed_out", False)}
+        # the scan waited for read nothing (its only site needs the AI): said as _scan says it, never "0 open", which
+        # reads as a company with no roles (seen when node made the first scan slow enough to be waited for, 2026-11-12)
+        if st.get("needs") and "found" not in st:
+            return {"company": cid, "needs": st["needs"], "unrouted": st.get("unrouted") or []}
         return {"company": cid, "found": st.get("found", 0), "new": len(st.get("new") or []), "closed": len(st.get("closed") or []),
                 "changed": len(st.get("changed") or []), "needs": st.get("needs") or "", "unrouted": st.get("unrouted") or [],
                 "short": st.get("short") or None}

@@ -1688,6 +1688,41 @@ def test_today_folds_and_its_roles_open_the_company_at_that_role(page, server):
     pg.wait_for_selector(".hunt-wrap:not(.is-page)")
 
 
+def test_an_open_cards_head_stays_at_the_top_and_folds_from_there(page, server):
+    """User, 2026-11-12: scrolled down a long open-roles list, its head (fold, count, Scan) stays stuck at the top of
+    the page, a sticky section header; folded from there, the folded card sits where its head was."""
+    pg = page
+    hunt = server.inst.hunt
+    c = hunt.add_company({"name": "长列表公司", "site": "https://careers.long.example/campus"})
+    hunt.scanner.postings.merge(c["id"], [{"title": f"研发工程师 {i:03d}", "url": f"https://careers.long.example/job/{i}"}
+                                          for i in range(80)], how="route")
+    hunt.scanner.postings.settings(keywords="研发")
+    pg.evaluate("() => { localStorage.removeItem('fold:company-postings'); H.pq = ''; }")
+    pg.keyboard.press("Control+3")
+    pg.evaluate(f"() => openHunt('company', '{c['id']}')")
+    card = ".hunt-wrap.is-page .postings-card"
+    pg.wait_for_selector(card + " .post-row")
+    pos = """() => { const sc = document.querySelector('#fillspace .hunt-scroll').getBoundingClientRect();
+        const card = document.querySelector('.hunt-wrap.is-page .postings-card');
+        return { head: card.querySelector(':scope > .card-h').getBoundingClientRect().top - sc.top,
+                 card: card.getBoundingClientRect().top - sc.top, folded: card.classList.contains('folded') }; }"""
+    pg.evaluate("""() => { const sc = document.querySelector('#fillspace .hunt-scroll');
+        const card = document.querySelector('.hunt-wrap.is-page .postings-card');
+        sc.scrollTop += card.getBoundingClientRect().top - sc.getBoundingClientRect().top + 900; }""")
+    at = pg.evaluate(pos)
+    assert at["card"] < -800 and abs(at["head"]) < 1, at                       # the card's top is far above; its head is at the top
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"hunt-sticky-head-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+    pg.click(card + " > .card-h .card-fold")
+    at = pg.evaluate(pos)
+    assert at["folded"] and abs(at["card"]) < 1, at                           # folded where its head was, not off above
+    pg.click(card + " > .card-h .card-fold")                                   # open again for the tests after it
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.wait_for_selector(".hunt-wrap:not(.is-page)")
+
+
 def test_a_browser_about_to_close_itself_can_be_kept_open(page, server):
     """A browser work started says so a few seconds before it closes itself; Keep it open makes it the user's."""
     b = server.inst.browser
@@ -2239,6 +2274,8 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     server.req("PUT", f"/api/hunt/apps/{a2}", {"apply_by": day})
     pg.click(".dbv-tab[data-view=v4]")
     pg.wait_for_selector(f".dbv-calday.today[data-day='{day}'] .dbv-item.k-event:has-text('一面')")
+    # two requests, two repaints: the deadline may land a moment after the interview (raced, 2026-11-12)
+    pg.wait_for_selector(f".dbv-calday[data-day='{day}'] .dbv-item.k-deadline")
     assert pg.locator(f".dbv-calday[data-day='{day}'] .dbv-item.k-deadline").count() == 1
     assert pg.locator("#dbv-apps-group").count() == 0                       # no columns or groups on a calendar
     for scheme in ("light", "dark"):
@@ -3076,7 +3113,7 @@ def test_a_site_the_scan_missed_is_named_on_the_status_and_its_row(page_all):
     assert out["none"].endswith("读取方式：mokahr · join.huolala.example 本次未能读取"), out
     assert out["part"].endswith("读取方式：mokahr · join.huolala.example 部分页面未能读取"), out
     assert out["old"].endswith("读取方式：mokahr · 部分页面未能读取"), out   # a route's page: as before
-    assert out["rows"] == [["能自动扫描", "本次未能读取"], ["能自动扫描"]], out
+    assert out["rows"] == [["能自动扫描（内置读法）", "本次未能读取"], ["能自动扫描（内置读法）"]], out
 
 
 def test_scan_wording_names_sites_never_a_company(page_all):
@@ -3099,8 +3136,9 @@ def test_scan_wording_names_sites_never_a_company(page_all):
     }""")
     assert out["toastSay"] == "扫描完成：0 个新 · 0 个已关闭 · 2 个网址还不能自动扫描：campus.xinghe.example, careers.xinghe.example", out
     assert out["cell"] == "campus.xinghe.example, careers.xinghe.example 还不能自动扫描：要先让 AI 学会读", out
-    assert out["rows"] == [["还不能自动扫描", "site-scan warn"], ["能自动扫描", "site-scan ok"],
-                           ["能自动扫描", "site-scan ok"], ["未检查", "site-scan "]], out
+    # read by code built into the app, or by a route the AI recorded once: told apart (user, 2026-11-12)
+    assert out["rows"] == [["还不能自动扫描", "site-scan warn"], ["能自动扫描（内置读法）", "site-scan ok"],
+                           ["能自动扫描（AI 记录的读法）", "site-scan ok"], ["未检查", "site-scan "]], out
     assert out["system"] == "公司自建"                                       # never the AI's English "own site"
 
 

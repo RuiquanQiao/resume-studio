@@ -1,0 +1,4 @@
+career-ops providers, copied from https://github.com/santifer/career-ops
+commit b744431b1a5323d7288b588ef394df57e8aad826 2026-11-12
+MIT: see LICENSE (career-ops) and node_modules/js-yaml/LICENSE (js-yaml).
+Refresh with: python scripts/update_career_ops.py

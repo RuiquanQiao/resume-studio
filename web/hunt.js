@@ -1853,12 +1853,13 @@ async function removeCompanySite(c) {
   paintFill();
 }
 
-// on a careers site's row: whether a scan reads it by itself (Scanner.site_status), said on every row
+// on a careers site's row: whether a scan reads it by itself (Scanner.site_status), said on every row, and how:
+// code built into the app for its recruiting system, or a route the AI recorded once (user, 2026-11-12)
 function siteScanChip(how, list, tried = "") {
-  const [cls, say, why] = how === "api" ? ["ok", t("Scanned automatically"), list
+  const [cls, say, why] = how === "api" ? ["ok", t("Scanned automatically (built in)"), list
       ? t("Its list is at {list}, read through its recruiting system's public API, no AI", { list: siteName(list) })
       : t("Read through its recruiting system's public API, no AI")]
-    : how === "route" ? ["ok", t("Scanned automatically"), t("Read the way the AI recorded once, no AI")]
+    : how === "route" ? ["ok", t("Scanned automatically (AI-recorded)"), t("Read the way the AI recorded once, no AI")]
     : how === "no" && tried ? ["warn", t("The AI tried; still can't be scanned"), [t("The AI tried to learn it {when}, and the scan still can't read it", { when: huntWhen(tried) }),
       list && t("Its list is at {list}, but no scan reads that address yet", { list: siteName(list) })].filter(Boolean).join(t("; "))]
     : how === "no" ? ["warn", t("Can't be scanned automatically yet"), list ? t("Its list is at {list}, but no scan reads that address yet", { list: siteName(list) })

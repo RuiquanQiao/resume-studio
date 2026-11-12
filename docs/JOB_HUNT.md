@@ -185,6 +185,12 @@ All three were built on 2026-10-18. Choices made on the way:
   `_registry.mjs`, the way its `scan.mjs` does, so its updates keep coming (the swappable-provider rule this
   project keeps). Without career-ops installed, every site is read by a route. A live check read 2,000 Tencent
   postings in seconds; Xinghe's own site has no provider, so it gets a route.
+- *Changed 2026-11-12:* the providers are now **copied in**, since career-ops is to be removed. career-ops is MIT,
+  so its code may be copied and changed, with its copyright and license notice kept beside it:
+  `jobs/vendor/career-ops/` holds `providers/` and the dozen files they import, its `LICENSE`, `SOURCE.txt` (the
+  commit) and js-yaml (MIT, the one package they need). The scan needs only Node.js, no career-ops install.
+  `python scripts/update_career_ops.py` brings in career-ops' newest copy (it follows the providers' imports, and
+  stops if they start needing a package not kept here); then run `scripts/check.py`.
 - *Built:* **keywords** (career-ops' title filter): the roles the user looks for, on the Companies tab. Postings
   without one are kept but folded away, and don't count as news. Tencent alone lists thousands.
 - *Built:* the **daily scan** never opens the browser by itself: sites read by a route wait for a scan the user

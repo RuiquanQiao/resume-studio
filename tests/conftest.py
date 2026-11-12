@@ -55,6 +55,8 @@ os.environ["STUDIO_FEISHU_DETECT"] = "off"
 os.environ["STUDIO_HOTJOB_DETECT"] = "off"
 # and whether it is one of 阿里's talent sites
 os.environ["STUDIO_ALITALENT_DETECT"] = "off"
+# and which of career-ops' providers (jobs/vendor/career-ops) reads it: tests that want them say so
+os.environ["STUDIO_PROVIDERS"] = "off"
 # the user's own Claude Code settings (a model picked there, say) never reach the fake one's answers
 os.environ["CLAUDE_CONFIG_DIR"] = str(ROOT / ".cache" / "claude-config")
 os.environ.pop("ANTHROPIC_MODEL", None)

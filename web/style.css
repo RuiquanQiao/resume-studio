@@ -426,6 +426,12 @@ body[data-ws="resume"][data-preview="off"][data-chat="off"] .workspace { grid-te
 .card.folded > .card-b { display: none; }
 .card.folded > .card-h { padding-bottom: 12px; }
 .card-b { padding: 12px 16px 14px; }
+/* a sticky section header (user, 2026-11-12): an open foldable card's head stays at the top of the page while its
+   long body scrolls under it, so folding it, its count and its buttons are always at hand. The body's 12px top
+   padding moves into the head, so nothing shifts when it isn't stuck */
+.hunt-scroll .card-foldable:not(.folded) > .card-h { position: sticky; top: 0; z-index: 3; padding-bottom: 12px;
+  background: var(--panel-2); border-radius: var(--r-lg) var(--r-lg) 0 0; }
+.hunt-scroll .card-foldable:not(.folded) > .card-b { padding-top: 0; }
 .card.fact { background: var(--fact); border-color: var(--fact-line); }
 .card.fact h3 { color: var(--fact-title); }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px 14px; margin-bottom: 12px; }
@@ -1370,7 +1376,8 @@ mark.w-add { background: color-mix(in srgb, var(--ok) 30%, transparent); }
 .hunt-tab:hover { color: var(--text); }
 .hunt-tab.on { background: var(--panel); color: var(--text); box-shadow: var(--shadow-sm); }
 .hunt-tab .n { font-size: 12.5px; font-weight: 500; color: var(--text-3); font-variant-numeric: tabular-nums; }
-.hunt-scroll { flex: 1; min-height: 0; overflow: auto; }
+/* scroll-padding: a row brought into view (Tab, scrollIntoView) clears a card's stuck head (.card-foldable) */
+.hunt-scroll { flex: 1; min-height: 0; overflow: auto; scroll-padding-top: 56px; }
 .hunt-wrap { width: 100%; padding: 16px 28px 28px; display: flex; flex-direction: column; gap: 12px; }
 .hunt-wrap.is-page { gap: 0; }
 .hunt-wrap.is-page > .row:first-child, .hunt-wrap.is-page > .hunt-back { margin-bottom: 8px; }

@@ -1183,20 +1183,15 @@ export default { id: 'demo', detect: (e) => (e.careers_url.includes('jobs.exampl
     { title: '', url: 'https://jobs.example.com/2' }]; } };
 """, encoding="utf-8")
 
-    class Tool:
-        root = co
-
+    class Tool:   # career-ops is not installed: the providers are this repository's own copy (here the stand-in)
         def installed(self):
-            return True
-
-        def node(self, *args, timeout=120):
-            import subprocess
-            return subprocess.run([shutil.which("node"), *args], capture_output=True, text=True, encoding="utf-8", timeout=timeout)
+            return False
 
     ps = Postings(hunt)
     hunt.add_company({"name": "Example", "sites": [{"url": "https://jobs.example.com", "kind": "campus"},
                                                    {"url": "https://example.com/careers", "kind": "social"}]})
     sc = Scanner(hunt, ps, Tool(), None, lambda: None)
+    sc.providers_dir = co
     assert [s["how"] for s in sc.plan(hunt.company("C1"))] == ["demo", "claude"]
     res = sc.scan("C1")
     assert (res["found"], res["new"], res["needs"]) == (1, 1, "claude")         # the other site still needs Claude
@@ -1206,6 +1201,42 @@ export default { id: 'demo', detect: (e) => (e.careers_url.includes('jobs.exampl
     sc.scan("示例基金")
     p = next(x for x in ps.all() if x["company"] == "C2")
     assert (p["title"], p["url"]) == ("123456", "https://x.jobs.feishu.cn/123456/position/7/detail")
+
+
+def test_a_waited_for_scan_that_read_nothing_says_it_needs_the_ai_never_zero_open(hunt):
+    """A scan asked for while one runs waits for it and answers with its result: when that scan read nothing (the
+    company's only site needs the AI), it says so, never "0 open", which reads as a company with no roles."""
+    ps = Postings(hunt)
+    hunt.add_company({"name": "Example", "sites": [{"url": "https://careers.example.com/jobs"}]})
+    ps.set_scan_state("C1", needs="claude", unrouted=["https://careers.example.com/jobs"])
+    sc = Scanner(hunt, ps, None, None, lambda: None)
+    r = sc.wait_scan("C1")
+    assert "found" not in r and r["needs"] == "claude" and r["unrouted"] == ["https://careers.example.com/jobs"]
+    ps.merge("C1", [{"title": "Engineer", "url": "https://careers.example.com/jobs/1"}], how="route")
+    assert sc.wait_scan("C1")["found"] == 1                                    # read once: counted as before
+
+
+@needs_node
+def test_the_copied_career_ops_providers_name_the_big_systems_with_no_career_ops_installed(hunt, monkeypatch):
+    """career-ops' providers live in jobs/vendor/career-ops (MIT, 2026-11-12): they load with no career-ops install
+    and no npm install, and name Greenhouse, Moka, Workday, Tencent and Meituan sites (detecting needs no network)."""
+    from jobhunt.scan import PROVIDERS
+    monkeypatch.delenv("STUDIO_PROVIDERS")                                    # the copy itself, as the app runs it
+    assert (PROVIDERS / "LICENSE").read_text(encoding="utf-8").startswith("MIT License")
+
+    class Tool:
+        def installed(self):
+            return False
+
+    sc = Scanner(hunt, Postings(hunt), Tool(), None, lambda: None)
+    assert sc.providers_ready()
+    urls = {"https://boards.greenhouse.io/stripe": "greenhouse",
+            "https://app.mokahr.com/campus-recruitment/demo/1234": "mokahr",
+            "https://acme.wd1.myworkdayjobs.com/en-US/External": "workday",
+            "https://careers.tencent.com": "tencent", "https://zhaopin.meituan.com": "meituan",
+            "https://careers.unknown-company.example/jobs": None}
+    got = sc._bridge([{"key": str(i), "name": "x", "url": u} for i, u in enumerate(urls)], detect=True)
+    assert {r["url"]: r["provider"] for r in got} == urls
 
 
 def test_the_window_and_claude_scan_and_apply(live, data_file, monkeypatch):
