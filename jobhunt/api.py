@@ -686,6 +686,20 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         guard(lambda: scanner.learn_tried(req.params["cid"], urls))
         return company_view(req.params["cid"])
 
+    # systems still read by the AI's routes, for the user to report to the developer (jobhunt/report.py)
+    @app.route("GET", "/api/hunt/report")
+    def get_report(req: Request):
+        return scanner.report_offers()
+
+    @app.route("POST", "/api/hunt/report")
+    def done_report(req: Request):
+        b = body(req)
+        how = str(b.get("how") or "")
+        if how not in ("issue", "copied", "ignored"):
+            raise HttpError(400, "how: issue, copied or ignored")
+        scanner.mark_reported([str(k) for k in b.get("keys") or [] if k], how)
+        return scanner.report_offers()
+
     @app.route("GET", "/api/hunt/companies/{cid}")
     def get_company(req: Request):
         return guard(lambda: company_view(req.params["cid"]))

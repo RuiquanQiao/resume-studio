@@ -29,7 +29,7 @@ _CN_ZONES = {"China Standard Time", "Asia/Shanghai", "Asia/Chongqing", "Asia/Chu
              "PRC", "Asia/Kashgar"}
 # addresses of systems that run in mainland China, whatever the company's own domain
 _CN_HOSTS = re.compile(r"(\.|^)(zhiye\.com|mokahr\.com|feishu\.cn|hotjob\.cn|italent\.cn|dayee\.com|zhaopin\.com|"
-                       r"51job\.com|liepin\.com|nowcoder\.com|bytedance\.com|mioffice\.cn)$")
+                       r"51job\.com|liepin\.com|nowcoder\.com|bytedance\.com|mioffice\.cn|iguopin\.com)$")
 
 _lock = threading.Lock()
 _path: Path | None = None

@@ -2380,5 +2380,33 @@
  "Stop keeping a copy of your profile on {company}'s site?": "Keine Kopie Ihres Profils auf der Seite von {company} mehr aufbewahren?",
  "Nothing changes on the site itself. What the AI read there stays saved: keep a copy again to get it back.": "Auf der Seite selbst ändert sich nichts. Was die KI dort gelesen hat, bleibt gespeichert: Bewahren Sie wieder eine Kopie auf, um es zurückzuerhalten.",
  "Stop": "Beenden",
- "Stop keeping a copy of your profile there": "Keine Kopie des Profils dort mehr aufbewahren"
+ "Stop keeping a copy of your profile there": "Keine Kopie des Profils dort mehr aufbewahren",
+ "{n} recruiting system is still read by routes the AI recorded, one company at a time. Reported to the developer, it can get a built-in scan that reads every company on it without AI.": [
+  "{n} Bewerbungssystem wird noch über Routen gelesen, die die KI aufgezeichnet hat, Firma für Firma. Dem Entwickler gemeldet, kann es einen eingebauten Scan bekommen, der jede Firma darauf ohne KI liest.",
+  "{n} Bewerbungssysteme werden noch über Routen gelesen, die die KI aufgezeichnet hat, Firma für Firma. Dem Entwickler gemeldet, können sie einen eingebauten Scan bekommen, der jede Firma darauf ohne KI liest."
+ ],
+ "Review and report": "Ansehen und melden",
+ "Ignore": "Ignorieren",
+ "Don't offer these systems again": "Diese Systeme nicht mehr anbieten",
+ "These systems won't be offered again": "Diese Systeme werden nicht mehr angeboten",
+ "Couldn't copy: select the text and copy it": "Kopieren fehlgeschlagen: Text markieren und kopieren",
+ "Copy text": "Text kopieren",
+ "This is everything that would be sent: the API paths and shared hosts that the routes of two or more of your companies call, and how many companies use them. No company names, notes or account details.": "Das ist alles, was gesendet würde: die API-Pfade und gemeinsamen Hosts, die die Routen von zwei oder mehr Ihrer Firmen aufrufen, und wie viele Firmen sie nutzen. Keine Firmennamen, Notizen oder Kontodaten.",
+ "Submitting needs a GitHub account. Without one, copy the text and send it any way you like.": "Zum Einreichen brauchen Sie ein GitHub-Konto. Ohne eines kopieren Sie den Text und senden ihn auf beliebigem Weg.",
+ "Report recruiting systems to the developer": "Bewerbungssysteme an den Entwickler melden",
+ "Submit on GitHub": "Auf GitHub einreichen",
+ "GitHub opened in your browser: submit the issue there": "GitHub im Browser geöffnet: reichen Sie das Issue dort ein",
+ "Recruiting systems that Resume Studio still reads with routes the AI recorded, one company at a time. A built-in scan for one of them would read every company on it with no AI.": "Diese Bewerbungssysteme liest Resume Studio noch über Routen, die die KI aufgezeichnet hat, Firma für Firma. Ein eingebauter Scan für eines davon würde jede Firma darauf ohne KI lesen.",
+ "Sent from Resume Studio. No company names, own domains, notes or account details are included.": "Gesendet von Resume Studio. Ohne Firmennamen, eigene Domains der Firmen, Notizen oder Kontodaten.",
+ "System {i}: {companies}, {pages}": "System {i}: {companies}, {pages}",
+ "{n} company": [
+  "{n} Firma",
+  "{n} Firmen"
+ ],
+ "{n} route page": [
+  "{n} Routenseite",
+  "{n} Routenseiten"
+ ],
+ "API path: {path}": "API-Pfad: {path}",
+ "API host: {host}": "API-Host: {host}"
 }

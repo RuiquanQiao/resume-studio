@@ -16,7 +16,8 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like 
 # hosts whose icon is the hiring system's own
 VENDORS = ("mokahr.com", "feishu.cn", "larksuite.com", "zhiye.com", "hotjob.cn", "beisen.com", "greenhouse.io",
            "lever.co", "myworkdayjobs.com", "workday.com", "ashbyhq.com", "smartrecruiters.com", "linkedin.com",
-           "zhipin.com", "liepin.com", "51job.com", "zhaopin.com", "nowcoder.com", "dajie.com", "wondercv.com")
+           "zhipin.com", "liepin.com", "51job.com", "zhaopin.com", "nowcoder.com", "dajie.com", "wondercv.com",
+           "iguopin.com")
 
 
 def fetch_logo(url: str) -> tuple[bytes, str]:

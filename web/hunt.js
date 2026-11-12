@@ -1364,6 +1364,7 @@ function companiesTable() {
       d.companies.length > 0 && scanAllButton(),
       d.companies.length > 0 && h("button", { class: "btn sm", id: "hunt-history", onclick: () => historyModal() }, icon("history"), t("What the AI changed"))),
     d.companies.length > 0 && scanNews(),
+    d.companies.length > 0 && reportBar(),
     languagesBar(d.companies),
     dbView({ table: "companies", props: companyProps(), rows: shown, rowId: (c) => c.id, open: (c) => openHunt("company", c.id),
       defaults: [{ id: "v1", name: t("All companies") }, { id: "v2", name: t("Map"), layout: "map" }], repaint: paintHunt,
@@ -1372,6 +1373,50 @@ function companiesTable() {
         ? h("div", null, h("div", { class: "t" }, t("No companies yet")), h("p", null, t("Add the companies you're applying to; the AI can tell you about each one.")))
         : t("Nothing matches") }),
   ];
+}
+
+// recruiting systems several companies' AI-recorded routes call, offered to the user to report to the developer, so a
+// built-in scan gets written for everyone (jobhunt/report.py). Asked once a minute at most; nothing goes out unless
+// the user sends it: an issue filled in on GitHub, or the text copied
+let REPORT = { at: 0, data: null, busy: false };
+function reportBar() {
+  if (!REPORT.busy && Date.now() - REPORT.at > 60000) {
+    REPORT.busy = true;
+    api("GET", "/api/hunt/report").then((r) => { REPORT = { at: Date.now(), data: r, busy: false }; if (r.items.length) paintHunt(); })
+      .catch(() => { REPORT = { ...REPORT, at: Date.now(), busy: false }; });
+  }
+  const items = (REPORT.data && REPORT.data.items) || [];
+  if (!items.length) return null;
+  const done = async (how) => {
+    try { REPORT = { at: Date.now(), data: await api("POST", "/api/hunt/report", { keys: items.map((x) => x.key), how }), busy: false }; }
+    catch (e) { toast(e.message); return; }
+    paintHunt();
+  };
+  return h("div", { class: "note-bar", id: "hunt-report" }, icon("bolt"), h("span", { class: "nb-text" },
+    t("{n} recruiting system is still read by routes the AI recorded, one company at a time. Reported to the developer, it can get a built-in scan that reads every company on it without AI.",
+      { n: items.length }, "{n} recruiting systems are still read by routes the AI recorded, one company at a time. Reported to the developer, they can get a built-in scan that reads every company on them without AI.")),
+    h("button", { class: "btn sm", id: "hunt-report-open", onclick: () => reportModal(items, done) }, t("Review and report")),
+    h("button", { class: "btn sm ghost", id: "hunt-report-ignore", title: t("Don't offer these systems again"),
+      onclick: async () => { await done("ignored"); toast(t("These systems won't be offered again")); } }, t("Ignore")));
+}
+
+async function reportModal(items, done) {
+  const text = REPORT.data.text, url = REPORT.data.issue_url;
+  let copied = false;
+  const copy = h("button", { class: "btn sm", id: "report-copy", onclick: async () => {
+    try { await navigator.clipboard.writeText(text); } catch (_) { toast(t("Couldn't copy: select the text and copy it")); return; }
+    copied = true; toast(t("Copied"), { ms: 1200 });
+  } }, icon("clipboard"), t("Copy text"));
+  const body = h("div", { class: "report-body" },
+    h("p", null, t("This is everything that would be sent: the API paths and shared hosts that the routes of two or more of your companies call, and how many companies use them. No company names, notes or account details.")),
+    h("pre", { class: "report-text", tabindex: "0" }, text),
+    h("div", { class: "report-alt" }, h("span", { class: "muted" }, t("Submitting needs a GitHub account. Without one, copy the text and send it any way you like.")), copy));
+  const ok = await modal({ title: t("Report recruiting systems to the developer"), message: body, ok: t("Submit on GitHub") });
+  if (ok) {
+    try { await api("POST", "/api/open", { url }); } catch (e) { toast(e.message); return; }
+    await done("issue");
+    toast(t("GitHub opened in your browser: submit the issue there"));
+  } else if (copied) await done("copied");
 }
 
 function platformsTable() {

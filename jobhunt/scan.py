@@ -19,8 +19,8 @@ Each site is read the cheapest way that works, never by Claude once it has been 
 3. Neither yet: the site **needs Claude** to record its route; the window offers that (an automatic daily
    scan never starts Claude).
 
-北森 (jobhunt/beisen.py), Feishu on any domain (jobhunt/feishu.py), HotJob (jobhunt/hotjob.py) and 阿里's talent
-sites (jobhunt/alitalent.py) are read by the scan itself, career-ops or not. Routes of several companies that call one API are found by jobhunt/systems.py, so a
+北森 (jobhunt/beisen.py), Feishu on any domain (jobhunt/feishu.py), HotJob (jobhunt/hotjob.py), 阿里's talent
+sites (jobhunt/alitalent.py) and 国聘's company pages (jobhunt/iguopin.py) are read by the scan itself, career-ops or not. Routes of several companies that call one API are found by jobhunt/systems.py, so a
 system the AI keeps learning one site at a time gets a built-in scan of its own.
 """
 from __future__ import annotations
@@ -42,7 +42,7 @@ from core.browser import BrowserError, PageNotOpened
 from core.cdp import CdpError
 from core.i18n import t
 
-from . import alitalent, beisen, feishu, hotjob, patience, systems
+from . import alitalent, beisen, feishu, hotjob, iguopin, patience, report, systems
 from .postings import Postings
 from .store import Hunt, site_host, site_key
 
@@ -51,7 +51,7 @@ PROVIDERS = BRIDGE.parent / "vendor" / "career-ops"   # career-ops' providers, c
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # the job APIs the scan reads itself, whatever the site: a route calling one predates that scan
 BUILT_IN_APIS = {beisen.API.lower(), feishu.API.lower(), hotjob.API.lower().rstrip("/"),
-                 alitalent.API.lower(), alitalent.BATCHES.lower()}
+                 alitalent.API.lower(), alitalent.BATCHES.lower(), iguopin.API.lower(), iguopin.INFO.lower()}
 KNOWN = "providers.json"   # hunt/providers.json  {"<list address>": "beisen"}: the systems found reading each
 MAX_PAGES = 20   # of a recorded route, each with 2 minutes
 # a scan has no one waiting on it, and a user abroad reads sites on the far side of the world (user, 2026-11-02):
@@ -168,6 +168,8 @@ class Scanner:
         self.hotjob_detect: Callable[[str], bool | None] = hotjob.detect
         self.hotjob_read: Callable[[str], dict] = hotjob.read
         self._not_hotjob: set[str] = set()
+        # 国聘's exclusive company pages (jobhunt/iguopin.py): `<x>.iguopin.com`, told by the address alone
+        self.iguopin_read: Callable[[str], dict] = iguopin.read
         # 阿里's talent sites (jobhunt/alitalent.py): a company's talent.<x> domain, or its part of the group's campus site
         self.alitalent_detect: Callable[[str], bool | None] = alitalent.detect
         self.alitalent_read: Callable[[str], dict] = alitalent.read
@@ -260,7 +262,11 @@ class Scanner:
         for r in self._bridge([{"key": u, "name": name, "url": u} for u in unknown], detect=True):
             if not r.get("error"):
                 self._providers[r["url"]] = r.get("provider")
-        # HotJob first: only an address under a portal id is asked, so the others' checks (a page fetched for
+        # 国聘 first: its company pages are told by their address, so none of the checks below ever asks one
+        for u in dict.fromkeys(urls):
+            if not self._providers.get(u) and iguopin.detect(u):
+                self._providers[u] = iguopin.PROVIDER
+        # HotJob next: only an address under a portal id is asked, so the others' checks (a page fetched for
         # 北森's marks, a POST for Feishu's list) never go to a HotJob site
         for u in dict.fromkeys(urls):
             if self._providers.get(u) or u in self._not_hotjob:
@@ -588,12 +594,13 @@ class Scanner:
             # the lists the scan reads itself (北森, Feishu on any domain); the rest through career-ops' providers
             readers = {beisen.PROVIDER: (beisen.lists, self.beisen_read), feishu.PROVIDER: (feishu.lists, self.feishu_read),
                        hotjob.PROVIDER: (hotjob.lists, self.hotjob_read),
-                       alitalent.PROVIDER: (alitalent.lists, self.alitalent_read)}
+                       alitalent.PROVIDER: (alitalent.lists, self.alitalent_read),
+                       iguopin.PROVIDER: (iguopin.lists, self.iguopin_read)}
             ours = [(prov, u) for prov, (each, _) in readers.items()
                     for u in each([x for x in lists if self._providers.get(x) == prov])]
             # which of the company's sites a list stands for: 北森 reads a whole domain as one list, Feishu a portal
             same = {beisen.PROVIDER: beisen.origin, feishu.PROVIDER: lambda u: (feishu.origin(u), feishu.portal(u)),
-                    hotjob.PROVIDER: hotjob.key, alitalent.PROVIDER: alitalent.key}
+                    hotjob.PROVIDER: hotjob.key, alitalent.PROVIDER: alitalent.key, iguopin.PROVIDER: iguopin.key}
             missed: dict[str, str] = {}   # site -> "none" (nothing read off it this time) or "part" (some pages)
 
             def miss(u: str, what: str) -> None:
@@ -797,6 +804,22 @@ class Scanner:
     def shared_systems(self) -> list[dict]:
         """Every API the routes of several companies call that no built-in scan reads yet."""
         return systems.groups(self._route_pages(), self._read_built_in)
+
+    # ---- telling the developer which systems still need the AI (jobhunt/report.py) ----
+    def report_offers(self) -> dict:
+        """The systems worth reporting, not yet reported or ignored: {"items", "text", "issue_url"}."""
+        pages = self._route_pages()
+        done = report.load(self.hunt._load(report.FILE))
+        items = [x for x in report.offers(pages, self._read_built_in) if x["key"] not in done]
+        body = report.text(items) if items else ""
+        return {"items": items, "text": body, "issue_url": report.issue_url(items, body) if items else ""}
+
+    def mark_reported(self, keys: list[str], how: str) -> None:
+        """Kept so the same systems aren't offered again: sent as an issue, copied, or ignored by the user."""
+        with self.hunt.lock:
+            done = report.load(self.hunt._load(report.FILE))
+            done.update({k: {"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "how": how} for k in keys})
+            self.hunt._write(report.FILE, done)
 
     def kin(self, ref: str) -> list[dict]:
         """The other companies whose routes call an API this company's route calls (no built-in scan reads it)."""

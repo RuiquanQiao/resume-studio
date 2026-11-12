@@ -1723,6 +1723,48 @@ def test_an_open_cards_head_stays_at_the_top_and_folds_from_there(page, server):
     pg.wait_for_selector(".hunt-wrap:not(.is-page)")
 
 
+def test_a_system_the_ai_reads_one_company_at_a_time_is_offered_to_report(page, server):
+    """User, 2026-11-12: many companies on a system the app can't read built in each cost the AI; the developer
+    should hear of it. The companies table offers the report; the user sees the whole text first and sends it
+    on GitHub (or copies it), or ignores it; either way the same systems aren't offered again."""
+    pg = page
+    hunt = server.inst.hunt
+    for name in ("星河科技", "远山能源"):
+        c = hunt.add_company({"name": name, "site": f"https://{len(name)}{name[0]}.joinus.example/job"})
+        hunt.scanner.postings.set_scan_state(c["id"], route={"pages": [{"url": c["site"],
+            "script": "async (h) => { await fetch('https://api.joinus.example/api/v2/job/search'); return {postings: []}; }"}]})
+    pg.keyboard.press("Control+3")
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.evaluate("() => { REPORT.at = 0; paintHunt(); }")
+    pg.wait_for_selector("#hunt-report")
+    assert "1 套招聘系统" in pg.inner_text("#hunt-report")
+    pg.click("#hunt-report-open")
+    pg.wait_for_selector(".modal .report-text")
+    text = pg.inner_text(".modal .report-text")
+    assert "/api/v2/job/search" in text and "api.joinus.example" in text and "星河" not in text and "远山" not in text
+    assert text.startswith("以下招聘系统")                                     # in the user's language: every word read
+    pg.wait_for_timeout(300)                                                    # past the dialog's fade-in
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.wait_for_timeout(300)                                                # past the buttons' colour transition
+        pg.screenshot(path=str(ART / f"hunt-report-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+    pg.click(".modal .acts .btn.primary")                                      # Submit on GitHub: opened, kept as sent
+    pg.wait_for_selector("#hunt-report", state="detached")
+    done = json.loads((hunt.dir / "reported.json").read_text(encoding="utf-8"))
+    assert [v["how"] for v in done.values()] == ["issue"]
+    # a new system later is offered again; ignored, it goes for good
+    for name in ("长风集团", "青山制造"):
+        c = hunt.add_company({"name": name, "site": f"https://{len(name)}{name[0]}.hire.example/"})
+        hunt.scanner.postings.set_scan_state(c["id"], route={"pages": [{"url": c["site"],
+            "script": "async (h) => { await fetch('/rest/hire/jobs/page'); return {postings: []}; }"}]})
+    pg.evaluate("() => { REPORT.at = 0; paintHunt(); }")
+    pg.wait_for_selector("#hunt-report")
+    pg.click("#hunt-report-ignore")
+    pg.wait_for_selector("#hunt-report", state="detached")
+    assert sorted(v["how"] for v in json.loads((hunt.dir / "reported.json").read_text(encoding="utf-8")).values()) == ["ignored", "issue"]
+
+
 def test_a_browser_about_to_close_itself_can_be_kept_open(page, server):
     """A browser work started says so a few seconds before it closes itself; Keep it open makes it the user's."""
     b = server.inst.browser

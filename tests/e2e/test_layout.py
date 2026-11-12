@@ -357,6 +357,18 @@ def sites_the_ai_tried(c):
     hunt.scanner.postings.set_scan_state("C1", needs="claude", unrouted=[intern, long], tried={intern: "2026-11-04T11:44:12"})
 
 
+def systems_to_report(c):
+    """Two companies whose AI-recorded routes call one API no built-in scan reads, a long path among them: the
+    companies table offers to report the system to the developer (jobhunt/report.py, 2026-11-12)."""
+    filled_companies(c)
+    hunt = c.server.inst.hunt
+    long = "/api/recruitment-platform/v3/campus-and-experienced/positions/search-with-filters-and-pagination"
+    for cid in ("C1", "C2"):
+        hunt.scanner.postings.set_scan_state(cid, route={"pages": [{"url": f"https://{cid.lower()}.joinus.example/job",
+            "script": f"async (h) => {{ await fetch('https://api.joinus.example{long}?t=8812{cid[1:]}3456'); "
+                      "await fetch('/api/v2/job/search'); return {postings: []}; }"}]})
+
+
 def read_failed(c):
     """A role added from the open postings (its row says so), whose page then didn't read."""
     filled_companies(c)
@@ -582,7 +594,8 @@ STATES = [
             openSettings(); }"""), click(".modal .agent-provider-select"), wait(".listbox .lb-hint.warn")),
           [".listbox .lb-hint.warn", ".listbox .lb-desc"]),
     # a chat on Codex whose sign-in ran out: the reply says how to sign in again
-    State("chat, another agent signed out", then(wait("#chat-input"), js("""async () => {
+    # (after startup: a chat loaded by startup once replaced these messages under load, 2026-11-12)
+    State("chat, another agent signed out", then(wait("#chat-input"), lambda pg, c: pg.wait_for_function("() => ui.started"), js("""async () => {
             await pickAgent(agentOf("codex"));
             ui.claude.agents = ui.claude.agents.map((a) => a.id === "codex" ? { ...a, signed_in: false } : a);
             ui.chat.messages = [{ role: "user", text: "你好", files: [] }, { role: "assistant", blocks: [], error: "Not logged in. Run codex login." }];
@@ -632,6 +645,11 @@ STATES = [
           [".modal .fm-notice-slot .fm-notice", ".modal .fm-notice-hint"], prepare=companies),
     State("applying, an application's page", then(applying("apps"), click(".dbv-title >> nth=0")), ["#app-status"],
           prepare=companies),
+    State("applying, a recruiting system offered to report", then(applying("companies"), wait("#hunt-report")),
+          ["#hunt-report", "#hunt-report-open", "#hunt-report-ignore"], prepare=systems_to_report),
+    State("applying, the report to the developer", then(applying("companies"), wait("#hunt-report"), click("#hunt-report-open"),
+                                                       wait(".modal .report-text")),
+          [".modal .report-text", ".modal #report-copy", ".modal .report-alt .muted"], prepare=systems_to_report),
     State("applying, what the AI changed, nothing yet", then(applying("companies"), click("#hunt-history"), wait(".hist-modal .hist-empty")),
           [".hist-modal .hist-empty"], prepare=companies),
     State("applying, what the AI changed, long changes, one undone",

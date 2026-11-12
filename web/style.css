@@ -574,6 +574,14 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .modal input { width: 100%; height: 34px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 0 10px; background: var(--panel); margin-bottom: 14px; }
 .modal input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 .modal .acts { display: flex; justify-content: flex-end; gap: 8px; }
+/* the report to the developer (web/hunt.js reportModal): the exact text sent, readable and scrollable, never cut */
+.modal:has(.report-body) { width: min(600px, 92vw); }
+.report-text { margin: 0 0 12px; max-height: min(46vh, 360px); overflow: auto; padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--panel-2); font: 12px/1.55 var(--mono); color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.report-text:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.report-alt { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; font-size: 12.5px; }
+.report-alt .muted { flex: 1; min-width: 0; }
+.report-alt .btn { flex: none; }
 /* what the AI changed (web/hunt.js historyModal): one row per change, undo on the right */
 .modal.hist-modal { width: min(680px, 94vw); }
 .hist-list { max-height: min(60vh, 560px); overflow-y: auto; margin: 0 -20px 14px; padding: 0 20px; border-top: 1px solid var(--line); }
