@@ -12,7 +12,7 @@ docs/JOB_HUNT.md). Other kinds of applying need other records:
 |---|---|---|
 | China's talent programmes (人才引进) | programmes of a city, province, university or employer: who qualifies, what they give (安家费, housing, research funds, 编制), when to apply | the "employer" is a policy, not a company with roles |
 | Civil service and public institutions (考公考编) | positions from a position table (职位表): exam type, unit, position code, quotas, requirements, exam dates | one announcement, thousands of positions filtered by degree and major; the stages are exams, not interviews |
-| PhD applications | programmes and supervisors per university and country: funding, deadlines, contact with the supervisor (套磁) | the target is a person or a programme, the materials are a research proposal and references |
+| PhD applications | six linked tables (2026-11-12): universities, programmes and positions, supervisors and contact with them (套磁), scholarships, referees, documents | the target is a person or a programme, funding is often a separate competition, the materials are a research proposal and references |
 
 So the core stays the same (the experience library, resumes, the AI chat, the browser, the calendar) and each kind
 of applying is a **plugin**: its own records, described as data, plus a guide for the AI. Anyone can make one and
@@ -73,7 +73,13 @@ Where plugins live:
 ```
 
 Property types: `title` (exactly one, the record's name), `text` (one line), `longtext` (wraps, several lines),
-`number`, `url`, `date` (YYYY-MM-DD), `select` (one of `options`; `"free": true` lets the user type new ones).
+`number`, `url`, `date` (YYYY-MM-DD), `select` (one of `options`; `"free": true` lets the user type new ones),
+`relation` (2026-11-12: a link to records of another collection of the same plugin, `"to": "<collection id>"`;
+`"multiple": true` for several). A relation is kept as the linked record's id (`"R3"`, or a list of them); the AI may
+give a record's exact title instead. In the window a single link is a select of the other collection's records (it
+groups, filters and sorts), several are chips; both are picked in a list that finds by title and can add a new record
+to the other collection. A record's page lists the records that link to it (a university's programmes and
+supervisors), with a button that adds one already linked. Deleting a record unlinks it everywhere.
 Every label is a `{lang: text}` map; a language it doesn't have falls back to `en`, then to any. A plugin should
 carry every interface language of the app (en, zh, ja, ko, de, fr, es): the tests check bundled ones do.
 

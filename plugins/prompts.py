@@ -17,6 +17,8 @@ def _prop(p: dict) -> str:
         s += ": " + ", ".join(f"{o['value']}={manifest.local(o['label'], 'zh')}" for o in p["options"])
         if p.get("free"):
             s += ", or a new one"
+    if p["type"] == "relation":
+        s += f" to `{p['to']}`: " + ("a list of records' ids or titles" if p.get("multiple") else "a record's id or title")
     return s + ")"
 
 
@@ -49,6 +51,9 @@ def tools_note(data_path: str, registry: Any, state_dir: Any) -> str:
               f"- `{j} delete <plugin> <collection> <id>` deletes one; ask the user first.",
               "- A value is checked against its property: a select takes one of its values (or its label), a date is "
               "YYYY-MM-DD, a url starts with http(s)://. A key the collection doesn't have is refused.",
+              "- A relation links a record to records of another collection of the same plugin (a programme to its "
+              "university): give the linked record's id (R3) or its exact title; add that record first when it isn't "
+              "there yet, so nothing is written twice. Deleting a record unlinks it everywhere.",
               "",
               "How to work them:",
               "- **Before working on a plugin's records, read its guide** (once per chat): where the official notices are, "

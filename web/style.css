@@ -1990,6 +1990,27 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .market-text .hint { font-size: 12.5px; color: var(--text-2); }
 .market-row > .btn, .market-row > .state-chip { flex: none; }
 .grid2.plugin-pair > .field { justify-content: flex-start; }
+/* relations: a linked record is a chip that opens it (like a role's chip); a record's page lists what links to it */
+.plugin-rels { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+.plugin-rel { display: inline-block; max-width: 100%; height: 22px; line-height: 22px; padding: 0 8px; border: 0; border-radius: 6px;
+  background: var(--hover); color: var(--text); font: inherit; font-size: 12.5px; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plugin-rel:hover, .plugin-rel:focus-visible { background: var(--accent-soft); color: var(--accent); outline: none; }
+.dbv-td .plugin-rels { flex-wrap: nowrap; overflow: hidden; }
+.dbv-td.wrap .plugin-rels { flex-wrap: wrap; }
+.dbv-td .plugin-rel { flex: 0 1 auto; min-width: 0; }
+.plugin-relfield { min-height: 30px; }
+.plugin-relbtn { flex: none; }
+.plugin-relpick .lb-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plugin-relpick .lb-empty { padding: 6px 10px; font-size: 12.5px; }
+.plugin-linklist { display: grid; }
+.plugin-linkrow { display: flex; align-items: center; gap: 10px; min-width: 0; width: 100%; padding: 7px 8px; border: 0; border-radius: 6px;
+  background: none; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.plugin-linkrow + .plugin-linkrow { border-top: 1px solid var(--line); border-radius: 0; }
+.plugin-linkrow:hover, .plugin-linkrow:focus-visible { background: var(--hover); outline: none; }
+.plugin-linkname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plugin-linkrow > .state-chip, .plugin-linkdate { flex: none; }
+.plugin-linkdate { font-size: 12.5px; color: var(--text-3); }
 /* with plugins on, the tabs can outgrow a narrow window: the row scrolls sideways (a thin bar), the tab on keeps in view */
 .hunt-tabs { scrollbar-width: thin; }
 .hunt-tabs > .hunt-tab { flex: none; }

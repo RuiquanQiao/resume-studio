@@ -2183,5 +2183,13 @@
  "Other kinds of applying, each a workspace of its own in the top bar: talent programmes, civil service exams, PhDs… Turning one off keeps its records.": "다른 유형의 지원입니다. 각 플러그인은 상단 표시줄에 별도의 작업 공간을 갖습니다: 인재 유치, 공무원 시험, 박사 과정 등. 사용을 중지해도 기록은 유지됩니다.",
  "Tell {agent} what you have heard of, or ask it to look: it fills the table from official sources and says where each fact comes from.": "알고 계신 정보를 {agent}에게 알려 주시거나 조사를 요청해 주십시오. {agent}이(가) 공식 출처를 바탕으로 표를 작성하고 각 정보의 출처를 밝힙니다.",
  "{agent}, with {plugin}": "{agent} · {plugin}",
- "{name} is on: it is in the top bar": "{name}을(를) 사용합니다. 상단 표시줄에서 열 수 있습니다"
+ "{name} is on: it is in the top bar": "{name}을(를) 사용합니다. 상단 표시줄에서 열 수 있습니다",
+ "Find or add a {item}": "{item} 찾기 또는 추가",
+ "Link a {item}": "{item} 연결",
+ "New {item} “{name}”": "새 {item} ‘{name}’",
+ "No {items} yet: type a name to add one.": "아직 {items}이(가) 없습니다. 이름을 입력하면 추가됩니다.",
+ "None linked yet.": "아직 연결된 기록이 없습니다.",
+ "{field}: a record's id or title": "{field}: 기록의 ID 또는 제목이어야 합니다",
+ "{field}: one record, not a list": "{field}: 기록 하나만 연결할 수 있습니다",
+ "{field}: {collection} has no record “{value}”": "{field}: {collection}에 ‘{value}’이(가) 없습니다"
 }

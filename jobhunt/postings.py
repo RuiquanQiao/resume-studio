@@ -29,7 +29,7 @@ import re
 import threading
 import unicodedata
 import time
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
 
 from core.i18n import t
@@ -123,7 +123,10 @@ _WORD = "[^\\W" + _CJK + "]"
 
 
 def _fold(s: str) -> str:
-    s = unicodedata.normalize("NFD", str(s or ""))   # split() below takes no-break spaces too
+    s = str(s or "")
+    if s.isascii():   # nothing to take apart: most English titles, and the cost of the first look at 66,000 titles
+        return " ".join(s.split()).casefold()
+    s = unicodedata.normalize("NFD", s)   # split() below takes no-break spaces too
     return " ".join("".join(ch for ch in s if not unicodedata.combining(ch)).split()).casefold()
 
 
@@ -149,12 +152,35 @@ def keyword_hits(title: str, keyword: str) -> bool:
     return _hits(_fold(title), keyword)
 
 
+@functools.lru_cache(maxsize=256)
+def _any_of(keywords: tuple) -> Callable[[str], bool]:
+    """Whether a folded title hits any of these keywords, as one test: the one-part keywords joined into one pattern,
+    searched once, and the "AI+产品" ones part by part. Testing each keyword alone made 1.5 million calls for 66,000
+    titles and 3 tracks, 3 s every time the postings changed (2026-11-12)."""
+    one, many = [], []
+    for k in keywords:
+        parts = _keyword(k) if k else None
+        if parts is None:
+            continue
+        if len(parts) == 1:
+            one.append(parts[0].pattern if not isinstance(parts[0], str) else re.escape(parts[0]))
+        else:
+            many.append(parts)
+    rx = re.compile("|".join(one)) if one else None
+
+    def test(folded: str) -> bool:
+        if rx is not None and rx.search(folded):
+            return True
+        return any(all((x in folded) if isinstance(x, str) else x.search(folded) is not None for x in parts) for parts in many)
+    return test
+
+
 def _matches(folded: str, keywords: Any, exclude: Any) -> bool:
-    if exclude and any(_hits(folded, x) for x in exclude if x):
+    if exclude and _any_of(tuple(exclude))(folded):
         return False
     if not keywords:
         return True
-    return any(_hits(folded, k) for k in keywords if k)
+    return _any_of(tuple(keywords))(folded)
 
 
 def matches(title: str, keywords: list[str], exclude: list[str] | None = None) -> bool:

@@ -139,6 +139,49 @@ def test_records_are_checked_against_their_properties(tmp_path):
     assert recs.add("things", {"title": "Three"})["id"] == "R3"                                     # ids never reused
 
 
+def linked() -> dict:
+    """good(), with a second collection whose records link to "things": one each, and several."""
+    m = good()
+    m["collections"].append({"id": "parts", "name": {"en": "Parts"}, "item": {"en": "part"}, "properties": [
+        {"key": "title", "type": "title", "label": {"en": "Name"}},
+        {"key": "thing", "type": "relation", "to": "things", "label": {"en": "Thing"}},
+        {"key": "uses", "type": "relation", "to": "things", "multiple": True, "label": {"en": "Used by"}}]})
+    return m
+
+
+@pytest.mark.parametrize("change, says", [
+    (lambda p: p.update(to="nowhere"), "to names a collection of this plugin"),
+    (lambda p: p.pop("to"), "names the collection it links to"),
+    (lambda p: p.update(multiple="yes"), "multiple is true or false"),
+    (lambda p: p.update(type="text"), "only a relation has to"),
+])
+def test_a_relation_links_to_a_collection_of_its_own_plugin(change, says):
+    m = linked()
+    change(m["collections"][1]["properties"][1])
+    with pytest.raises(manifest.ManifestError, match=says):
+        manifest.check(m)
+
+
+def test_relations_take_ids_or_titles_and_a_deleted_record_is_unlinked_everywhere(tmp_path):
+    """2026-11-12: PhD applications are linked tables (a programme's university, a referee's programmes)."""
+    recs = Records(tmp_path, manifest.check(linked()))
+    anu = recs.add("things", {"title": "ANU"})["id"]
+    nus = recs.add("things", {"title": "NUS"})["id"]
+    p = recs.add("parts", {"title": "PhD in CS", "thing": " anu ", "uses": [anu, "NUS", anu]})   # a title, any case; once each
+    assert p["thing"] == anu and p["uses"] == [anu, nus]
+    for bad, says in ([{"thing": "MIT"}, "Things has no record “MIT”"], [{"thing": [anu, nus]}, "one record, not a list"],
+                      [{"uses": [{"id": anu}]}, "a record's id or title"]):
+        with pytest.raises(ValueError, match=says):
+            recs.edit("parts", p["id"], bad)
+    assert recs.edit("parts", p["id"], {"uses": []}).get("uses") is None                        # [] clears it
+    recs.edit("parts", p["id"], {"uses": [anu, nus]})
+    recs.delete("things", anu)
+    got = recs.get("parts", p["id"])
+    assert "thing" not in got and got["uses"] == [nus]                                            # unlinked, the rest kept
+    recs.delete("things", nus)
+    assert "uses" not in recs.get("parts", p["id"])
+
+
 def zipped(files: dict, top: str = "") -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:

@@ -2357,5 +2357,13 @@
  "Other kinds of applying, each a workspace of its own in the top bar: talent programmes, civil service exams, PhDs… Turning one off keeps its records.": "D'autres types de candidatures, chacun disposant de son propre espace de travail dans la barre supérieure : programmes de talents, concours de la fonction publique, doctorats… Désactiver un plugin conserve ses fiches.",
  "Tell {agent} what you have heard of, or ask it to look: it fills the table from official sources and says where each fact comes from.": "Indiquez à {agent} ce que vous savez déjà, ou demandez-lui de chercher : {agent} remplit le tableau à partir de sources officielles et indique la source de chaque information.",
  "{agent}, with {plugin}": "{agent} · {plugin}",
- "{name} is on: it is in the top bar": "{name} est activé et disponible dans la barre supérieure"
+ "{name} is on: it is in the top bar": "{name} est activé et disponible dans la barre supérieure",
+ "Find or add a {item}": "Chercher ou ajouter : {item}",
+ "Link a {item}": "Lier : {item}",
+ "New {item} “{name}”": "Nouveau : {item} « {name} »",
+ "No {items} yet: type a name to add one.": "Aucun élément dans « {items} » : saisissez un nom pour en ajouter un.",
+ "None linked yet.": "Rien de lié pour l'instant.",
+ "{field}: a record's id or title": "{field} : l'identifiant ou le titre d'un enregistrement",
+ "{field}: one record, not a list": "{field} : un seul enregistrement, pas une liste",
+ "{field}: {collection} has no record “{value}”": "{field} : {collection} n'a pas d'enregistrement « {value} »"
 }

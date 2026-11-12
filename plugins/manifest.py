@@ -9,7 +9,7 @@ from typing import Any
 
 FORMAT = 1                                    # the plugin format this app reads ("app": ">=1")
 LANGS = ("en", "zh", "ja", "ko", "de", "fr", "es")
-TYPES = ("title", "text", "longtext", "number", "url", "date", "select")
+TYPES = ("title", "text", "longtext", "number", "url", "date", "select", "relation")
 COLORS = ("gray", "blue", "green", "yellow", "orange", "red", "purple")
 LAYOUTS = ("table", "board", "calendar", "gantt")
 ID = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$")
@@ -95,6 +95,10 @@ def check(m: Any) -> dict:
     seen = set()
     for c in cols:
         _collection(c, seen)
+    for c in cols:   # a relation links to another collection of the same plugin
+        for p in c["properties"]:
+            if p["type"] == "relation" and p["to"] not in seen:
+                raise ManifestError(f"collection {c['id']}.{p['key']}: to names a collection of this plugin, not {p['to']!r}")
     return m
 
 
@@ -116,7 +120,7 @@ def _collection(c: Any, seen: set) -> None:
     for p in props:
         if not isinstance(p, dict):
             raise ManifestError(f"{where}: a property is an object")
-        _keys(p, {"key", "type", "label", "options", "free", "hint", "width", "hidden"}, f"{where} property")
+        _keys(p, {"key", "type", "label", "options", "free", "hint", "width", "hidden", "to", "multiple"}, f"{where} property")
         k = p.get("key")
         if not isinstance(k, str) or not KEY.match(k) or k in keys or k in RESERVED:
             raise ManifestError(f"{where}: property key {k!r}: lowercase, unique, not {sorted(RESERVED)}")
@@ -147,6 +151,13 @@ def _collection(c: Any, seen: set) -> None:
                 raise ManifestError(f"{where}.{k}: free is true or false")
         elif "options" in p or "free" in p:
             raise ManifestError(f"{where}.{k}: only a select has options")
+        if p["type"] == "relation":
+            if not isinstance(p.get("to"), str) or not KEY.match(p["to"]):
+                raise ManifestError(f"{where}.{k}: a relation names the collection it links to (to)")
+            if "multiple" in p and not isinstance(p["multiple"], bool):
+                raise ManifestError(f"{where}.{k}: multiple is true or false")
+        elif "to" in p or "multiple" in p:
+            raise ManifestError(f"{where}.{k}: only a relation has to and multiple")
         keys[k] = p
     if sum(p["type"] == "title" for p in keys.values()) != 1:
         raise ManifestError(f"{where}: exactly one title property")

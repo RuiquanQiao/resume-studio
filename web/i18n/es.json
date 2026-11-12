@@ -2357,5 +2357,13 @@
  "Other kinds of applying, each a workspace of its own in the top bar: talent programmes, civil service exams, PhDs… Turning one off keeps its records.": "Otros tipos de solicitud, cada uno con su propio espacio de trabajo en la barra superior: programas de talento, oposiciones, doctorados… Al desactivar uno se conservan sus registros.",
  "Tell {agent} what you have heard of, or ask it to look: it fills the table from official sources and says where each fact comes from.": "Indique a {agent} lo que ya sabe, o pídale que lo busque: {agent} completa la tabla con fuentes oficiales e indica de dónde procede cada dato.",
  "{agent}, with {plugin}": "{agent} · {plugin}",
- "{name} is on: it is in the top bar": "{name} está activado y disponible en la barra superior"
+ "{name} is on: it is in the top bar": "{name} está activado y disponible en la barra superior",
+ "Find or add a {item}": "Buscar o añadir: {item}",
+ "Link a {item}": "Vincular: {item}",
+ "New {item} “{name}”": "Nuevo: {item} «{name}»",
+ "No {items} yet: type a name to add one.": "Aún no hay nada en «{items}»: escriba un nombre para añadir uno.",
+ "None linked yet.": "Aún no hay nada vinculado.",
+ "{field}: a record's id or title": "{field}: el identificador o el título de un registro",
+ "{field}: one record, not a list": "{field}: un solo registro, no una lista",
+ "{field}: {collection} has no record “{value}”": "{field}: {collection} no tiene ningún registro «{value}»"
 }

@@ -448,6 +448,29 @@ def plugin_records(c):
         assert st == 200
 
 
+def phd_records(c):
+    """PhD applications as linked tables (2026-11-12): a university with a long name, programmes, supervisors and a
+    referee linked to them, so relation chips, a record's backlinks and the picker meet long text."""
+    plugin_records(c)
+    s = c.server
+    add = lambda col, f: s.req("POST", f"/api/plugins/phd-applications/records/{col}", f)[1]["id"]
+    long_uni = "Eidgenössische Technische Hochschule Zürich (ETH Zürich) — Department of Computer Science"
+    uni = add("universities", {"title": long_uni, "country": "Switzerland", "city": "Zürich", "shortlist": "applying"})
+    anu = add("universities", {"title": "Australian National University", "country": "Australia", "shortlist": "considering"})
+    sup = [add("supervisors", {"title": n, "university": u, "contact": "emailed", "first_email": "2026-11-02"})
+           for n, u in (("Prof. Maximilian Alexander von Hohenzollern-Sigmaringen", uni), ("Dr. Lin", anu))]
+    progs = [add("programs", {"title": t, "university": u, "supervisors": sup, "stage": st, "apply_by": d})
+             for t, u, st, d in (("Doctoral position in trustworthy multi-agent systems for large language models", uni, "preparing", "2026-12-15"),
+                                 ("PhD in Computer Science (RTP scholarship round 2)", anu, "researching", "2027-03-31"))]
+    add("referees", {"title": "Prof. Wang", "programs": progs, "stage": "asked"})
+
+
+def phd_one_programme(c):
+    """A programme and no universities yet: its university picker says how to add one."""
+    plugin_records(c)
+    c.server.req("POST", "/api/plugins/phd-applications/records/programs", {"title": "PhD in Computer Science"})
+
+
 def plugin_ws(pid="civil-service", collection="positions"):
     """A plugin's own workspace (a button in the top bar), at one of its tables."""
     tab = f"p.{pid}.{collection}"
@@ -679,6 +702,20 @@ STATES = [
     State("plugins, a record's page", then(plugin_ws(), click("#pluginspace .dbv-title >> nth=0"), wait("#pluginspace .plugin-pair")),
           ["#pluginspace .plugin-pair .select", "#pluginspace .plugin-pair input[type=date]"], prepare=plugin_records),
     State("plugins, a plugin's empty table", then(plugin_ws("phd-applications", "programs")), ["#pluginspace .plugin-empty"], prepare=plugin_records),
+    State("plugins, linked records in a table", then(js("() => { PW.col['phd-applications'] = 'programs'; }"), plugin_ws("phd-applications", "programs")),
+          ["#pluginspace .dbv-view[data-table='p.phd-applications.programs'] tbody tr", "#pluginspace .dbv-td .plugin-rel"], prepare=phd_records),
+    State("plugins, a record's page with what links to it",
+          then(js("() => { PW.col['phd-applications'] = 'universities'; }"), plugin_ws("phd-applications", "universities"),
+               click("#pluginspace .dbv-title >> nth=0"), wait("#pluginspace .plugin-backlinks .plugin-linkrow")),
+          ["#pluginspace .plugin-backlinks .plugin-linkrow", "#pluginspace .plugin-backlinks .state-chip"], prepare=phd_records),
+    State("plugins, picking linked records",
+          then(js("() => { PW.col['phd-applications'] = 'programs'; }"), plugin_ws("phd-applications", "programs"),
+               click("#pluginspace .dbv-title >> nth=0"), click("#pluginspace .plugin-relbtn[data-key=supervisors]"), wait(".plugin-relpick .lb-opt.on")),
+          [".plugin-relpick .lb-opt", ".plugin-relpick input"], prepare=phd_records),
+    State("plugins, picking from a table with nothing in it",
+          then(js("() => { PW.col['phd-applications'] = 'programs'; }"), plugin_ws("phd-applications", "programs"),
+               click("#pluginspace .dbv-title >> nth=0"), click("#pluginspace .plugin-relbtn[data-key=university]"), wait(".plugin-relpick .lb-empty")),
+          [".plugin-relpick .lb-empty"], prepare=phd_one_programme),
     State("plugins, in Settings", then(js("() => openSettings()"), wait("#plugins-settings .plugin-row"),
           js("() => document.querySelector('#plugins-settings').scrollIntoView()")), ["#plugins-settings .plugin-row .check-row"],
           prepare=plugin_records),

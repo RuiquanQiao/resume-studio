@@ -94,6 +94,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         try:
             posts.slim_file()
             posts.summary()
+            place_list.known("t:CN")   # the list of places, read once (1.2 s): each company's research language needs it
         except Exception:  # noqa: BLE001 (a file being written: the first look reads it then)
             pass
     threading.Thread(target=warm, name="hunt-warm-postings", daemon=True).start()

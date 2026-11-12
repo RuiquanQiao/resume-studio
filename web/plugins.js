@@ -158,11 +158,88 @@ async function savePluginField(pid, cid, row, key, value) {
   return r;
 }
 
+// ---- relations: a record linked to records of another collection of the same plugin (a programme to its university)
+const relTarget = (p, prop) => p.manifest.collections.find((x) => x.id === prop.to);
+const relIds = (v) => Array.isArray(v) ? v : v ? [v] : [];
+const relTitle = (p, prop, id) => {
+  const tc = relTarget(p, prop), r = tc && pluginRows(p.id, tc.id).find((x) => x.id === id);
+  return r ? r[titleProp(tc).key] || t("Untitled") : "";
+};
+const relText = (p, prop, v) => relIds(v).map((id) => relTitle(p, prop, id)).filter(Boolean).join(", ");
+// a linked record as a chip: clicking it opens that record
+function relChip(p, prop, id) {
+  const name = relTitle(p, prop, id);
+  if (!name) return null;
+  return h("button", { type: "button", class: "plugin-rel", "data-rel": id, title: name,
+    onclick: (e) => { e.stopPropagation(); openPluginRecord(p.id, prop.to, id); } }, name);
+}
+
+// pick the linked record(s): typing finds one by its title, or adds a new one to the other collection; several
+// (multiple) are ticked on and off, the list staying open
+function relPicker(anchor, p, prop, row, save) {
+  const tc = relTarget(p, prop), tkey = titleProp(tc).key;
+  let cur = relIds(row[prop.key]);
+  const input = h("input", { type: "text", class: "dbv-optinput", spellcheck: "false", "aria-label": L(prop.label),
+    placeholder: t("Find or add a {item}", { item: L(tc.item) }) });
+  const list = h("div", { class: "listbox dbv-pop dbv-options", role: "listbox", "aria-label": L(prop.label), "aria-multiselectable": String(!!prop.multiple) });
+  const put = async (ids) => {
+    cur = ids;
+    try { await save(prop.multiple ? ids : ids[0] || ""); } catch (e) { toast(e.message); }
+  };
+  const fill = () => {
+    const q = input.value.trim(), qq = q.toLowerCase();
+    const rows = pluginRows(p.id, tc.id);
+    const shown = rows.filter((r) => !qq || String(r[tkey] || "").toLowerCase().includes(qq));
+    const opt = (r) => {
+      const on = cur.includes(r.id);
+      return h("button", { type: "button", role: "option", class: "lb-opt" + (on ? " on" : ""), "aria-selected": String(on), "data-value": r.id,
+        onclick: () => {
+          if (!prop.multiple) { (on ? Promise.resolve() : put([r.id])).then(closeFloat); return; }
+          put(on ? cur.filter((x) => x !== r.id) : [...cur, r.id]).then(fill);
+        } },
+      h("span", { class: "lb-check" }, on ? icon("check") : null), h("span", { class: "lb-text" }, r[tkey] || t("Untitled")));
+    };
+    list.replaceChildren(...shown.map(opt),
+      ...(q && !rows.some((r) => String(r[tkey] || "").toLowerCase() === qq) ? [h("button", { type: "button", role: "option", class: "lb-opt dbv-newopt",
+        onclick: async () => {
+          let r;
+          try { r = await api("POST", `/api/plugins/${p.id}/records/${tc.id}`, { [tkey]: q }); }
+          catch (e) { toast(e.message); return; }
+          (PL.records[p.id] = PL.records[p.id] || {})[tc.id] = [...pluginRows(p.id, tc.id), r];
+          input.value = "";
+          await put(prop.multiple ? [...cur, r.id] : [r.id]);
+          if (prop.multiple) fill(); else closeFloat();
+        } }, h("span", { class: "lb-check" }, icon("plus")), t("New {item} “{name}”", { item: L(tc.item), name: q }))] : []),
+      ...(cur.length && !q ? [h("button", { type: "button", role: "option", class: "lb-opt dbv-clearopt", onclick: () => put([]).then(closeFloat) },
+        h("span", { class: "lb-check" }, icon("x")), t("Clear"))] : []),
+      ...(!rows.length && !q ? [h("div", { class: "muted lb-empty" }, t("No {items} yet: type a name to add one.", { items: L(tc.name) }))] : []));
+  };
+  input.addEventListener("input", fill);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); const first = list.querySelector(".lb-opt"); if (first) first.focus(); }
+    if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); const first = list.querySelector(".lb-opt"); if (first) first.click(); }
+  });
+  list.addEventListener("keydown", (e) => menuKeys(e, list, ".lb-opt"));
+  fill();
+  openFloat(anchor, h("div", { class: "menu dbv-pop dbv-free plugin-relpick" }, input, list),
+    { minWidth: Math.max(240, anchor.offsetWidth), onClose: () => { if (typeof dbvAfterClose === "function") dbvAfterClose(); paintPluginspace(); }, focus: input });
+}
+
 function pluginProps(p, c) {
   const set = (prop) => (row, v) => savePluginField(p.id, c.id, row, prop.key, v).then(() => paintPluginspace());
   return c.properties.map((prop) => {
     const base = { key: prop.key, label: L(prop.label), width: prop.width, hidden: !!prop.hidden, get: (r) => r[prop.key] ?? "" };
     if (prop.type === "title") return { ...base, type: "title" };
+    if (prop.type === "relation") {
+      const tc = relTarget(p, prop);
+      // saved without a repaint: the picker stays open over its cell, and the table is drawn again when it closes
+      const rel = { edit: (td, row) => relPicker(td, p, prop, row, (v) => savePluginField(p.id, c.id, row, prop.key, v)),
+        render: (r) => h("span", { class: "plugin-rels" }, relIds(r[prop.key]).map((id) => relChip(p, prop, id))) };
+      // one link: a select of the other collection's records, so it groups, filters and sorts like one
+      if (!prop.multiple) return { ...base, ...rel, type: "select", group: true,
+        options: () => pluginRows(p.id, tc.id).map((r) => ({ value: r.id, label: r[titleProp(tc).key] || t("Untitled"), cls: "s-plain" })) };
+      return { ...base, ...rel, type: "text", get: (r) => relText(p, prop, r[prop.key]) };
+    }
     if (prop.type === "select") return { ...base, type: "select", group: true, free: !!prop.free, set: set(prop),
       options: () => [...(prop.options || []).map((o) => pluginChip(prop, o.value)),
         ...(prop.free ? [...new Set(pluginRows(p.id, c.id).map((r) => r[prop.key]).filter((v) => v && !optionOf(prop, v)))].map((v) => pluginChip(prop, v)) : [])] };
@@ -191,7 +268,7 @@ function pluginTable(tab) {
   const rows = pluginRows(p.id, c.id);
   const err = (PL.records[p.id] || {}).error;
   const q = PW.q.trim().toLowerCase();
-  const texts = (r) => c.properties.map((x) => x.type === "select" ? optionLabel(x, r[x.key]) : r[x.key]);
+  const texts = (r) => c.properties.map((x) => x.type === "select" ? optionLabel(x, r[x.key]) : x.type === "relation" ? relText(p, x, r[x.key]) : r[x.key]);
   const shown = q ? rows.filter((r) => texts(r).some((x) => String(x || "").toLowerCase().includes(q))) : rows;
   const search = h("input", { class: "hunt-search", type: "search", id: "plugin-search", value: PW.q, placeholder: t("Search"), spellcheck: "false",
     "aria-label": t("Search"), oninput: (e) => { PW.q = e.target.value; paintPluginspace(); } });
@@ -243,6 +320,15 @@ function pluginField(tab, prop) {
   const { p, c, row } = tab;
   const save = (v) => savePluginField(p.id, c.id, row, prop.key, v).catch((e) => toast(e.message));
   const hint = L(prop.hint);
+  if (prop.type === "relation") {
+    const tc = relTarget(p, prop);
+    const chips = relIds(row[prop.key]).map((id) => relChip(p, prop, id)).filter(Boolean);
+    const pick = h("button", { type: "button", class: "btn sm ghost plugin-relbtn", "data-key": prop.key, "aria-haspopup": "listbox",
+      onclick: (e) => relPicker(e.currentTarget, p, prop, row, (v) => savePluginField(p.id, c.id, row, prop.key, v)) },
+    icon(chips.length ? "pen" : "plus"), chips.length ? t("Change") : t("Link a {item}", { item: L(tc.item) }));
+    return h("div", { class: "field" }, h("label", null, L(prop.label), hint && h("span", { class: "hint" }, hint)),
+      h("div", { class: "plugin-rels plugin-relfield" }, ...chips, pick));
+  }
   if (prop.type === "select") {
     const opts = [{ value: "", label: t("Not set") }, ...(prop.options || []).map((o) => ({ value: o.value, label: L(o.label) })),
       ...(row[prop.key] && !optionOf(prop, row[prop.key]) ? [{ value: row[prop.key], label: row[prop.key] }] : [])];
@@ -285,8 +371,45 @@ function pluginRecordPage(tab) {
     h("div", { class: "hunt-head" }, h("h1", null, row[titleProp(c).key] || t("Untitled")),
       h("p", null, L(p.manifest.name), " · ", t("added {date}", { date: (row.created || "").slice(0, 10) }), row.by === "claude" ? " · " + t("by the AI") : "")),
     card(L(c.item), "", body),
+    ...pluginBacklinks(tab),
     h("div", { class: "row" }, h("span", { class: "spacer" }), h("button", { class: "btn sm danger-soft", onclick: del }, icon("trash"), t("Delete"))),
   ];
+}
+
+// the records of other collections that link to this one, a card per link (a university's programmes, its
+// supervisors), each row opening its record, and a button that adds one already linked here
+function pluginBacklinks(tab) {
+  const { p, c, row } = tab;
+  const out = [];
+  for (const oc of p.manifest.collections) {
+    for (const prop of oc.properties) {
+      if (prop.type !== "relation" || prop.to !== c.id) continue;
+      const tk = titleProp(oc).key;
+      const st = oc.status && oc.properties.find((x) => x.key === oc.status);
+      const mine = pluginRows(p.id, oc.id).filter((r) => relIds(r[prop.key]).includes(row.id));
+      const add = async () => {
+        const name = await modal({ title: t("New {item}", { item: L(oc.item) }), input: "", placeholder: L(titleProp(oc).label), ok: t("Add") });
+        if (!name) return;
+        let r;
+        try { r = await api("POST", `/api/plugins/${p.id}/records/${oc.id}`, { [tk]: name, [prop.key]: prop.multiple ? [row.id] : row.id }); }
+        catch (e) { toast(e.message); return; }
+        (PL.records[p.id] = PL.records[p.id] || {})[oc.id] = [...pluginRows(p.id, oc.id), r];
+        openPluginRecord(p.id, oc.id, r.id);
+      };
+      const title = oc.properties.filter((x) => x.type === "relation" && x.to === c.id).length > 1 ? `${L(oc.name)} · ${L(prop.label)}` : L(oc.name);
+      const sec = card(title, "", mine.length ? h("div", { class: "plugin-linklist" }, mine.map((r) => h("button", { type: "button", class: "plugin-linkrow", "data-rid": r.id,
+          onclick: () => openPluginRecord(p.id, oc.id, r.id) },
+          h("span", { class: "plugin-linkname" }, r[tk] || t("Untitled")),
+          st && r[oc.status] ? dbvChip(pluginChip(st, r[oc.status])) : null,
+          ...(oc.dates || []).filter((k) => r[k]).slice(0, 1).map((k) => h("span", { class: "plugin-linkdate" },
+            `${L((oc.properties.find((x) => x.key === k) || {}).label)} ${r[k]}`)))))
+          : h("p", { class: "muted" }, t("None linked yet.")),
+        { cls: "plugin-backlinks", count: mine.length, actions: h("button", { class: "btn sm ghost", onclick: add }, icon("plus"), t("New {item}", { item: L(oc.item) })) });
+      sec.dataset.from = `${oc.id}.${prop.key}`;
+      out.push(sec);
+    }
+  }
+  return out;
 }
 
 // ================================================================ the chat

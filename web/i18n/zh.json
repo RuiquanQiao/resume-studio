@@ -2183,5 +2183,13 @@
  "Other kinds of applying, each a workspace of its own in the top bar: talent programmes, civil service exams, PhDs… Turning one off keeps its records.": "其他类型的申请，每个插件在顶栏中拥有独立的工作区：人才引进、考公考编、博士申请等。停用插件不会删除其记录。",
  "Tell {agent} what you have heard of, or ask it to look: it fills the table from official sources and says where each fact comes from.": "请告诉 {agent} 您已了解的信息，或请其代为查找：{agent} 会依据官方来源填写表格，并注明每项信息的出处。",
  "{agent}, with {plugin}": "{agent} · {plugin}",
- "{name} is on: it is in the top bar": "已启用 {name}，可在顶栏中打开"
+ "{name} is on: it is in the top bar": "已启用 {name}，可在顶栏中打开",
+ "Find or add a {item}": "查找或新建{item}",
+ "Link a {item}": "关联{item}",
+ "New {item} “{name}”": "新建{item}“{name}”",
+ "No {items} yet: type a name to add one.": "暂无{items}：输入名称即可新建。",
+ "None linked yet.": "尚无关联记录。",
+ "{field}: a record's id or title": "{field}：应为记录的编号或标题",
+ "{field}: one record, not a list": "{field}：只能关联一条记录，不能是列表",
+ "{field}: {collection} has no record “{value}”": "{field}：{collection}中没有“{value}”"
 }

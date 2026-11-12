@@ -2183,5 +2183,13 @@
  "Other kinds of applying, each a workspace of its own in the top bar: talent programmes, civil service exams, PhDs… Turning one off keeps its records.": "その他の応募の種類です。各プラグインはトップバーに専用のワークスペースを持ちます：人材招致、公務員試験、博士課程など。無効にしても記録は保持されます。",
  "Tell {agent} what you have heard of, or ask it to look: it fills the table from official sources and says where each fact comes from.": "把握している情報を {agent} にお伝えいただくか、調査をご依頼ください。{agent} は公式の情報源に基づいて表を記入し、各情報の出典を明記します。",
  "{agent}, with {plugin}": "{agent} · {plugin}",
- "{name} is on: it is in the top bar": "{name} を有効にしました。トップバーから開けます"
+ "{name} is on: it is in the top bar": "{name} を有効にしました。トップバーから開けます",
+ "Find or add a {item}": "{item}を検索・追加",
+ "Link a {item}": "{item}をリンク",
+ "New {item} “{name}”": "新しい{item}「{name}」",
+ "No {items} yet: type a name to add one.": "{items}はまだありません。名前を入力すると追加できます。",
+ "None linked yet.": "リンクされた記録はまだありません。",
+ "{field}: a record's id or title": "{field}：記録の ID かタイトルを指定してください",
+ "{field}: one record, not a list": "{field}：リンクできるのは1件だけです",
+ "{field}: {collection} has no record “{value}”": "{field}：{collection}に「{value}」はありません"
 }

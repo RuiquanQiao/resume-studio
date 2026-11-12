@@ -92,7 +92,7 @@ class Records:
         raise KeyError(f"no record {rid!r} in {self.m['id']} {cid}")
 
     # ---- checking ----
-    def clean(self, cid: str, fields: Any, *, new: bool) -> dict:
+    def clean(self, cid: str, fields: Any, *, new: bool, data: dict | None = None) -> dict:
         c = manifest.collection(self.m, cid)
         if not isinstance(fields, dict):
             raise ValueError(t("The fields are a JSON object"))
@@ -104,7 +104,7 @@ class Records:
             p = props.get(k)
             if not p:
                 raise ValueError(t("{plugin} {collection} has no property “{name}”; it has: {keys}", plugin=self.m["id"], collection=cid, name=k, keys=", ".join(props)))
-            out[k] = value(p, v)
+            out[k] = self._link(p, v, data if data is not None else self._load()) if p["type"] == "relation" else value(p, v)
         title = next(p["key"] for p in c["properties"] if p["type"] == "title")
         if new and not out.get(title):
             raise ValueError(t("Give it a {field}", field=title))
@@ -112,11 +112,37 @@ class Records:
             raise ValueError(t("The {field} can't be empty", field=title))
         return out
 
+    def _link(self, p: dict, v: Any, data: dict) -> Any:
+        """A relation's value: the id of a record in the collection it links to ("R3"), or that record's exact title
+        (what the AI knows a university by); a list of them when it links to several. "" or [] clears it."""
+        target = manifest.collection(self.m, p["to"])
+        tkey = next(x["key"] for x in target["properties"] if x["type"] == "title")
+        rows = data[target["id"]]
+        many = bool(p.get("multiple"))
+        xs = v if isinstance(v, list) else [] if v in (None, "") else [v]
+        if not many and len(xs) > 1:
+            raise ValueError(t("{field}: one record, not a list", field=p["key"]))
+        out: list[str] = []
+        for x in xs:
+            s = " ".join(str(x).split()) if isinstance(x, (str, int)) and not isinstance(x, bool) else None
+            if s is None:
+                raise ValueError(t("{field}: a record's id or title", field=p["key"]))
+            if not s:
+                continue
+            hit = next((r for r in rows if r["id"] == s), None) or next(
+                (r for r in rows if str(r.get(tkey) or "").casefold() == s.casefold()), None)
+            if not hit:
+                raise ValueError(t("{field}: {collection} has no record “{value}”", field=p["key"],
+                                   collection=manifest.local(target["name"], "en"), value=s))
+            if hit["id"] not in out:
+                out.append(hit["id"])
+        return out if many else (out[0] if out else "")
+
     # ---- writing ----
     def add(self, cid: str, fields: Any, by: str = "you") -> dict:
         with self.lock:
             data = self._load()
-            row = self.clean(cid, fields, new=True)
+            row = {k: v for k, v in self.clean(cid, fields, new=True, data=data).items() if v not in ("", None, [])}
             rid = f"R{data['next']}"
             data["next"] += 1
             now = _now()
@@ -128,11 +154,11 @@ class Records:
     def edit(self, cid: str, rid: str, fields: Any, by: str = "you") -> dict:
         with self.lock:
             data = self._load()
-            ch = self.clean(cid, fields, new=False)
+            ch = self.clean(cid, fields, new=False, data=data)
             for r in data[cid]:
                 if r["id"] == rid:
                     for k, v in ch.items():
-                        if v in ("", None):
+                        if v in ("", None, []):
                             r.pop(k, None)
                         else:
                             r[k] = v
@@ -147,6 +173,19 @@ class Records:
             for i, r in enumerate(data[cid]):
                 if r["id"] == rid:
                     del data[cid][i]
+                    # the records that linked to it no longer do (a university deleted leaves its programmes, unlinked)
+                    for c in self.m["collections"]:
+                        for p in c["properties"]:
+                            if p["type"] != "relation" or p["to"] != cid:
+                                continue
+                            for x in data[c["id"]]:
+                                v = x.get(p["key"])
+                                if v == rid:
+                                    x.pop(p["key"])
+                                elif isinstance(v, list) and rid in v:
+                                    x[p["key"]] = [y for y in v if y != rid]
+                                    if not x[p["key"]]:
+                                        x.pop(p["key"])
                     self._save(data)
                     return r
             raise KeyError(f"no record {rid!r} in {self.m['id']} {cid}")

@@ -77,6 +77,10 @@ function sentText(s) {
 // ================================================================ data
 async function loadHunt({ quiet = false } = {}) {
   if (H.loading) { H.again = true; return H.loading; }
+  const paint = () => {
+    if (W.ws === "fill" && dbvBusy()) DBV.pending = true;   // an open cell editor or view panel: after it closes
+    else if (W.ws === "fill") paintFill();
+  };
   H.loading = (async () => {
     try {
       do {
@@ -84,13 +88,15 @@ async function loadHunt({ quiet = false } = {}) {
         const [data] = await Promise.all([api("GET", "/api/hunt"), DBV.tables && !H.viewsStale ? null : loadViews()]);
         H.data = data; H.viewsStale = false;
         if (H.page && H.page.kind !== "platform") await loadHuntPage({ quiet: true });
+        // each answer is shown as it comes: a scan says "changed" every few seconds, and painting only once the
+        // changes stopped left the table at "Loading…" for the whole scan (user, 2026-11-12)
+        if (H.again) paint();
       } while (H.again);
       scanDone();
       if (!H.autoScan) { H.autoScan = true; api("POST", "/api/hunt/scan", { auto: true }).catch(() => {}); }
     } catch (e) { if (!quiet) toast(e.message); }
     finally { H.loading = null; }
-    if (W.ws === "fill" && dbvBusy()) DBV.pending = true;   // an open cell editor or view panel: after it closes
-    else if (W.ws === "fill") paintFill();
+    paint();
   })();
   return H.loading;
 }

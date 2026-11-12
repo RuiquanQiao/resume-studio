@@ -779,6 +779,24 @@ def test_the_table_matches_each_title_once_and_counts_again_only_on_a_change(hun
     assert not P.keyword_hits("AI 工程师", " + ")                           # a keyword with nothing in it hits nothing
 
 
+def test_a_tracks_keywords_tested_at_once_agree_with_each_keyword_alone():
+    """2026-11-12: a track's keywords are tested as one pattern (the first look at 66,000 titles took 3 s one by
+    one). Every title gets the answer testing each keyword alone gives: acronyms as whole words, "a+b" needing both,
+    regex characters taken as written, an excluded word ruling a title out, empty keywords hitting nothing."""
+    import jobhunt.postings as P
+    kws = ["AI", "ml", "LLM", "AI+产品", "Agent+Product", "C++", "(实习)", ".NET", "全栈", " + ", "", "Applied AI"]
+    excl = ["销售", "ai+实施", "QA"]
+    titles = ["AI 工程师", "AI工程师", "Maintenance", "Detail", "HTML 开发", "ML Engineer", "AIML", "AI 产品经理", "产品 AI",
+              "C++ 开发", "C 开发", "前端(实习)", "前端实习", ".NET 工程师", "NET", "全栈开发", "Agent Product Lead",
+              "Applied  AI Scientist", "ÀI ŕesearch", "AI 销售", "AI 实施顾问", "QA 测试", "AQAB", "", "llm 应用"]
+    one = lambda f, xs: any(P._hits(f, k) for k in xs if k)
+    for title in titles:
+        f = P._fold(title)
+        for k, x in ((kws, excl), (kws, []), ([], excl), (["AI"], None)):
+            alone = not (x and one(f, x)) and (not k or one(f, k))
+            assert P._matches(f, k, x) == alone, (title, k, x)
+
+
 def test_scans_are_parsed_once_per_change(hunt, monkeypatch):
     """The table asks for each company's scan state: 200 parses of a 700 KB scans.json a look (2026-11-08)."""
     ps = Postings(hunt)

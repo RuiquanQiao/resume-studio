@@ -1851,6 +1851,57 @@ def test_a_search_box_takes_chinese_typed_through_an_ime(page_all, server):
         server.req("DELETE", f"/api/hunt/companies/{cid}")
 
 
+def test_the_company_table_shows_while_changes_keep_coming(page_all, server):
+    """A user report, 2026-11-12: the Companies tab said "Loading…" for minutes. A scan says "changed" every few
+    seconds, each change asked for the table again while the last answer was still on its way, and the table was
+    painted only once the changes stopped: never, while the scan ran. Each answer is painted as it comes now."""
+    pg = page_all
+    cid = server.req("POST", "/api/hunt/companies", {"name": "星河 Loading"})[1]["company"]["id"]
+    pg.keyboard.press("Control+3")
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.wait_for_selector(".dbv-view tbody:has-text('星河 Loading')")
+    pg.evaluate("""() => {
+      window.__api = api;
+      api = async (...a) => { if (a[1] === '/api/hunt') await new Promise((r) => setTimeout(r, 300)); return window.__api(...a); };
+      H.data = null; paintFill();
+      window.__tick = setInterval(() => loadHunt({ quiet: true }), 100);   // what a scan's "hunt" events do
+    }""")
+    try:
+        pg.wait_for_selector(".dbv-view tbody:has-text('星河 Loading')", timeout=3000)
+        assert pg.evaluate("() => !!H.loading")   # still loading again and again: the table didn't wait for that
+    finally:
+        pg.evaluate("() => { clearInterval(window.__tick); api = window.__api; }")
+        server.req("DELETE", f"/api/hunt/companies/{cid}")
+
+
+def test_phd_records_link_to_each_other_in_the_window(page_all, server):
+    """2026-11-12: PhD applications are linked tables. A programme's university is picked in its cell (or made there),
+    the university's page lists its programmes, and a university deleted leaves its programmes unlinked."""
+    pg = page_all
+    base = "/api/plugins/phd-applications/records"
+    server.req("PUT", "/api/plugins/phd-applications", {"on": True})
+    prog = server.req("POST", f"{base}/programs", {"title": "PhD in Computer Science"})[1]["id"]
+    pg.wait_for_function("() => wsPlugin('p.phd-applications')")
+    pg.evaluate("() => { PW.col['phd-applications'] = 'programs'; setWorkspace('p.phd-applications'); }")
+    cell = "#pluginspace .dbv-view[data-table='p.phd-applications.programs'] tbody tr td[data-key=university]"
+    pg.click(cell)
+    pg.fill(".plugin-relpick input", "Australian National University")
+    pg.click(".plugin-relpick .dbv-newopt")                                   # made from the picker, and linked
+    pg.wait_for_selector(f"{cell} .plugin-rel:has-text('Australian National University')")
+    uni = server.req("GET", "/api/plugins")[1]["records"]["phd-applications"]["universities"][0]
+    assert server.req("GET", "/api/plugins")[1]["records"]["phd-applications"]["programs"][0]["university"] == uni["id"]
+    pg.click(f"{cell} .plugin-rel")                                           # the chip opens the university
+    pg.wait_for_selector("#pluginspace .plugin-backlinks .plugin-linkrow:has-text('PhD in Computer Science')")
+    pg.click("#pluginspace .plugin-backlinks .plugin-linkrow")                # and its programme opens from there
+    pg.wait_for_selector("#pluginspace .hunt-head h1:has-text('PhD in Computer Science')")
+    server.req("DELETE", f"{base}/universities/{uni['id']}")
+    pg.wait_for_function("() => { const b = document.querySelector('#pluginspace .plugin-relbtn[data-key=university]');"
+                         " return b && !b.parentElement.querySelector('.plugin-rel'); }")   # unlinked, shown by itself
+    assert "university" not in server.req("GET", "/api/plugins")[1]["records"]["phd-applications"]["programs"][0]
+    server.req("DELETE", f"{base}/programs/{prog}")
+    server.req("PUT", "/api/plugins/phd-applications", {"on": False})
+
+
 def test_a_change_shows_while_the_user_types(page_all, server):
     """A user report, 2026-10-23: a change from Claude waited for a switch of views while the cursor was in a box.
     Now the table follows at once, and the box keeps what is typed and the cursor."""
