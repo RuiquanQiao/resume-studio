@@ -42,6 +42,9 @@ const fillView = () => F.view[F.site] || null;
 const pageName = (b) => (b && b.url && b.url !== "about:blank" ? b.title || b.url.replace(/^https?:\/\/(www\.)?/, "") : "");
 const SITE_NAMES = { linkedin: "LinkedIn", boss: "BOSS直聘" };   // before the list has loaded
 const fillSite = () => ((F.sites || []).find((s) => s.id === F.site)) || { id: F.site, name: SITE_NAMES[F.site] || F.site };
+// the Platforms (LinkedIn, BOSS直聘…); a company's 网申 profile (kind "company") is on the company's page instead
+const platformSites = () => (F.sites || []).filter((s) => s.kind !== "company");
+const companySite = (cid) => (F.sites || []).find((s) => s.kind === "company" && s.company === cid) || null;
 // an item in a few words, the way autofill/profile.py label_of says it
 const LABEL_PARTS = { experience: ["title", "org"], education: ["degree", "org"], projects: ["name", "role"], awards: ["title", "issuer"] };
 const itemTitle = (section, fields) => (LABEL_PARTS[section] || []).map((k) => (fields || {})[k]).filter(Boolean).join(" · ") || t("(untitled)");
@@ -54,7 +57,7 @@ async function loadFill() {
       const r = await api("GET", "/api/autofill");
       F.sites = r.sites; F.presets = r.presets; F.browser = r.browser;
       if (!F.sites.length) { paintFill(); renderWsTools(); return; }
-      if (!F.sites.some((s) => s.id === F.site)) F.site = F.sites[0].id;
+      if (!F.sites.some((s) => s.id === F.site)) F.site = (platformSites()[0] || F.sites[0]).id;
       await loadFillSite(F.site);
     } catch (e) { toast(e.message); }
     finally { F.loading = null; }
@@ -259,8 +262,11 @@ function fillAfterResumeChange() {
 function paintPlatform() {
   const el = $("#fillspace");
   if (!el) return;
+  // a company's 网申 profile goes back to its company; a platform's to the Platforms
+  const own = fillSite().kind === "company" ? fillSite().company : null;
+  const back = own ? backToCompany(own) : backTo("platforms");
   if (!F.sites || !fillView()) {
-    el.replaceChildren(huntBar(), h("div", { class: "fill-wrap" }, backTo("platforms"), h("div", { class: "muted" }, t("Loading…"))));
+    el.replaceChildren(huntBar(), h("div", { class: "fill-wrap" }, back, h("div", { class: "muted" }, t("Loading…"))));
     return;
   }
   const wrap = el.querySelector(".fill-scroll");
@@ -270,11 +276,15 @@ function paintPlatform() {
     huntBar(),
     h("div", { class: "fill-scroll" },
       h("div", { class: "fill-wrap" },
-        backTo("platforms"),
+        back,
         h("div", { class: "fill-head" },
-          h("div", { class: "fh-text" }, h("h1", null, t("Your profile on {site}", { site: fillSite().name })),
-            h("p", null, t("Resume Studio keeps a copy of each profile. Edit it here or on the site: “Check for updates” brings the site's changes in, and yours go up when you say so."))),
-          h("div", { id: "fill-sites", class: "fill-sites" })),
+          own ? h("div", { class: "fh-text" }, h("h1", null, t("Your profile on {company}'s careers site", { company: fillSite().name })),
+            h("p", null, t("The online resume {company} reads with every application on its site. Resume Studio keeps a copy, compared with the subset its company's page says.", { company: fillSite().name })),
+            fillSite().learned_from && h("p", { class: "muted" }, t("Its sections and limits come from {site}, on the same recruiting system ({system}); the AI checks them on its first read.",
+              { site: ((F.sites || []).find((s) => s.id === fillSite().learned_from) || {}).name || fillSite().learned_from, system: fillSite().system })))
+            : h("div", { class: "fh-text" }, h("h1", null, t("Your profile on {site}", { site: fillSite().name })),
+              h("p", null, t("Resume Studio keeps a copy of each profile. Edit it here or on the site: “Check for updates” brings the site's changes in, and yours go up when you say so."))),
+          !own && h("div", { id: "fill-sites", class: "fill-sites" })),
         h("div", { id: "fill-browser" }),
         syncCard(v),
         v.synced && h("div", { id: "fill-tabs" }),
@@ -325,7 +335,9 @@ function syncCard(v) {
   const menu = (e) => openMenu(e.currentTarget, [
     { label: t("Let AI read {site} again and record the route anew", { site: site.name }), icon: "sparkle", onClick: learnRoute, disabled: !ui.chat.available || reading },
     { label: t("Open {site}", { site: site.name }), icon: "external", onClick: openSite },
-  ], { align: "end" });
+    // a platform's settings are on its tab's right-click; a company's site has no tab row: they are here
+    site.kind === "company" && { label: t("Site settings…"), icon: "settings", onClick: () => siteDialog(site) },
+  ].filter(Boolean), { align: "end" });
   return h("div", { class: "fill-card fill-sync" },
     h("div", { class: "fsy-row" },
       h("div", { class: "fsy-text" },
@@ -422,10 +434,13 @@ async function addItem(section, fields) {
 
 // which resume subset and language the copy is compared with (its suggestions)
 function compareCard(v) {
-  const vs = subsets();
+  // a company's site gets the subset its company's page says ("Filled from"): picking here changes that one
+  const co = v.site.kind === "company" ? v.site.company : null;
+  const vs = co ? subsets().filter((x) => x.id !== ALL || v.subset_id === ALL) : subsets();
   const sel = uiSelect({ id: "fill-subset", label: t("Resume subset"), menuWidth: 300, value: v.subset_id,
     options: vs.map((x) => ({ value: x.id, label: subsetName(x), hint: x.id === ALL ? t("every entry") : null })),
-    onChange: (id) => chooseTarget({ subset_id: id }) });
+    onChange: (id) => co ? editCompany(co, { subset: id }, { repaint: false }).then(() => loadFillSite(F.site, { quiet: true }))
+      : chooseTarget({ subset_id: id }) });
   const ls = langs();
   return h("div", { class: "fill-compare" },
     h("span", { class: "muted" }, t("Suggestions from your resume:")), sel.el,
@@ -582,7 +597,7 @@ function autosizeFull(ta) { ta.style.height = "auto"; ta.style.height = ta.scrol
 function paintFillSites() {
   const box = $("#fill-sites");
   if (!box) return;
-  box.replaceChildren(...(F.sites || []).map((s) => h("button", { type: "button", role: "tab", class: "fs-site" + (s.id === F.site ? " on" : ""),
+  box.replaceChildren(...platformSites().map((s) => h("button", { type: "button", role: "tab", class: "fs-site" + (s.id === F.site ? " on" : ""),
     "aria-selected": String(s.id === F.site), "data-site": s.id, onclick: () => switchFillSite(s.id),
     oncontextmenu: (e) => { e.preventDefault(); siteMenu(e.currentTarget, s); } },
   h("span", { class: "fs-name" }, s.name),
@@ -594,11 +609,14 @@ function paintFillSites() {
 
 // ================================================================ the user's sites
 function siteMenu(anchor, s) {
-  const i = F.sites.findIndex((x) => x.id === s.id);
+  // the order is the platforms' order: moving past a company's site (not on this row) would look like nothing
+  const list = platformSites();
+  const i = list.findIndex((x) => x.id === s.id);
+  const at = (x) => F.sites.findIndex((y) => y.id === x.id);
   openMenu(anchor, [
     { label: t("Site settings…"), icon: "settings", onClick: () => siteDialog(s) },
-    i > 0 && { label: t("Move left"), icon: "chevLeft", onClick: () => moveSite(s, i - 1) },
-    i < F.sites.length - 1 && { label: t("Move right"), icon: "chevRight", onClick: () => moveSite(s, i + 1) },
+    i > 0 && { label: t("Move left"), icon: "chevLeft", onClick: () => moveSite(s, at(list[i - 1])) },
+    i < list.length - 1 && { label: t("Move right"), icon: "chevRight", onClick: () => moveSite(s, at(list[i + 1])) },
     { label: t("Remove from the list"), icon: "trash", danger: true, onClick: () => removeSite(s) },
   ].filter(Boolean));
 }
@@ -625,16 +643,22 @@ async function removeSite(s) {
 // the list gained or lost a site: show one that is on it (a new one, if given)
 async function fillSitesChanged(pick = null) {
   if (pick) { F.site = pick; H.tab = "platforms"; H.page = { kind: "platform", id: pick }; storeHunt(); }
-  if (F.sites.length && !F.sites.some((s) => s.id === F.site)) F.site = F.sites[0].id;
-  // the platform whose page was open is gone: the next one's page (none left: the table)
+  const gone = !F.sites.some((s) => s.id === F.site);
+  const was = gone && F.view[F.site] && F.view[F.site].site;   // what the page on screen showed
+  if (F.sites.length && gone) F.site = (platformSites()[0] || F.sites[0]).id;
+  // the site whose page was open is gone: a company's goes back to its company; a platform's to the next one's
+  // page (none left: the table)
   if (H.page && H.page.kind === "platform" && !F.sites.some((s) => s.id === H.page.id)) {
-    H.page = F.sites.length ? { kind: "platform", id: F.site } : null;
+    H.page = was && was.kind === "company" ? { kind: "company", id: was.company }
+      : platformSites().length ? { kind: "platform", id: F.site } : null;
+    if (H.page && H.page.kind === "company") H.tab = "companies";
     storeHunt();
   }
   store("fill-site", F.sites.length ? F.site : null);
   F.open = {};
   if (W.ws !== "fill") return;
-  if (F.sites.length) { paintFill(); await loadFillSite(F.site); } else paintFill();
+  if (H.page && H.page.kind === "company") { paintFill(); await loadHuntPage(); paintFill(); }
+  else if (F.sites.length) { paintFill(); await loadFillSite(F.site); } else paintFill();
   renderWsTools();
   if (!ui.chat.messages.length && !ui.chat.running) renderChat();
 }
@@ -673,8 +697,10 @@ function siteDialog(s) {
   const close = () => { root.replaceChildren(); document.removeEventListener("keydown", onKey); };
   const onKey = (e) => { if (e.key === "Escape") close(); };
   document.addEventListener("keydown", onKey);
+  // a company's site: its name and address are the company's (changed on its page), the rest is the site's
+  const co = !!(s && s.kind === "company");
   const done = async () => {
-    const body = { name: name.value, home: home.value, notes: notes.value, ...(lang ? { lang } : {}) };
+    const body = { ...(co ? {} : { name: name.value, home: home.value }), notes: notes.value, ...(lang ? { lang } : {}) };
     if (s) {
       try { const r = await api("PUT", `/api/autofill/${encodeURIComponent(s.id)}/settings`, body); F.sites = r.sites; F.presets = r.presets; }
       catch (e) { toast(e.message, { ms: 7000 }); return; }
@@ -695,8 +721,8 @@ function siteDialog(s) {
       h("h3", null, s ? t("{site} settings", { site: s.name }) : t("Add a site")),
       presetRow,
       !s && presetRow && h("div", { class: "fd-or" }, t("or any other site")),
-      h("div", { class: "field" }, h("label", { for: "site-name" }, t("Name")), name),
-      h("div", { class: "field" }, h("label", { for: "site-home" }, t("Address"),
+      !co && h("div", { class: "field" }, h("label", { for: "site-name" }, t("Name")), name),
+      !co && h("div", { class: "field" }, h("label", { for: "site-home" }, t("Address"),
         h("span", { class: "hint" }, t("The page with your profile, or the site's home page: the AI finds the profile from there"))), home),
       ls.length > 1 && h("div", { class: "field" }, h("label", null, t("Resume language"), h("span", { class: "hint" }, t("What the profile usually gets; you can switch it on the page too"))),
         uiSeg(ls.map((l) => ({ value: l, label: langName(l) })), lang || ls[0], (l) => { lang = l; }, { label: t("Resume language") })),
@@ -706,11 +732,11 @@ function siteDialog(s) {
         ? t("The AI learned what this site has when it last read it: {list}.", { list: s.sections.map((x) => t(SECTION_NAMES[x] || x)).join(", ") })
         : t("The AI works out which sections and limits this site has the first time it reads it.")),
       h("div", { class: "acts" },
-        s && h("button", { class: "btn danger-soft", onclick: () => { close(); removeSite(s); } }, icon("trash"), t("Remove from the list")),
+        s && !co && h("button", { class: "btn danger-soft", onclick: () => { close(); removeSite(s); } }, icon("trash"), t("Remove from the list")),
         h("span", { class: "spacer" }),
         h("button", { class: "btn", onclick: close }, t("Cancel")),
         h("button", { class: "btn primary", onclick: done }, s ? t("Done") : t("Add"))))));
-  setTimeout(() => name.focus(), 0);
+  setTimeout(() => (co ? notes : name).focus(), 0);
 }
 
 async function switchFillSite(id) {

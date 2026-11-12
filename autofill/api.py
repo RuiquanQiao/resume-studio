@@ -121,8 +121,16 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         """A site on the list: one Resume Studio knows (`preset`), or any other by its address."""
         b = body(req)
         try:
-            site = fill.add_site(preset=str(b.get("preset") or ""), **site_fields(b))
+            if b.get("company"):
+                # a company's 网申 profile: its name and address are the company's
+                site = fill.add_company_site(str(b["company"]))
+            else:
+                site = fill.add_site(preset=str(b.get("preset") or ""), **site_fields(b))
+        except KeyError:
+            raise HttpError(404, t("Unknown company: {name}", name=str(b.get("company"))))
         except ValueError as e:
+            if str(e) == "company-site":
+                raise HttpError(400, t("First give the address where you sign up on its careers site."))
             raise bad_home(e)
         publish(site.id)
         return {"site": site.public(), "sites": fill.summary(), "presets": fill.presets()}

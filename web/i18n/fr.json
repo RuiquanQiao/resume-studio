@@ -2365,5 +2365,19 @@
  "None linked yet.": "Rien de lié pour l'instant.",
  "{field}: a record's id or title": "{field} : l'identifiant ou le titre d'un enregistrement",
  "{field}: one record, not a list": "{field} : un seul enregistrement, pas une liste",
- "{field}: {collection} has no record “{value}”": "{field} : {collection} n'a pas d'enregistrement « {value} »"
+ "{field}: {collection} has no record “{value}”": "{field} : {collection} n'a pas d'enregistrement « {value} »",
+ "Unknown company: {name}": "Entreprise inconnue : {name}",
+ "First give the address where you sign up on its careers site.": "Veuillez d’abord indiquer l’adresse où vous vous inscrivez sur son site carrières.",
+ "Your profile on {company}'s careers site": "Votre profil sur le site carrières de {company}",
+ "The online resume {company} reads with every application on its site. Resume Studio keeps a copy, compared with the subset its company's page says.": "Le CV en ligne que {company} consulte pour chaque candidature sur son site. Resume Studio en garde une copie, comparée au sous-ensemble indiqué sur la page de l’entreprise.",
+ "Its sections and limits come from {site}, on the same recruiting system ({system}); the AI checks them on its first read.": "Ses sections et limites proviennent de {site}, sur le même système de recrutement ({system}) ; l’IA les vérifie lors de sa première lecture.",
+ "the online resume the company reads": "le CV en ligne que l’entreprise consulte",
+ "Resume Studio can keep a copy of it, field by field, and fill it from the subset above, as for LinkedIn.": "Resume Studio peut en garder une copie, champ par champ, et la remplir à partir du sous-ensemble ci-dessus, comme pour LinkedIn.",
+ "First give the address where you sign up, above.": "Veuillez d’abord indiquer ci-dessus l’adresse où vous vous inscrivez.",
+ "Keep a copy of it": "En garder une copie",
+ "Open the copy": "Ouvrir la copie",
+ "Stop keeping a copy of your profile on {company}'s site?": "Ne plus garder de copie de votre profil sur le site de {company} ?",
+ "Nothing changes on the site itself. What the AI read there stays saved: keep a copy again to get it back.": "Rien ne change sur le site lui-même. Ce que l’IA y a lu reste enregistré : gardez de nouveau une copie pour le retrouver.",
+ "Stop": "Arrêter",
+ "Stop keeping a copy of your profile there": "Ne plus garder de copie de votre profil sur ce site"
 }

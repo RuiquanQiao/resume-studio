@@ -58,6 +58,7 @@ class Instance:
     jobs_watcher: SignatureWatcher | None = None
     plan_watcher: SignatureWatcher | None = None   # the plan's files (Claude writes them straight)
     plugins: Any = None                            # plugins.registry.Registry (docs/PLUGINS.md)
+    fill: Any = None                               # autofill.service.Autofill: platforms' and companies' profiles
     plugins_watcher: SignatureWatcher | None = None   # the plugins' records (the AI writes them straight)
     web: WebHost | None = None                 # the tool's own web interface, hosted in the window
     browser: ManagedBrowser | None = None      # the browser Autofill drives (its own profile, per computer)
@@ -371,7 +372,12 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
     fill = autofill_api.register(app, studio, chats, inst.browser)
 
     # ---- the job hunt: applications, companies and platforms (Resume Studio's own tracker) ----
-    inst.hunt = hunt_api.register(app, studio, tool, prefs, platforms=fill.summary, browser=inst.browser)
+    # its Platforms are the sites that are platforms; a company's 网申 profile is on the company's page
+    inst.hunt = hunt_api.register(app, studio, tool, prefs, platforms=lambda: [s for s in fill.summary() if s["kind"] != "company"],
+                                  browser=inst.browser)
+    hunt_store = inst.hunt
+    fill.companies = lambda: {c["id"]: c for c in hunt_store.companies()}
+    inst.fill = fill
 
     # ---- the plan: one document Claude helps the user write, with its versions (docs/PLAN.md) ----
     inst.plan, inst.plan_watcher = plan_api.register(app, studio, chats, watch_interval=watch_interval)

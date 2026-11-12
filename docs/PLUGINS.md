@@ -169,7 +169,7 @@ service a plugin uses; today it is refused.
 
 ## Later phases (designed, not built)
 
-1. **A company's careers-site profile as a platform** (docs/JOB_HUNT.md's Platforms table). A platform row is
+1. **A company's careers-site profile as a platform** (built 2026-11-12: docs/JOB_HUNT.md step 4). A platform row is
    "a site where the user keeps a profile": general ones (LinkedIn, BOSS直聘) and a company's own careers site
    (网申), linked to its company and shown on the company's page. Same pipeline (the AI reads the form's fields,
    Resume Studio keeps a copy, pushes changes, notices changes on the site). Chinese careers sites mostly run on a

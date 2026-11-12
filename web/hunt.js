@@ -153,6 +153,14 @@ function listenHunt(es) {
     // another window arranged a table: not the echo of this one's own save, nor while it has one waiting
     if (d.views && !Object.keys(DBV.timers).length && Date.now() - DBV.saved > 2000) H.viewsStale = true;
     loadHunt({ quiet: true });
+    // a company's 网申 profile takes its name, address and subset from the company: a change there is its copy's
+    if ((F.sites || []).some((s) => s.kind === "company")) {
+      api("GET", "/api/autofill").then((r) => {
+        F.sites = r.sites; F.presets = r.presets;
+        if (H.page && H.page.kind === "platform" && fillSite().kind === "company") loadFillSite(F.site, { quiet: true });
+        else if (H.page && H.page.kind === "platform" && !F.sites.some((s) => s.id === H.page.id)) fillSitesChanged();
+      }).catch(() => {});
+    }
   });
 }
 
@@ -183,7 +191,9 @@ function welcomeAgain() { if (!ui.chat.messages.length && !ui.chat.running) rend
 async function openHunt(kind, id) {
   await flushTyping();
   if (kind === "platform") {
-    H.tab = "platforms"; H.page = { kind, id }; H.view = null;
+    // a company's 网申 profile is part of the company: its page sits under Companies
+    const s = (F.sites || []).find((x) => x.id === id);
+    H.tab = s && s.kind === "company" ? "companies" : "platforms"; H.page = { kind, id }; H.view = null;
     storeHunt();
     if (F.site !== id) { F.site = id; store("fill-site", id); F.open = {}; }
     paintFill();
@@ -204,7 +214,10 @@ async function openHunt(kind, id) {
 // the workspace: a platform's own page is autofill.js's; everything else is here
 function paintFill() {
   repaintKeeping($("#fillspace"), () => {
-    if (H.tab === "platforms" && H.page && H.page.kind === "platform" && (F.sites || []).some((s) => s.id === H.page.id)) {
+    // before the sites have loaded (a restart) the page waits for them: dropped then, a platform's page open at the
+    // restart came back as the table (2026-11-12)
+    if ((H.tab === "platforms" || H.tab === "companies") && H.page && H.page.kind === "platform" && (!F.sites || F.sites.some((s) => s.id === H.page.id))) {
+      if (!F.sites) loadFill();
       paintPlatform();
       return;
     }
@@ -216,7 +229,7 @@ function paintFill() {
 function huntBar() {
   const d = H.data;
   const n = { apps: d ? d.applications.length : null, picked: d && anyTracks() ? d.companies.reduce((k, c) => k + ((c.postings || {}).matching || 0), 0) : null,
-    companies: d ? d.companies.length : null, platforms: F.sites ? F.sites.length : null };
+    companies: d ? d.companies.length : null, platforms: F.sites ? platformSites().length : null };
   return h("div", { class: "hunt-bar" + (H.page ? " is-page" : "") },
     h("div", { class: "hunt-tabs", role: "tablist", "aria-label": t("Applying") }, Object.entries(HUNT_TABS).map(([id, label]) =>
       h("button", { type: "button", role: "tab", class: "hunt-tab" + (H.tab === id ? " on" : ""), "data-tab": id, "aria-selected": String(H.tab === id),
@@ -316,7 +329,7 @@ function appProps() {
     { key: "referral", label: t("Referral code"), type: "text", width: 130, get: (a) => a.referral || "", set: (a, v) => cellApp(a, { referral: v }) },
     { key: "channel", label: t("How"), type: "select", width: 150, min: 120, wrap: true, hidden: true, get: (a) => a.channel || "site", options: channels,
       render: (a) => h("span", { class: "c-muted" }, channelText(a)),
-      set: (a, v) => cellApp(a, { channel: v, ...(v === "platform" && !a.platform && (F.sites || []).length ? { platform: F.sites[0].id } : {}) }) },
+      set: (a, v) => cellApp(a, { channel: v, ...(v === "platform" && !a.platform && platformSites().length ? { platform: platformSites()[0].id } : {}) }) },
     { key: "sent", label: t("Resume sent"), type: "custom", width: 190, min: 130, get: (a) => (a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : ""),
       render: (a) => h("span", { class: "c-muted c-resume" }, a.sent && a.sent.length ? sentText(a.sent[a.sent.length - 1]) : "", resumeButton(a)),
       edit: (td, a) => openSentPop(td, a) },
@@ -1362,7 +1375,7 @@ function companiesTable() {
 }
 
 function platformsTable() {
-  const sites = F.sites || [];
+  const sites = platformSites();
   const apps = (H.data && H.data.applications) || [];
   if (!F.sites) { loadFill(); return h("div", { class: "muted" }, t("Loading…")); }
   const host = (s) => (s.home || "").replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
@@ -1687,6 +1700,11 @@ function backTo(tab) {
   const label = { apps: t("All applications"), companies: t("All companies"), platforms: t("All platforms") }[tab];
   return h("button", { class: "btn sm ghost hunt-back", onclick: () => setHuntTab(tab) }, icon("chevLeft"), label);
 }
+// from a company's 网申 profile back to the company it belongs to
+function backToCompany(cid) {
+  const c = ((H.data && H.data.companies) || []).find((x) => x.id === cid);
+  return h("button", { class: "btn sm ghost hunt-back", onclick: () => openHunt("company", cid) }, icon("chevLeft"), c ? c.name : t("All companies"));
+}
 
 async function openOnSite(url) {
   if (!/^https?:\/\//.test(url || "")) return;
@@ -1741,6 +1759,7 @@ function companyPage(v) {
         c.site && { label: t("Open it in Resume Studio's browser"), icon: "globe", onClick: () => openOnSite(c.site) },
         { label: t("What the AI changed"), icon: "history", onClick: () => historyModal({ target: c.id, name: c.name }) },
         c.site && { label: t("Sign in to it in Resume Studio's browser"), icon: "user", onClick: () => signInMode(c.site) },
+        companySite(c.id) && { label: t("Stop keeping a copy of your profile there"), icon: "x", onClick: () => removeCompanySite(c) },
         { label: c.logo ? t("Change the logo…") : t("Add a logo…"), icon: "file", onClick: () => pickLogo(c) },
         c.logo && { label: t("Remove the logo"), icon: "x", onClick: () => removeLogo(c) },
         (c.kept || []).length > 0 && { label: t("Let AI fill the fields you edited too"), icon: "sparkle", onClick: () => editCompany(c.id, { kept: [] }) },
@@ -1759,6 +1778,7 @@ function companyPage(v) {
         st && h("span", { class: "chip" + (st.latest && !st.same_as ? " vd-changed" : "") }, !st.latest ? t("No versions yet") : st.same_as ? `v${st.same_as}` : t("v{n} · changed", { n: st.latest })),
         c.subset && c.subset_exists && h("button", { class: "btn sm ghost", onclick: () => previewSubset(c.subset) }, icon("file"), t("Preview")))),
       c.subset && !c.subset_exists && h("p", { class: "muted card-p" }, t("This subset is gone; pick another.")),
+      companyProfileField(c),
       h("p", { class: "card-p muted" }, t("When you submit the sign-up on the site, mark it here: the subset is kept as a version (if it changed) and pinned on every role there that hasn't gone out yet.")),
       h("div", { class: "row" }, h("button", { class: "btn primary", id: "company-send", disabled: !(c.subset && c.subset_exists && unsent.length), onclick: () => sendCompany(c, unsent) },
         icon("check"), unsent.length ? t("Mark as sent ({n})", { n: unsent.length }) : t("Mark as sent")),
@@ -1788,6 +1808,49 @@ function companyPage(v) {
     ], { fold: "company-details" }),
     card(t("What happened"), v.events.length ? t("{n} event", { n: v.events.length }, "{n} events") : "", [timeline(v.events, apps)], { fold: "company-history" }),
   ];
+}
+
+// the user's online resume on the company's careers site (its 网申 profile), kept like a platform's: a local copy,
+// read by a recorded route, filled from the subset above with ticked changes (docs/JOB_HUNT.md step 4)
+function companyProfileField(c) {
+  if (!F.sites) { loadFill(); return null; }
+  const s = companySite(c.id);
+  const label = h("label", null, t("Your profile there"), h("span", { class: "hint" }, t("the online resume the company reads")));
+  if (!s) {
+    return h("div", { class: "field", id: "company-profile" }, label,
+      h("div", { class: "co-profile" },
+        h("span", { class: "muted" }, c.site ? t("Resume Studio can keep a copy of it, field by field, and fill it from the subset above, as for LinkedIn.")
+          : t("First give the address where you sign up, above.")),
+        h("button", { class: "btn sm", id: "company-profile-add", disabled: !c.site, onclick: () => addCompanySite(c) }, icon("plus"), t("Keep a copy of it"))));
+  }
+  const state = s.check_error ? h("span", { class: "fs-status bad", title: s.check_error }, icon("alert"), t("The last check didn't finish."))
+    : s.signed_out ? h("span", { class: "state-chip s-warn" }, t("Sign in"))
+    : h("span", { class: "c-muted" }, !s.synced_at ? t("Not read yet") : s.conflicts ? t("{n} conflict", { n: s.conflicts }, "{n} conflicts")
+      : s.changes ? t("{n} change to push", { n: s.changes }, "{n} changes to push") : t("In step"));
+  return h("div", { class: "field", id: "company-profile" }, label,
+    h("div", { class: "co-profile" }, state,
+      h("span", { class: "spacer" }),
+      h("button", { class: "btn sm", id: "company-profile-open", onclick: () => openHunt("platform", s.id) }, icon("file"), t("Open the copy"))));
+}
+
+async function addCompanySite(c) {
+  let r;
+  try { r = await api("POST", "/api/autofill/sites", { company: c.id }); }
+  catch (e) { toast(e.message, { ms: 7000 }); return; }
+  F.sites = r.sites; F.presets = r.presets;
+  await openHunt("platform", r.site.id);
+}
+
+async function removeCompanySite(c) {
+  const s = companySite(c.id);
+  if (!s) return;
+  const ok = await modal({ title: t("Stop keeping a copy of your profile on {company}'s site?", { company: c.name }),
+    message: t("Nothing changes on the site itself. What the AI read there stays saved: keep a copy again to get it back."), ok: t("Stop"), danger: true });
+  if (!ok) return;
+  try { const r = await api("DELETE", "/api/autofill/" + encodeURIComponent(s.id)); F.sites = r.sites; F.presets = r.presets; }
+  catch (e) { toast(e.message); return; }
+  delete F.view[s.id];
+  paintFill();
 }
 
 // on a careers site's row: whether a scan reads it by itself (Scanner.site_status), said on every row
@@ -2028,9 +2091,9 @@ function appPage(v) {
     options: ((H.data && H.data.states) || []).map((s) => ({ value: s.id, label: huntState(s.id) })),
     onChange: (val) => setAppStatus(a, val) });
   const channel = uiSeg(Object.entries(HCHANNELS).map(([value, label]) => ({ value, label: t(label) })), a.channel || "site",
-    (val) => editApp(a.id, { channel: val, ...(val === "platform" && !a.platform && (F.sites || []).length ? { platform: F.sites[0].id } : {}) }), { cls: "sm", label: t("How") });
+    (val) => editApp(a.id, { channel: val, ...(val === "platform" && !a.platform && platformSites().length ? { platform: platformSites()[0].id } : {}) }), { cls: "sm", label: t("How") });
   const plat = a.channel === "platform" && uiSelect({ id: "app-platform", label: t("Platform"), menuWidth: 220, value: a.platform || null, placeholder: t("Pick a platform"),
-    options: (F.sites || []).map((s) => ({ value: s.id, label: s.name })), onChange: (val) => editApp(a.id, { platform: val }) });
+    options: platformSites().map((s) => ({ value: s.id, label: s.name })), onChange: (val) => editApp(a.id, { platform: val }) });
   const subId = a.subset || c.subset || null;
   const pick = uiSelect({ id: "app-subset", label: t("Subset"), menuWidth: 300, value: a.subset || null,
     placeholder: c.subset ? t("Like the company: {name}", { name: subsetName(subsets().find((x) => x.id === c.subset)) || c.subset }) : t("Pick a subset"),

@@ -2191,5 +2191,19 @@
  "None linked yet.": "아직 연결된 기록이 없습니다.",
  "{field}: a record's id or title": "{field}: 기록의 ID 또는 제목이어야 합니다",
  "{field}: one record, not a list": "{field}: 기록 하나만 연결할 수 있습니다",
- "{field}: {collection} has no record “{value}”": "{field}: {collection}에 ‘{value}’이(가) 없습니다"
+ "{field}: {collection} has no record “{value}”": "{field}: {collection}에 ‘{value}’이(가) 없습니다",
+ "Unknown company: {name}": "알 수 없는 회사입니다: {name}",
+ "First give the address where you sign up on its careers site.": "먼저 채용 사이트에서 가입하는 주소를 입력해 주십시오.",
+ "Your profile on {company}'s careers site": "{company} 채용 사이트의 프로필",
+ "The online resume {company} reads with every application on its site. Resume Studio keeps a copy, compared with the subset its company's page says.": "{company}이(가) 자사 사이트의 모든 지원서와 함께 확인하는 온라인 이력서입니다. Resume Studio는 사본을 보관하고 회사 페이지에서 지정한 서브셋과 비교합니다.",
+ "Its sections and limits come from {site}, on the same recruiting system ({system}); the AI checks them on its first read.": "섹션과 글자 수 제한은 같은 채용 시스템({system})의 {site}에서 가져왔습니다. AI가 처음 읽을 때 확인합니다.",
+ "the online resume the company reads": "회사가 확인하는 온라인 이력서",
+ "Resume Studio can keep a copy of it, field by field, and fill it from the subset above, as for LinkedIn.": "Resume Studio는 LinkedIn과 마찬가지로 항목별로 사본을 보관하고 위의 서브셋으로 채울 수 있습니다.",
+ "First give the address where you sign up, above.": "먼저 위에 가입 주소를 입력해 주십시오.",
+ "Keep a copy of it": "사본 보관",
+ "Open the copy": "사본 열기",
+ "Stop keeping a copy of your profile on {company}'s site?": "{company} 사이트 프로필의 사본 보관을 중지하시겠습니까?",
+ "Nothing changes on the site itself. What the AI read there stays saved: keep a copy again to get it back.": "사이트 자체는 변경되지 않습니다. AI가 읽은 내용은 저장된 채로 남으며, 다시 사본을 보관하면 복원됩니다.",
+ "Stop": "중지",
+ "Stop keeping a copy of your profile there": "이 사이트 프로필의 사본 보관 중지"
 }

@@ -228,6 +228,19 @@ def companies(c):
             c.server.req("POST", f"/api/hunt/companies/{cid}/roles", {"role": r})
 
 
+def company_profiles(c):
+    """The first company's 网申 profile copied and read once, on 北森; the second on 北森 too, starting from it."""
+    companies(c)
+    for cid in ("C1", "C2"):
+        c.server.req("PUT", f"/api/hunt/companies/{cid}", {"sites": [{"url": "https://careers.example.com/campus", "kind": "campus", "system": "北森"}]})
+    sid = c.server.req("POST", "/api/autofill/sites", {"company": "C1"})[1]["site"]["id"]
+    c.server.req("POST", f"/api/autofill/{sid}/current", {
+        "url": "https://careers.example.com/campus/resume", "basics": {"about": "热爱编程，" * 40},
+        "items": [{"section": "education", "key": None, "fields": {"org": "Hilltop Capital University", "degree": "MSc Computer Science", "start": "2025-07"}}],
+        "site": {"sections": ["education", "experience", "projects"], "basics": ["about"], "limits": {"basics.about": 500}}})
+    c.server.req("POST", "/api/autofill/sites", {"company": "C2"})
+
+
 LOGO = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000"
                      "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082")
 
@@ -604,6 +617,15 @@ STATES = [
     State("applying, companies", applying("companies"), [".htable tbody tr"], prepare=companies),
     State("applying, a company's page", then(applying("companies"), click(".dbv-title >> nth=0")), [".hunt-wrap.is-page"],
           prepare=companies),
+    State("applying, a company's page with its 网申 profile copied", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title"),
+          lambda pg, c: (pg.wait_for_selector("#company-profile-open"), pg.evaluate("() => document.querySelector('#company-profile').scrollIntoView({block: 'center'})"))),
+          ["#company-profile .co-profile", "#company-profile-open"], prepare=company_profiles),
+    State("applying, a company's 网申 profile copy", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title"),
+          click("#company-profile-open"), wait(".fill-card.fill-sync")), [".fill-head h1", ".fill-card.fill-sync", ".hunt-back", ".fill-compare"],
+          prepare=company_profiles),
+    State("applying, a 网申 profile copy that starts from another company's", then(applying("companies"), click(".dbv-view tr[data-id='C2'] .dbv-title"),
+          click("#company-profile-open"), wait(".fill-card.fill-start")), [".fill-head .fh-text p.muted", ".fill-card.fill-start"],
+          prepare=company_profiles),
     State("applying, a company that may be on the list already",
           then(applying("companies"), click("#hunt-new-company"), lambda pg, c: pg.fill("#fm-name", "Atlassian Pty Ltd"),
                click(".modal .btn.primary"), wait(".modal .fm-notice-hint")),

@@ -71,9 +71,11 @@ def _shape_step(site: Site) -> str:
     """For a site the user added: the JSON also says what the site has, so the plan fits it."""
     if site.preset:
         return ""
+    shape = json.dumps({'sections': site.sections, 'basics': site.basics, 'limits': site.limits, 'lacks': site.lacks}, ensure_ascii=False)
     known = "" if not site.learned else (
-        f" Last time it had: {json.dumps({'sections': site.sections, 'basics': site.basics, 'limits': site.limits, 'lacks': site.lacks}, ensure_ascii=False)}"
-        " (correct it if the site changed).")
+        f" Another company's careers site on {site.system} had: {shape}. Sites on one system usually share it: check"
+        " it against this one and correct what differs." if site.learned_from else
+        f" Last time it had: {shape} (correct it if the site changed).")
     return f"""
    This site is new to Resume Studio, so the route JSON also says what the site has, at its top level:
    `"site": {{"sections": [...], "basics": [...], "limits": {{"experience.description": 2000}}, "lacks": {{"projects": ["role"]}}}}`

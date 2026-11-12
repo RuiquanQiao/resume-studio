@@ -2191,5 +2191,19 @@
  "None linked yet.": "尚无关联记录。",
  "{field}: a record's id or title": "{field}：应为记录的编号或标题",
  "{field}: one record, not a list": "{field}：只能关联一条记录，不能是列表",
- "{field}: {collection} has no record “{value}”": "{field}：{collection}中没有“{value}”"
+ "{field}: {collection} has no record “{value}”": "{field}：{collection}中没有“{value}”",
+ "Unknown company: {name}": "未知的公司：{name}",
+ "First give the address where you sign up on its careers site.": "请先填写在其招聘网站上注册的地址。",
+ "Your profile on {company}'s careers site": "你在 {company} 招聘网站上的简历",
+ "The online resume {company} reads with every application on its site. Resume Studio keeps a copy, compared with the subset its company's page says.": "{company} 在其网站上处理每份申请时都会查看这份在线简历。Resume Studio 保存一份副本，并与公司页上指定的子集对照。",
+ "Its sections and limits come from {site}, on the same recruiting system ({system}); the AI checks them on its first read.": "其栏目和字数限制沿用自 {site}（同一招聘系统：{system}）；AI 首次读取时会核对。",
+ "the online resume the company reads": "公司查看的在线简历",
+ "Resume Studio can keep a copy of it, field by field, and fill it from the subset above, as for LinkedIn.": "Resume Studio 可以逐项保存它的副本，并按上方的子集填写，与 LinkedIn 相同。",
+ "First give the address where you sign up, above.": "请先在上方填写注册地址。",
+ "Keep a copy of it": "保存副本",
+ "Open the copy": "打开副本",
+ "Stop keeping a copy of your profile on {company}'s site?": "停止保存你在 {company} 网站上简历的副本？",
+ "Nothing changes on the site itself. What the AI read there stays saved: keep a copy again to get it back.": "网站本身不会有任何改动。AI 在那里读取的内容仍会保留：再次保存副本即可恢复。",
+ "Stop": "停止",
+ "Stop keeping a copy of your profile there": "停止保存该网站简历的副本"
 }

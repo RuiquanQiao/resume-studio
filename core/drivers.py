@@ -21,6 +21,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -38,6 +39,21 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 def _now() -> float:
     return round(time.time(), 3)
+
+
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+
+
+def stderr_text(raw: bytes) -> str:
+    """An agent's error output as the chat shows it: what a terminal would print, without its colour codes (a
+    Python traceback came in full of \\x1b[35m, 2026-11-12), in UTF-8 or else this computer's code page (GBK on a
+    Chinese Windows, where a tool printing in it came in as replacement characters)."""
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        import locale
+        text = raw.decode(locale.getpreferredencoding(False) or "utf-8", errors="replace")
+    return _ANSI.sub("", text).replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
 class Driver:
@@ -73,7 +89,7 @@ class Driver:
                     self.reply_done(runner, turn, res.get("error"), cost)
             code = turn.proc.wait()
             time.sleep(0.05)
-            err_text = b"".join(stderr_chunks).decode("utf-8", errors="replace").strip()
+            err_text = stderr_text(b"".join(stderr_chunks))
             if code != 0 and not turn.error and not turn.cancelled and not turn.flushed_any:
                 turn.error = err_text[-2000:] or t("{cmd} exited with code {code}", cmd=self.agent.exe, code=code)
         except OSError as e:

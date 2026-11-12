@@ -1851,6 +1851,48 @@ def test_a_search_box_takes_chinese_typed_through_an_ime(page_all, server):
         server.req("DELETE", f"/api/hunt/companies/{cid}")
 
 
+def test_a_companys_wangshen_profile_is_copied_from_its_page_and_comes_back_after_a_restart(page_all, server):
+    """docs/JOB_HUNT.md step 4: the company's page keeps a copy of the user's 网申 profile there, like a platform's.
+    The copy's page goes back to the company, isn't one of the Platforms, and is open again after a reload (a
+    platform's page open at a restart came back as the table, 2026-11-12)."""
+    pg = page_all
+    cid = server.req("POST", "/api/hunt/companies", {"name": "星河网申", "site": "https://careers.example.com/campus",
+                                                     "subset": "RES-TECH-EN"})[1]["company"]["id"]
+    bare = server.req("POST", "/api/hunt/companies", {"name": "无网址公司"})[1]["company"]["id"]
+    pg.keyboard.press("Control+3")
+    pg.evaluate("(id) => openHunt('company', id)", bare)
+    pg.wait_for_selector("#company-profile-add[disabled]")   # no sign-up address: nothing to copy yet, said beside it
+    pg.evaluate("(id) => openHunt('company', id)", cid)
+    pg.click("#company-profile-add")
+    pg.wait_for_selector(".fill-card.fill-start")
+    assert "星河网申" in pg.inner_text(".fill-head h1") and pg.inner_text(".hunt-back").strip() == "星河网申"
+    assert pg.evaluate("() => H.tab") == "companies" and not pg.query_selector("#fill-sites")
+    assert pg.inner_text(".hunt-tab[data-tab=platforms] .n") == "2"   # LinkedIn and BOSS直聘 only
+    pg.reload()
+    pg.wait_for_selector(".fill-card.fill-start")
+    assert "星河网申" in pg.inner_text(".fill-head h1")
+    pg.click(".hunt-back")
+    pg.wait_for_selector("#company-profile-open")
+    assert "尚未读取" in pg.inner_text("#company-profile")
+    # a platform's page comes back after a reload too
+    pg.evaluate("() => openHunt('platform', 'linkedin')")
+    pg.wait_for_selector("#fill-sites")
+    pg.reload()
+    pg.wait_for_selector("#fill-sites .fs-site.on[data-site=linkedin]")
+    # the Platforms table lists platforms only
+    pg.click(".hunt-tab[data-tab=platforms]")
+    pg.wait_for_selector(".dbv-view[data-table=platforms] tbody tr")
+    assert "星河网申" not in pg.inner_text(".dbv-view[data-table=platforms]")
+    # and the copy can go: off the company's page, with what was read kept for when it comes back
+    pg.evaluate("(id) => openHunt('company', id)", cid)
+    pg.wait_for_selector("#company-profile-open")
+    pg.click(".ed-acts .btn.icon.ghost")
+    pg.click(".menu button:has-text('停止保存该网站简历的副本')")
+    pg.click(".modal .btn.danger-soft")
+    pg.wait_for_selector("#company-profile-add")
+    assert not pg.query_selector("#company-profile-open")
+
+
 def test_the_company_table_shows_while_changes_keep_coming(page_all, server):
     """A user report, 2026-11-12: the Companies tab said "Loading…" for minutes. A scan says "changed" every few
     seconds, each change asked for the table again while the last answer was still on its way, and the table was

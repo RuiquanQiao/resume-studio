@@ -11,6 +11,19 @@ import pytest
 from core import agents
 
 
+def test_an_agents_error_output_reads_as_a_terminal_shows_it(monkeypatch):
+    """A crash's stderr in the chat: no colour codes (a Python traceback came in full of \\x1b[35m), and text in the
+    computer's code page (GBK on a Chinese Windows) read in it, not as replacement characters."""
+    import locale
+    from core.drivers import stderr_text
+
+    tb = b'Traceback (most recent call last):\r\n  File \x1b[35m"fake.py"\x1b[0m, line \x1b[35m255\x1b[0m\r\n\x1b[1;31mKeyError\x1b[0m: \x1b]8;;x\x07x'
+    assert stderr_text(tb) == 'Traceback (most recent call last):\n  File "fake.py", line 255\nKeyError: x'
+    monkeypatch.setattr(locale, "getpreferredencoding", lambda do_setlocale=True: "gbk")
+    assert stderr_text("找不到命令 claude".encode("gbk")) == "找不到命令 claude"
+    assert stderr_text("错误：已用完".encode("utf-8")) == "错误：已用完"
+
+
 def test_codex_uses_provider_turn_start_time():
     from types import SimpleNamespace
     from core.chat import Turn

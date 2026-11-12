@@ -324,6 +324,80 @@ def test_the_user_picks_the_sites(server, data_file):
     assert server.req("GET", "/api/autofill")[1]["sites"] == []
 
 
+def test_a_companys_careers_site_keeps_a_copy_like_a_platform(server, data_file):
+    """A company's 网申 profile is a site of kind "company" (docs/JOB_HUNT.md step 4): its name and address are the
+    company's, it is compared with the company's subset, it isn't one of the Platforms, and a site on a recruiting
+    system starts with what was learned on another company's site on that system."""
+    def company(name, site="", subset="", system=""):
+        c = server.req("POST", "/api/hunt/companies", {"name": name, **({"site": site} if site else {}), **({"subset": subset} if subset else {})})[1]["company"]
+        if system:
+            server.req("PUT", f"/api/hunt/companies/{c['id']}", {"sites": [{"url": c["site"], "kind": "campus", "system": system}]})
+        return c["id"]
+    a = company("星河科技", "https://xinghe.example.com/campus", "RES-TECH-EN", "北森")
+    b = company("云帆科技", "https://yunfan.example.com/campus", system="北森")
+    bare = company("无站点公司")
+
+    assert server.req("POST", "/api/autofill/sites", {"company": "C999"})[0] == 404
+    st, r = server.req("POST", "/api/autofill/sites", {"company": bare})
+    assert st == 400 and r["error"]   # no sign-up address yet: said, never a site with no address
+    st, r = server.req("POST", "/api/autofill/sites", {"company": a})
+    assert st == 200, r
+    s = r["site"]
+    assert s["kind"] == "company" and s["company"] == a and s["name"] == "星河科技" and s["home"] == "https://xinghe.example.com/campus"
+    assert s["system"] == "北森" and not s["learned"]
+    sid = s["id"]
+    # one per company: adding it again is the same site
+    assert server.req("POST", "/api/autofill/sites", {"company": a})[1]["site"]["id"] == sid
+    # compared with the company's subset, the one "Mark as sent" keeps
+    v = server.req("GET", f"/api/autofill/{sid}")[1]
+    assert v["subset_id"] == "RES-TECH-EN" and v["site"]["kind"] == "company"
+    # the tracker's Platforms are platforms only
+    assert [p["id"] for p in server.req("GET", "/api/hunt")[1]["platforms"]] == ["linkedin", "boss"]
+
+    # what the AI is told: whose careers site, what never to press, which system
+    from autofill import prompts
+    ctx = prompts.learn_context(next(x for x in _fill_of(server).sites() if x.id == sid), "d.yaml", None, "", False)
+    assert "星河科技's own careers site" in ctx and "投递" in ctx and "runs on 北森" in ctx and "身份证号" in ctx
+
+    # its first read says what it has; the next company on 北森 starts with that
+    now = {"url": "https://xinghe.example.com/campus/resume", "basics": {"about": "热爱编程"},
+           "items": [{"section": "education", "key": None, "fields": {"org": "HCU", "degree": "MSc", "start": "2025-07"}}],
+           "site": {"sections": ["education", "experience", "projects"], "basics": ["about"], "limits": {"basics.about": 500},
+                    "lacks": {"projects": ["link"]}}}
+    st, r = server.req("POST", f"/api/autofill/{sid}/current", now)
+    assert st == 200, r
+    r = server.req("POST", "/api/autofill/sites", {"company": b})[1]
+    sb = r["site"]
+    assert sb["learned"] and sb["learned_from"] == sid and sb["sections"] == ["education", "experience", "projects"]
+    assert sb["limits"] == {"basics.about": 500} and sb["fields"]["projects"] == ["name", "role", "start", "end", "description"]
+    assert "Another company's careers site on 北森" in prompts.learn_context(
+        next(x for x in _fill_of(server).sites() if x.id == sb["id"]), "d.yaml", None, "", False)
+
+    # the company's name and address are its page's: a change there is the copy's at once; the site's own settings
+    # can't change them
+    server.req("PUT", f"/api/hunt/companies/{a}", {"name": "星河集团", "site": "https://xinghe.example.com/join"})
+    s = next(x for x in server.req("GET", "/api/autofill")[1]["sites"] if x["id"] == sid)
+    assert s["name"] == "星河集团" and s["home"] == "https://xinghe.example.com/join"
+    server.req("PUT", f"/api/autofill/{sid}/settings", {"name": "x", "home": "https://elsewhere.example.com", "notes": "简历在 个人中心 → 我的简历"})
+    s = next(x for x in server.req("GET", "/api/autofill")[1]["sites"] if x["id"] == sid)
+    assert s["name"] == "星河集团" and s["home"] == "https://xinghe.example.com/join" and s["notes"].startswith("简历在")
+
+    # off the list and back: what was read and learned there comes back with it
+    server.req("DELETE", f"/api/autofill/{sid}")
+    assert sid not in [x["id"] for x in server.req("GET", "/api/autofill")[1]["sites"]]
+    s = server.req("POST", "/api/autofill/sites", {"company": a})[1]["site"]
+    assert s["id"] == sid and s["learned"] and not s["learned_from"] and s["notes"].startswith("简历在")
+    assert server.req("GET", f"/api/autofill/{sid}")[1]["synced"]
+    # a company that is deleted takes its site off the list
+    server.req("DELETE", f"/api/hunt/companies/{b}")
+    assert sb["id"] not in [x["id"] for x in server.req("GET", "/api/autofill")[1]["sites"]]
+
+
+def _fill_of(server):
+    """The running app's Autofill (its companies hook is the tracker's)."""
+    return server.inst.fill
+
+
 def run_steps(server, data_file, steps: dict):
     """What fake Claude runs when a message has these words (scripts/browser.py, as Bash)."""
     os.environ["FAKE_CLAUDE_RUN"] = json.dumps(steps)

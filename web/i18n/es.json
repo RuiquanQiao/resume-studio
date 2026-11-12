@@ -2365,5 +2365,19 @@
  "None linked yet.": "Aún no hay nada vinculado.",
  "{field}: a record's id or title": "{field}: el identificador o el título de un registro",
  "{field}: one record, not a list": "{field}: un solo registro, no una lista",
- "{field}: {collection} has no record “{value}”": "{field}: {collection} no tiene ningún registro «{value}»"
+ "{field}: {collection} has no record “{value}”": "{field}: {collection} no tiene ningún registro «{value}»",
+ "Unknown company: {name}": "Empresa desconocida: {name}",
+ "First give the address where you sign up on its careers site.": "Indique primero la dirección donde se registra en su sitio de empleo.",
+ "Your profile on {company}'s careers site": "Su perfil en el sitio de empleo de {company}",
+ "The online resume {company} reads with every application on its site. Resume Studio keeps a copy, compared with the subset its company's page says.": "El currículum en línea que {company} lee con cada solicitud en su sitio. Resume Studio guarda una copia, comparada con el subconjunto que indica la página de la empresa.",
+ "Its sections and limits come from {site}, on the same recruiting system ({system}); the AI checks them on its first read.": "Sus secciones y límites provienen de {site}, en el mismo sistema de selección ({system}); la IA los comprueba en su primera lectura.",
+ "the online resume the company reads": "el currículum en línea que lee la empresa",
+ "Resume Studio can keep a copy of it, field by field, and fill it from the subset above, as for LinkedIn.": "Resume Studio puede guardar una copia, campo por campo, y rellenarla con el subconjunto de arriba, como en LinkedIn.",
+ "First give the address where you sign up, above.": "Indique primero arriba la dirección donde se registra.",
+ "Keep a copy of it": "Guardar una copia",
+ "Open the copy": "Abrir la copia",
+ "Stop keeping a copy of your profile on {company}'s site?": "¿Dejar de guardar una copia de su perfil en el sitio de {company}?",
+ "Nothing changes on the site itself. What the AI read there stays saved: keep a copy again to get it back.": "Nada cambia en el propio sitio. Lo que la IA leyó allí queda guardado: guarde de nuevo una copia para recuperarlo.",
+ "Stop": "Detener",
+ "Stop keeping a copy of your profile there": "Dejar de guardar una copia de su perfil allí"
 }

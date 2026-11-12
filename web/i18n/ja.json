@@ -2191,5 +2191,19 @@
  "None linked yet.": "リンクされた記録はまだありません。",
  "{field}: a record's id or title": "{field}：記録の ID かタイトルを指定してください",
  "{field}: one record, not a list": "{field}：リンクできるのは1件だけです",
- "{field}: {collection} has no record “{value}”": "{field}：{collection}に「{value}」はありません"
+ "{field}: {collection} has no record “{value}”": "{field}：{collection}に「{value}」はありません",
+ "Unknown company: {name}": "不明な企業です：{name}",
+ "First give the address where you sign up on its careers site.": "先に、採用サイトで登録するページのアドレスを入力してください。",
+ "Your profile on {company}'s careers site": "{company} の採用サイトにあるプロフィール",
+ "The online resume {company} reads with every application on its site. Resume Studio keeps a copy, compared with the subset its company's page says.": "{company} が自社サイトでの応募ごとに確認するオンライン履歴書です。Resume Studio はその写しを保存し、企業ページで指定したサブセットと照合します。",
+ "Its sections and limits come from {site}, on the same recruiting system ({system}); the AI checks them on its first read.": "セクションと文字数制限は、同じ採用システム（{system}）の {site} から引き継いでいます。AI が初回の読み取りで確認します。",
+ "the online resume the company reads": "企業が確認するオンライン履歴書",
+ "Resume Studio can keep a copy of it, field by field, and fill it from the subset above, as for LinkedIn.": "Resume Studio は LinkedIn と同様に、項目ごとに写しを保存し、上のサブセットから入力できます。",
+ "First give the address where you sign up, above.": "先に、上で登録ページのアドレスを入力してください。",
+ "Keep a copy of it": "写しを保存",
+ "Open the copy": "写しを開く",
+ "Stop keeping a copy of your profile on {company}'s site?": "{company} のサイトにあるプロフィールの写しの保存を停止しますか？",
+ "Nothing changes on the site itself. What the AI read there stays saved: keep a copy again to get it back.": "サイト自体は何も変更されません。AI がそこで読み取った内容は保存されたままです。再び写しを保存すると元に戻ります。",
+ "Stop": "停止",
+ "Stop keeping a copy of your profile there": "このサイトのプロフィールの写しの保存を停止"
 }

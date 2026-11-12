@@ -10,7 +10,7 @@ import re
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from resume import model
 from resume.service import Studio
@@ -27,6 +27,9 @@ class Autofill:
         self.studio = studio
         self.root = studio.store.state_dir / "autofill"
         self.lock = threading.RLock()
+        # the tracker's companies (jobhunt), id -> company: a company's 网申 profile takes its name, address, system
+        # and subset from there. Set by the app once the tracker exists; none until then.
+        self.companies: Callable[[], dict[str, dict]] = lambda: {}
 
     def _path(self, site_id: str) -> Path:
         return self.root / f"{site_id}.json"
@@ -45,9 +48,77 @@ class Autofill:
         tmp.write_text(json.dumps({"sites": recs}, ensure_ascii=False, indent=1), encoding="utf-8")
         os.replace(tmp, self.root / "sites.json")
 
+    def _companies(self) -> dict[str, dict]:
+        try:
+            return self.companies() or {}
+        except Exception:   # noqa: BLE001 — the tracker unreadable: platforms still work
+            return {}
+
     def sites(self) -> list[Site]:
         with self.lock:
-            return [s for s in (sites.build(r) for r in self._records()) if s is not None]
+            cs = self._companies() if any(r.get("kind") == "company" for r in self._records()) else {}
+            return [s for s in (sites.build(r, cs) for r in self._records()) if s is not None]
+
+    def company_site(self, company_id: str) -> Site | None:
+        return next((s for s in self.sites() if s.kind == "company" and s.company == company_id), None)
+
+    def add_company_site(self, company_id: str) -> Site:
+        """A copy of the user's profile on a company's careers site (its 网申 resume), kept like a platform's. One per
+        company; one added before (and taken off the list) comes back with what was read there."""
+        with self.lock:
+            c = self._companies().get(company_id)
+            if c is None:
+                raise KeyError(company_id)
+            if not sites.valid_home(str(c.get("site") or "")):
+                raise ValueError("company-site")
+            recs = self._records()
+            have = next((r for r in recs if r.get("kind") == "company" and r.get("company") == company_id), None)
+            if have is None:
+                sid = "co-" + re.sub(r"[^a-z0-9]+", "-", company_id.lower()).strip("-")
+                rec = {"id": sid, "kind": "company", "company": company_id}
+                gone = self.root / f"{sid}.json"
+                old = {}
+                try:
+                    old = json.loads(gone.read_text(encoding="utf-8")).get("site_rec") or {}
+                except (OSError, ValueError, AttributeError):
+                    pass
+                rec.update({k: v for k, v in old.items() if k in ("sections", "basics", "limits", "lacks", "learned", "learned_from", "notes", "lang")})
+                recs.append(rec)
+                self._write_records(recs)
+                site = sites.build(rec, self._companies())
+                if site is not None and not site.learned:
+                    self._share_shape(site)
+            site = self.company_site(company_id)
+            if site is None:
+                raise ValueError("company-site")
+            return site
+
+    def _share_shape(self, site: Site) -> None:
+        """A company site on a recruiting system another learned site runs on starts with what was learned there
+        (its sections, fields and limits); one just learned passes what it found to the unlearned ones on its system."""
+        if site.kind != "company" or not site.system:
+            return
+        recs = self._records()
+        cs = self._companies()
+        on = [(r, sites.build(r, cs)) for r in recs if r.get("kind") == "company"]
+        same = [(r, s) for r, s in on if s is not None and s.id != site.id and s.system.lower() == site.system.lower()]
+        changed = False
+        if site.learned:
+            for r, s in same:
+                if not s.learned or s.learned_from:   # never one that read itself
+                    r.update(sections=site.sections, basics=site.basics, limits=site.limits, lacks=site.lacks,
+                             learned=True, learned_from=site.id)
+                    changed = True
+        else:
+            src = next((s for _, s in same if s.learned and not s.learned_from), None) \
+                or next((s for _, s in same if s.learned), None)
+            mine = next((r for r in recs if r.get("id") == site.id), None)
+            if src is not None and mine is not None:
+                mine.update(sections=src.sections, basics=src.basics, limits=src.limits, lacks=src.lacks,
+                            learned=True, learned_from=src.id)
+                changed = True
+        if changed:
+            self._write_records(recs)
 
     def site(self, site_id: str) -> Site | None:
         return next((s for s in self.sites() if s.id == site_id), None)
@@ -96,6 +167,15 @@ class Autofill:
             for k, v in fields.items():
                 if k not in SITE_FIELDS or v is None:
                     continue
+                if rec.get("kind") == "company" and k in ("name", "home"):
+                    continue   # the company's own: changed on its page
+                if rec.get("kind") == "company":
+                    v = str(v).strip()
+                    if v:
+                        rec[k] = v
+                    else:
+                        rec.pop(k, None)
+                    continue
                 v = str(v).strip()
                 if k == "home" and v:
                     if "://" not in v and "." in v:
@@ -110,14 +190,18 @@ class Autofill:
                 else:
                     rec.pop(k, None)   # back to the preset's own
             self._write_records(recs)
-            return sites.build(rec)
+            return sites.build(rec, self._companies() if rec.get("kind") == "company" else None)
 
     def remove_site(self, site_id: str) -> None:
-        """Off the list. What was read there stays in its file, for when it comes back."""
+        """Off the list. What was read there stays in its file, for when it comes back (a company's site keeps
+        what was learned about it there too: adding it again brings it back)."""
         with self.lock:
             recs = self._records()
-            if not any(r.get("id") == site_id for r in recs):
+            rec = next((r for r in recs if r.get("id") == site_id), None)
+            if rec is None:
                 raise KeyError(site_id)
+            if rec.get("kind") == "company":
+                self.save(site_id, site_rec={k: v for k, v in rec.items() if k not in ("id", "kind", "company")})
             self._write_records([r for r in recs if r.get("id") != site_id])
 
     def move_site(self, site_id: str, index: int) -> None:
@@ -158,8 +242,11 @@ class Autofill:
                 return site, []
             rec.update(sections=secs, basics=basics, limits={str(k): v for k, v in limits.items()},
                        lacks={s: [str(f) for f in fs] for s, fs in lacks.items()}, learned=True)
+            rec.pop("learned_from", None)   # read on the site itself now
             self._write_records(recs)
-            return sites.build(rec) or site, []
+            out = sites.build(rec, self._companies() if rec.get("kind") == "company" else None) or site
+            self._share_shape(out)
+            return out, []
 
     def load(self, site_id: str) -> dict:
         with self.lock:
@@ -183,6 +270,9 @@ class Autofill:
         st = self.load(site.id) if st is None else st
         doc, _ = self.studio.store.load()
         chosen = st.get("subset_id") or st.get("version_id")   # version_id: saved before subsets were named
+        if site.kind == "company":
+            # what goes to the company is the subset its page says ("Filled from"), the one "Mark as sent" keeps
+            chosen = str((self._companies().get(site.company) or {}).get("subset") or "") or chosen
         subset = model.get_subset(doc, str(chosen or model.ALL_ID))
         if subset is None:
             subset = model.get_subset(doc, model.ALL_ID)

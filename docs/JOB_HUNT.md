@@ -825,10 +825,24 @@ Each step ends usable and tested, and is committed on its own.
 2. **Companies' pages**: About with Claude's research and sources; roles in 志愿 order; the browser bar
    naming the site it is on.
 3. **Sign in as a button**: sign-in state per site, the `plain_signin` memory, sign-in mode from the row.
-4. **填简历 for a company site**: company sites become Autofill sites of kind `company`, filled from the
+4. **填简历 for a company site** (built 2026-11-12): company sites become Autofill sites of kind `company`, filled from the
    sign-up's subset version with the git-style field diff. Xinghe first: its 简历 page has 基本信息, 个人证书,
    教育经历, 语言能力, 自我评价, 社交账号, 上传简历 (the subset version's PDF) and 作品集; no internship or
    project section, so the PDF carries those. ID numbers, home address and the like stay the user's to type.
+   Built as designed, with these choices:
+   - The company's page, "Its careers site" card, has **Your profile there**: "Keep a copy of it" (once it has a
+     sign-up address) makes the site; after that the row shows its state (not read / changes to push / conflicts /
+     in step / sign in) and "Open the copy". The copy's page is the platforms' page, under the Companies tab, going
+     back to its company; the ⋯ menu stops keeping it (what was read stays, for when it comes back).
+   - `autofill/sites.json` keeps `{id: "co-<company>", kind: "company", company}` plus what the AI learned; the name,
+     address and recruiting system are read from the company each time, so a change on its page is the copy's.
+   - The subset is the company's "Filled from" (the one "Mark as sent" keeps): picking one on the copy's page changes it.
+   - A careers site on a recruiting system (北森, Moka, 飞书…, the `system` the AI writes on its sites) starts with
+     the sections, fields and limits learned on another company's site on that system (`learned_from`), and the AI
+     is told to check them; a site that reads itself passes what it found on to the unlearned ones.
+   - The AI's guide for a company site (autofill/sites.py `COMPANY_GUIDE`): where the online resume usually is,
+     how its sections map, that 身份证号 and the like stay the user's, and never to press 投递 / 提交 / 撤回.
+   - The Platforms table, its count and the "via a platform" pickers list platforms only.
 5. **career-ops bridge**: import, "Copy to career-ops".
 
 ## What stays the user's
