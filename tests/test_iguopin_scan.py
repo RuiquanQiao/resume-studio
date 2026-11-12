@@ -56,10 +56,11 @@ class GuopinApi:
                 if urllib.parse.urlsplit(self.path).path != iguopin.API:
                     return self._json({"code": 404}, 404)
                 n, size = body["page"], min(100, body["page_size"])   # as the real one: 100 at most whatever is asked
-                api.asked.append((tuple(body["project_id"]), n, body.get("company_id_with_sub")))
+                api.asked.append((tuple(body.get("project_id", ())), n, body.get("company_id_with_sub")))
                 if n in api.broken:
                     return self._json({"code": 500, "msg": "busy"}, 502)
-                rows = [r for p in body["project_id"] for r in api.rows.get(p, [])]
+                rows = [r for p in body["project_id"] for r in api.rows.get(p, [])] if "project_id" in body \
+                    else [r for rs in api.rows.values() for r in rs]   # no project named: all of the company's open roles
                 self._json({"code": 200, "data": {"list": rows[(n - 1) * size:n * size], "total": len(rows),
                                                   "page": n, "page_size": size}})
 
@@ -152,6 +153,20 @@ def test_a_route_the_ai_kept_steps_aside_and_its_roles_keep_their_links(hunt, mo
         assert len(api.asked) == 1                                     # the site and the route's page: one list, read once
         assert sc.shared_systems() == []                               # its API is a built-in scan's now
     finally:
+        api.close()
+
+
+def test_a_menu_left_on_last_seasons_project_still_reads_this_seasons_roles():
+    """中储粮's page menu named a project with no roles while 924 were open under a newer one: read 0, 2026-11-13."""
+    api = GuopinApi({"acme2027": ("900001", nav("old"))}, {"old": [], "new": [role(i) for i in range(3)]})
+    base, waits = iguopin.BASE, iguopin.WAITS
+    iguopin.BASE, iguopin.WAITS = api.base, (0, 0, 0)
+    try:
+        r = iguopin.read(PAGE)
+        assert (r["total"], len(r["jobs"])) == (3, 3)
+        assert [a[0] for a in api.asked] == [("old",), ()]
+    finally:
+        iguopin.BASE, iguopin.WAITS = base, waits
         api.close()
 
 

@@ -165,14 +165,22 @@ def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | N
     company = str(info.get("company_id") or "")
     rows: list[dict] = []
     total, failed = 0, []
-    for ids in lists_:
-        body = {"page_size": PAGE, "project_id": ids, "source": "s_job_list"}
+    todo = list(lists_)
+    while todo:
+        ids = todo.pop(0)
+        body = {"page_size": PAGE, "source": "s_job_list"}
+        if ids:
+            body["project_id"] = ids
         if company:
             body["company_id_with_sub"] = company
         first = ask(API, {**body, "page": 1}, "its job list")
         rows += first.get("list") or []
         count = first.get("total") if isinstance(first.get("total"), int) else 0
         total += count
+        if not todo and not total and ids and company:
+            # every list the menu names is empty: the menu is left on last season's project while this season's roles
+            # are open (中储粮, 2026-11-13). Ask with no project: every open role of the company and its branches.
+            todo.append([])
         for n in range(2, min(MAX_PAGES, -(-count // PAGE)) + 1):
             try:
                 rows += ask(API, {**body, "page": n}, f"page {n} of its job list").get("list") or []
