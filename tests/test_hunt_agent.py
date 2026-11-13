@@ -248,10 +248,11 @@ def test_claude_fills_a_company_from_its_command(live, data_file, monkeypatch):
     monkeypatch.setattr(hunt_api, "fetch_logo", lambda url: (PNG, "image/png"))
     cli(data_file, "add-company", "星河科技")
     code, out = cli(data_file, "show", "星河科技")
-    assert "not filled yet: industry, strength, hq, site, logo" in out
+    assert "not filled yet: industry, nature, strength, hq, site, logo" in out
     fields = {"name": "Xinghe Holdings", "industry": "电商", "strength": "市值约 1,600 亿美元", "location": "上海",
               "sites": [{"url": "https://careers.xinghe.example/campus", "kind": "campus", "system": "own site"}],
-              "logo_url": "https://example.com/xinghe.png", "sources": {"strength": "https://example.com/q"}}
+              "logo_url": "https://example.com/xinghe.png", "nature": "private",
+              "sources": {"strength": "https://example.com/q", "nature": "https://example.com/register"}}
     code, out = cli(data_file, "fill", "星河科技", "--stdin", stdin=json.dumps(fields, ensure_ascii=False))
     assert code == 0, out
     assert "strength: 市值约 1,600 亿美元  [https://example.com/q]" in out and "logo: saved" in out

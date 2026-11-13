@@ -26,7 +26,7 @@ from . import ics, logos, reader, writing
 from .geo import Geo
 from .history import History, describe
 from .logos import fetch_logo, fetch_logo_in_browser
-from .postings import tracks_of, Postings, same_link, stale
+from .postings import held_back, tracks_of, Postings, same_link, stale
 from .rank import Descriptions, fit, skill_words
 from .scan import Scanner
 from .store import LOGO_TYPES, STATE_IDS, Hunt, SameCompany
@@ -358,13 +358,15 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                             "research": research(c, apps, resume_langs(doc)),
                             "subset_exists": bool(c.get("subset")) and model.get_item(doc, "subset", c["subset"]) is not None},
                 "applications": apps, "events": evs,
-                "postings": sorted(({**p, "stale": stale(p), "tracks": tracks_of(p["title"], trs)} for p in posts.all(c["id"])),
+                "postings": sorted(({**p, "stale": stale(p), "tracks": tracks_of(p["title"], trs, c.get("nature") or "")} for p in posts.all(c["id"])),
                                    key=lambda p: (bool(p.get("closed")), p.get("category") or "", p["title"])),
                 "scan": {k: v for k, v in st.items() if k != "route"} | {"recorded": bool(st.get("route")),
                                                                        "running": scanner.running.get(c["id"]),
                                                                        "queued": c["id"] in scanner.queue,
                                                                        "sites": scanner.site_status(c)},
-                "keywords": posts.scans()["keywords"], "tracks": posts.tracks()}
+                "keywords": posts.scans()["keywords"], "tracks": posts.tracks(),
+                # its nature not known yet: the tracks for some natures only can't say whether its roles are theirs
+                "held_back": [tr["id"] for tr in held_back(trs, c.get("nature") or "")]}
 
     def app_view(ref: str) -> dict:
         a = hunt.application(ref)
@@ -565,7 +567,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     @app.route("PUT", "/api/hunt/scan-settings")
     def scan_settings(req: Request):
         b = body(req)
-        return posts.settings(keywords=b.get("keywords"), daily=b.get("daily"), tracks=b.get("tracks"))
+        return guard(lambda: posts.settings(keywords=b.get("keywords"), daily=b.get("daily"), tracks=b.get("tracks")))
 
     @app.route("POST", "/api/hunt/postings/{pid}/apply")
     def apply_posting(req: Request):

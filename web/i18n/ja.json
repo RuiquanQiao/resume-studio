@@ -2225,5 +2225,19 @@
  "{n} company": "{n} 社",
  "{n} route page": "ルートページ {n} 件",
  "API path: {path}": "API パス：{path}",
- "API host: {host}": "API ホスト：{host}"
+ "API host: {host}": "API ホスト：{host}",
+ "A company's nature needs its source: sources.nature, the page it was read on (its shareholders in the business register, or the listed company's controller). Not sure: leave nature out": "企業の種別には出典が必要です：sources.nature（読んだページ。商業登記上の株主、または上場親会社の実質的支配者）。確かでない場合は種別を空欄にしてください",
+ "Fill in its nature": "企業の種別を入力",
+ "Foreign-owned": "外資系",
+ "Nature": "種別",
+ "Not filled in": "未入力",
+ "Only at": "対象",
+ "Private": "民間企業",
+ "Public institution": "公的機関",
+ "State-owned": "国有企業",
+ "This company's nature isn't filled in yet, so some tracks can't judge its roles: {tracks}.": "この企業の種別はまだ入力されていないため、一部のトラックでは求人を判断できません：{tracks}。",
+ "any company": "すべての企業",
+ "tracks for some kinds of company only go by it": "一部の企業種別向けのトラックはこれで判断します",
+ "“{value}” isn't a company nature: use one of {list}, or leave it empty": "「{value}」は企業の種別ではありません：{list} のいずれかを使うか、空欄にしてください",
+ "University / research": "大学・研究機関"
 }

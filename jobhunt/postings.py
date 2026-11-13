@@ -34,7 +34,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from core.i18n import t
 
-from .store import Hunt, _date, _key, _now, _places, _text
+from .store import Hunt, _date, _key, _now, _places, _text, nature as _nature
 
 BATCHES = ["campus", "intern", "social", "other"]
 
@@ -193,9 +193,17 @@ def _words(v: Any, limit: int = 40) -> list[str]:
     return [k for k in dict.fromkeys(_text(x, 40) for x in xs) if k][:limit]
 
 
+def _natures(v: Any) -> list[str]:
+    """A track's kinds of company: ids or their words (国央企, 民企…), in any order; an unknown one is an error."""
+    xs = re.split(r"[,，、;；]", v) if isinstance(v, str) else v if isinstance(v, list) else []
+    return [k for k in dict.fromkeys(_nature(x) for x in xs) if k]
+
+
 def clean_tracks(v: Any) -> list[dict]:
     """The kinds of role the user goes for, each its own filter (2026-11-04: someone may go for an engineering and a
-    product role at once): {id, name, keywords, exclude, subset}. `subset` is the resume that kind of role goes out with."""
+    product role at once): {id, name, keywords, exclude, subset, natures}. `subset` is the resume that kind of role goes
+    out with; `natures`, when it lists any, the kinds of company the track is for (jobhunt/store.py NATURES): a 国央企
+    track takes no role of a private company, nor of one whose nature isn't known yet (2026-11-13)."""
     rows = [x for x in (v if isinstance(v, list) else []) if isinstance(x, dict)]
     taken = {str(x.get("id")) for x in rows if re.fullmatch(r"T\d+", str(x.get("id") or ""))}
     out, used = [], set()
@@ -209,7 +217,7 @@ def clean_tracks(v: Any) -> list[dict]:
             taken.add(tid)
         used.add(tid)
         out.append({"id": tid, "name": name, "keywords": kws, "exclude": _words(x.get("exclude")),
-                    "subset": _text(x.get("subset"), 40)})
+                    "subset": _text(x.get("subset"), 40), "natures": _natures(x.get("natures"))})
     return out[:40]   # was 12 (2026-11-13): a student weighing a dozen kinds of role hit the wall
 
 
@@ -219,21 +227,28 @@ _TRACKED: dict[tuple, dict[str, tuple[str, ...]]] = {}
 _TRACKED_LOCK = threading.Lock()
 
 
-_LAST_TRACKS: list = [None, None]   # [the list asked about last, its key]: the same list 53,000 times in a row
+_LAST_TRACKS: list = [None, None, None]   # [the list asked about last, its key, its tracks for some natures only]
 
 
-def _tracks_key(tracks: list[dict]) -> tuple:
-    last = _LAST_TRACKS
+def _tracks_key(tracks: list[dict]) -> tuple[tuple, dict]:
+    last = _LAST_TRACKS[:]   # a copy: another thread may set it between the reads
     if last[0] is tracks:
-        return last[1]
+        return last[1], last[2]
     key = tuple((tr["id"], tuple(tr["keywords"]), tuple(tr.get("exclude") or ())) for tr in tracks)
-    _LAST_TRACKS[:] = [tracks, key]
-    return key
+    only = {tr["id"]: frozenset(tr["natures"]) for tr in tracks if tr.get("natures")}
+    _LAST_TRACKS[:] = [tracks, key, only]   # one assignment: a thread reading it sees the old three or the new
+    return key, only
 
 
-def tracks_of(title: str, tracks: list[dict]) -> list[str]:
-    """The tracks a title belongs to (their ids); a track with no keywords takes none."""
-    key = _tracks_key(tracks)
+def tracks_of(title: str, tracks: list[dict], nature: str = "") -> list[str]:
+    """The tracks a title belongs to (their ids), at a company of this nature ("" not known); a track with no keywords
+    takes none, and one for some natures only takes none of a company of another nature or of one not known yet."""
+    got, only = _title_tracks(title, tracks)
+    return [x for x in got if x not in only or nature in only[x]] if only else list(got)
+
+
+def _title_tracks(title: str, tracks: list[dict]) -> tuple[tuple[str, ...], dict]:
+    key, only = _tracks_key(tracks)
     seen = _TRACKED.get(key)
     if seen is None:
         with _TRACKED_LOCK:
@@ -248,12 +263,17 @@ def tracks_of(title: str, tracks: list[dict]) -> list[str]:
         got = tuple(tr["id"] for tr in tracks if tr["keywords"] and _matches(folded, tr["keywords"], tr["exclude"]))
         if len(seen) < 200_000:
             seen[title] = got
-    return list(got)
+    return got, only
 
 
-def wanted(title: str, tracks: list[dict]) -> bool:
-    """No track has keywords yet: every title counts. Else only those in one."""
-    return not any(tr["keywords"] for tr in tracks) or bool(tracks_of(title, tracks))
+def wanted(title: str, tracks: list[dict], nature: str = "") -> bool:
+    """No track has keywords yet: every title counts. Else only those in one (at a company of this nature)."""
+    return not any(tr["keywords"] for tr in tracks) or bool(tracks_of(title, tracks, nature))
+
+
+def held_back(tracks: list[dict], nature: str) -> list[dict]:
+    """The tracks a company of this nature isn't judged by: those for some natures only, when its nature isn't known."""
+    return [] if nature else [tr for tr in tracks if tr.get("keywords") and tr.get("natures")]
 
 
 # A posting's fields that most postings leave empty: written only when they hold something, and the key only when
@@ -377,6 +397,14 @@ class Postings:
         if "tracks" not in d:   # one list of keywords before tracks (2026-11-04): it becomes the first track
             d["tracks"] = [{"id": "T1", "keywords": d["keywords"]}] if d["keywords"] else []
         d["tracks"] = clean_tracks(d["tracks"])
+        if "track-natures" not in d.setdefault("migrated", []):
+            # once (2026-11-13): the tracks named for 国央企 were for any company (a game studio's 后端开发 was in
+            # "信息科技（国央企）"); now for state employers only. Nothing guesses a company's nature: until one is
+            # filled in, these tracks take none of its roles
+            for tr in d["tracks"]:
+                if "国央企" in tr["name"] and not tr["natures"]:
+                    tr["natures"] = ["soe", "public"]
+            d["migrated"].append("track-natures")
         d.setdefault("daily", True)
         d.setdefault("last_all", "")
         return d
@@ -613,13 +641,18 @@ class Postings:
         the scans or the day change; each company's row is the caller's to add to."""
         d = self.scans()
         view = self._view()
-        sig = (id(view), id(d), time.strftime("%Y-%m-%d"))
+        natures = self.natures()
+        sig = (id(view), id(d), time.strftime("%Y-%m-%d"), tuple(sorted(natures.items())))
         kept = self._summary_kept
         if not kept or kept[0] != sig:
-            kept = self._summary_kept = (sig, self._summary(d, view["postings"]), (view, d))   # holds them: ids stay theirs
+            kept = self._summary_kept = (sig, self._summary(d, view["postings"], natures), (view, d))   # holds them: ids stay theirs
         return {cid: dict(s) for cid, s in kept[1].items()}
 
-    def _summary(self, d: dict, ps: list[dict]) -> dict:
+    def natures(self) -> dict[str, str]:
+        """Each company's nature ("" not known): what a track for some natures only goes by."""
+        return {c["id"]: c.get("nature") or "" for c in self.hunt.companies()}
+
+    def _summary(self, d: dict, ps: list[dict], natures: dict[str, str]) -> dict:
         trs = d["tracks"]
         out: dict[str, dict] = {}
         today = time.strftime("%Y-%m-%d")
@@ -631,7 +664,7 @@ class Postings:
                 s["stale"] += 1
                 continue
             s["open"] += 1
-            mine = tracks_of(p["title"], trs)
+            mine = tracks_of(p["title"], trs, natures.get(p["company"], ""))
             for tid in mine:
                 s["tracks"][tid] = s["tracks"].get(tid, 0) + 1
             if mine or not any(tr["keywords"] for tr in trs):
@@ -642,7 +675,7 @@ class Postings:
             s["scan"] = {k: st.get(k) for k in ("at", "ok", "error", "signed_out", "how", "found", "short")}
             s["scan"]["recorded"] = bool(st.get("route"))
             # news counts like the open roles beside it: only the ones the user looks for, and a stale one isn't new
-            s["news"] = {k: sum(1 for i in st.get(k) or [] if i in news and wanted(news[i]["title"], trs)
+            s["news"] = {k: sum(1 for i in st.get(k) or [] if i in news and wanted(news[i]["title"], trs, natures.get(cid, ""))
                                 and not (k == "new" and stale(news[i], today))) for k in ("new", "closed", "changed")}
         return out
 
@@ -650,6 +683,7 @@ class Postings:
         """What the scans of the last day brought, per company: matching new, closed and changed postings."""
         d = self.scans()
         trs = d["tracks"]
+        natures = self.natures()
         by_id = {p["id"]: p for p in self._view()["postings"]}
         cut = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - since_hours * 3600))
         out = []
@@ -658,7 +692,7 @@ class Postings:
                 continue
             row = {"company": cid, "at": st["at"]}
             for k in ("new", "closed", "changed"):
-                row[k] = [dict(by_id[i]) for i in st.get(k) or [] if i in by_id and wanted(by_id[i]["title"], trs)
+                row[k] = [dict(by_id[i]) for i in st.get(k) or [] if i in by_id and wanted(by_id[i]["title"], trs, natures.get(cid, ""))
                           and not (k == "new" and stale(by_id[i]))]
             if any(row[k] for k in ("new", "closed", "changed")):
                 out.append(row)
@@ -669,12 +703,14 @@ class Postings:
         it is in; how many each track has in all. With no track set up, none: the window asks for tracks instead."""
         trs = [tr for tr in self.tracks() if tr["keywords"]]
         today = time.strftime("%Y-%m-%d")
-        names = {c["id"]: c["name"] for c in self.hunt.companies()}
+        cs = self.hunt.companies()
+        names = {c["id"]: c["name"] for c in cs}
+        natures = {c["id"]: c.get("nature") or "" for c in cs}
         out, counts = [], {tr["id"]: 0 for tr in trs}
         for p in self._view()["postings"]:
             if p.get("closed") or p["company"] not in names or stale(p, today):
                 continue
-            ts = tracks_of(p["title"], trs)
+            ts = tracks_of(p["title"], trs, natures[p["company"]])
             if not ts:
                 continue
             for x in ts:

@@ -2408,5 +2408,19 @@
   "{n} pages de route"
  ],
  "API path: {path}": "Chemin d’API : {path}",
- "API host: {host}": "Hôte d’API : {host}"
+ "API host: {host}": "Hôte d’API : {host}",
+ "A company's nature needs its source: sources.nature, the page it was read on (its shareholders in the business register, or the listed company's controller). Not sure: leave nature out": "La nature d'une entreprise exige une source : sources.nature, la page où elle a été lue (ses actionnaires au registre du commerce, ou l'actionnaire de contrôle de la société cotée). En cas de doute, laissez la nature vide",
+ "Fill in its nature": "Indiquer sa nature",
+ "Foreign-owned": "Étrangère",
+ "Nature": "Nature",
+ "Not filled in": "Non renseignée",
+ "Only at": "Uniquement",
+ "Private": "Privée",
+ "Public institution": "Établissement public",
+ "State-owned": "Publique (État)",
+ "This company's nature isn't filled in yet, so some tracks can't judge its roles: {tracks}.": "La nature de cette entreprise n'est pas encore renseignée : certaines pistes ne peuvent donc pas juger ses postes : {tracks}.",
+ "any company": "toute entreprise",
+ "tracks for some kinds of company only go by it": "les pistes réservées à certains types d'entreprise s'en servent",
+ "“{value}” isn't a company nature: use one of {list}, or leave it empty": "« {value} » n'est pas une nature d'entreprise : utilisez l'une de {list}, ou laissez vide",
+ "University / research": "Université / recherche"
 }

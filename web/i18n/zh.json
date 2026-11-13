@@ -2225,5 +2225,19 @@
  "{n} company": "{n} 家公司",
  "{n} route page": "{n} 个路由页",
  "API path: {path}": "接口路径：{path}",
- "API host: {host}": "接口域名：{host}"
+ "API host: {host}": "接口域名：{host}",
+ "A company's nature needs its source: sources.nature, the page it was read on (its shareholders in the business register, or the listed company's controller). Not sure: leave nature out": "公司性质需注明来源：sources.nature，即读到它的页面（工商登记中的股东，或上市公司的实际控制人）。无法确定时请不填性质",
+ "Fill in its nature": "填写公司性质",
+ "Foreign-owned": "外企",
+ "Nature": "性质",
+ "Not filled in": "未填写",
+ "Only at": "仅限",
+ "Private": "民企",
+ "Public institution": "事业单位",
+ "State-owned": "国央企",
+ "This company's nature isn't filled in yet, so some tracks can't judge its roles: {tracks}.": "该公司尚未填写性质，部分赛道无法判断其岗位：{tracks}。",
+ "any company": "不限公司",
+ "tracks for some kinds of company only go by it": "仅限部分公司性质的赛道以此为准",
+ "“{value}” isn't a company nature: use one of {list}, or leave it empty": "“{value}”不是公司性质：请使用 {list} 之一，或留空",
+ "University / research": "高校/科研院所"
 }

@@ -1029,15 +1029,16 @@ function tracksButton() {
   const trs = huntTracks().filter((tr) => (tr.keywords || []).length);
   return h("button", { class: "btn sm ghost trk-btn", id: "hunt-tracks", title: t("The kinds of role you go for, each with the words its titles use"),
     onclick: () => editTracks() }, icon("filter"),
-  trs.length ? t("Tracks: {names}", { names: trs.map(trackName).join(", ") }) : t("Set up your tracks"));
+  // in a span: a bare text node in the centred button can't be cut with an ellipsis, so a long name stuck out on both sides
+  h("span", null, trs.length ? t("Tracks: {names}", { names: trs.map(trackName).join(", ") }) : t("Set up your tracks")));
 }
 
 // Tracks, edited in a dialog: nothing is saved until Done (a pick inside a dialog waits for Done)
 function editTracks() {
   const root = $("#modal-root");
   if (root.firstChild) return;
-  let rows = huntTracks().map((tr) => ({ ...tr, keywords: (tr.keywords || []).join(", "), exclude: (tr.exclude || []).join(", ") }));
-  if (!rows.length) rows = [{ id: "", name: "", keywords: "", exclude: "", subset: "" }];
+  let rows = huntTracks().map((tr) => ({ ...tr, keywords: (tr.keywords || []).join(", "), exclude: (tr.exclude || []).join(", "), natures: [...(tr.natures || [])] }));
+  if (!rows.length) rows = [{ id: "", name: "", keywords: "", exclude: "", subset: "", natures: [] }];
   const choices = subsets().filter((x) => x.id !== ALL);
   const list = h("div", { class: "trk-list" });
   const close = () => { root.replaceChildren(); document.removeEventListener("keydown", onKey, true); };
@@ -1057,12 +1058,25 @@ function editTracks() {
       field(t("Titles with any of"), h("input", { class: "trk-kw", value: r.keywords, spellcheck: "false", placeholder: t("AI, Agent, 大模型, LLM, AI+应用"),
         oninput: (e) => { r.keywords = e.target.value; } })),
       field(t("But not"), h("input", { class: "trk-ex", value: r.exclude, spellcheck: "false", placeholder: t("销售, 售前"),
-        oninput: (e) => { r.exclude = e.target.value; } })))));
+        oninput: (e) => { r.exclude = e.target.value; } })),
+      // none picked: every company; some: only companies of those kinds (a company not filled in yet: none)
+      h("div", { class: "trk-field" }, h("span", { class: "trk-lab", id: `trk-nat-lab-${i}` }, t("Only at")),
+        h("div", { class: "trk-nats", role: "group", "aria-labelledby": `trk-nat-lab-${i}` },
+          natureOptions().map((o) => {
+            const on = () => r.natures.includes(o.value);
+            return h("button", { type: "button", class: "trk-nat" + (on() ? " on" : ""), "aria-pressed": String(on()), "data-nature": o.value,
+              onclick: (e) => {
+                r.natures = on() ? r.natures.filter((x) => x !== o.value) : [...r.natures, o.value];
+                e.currentTarget.classList.toggle("on", on()); e.currentTarget.setAttribute("aria-pressed", String(on()));
+                e.currentTarget.parentElement.querySelector(".trk-nat-any").hidden = r.natures.length > 0;
+              } }, o.label);
+          }),
+          h("span", { class: "trk-nat-any", hidden: r.natures.length > 0 }, t("any company")))))));
   };
   paint();
   const done = async () => {
     try {
-      await api("PUT", "/api/hunt/scan-settings", { tracks: rows.map((r) => ({ id: r.id, name: r.name.trim(), keywords: r.keywords, exclude: r.exclude, subset: r.subset })) });
+      await api("PUT", "/api/hunt/scan-settings", { tracks: rows.map((r) => ({ id: r.id, name: r.name.trim(), keywords: r.keywords, exclude: r.exclude, subset: r.subset, natures: r.natures })) });
       close();
       await loadHunt({ quiet: true });
       toast(t("Tracks saved"));
@@ -1074,7 +1088,7 @@ function editTracks() {
       h("p", null, t("One track per kind of role you go for. A role is picked for you when its title has one of a track's words; separate words with commas, and join two with + when a title needs both. Two or three letters (AI, ML) count only as a whole word.")),
       list,
       h("div", { class: "trk-more" },
-        h("button", { class: "btn sm", onclick: () => { rows.push({ id: "", name: "", keywords: "", exclude: "", subset: "" }); paint(); const n = list.querySelectorAll(".trk-name"); n[n.length - 1].focus(); } },
+        h("button", { class: "btn sm", onclick: () => { rows.push({ id: "", name: "", keywords: "", exclude: "", subset: "", natures: [] }); paint(); const n = list.querySelectorAll(".trk-name"); n[n.length - 1].focus(); } },
           icon("plus"), t("Add a track")),
         h("button", { class: "btn sm", disabled: !ui.chat.available, title: ui.chat.available ? t("The AI sets them up from your resume subsets and the words real postings use") : missingAgentText(),
           onclick: () => { close(); askTracks(); } }, icon("sparkle"), t("Let AI set them up"))),
@@ -1274,6 +1288,11 @@ function postingsCard(v) {
     sc.error && h("div", { class: "note-bar warn" }, icon("alert"), h("span", { class: "nb-text" }, sc.error),
       sc.signed_out && c.site && h("button", { class: "btn sm", onclick: () => signInMode(c.site) }, icon("user"), t("Sign in to {site}", { site: c.name }))),
     sc.needs === "sites" && h("p", { class: "muted card-p" }, t("No careers site known yet: ask the AI to fill the company in, or type one below.")),
+    (v.held_back || []).length > 0 && open.length > 0 && h("div", { class: "note-bar", id: "company-nature-unknown" }, icon("alert"),
+      h("span", { class: "nb-text" }, t("This company's nature isn't filled in yet, so some tracks can't judge its roles: {tracks}.",
+        { tracks: v.held_back.map((id) => { const tr = huntTracks().find((x) => x.id === id); return tr ? trackName(tr) : id; }).join(", ") })),
+      h("button", { class: "btn sm", onclick: () => { const el = $("#company-nature-pick"); if (el) { el.scrollIntoView({ block: "center" }); el.click(); } } },
+        t("Fill in its nature"))),
     // read fine and found nothing: say so, or an empty card looks like a scan that never ran
     sc.ok && !busy && !open.length && h("p", { class: "muted card-p", id: "company-no-postings" },
       t("Its sites list no open roles right now. If you know they hire, check the addresses under Its careers sites.")),
@@ -1292,6 +1311,10 @@ function postingsCard(v) {
 }
 
 const BATCH_NAMES = { campus: "Campus", intern: "Internship", social: "Experienced", other: "Other" };
+// what kind of employer a company is (jobhunt/store.py NATURES): a track can be for some kinds only
+const NATURE_NAMES = { soe: "State-owned", public: "Public institution", academic: "University / research",
+  private: "Private", foreign: "Foreign-owned", other: "Other" };
+const natureOptions = () => Object.entries(NATURE_NAMES).map(([value, label]) => ({ value, label: t(label), cls: "s-plain" }));
 // the sites a scan read nothing of, or only some pages of, by name: "join.huolala.cn wasn't read this time"
 function missedSay(missed) {
   const of = (w) => Object.entries(missed || {}).filter(([, x]) => x === w).map(([u]) => siteName(u)).join(", ");
@@ -1331,6 +1354,9 @@ function companyProps() {
         h("span", { class: "co-text" }, h("span", { class: "c-main-name" }, c.name),
           (c.aliases || []).length > 0 && h("span", { class: "c-alias" }, c.aliases.join(" · ")))) },
     text("industry", t("Industry"), 150, { group: true }),
+    // not filled in: an empty cell (no chip on most of the rows); "No Nature" when grouped, "is empty" when filtered
+    { key: "nature", label: t("Nature"), type: "select", width: 170, get: (c) => c.nature || "", options: natureOptions,
+      set: (c, v) => cellCompany(c, { nature: v }) },
     text("strength", t("Strength"), 200),
     { key: "roles", label: t("Roles"), type: "relation", width: 300, get: (c) => (c.apps || []).map((a) => a.role),
       // a scan going on comes first: the chips after it may be cut off at the cell's edge
@@ -1356,7 +1382,7 @@ function companyProps() {
 
 function companiesTable() {
   const d = H.data;
-  const shown = d.companies.filter((c) => matches(c.name, (c.aliases || []).join(" "), c.industry, c.strength, c.note, c.hq ? placeName(c.hq) : "", ...(c.places || []).map(placeText)));
+  const shown = d.companies.filter((c) => matches(c.name, (c.aliases || []).join(" "), c.industry, c.nature && t(NATURE_NAMES[c.nature] || ""), c.strength, c.note, c.hq ? placeName(c.hq) : "", ...(c.places || []).map(placeText)));
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Companies")),
       h("p", null, t("What each company is and how it is doing, your notes, and its own careers site: one profile there, several roles in your order of preference."))),
@@ -1575,7 +1601,7 @@ function sameCompany(e, name, m, { label, pick }) {
 // a posting's link: Claude reads it and fills in the company (new or known) and the role (docs/JOB_HUNT.md, 2026-10-18)
 // ---- what the AI changed, each undoable (jobhunt/history.py) ----
 const CHANGE_FIELDS = {
-  name: "Name", aliases: "Also called", industry: "Industry", strength: "Strength", hq: "Headquarters", places: "Hires in",
+  name: "Name", aliases: "Also called", industry: "Industry", nature: "Nature", strength: "Strength", hq: "Headquarters", places: "Hires in",
   size: "Size", site: "Careers site", sites: "Careers sites", logo_file: "Logo", logo: "Logo", about: "What it is",
   sources: "Sources", note: "Notes", account: "Account", subset: "Subset", role: "Role", url: "Link", status: "Status",
   referral: "Referral code", schedule: "Interviews and tests", apply_by: "Apply by", order: "Choice", jd: "JD",
@@ -1843,6 +1869,11 @@ function companyPage(v) {
       // short fields pair up; a field whose height varies (a place picker, a sentence the AI wrote) has a row of its
       // own and wraps: side by side, the taller one pushed its neighbour down and cut long text off (2026-11-11)
       hfield(t("Industry"), c.industry, save("industry"), { hint: keptHint(c, "industry"), multiline: true, rows: 1 }),
+      h("div", { class: "field", id: "company-nature" }, h("label", null, t("Nature"),
+        h("span", { class: "hint" }, keptHint(c, "nature") || t("tracks for some kinds of company only go by it"))),
+        uiSelect({ id: "company-nature-pick", label: t("Nature"), value: c.nature || "", menuWidth: 260, cls: "co-nature-pick",
+          options: [{ value: "", label: t("Not filled in") }, ...natureOptions()],
+          onChange: (v) => { c.nature = v; save("nature")(v); } }).el),
       hfield(t("Strength"), c.strength, save("strength"), { placeholder: t("e.g. market cap, or the latest valuation"), hint: keptHint(c, "strength"), multiline: true, rows: 1 }),
       hfield(t("Size"), c.size, save("size"), { hint: keptHint(c, "size"), multiline: true, rows: 1 }),
       h("div", { class: "field", id: "company-hq" }, h("label", null, t("Headquarters"), keptHint(c, "hq") && h("span", { class: "hint" }, keptHint(c, "hq"))),

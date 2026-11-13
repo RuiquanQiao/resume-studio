@@ -2225,5 +2225,19 @@
  "{n} company": "회사 {n}곳",
  "{n} route page": "경로 페이지 {n}개",
  "API path: {path}": "API 경로: {path}",
- "API host: {host}": "API 호스트: {host}"
+ "API host: {host}": "API 호스트: {host}",
+ "A company's nature needs its source: sources.nature, the page it was read on (its shareholders in the business register, or the listed company's controller). Not sure: leave nature out": "기업 유형에는 출처가 필요합니다: sources.nature(확인한 페이지. 법인 등기상 주주 또는 상장 모회사의 실질 지배자). 확실하지 않으면 유형을 비워 두세요",
+ "Fill in its nature": "기업 유형 입력",
+ "Foreign-owned": "외국계",
+ "Nature": "유형",
+ "Not filled in": "미입력",
+ "Only at": "대상",
+ "Private": "민간 기업",
+ "Public institution": "공공기관",
+ "State-owned": "국유 기업",
+ "This company's nature isn't filled in yet, so some tracks can't judge its roles: {tracks}.": "이 기업의 유형이 아직 입력되지 않아 일부 트랙에서 채용 공고를 판단할 수 없습니다: {tracks}.",
+ "any company": "모든 기업",
+ "tracks for some kinds of company only go by it": "일부 기업 유형 전용 트랙은 이 값을 기준으로 합니다",
+ "“{value}” isn't a company nature: use one of {list}, or leave it empty": "“{value}”은(는) 기업 유형이 아닙니다: {list} 중 하나를 사용하거나 비워 두세요",
+ "University / research": "대학·연구기관"
 }

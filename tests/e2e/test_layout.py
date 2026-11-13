@@ -303,6 +303,16 @@ def picked_ranked(c):
                              "P6": {"error": "the page didn't open", "read": "2026-11-04 10:00"}})
 
 
+def tracks_by_nature(c):
+    """A track for state employers only, one for any company; one company's nature filled in, one's not (2026-11-13)."""
+    filled_companies(c)
+    hunt = c.server.inst.hunt
+    hunt.update_company("C2", {"nature": "foreign"})
+    hunt.scanner.postings.settings(tracks=[
+        {"name": "信息科技 / 软件开发（国央企，含研究院与各地分公司）", "keywords": "研发, 开发工程师", "natures": ["soe", "public", "academic"]},
+        {"name": "Graduate engineering", "keywords": "Engineer, 算法, 前端, 客户端, 产品"}])
+
+
 def no_tracks(c):
     filled_companies(c)
     c.server.inst.hunt.scanner.postings.settings(tracks=[])
@@ -666,6 +676,12 @@ STATES = [
           [".picked-row .pk-fit.hi", ".picked-row .pk-fit.lo", "#picked-sort", "#picked-unread"], prepare=picked_ranked),
     State("applying, editing tracks", then(picked, click("#picked-edit-tracks"), wait(".trk-modal .trk-row")),
           [".trk-modal .trk-row .trk-kw", ".trk-modal .trk-subset", ".trk-modal .trk-more"], prepare=picked_roles),
+    State("applying, editing tracks for some kinds of company only", then(picked, click("#picked-edit-tracks"), wait(".trk-modal .trk-row")),
+          [".trk-modal .trk-nats .trk-nat.on", ".trk-modal .trk-nat-any:not([hidden])"], prepare=tracks_by_nature),
+    State("applying, companies, one with its nature", applying("companies"), [".htable td[data-key='nature'] .state-chip"],
+          prepare=tracks_by_nature),
+    State("applying, a company whose nature isn't filled in", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
+          ["#company-nature-unknown", "#company-nature-pick"], prepare=tracks_by_nature),
     State("applying, a company's open roles", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
           [".post-list .post-row", ".co-sites .co-site-edit .co-site-input", ".post-row .new-chip"], prepare=filled_companies),
     State("applying, a company's open roles, folded", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title"),
@@ -872,6 +888,28 @@ def test_many_plugins_keep_room_to_drag_the_window(win, server):
         settle(win)
         problems += win.evaluate(MANY_PLUGINS)
     assert not problems, "\n" + "\n".join(problems)
+
+
+def test_a_long_tracks_button_is_cut_at_its_end_not_its_start(win, server):
+    """2026-11-13: the tracks named in the head of Today were a bare text node in a centred button, so a long name
+    stuck out of both sides and the start of the first track's name was cut off."""
+    st = next(s for s in STATES if s.name == "applying, companies, one with its nature")
+    tracks_by_nature(Ctx(server))
+    open_window(win, server, "en")
+    st.show(win, Ctx(server))
+    win.wait_for_selector("#hunt-tracks", state="visible")
+    for w in (800, 1280):
+        win.set_viewport_size({"width": w, "height": 800})
+        win.wait_for_timeout(150)
+        # the names are in an element of their own, inside the button, cut at its end with an ellipsis
+        got = win.evaluate("""() => {
+            const btn = document.querySelector('#hunt-tracks'), el = btn.querySelector(':scope > span');
+            if (!el) return {text: 'a bare text node'};
+            const b = btn.getBoundingClientRect(), r = el.getBoundingClientRect();
+            return {left: Math.round(r.left - b.left), right: Math.round(b.right - r.right), cut: el.scrollWidth > el.clientWidth,
+                    ellipsis: getComputedStyle(el).textOverflow === 'ellipsis'};
+        }""")
+        assert got.get("left", -1) >= 0 and got["right"] >= 0 and got["ellipsis"], (w, got)
 
 
 def test_right_hand_tools_sit_next_to_the_settings_button(win, server):

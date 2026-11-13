@@ -77,7 +77,15 @@ is folded away in the window and isn't news. With no input, prints them. With --
 
 A keyword matches a part of the title, case and accents aside; a 2-3 letter one (AI, ML) only as a whole word
 (AI工程师 yes, Maintenance no); "AI+产品" needs both. `exclude` rules a title out. `subset`: the resume subset
-that kind of role goes out with."""
+that kind of role goes out with.
+
+`natures` (optional) makes a track for some kinds of company only: a role is in it only when its company's
+nature (`fill` sets it) is one of them. Left out or [], the track is for every company. A company whose nature
+isn't filled in yet is in none of these tracks (`show` says which tracks can't judge it): fill its nature in,
+never guess it. The kinds: soe (国央企), public (事业单位), academic (高校/科研院所), private (民企),
+foreign (外企), other (其他); their Chinese names are understood too.
+
+  {"id": "T4", "name": "信息科技（国央企）", "keywords": ["研发", "开发工程师"], "natures": ["soe", "public"]}"""
 
 FILL_HELP = """Claude's research on a company, every field at once, as JSON on stdin:
 
@@ -85,6 +93,13 @@ FILL_HELP = """Claude's research on a company, every field at once, as JSON on s
    "aliases": ["星河科技", "Xinghe", "Nebula"],
    "industry": "E-commerce / internet",              # industry, strength, size and about: in the language `show`
                                                      # names ("write … in"), whatever language the chat is in
+   "nature": "private",                              # what kind of employer: soe (国央企), public (事业单位),
+                                                     # academic (高校/科研院所), private (民企), foreign (外企), other.
+                                                     # Read it from who owns it: the shareholders in the business
+                                                     # register (国家企业信用信息公示系统, 企查查, 天眼查), a listed parent's
+                                                     # 实际控制人 in its annual report; an old owner is not the owner
+                                                     # (a studio ByteDance sold is not ByteDance's). Needs sources.nature;
+                                                     # not sure: leave it out, never guess
    "strength": "Market cap about US$160 bn (NASDAQ: XHT, 2026-10-17)",   # listed: market cap, exchange, ticker,
                                                      # date; not listed: valuation, latest round or headcount, with the date
    "hq": "Shanghai",                                 # the city of its headquarters: a city's name, nothing more
@@ -96,7 +111,7 @@ FILL_HELP = """Claude's research on a company, every field at once, as JSON on s
    "sites": [{"url": "https://careers.xinghe.example/campus", "kind": "campus", "system": "own site"},
              {"url": "https://careers.xinghe.example/intern", "kind": "intern", "system": "own site"}],
    "logo_url": "https://.../logo.png",                # downloaded once into the data folder
-   "sources": {"strength": "https://...", "industry": "https://...", "hq": "https://...", "size": "https://..."},
+   "sources": {"strength": "https://...", "industry": "https://...", "nature": "https://...", "hq": "https://...", "size": "https://..."},
    "about": {"summary": "...", "points": [{"topic": "...", "text": "...", "sources": ["https://..."]}], "read_at": "2026-10-18"}}
 
 Every key is optional; send what you found. Fields the user edited in the window are theirs and are left as
@@ -197,6 +212,11 @@ def show_company(v: dict) -> None:
     if c.get("places"):
         print("  hires in: " + "; ".join(place_text(x) for x in c["places"]) + ("  [" + src["places"] + "]" if src.get("places") else "")
               + ("  (the user's: fill leaves it)" if "places" in kept else ""))
+    names = {"soe": "soe (国央企)", "public": "public (事业单位)", "academic": "academic (高校/科研院所)",
+             "private": "private (民企)", "foreign": "foreign (外企)", "other": "other (其他)"}
+    if c.get("nature"):
+        print(f"  nature: {names.get(c['nature'], c['nature'])}" + (f"  [{src['nature']}]" if src.get("nature") else "")
+              + ("  (the user's: fill leaves it)" if "nature" in kept else ""))
     for k, label in (("industry", "industry"), ("strength", "strength"), ("hq", "headquarters"), ("size", "size"),
                      ("site", "careers site"), ("account", "account"), ("subset", "filled from")):
         if c.get(k):
@@ -211,7 +231,7 @@ def show_company(v: dict) -> None:
               f"{', ' + x['system'] if x.get('system') else ''}): {x['url']}"
               + (f" -> its list: {x['list']}" if x.get("list") else "") + f"  [{reads[how]}]")
     print("  logo: " + ("saved" if c.get("logo") else "none yet") + ("  (the user's)" if "logo" in kept else ""))
-    missing = [k for k in ("industry", "strength", "hq", "site", "logo") if not c.get(k)]
+    missing = [k for k in ("industry", "nature", "strength", "hq", "site", "logo") if not c.get(k)]
     if missing:
         print("  not filled yet: " + ", ".join(missing) + " (research it and send them with `fill`)")
     if c.get("note"):
@@ -253,7 +273,7 @@ def show_company(v: dict) -> None:
     if ps:
         from jobhunt.postings import tracks_of
         name = {tr["id"]: tr.get("name") or ", ".join(tr["keywords"][:2]) for tr in trs}
-        mine = [(p, tracks_of(p["title"], trs)) for p in ps]
+        mine = [(p, tracks_of(p["title"], trs, c.get("nature") or "")) for p in ps]
         mine = [(p, ts) for p, ts in mine if ts or not trs]
         print(f"  open postings: {len(ps)}" + (f", {len(mine)} in the user's tracks ("
                                                 + "; ".join(f"{name[tr['id']]}: {', '.join(tr['keywords'])}" for tr in trs) + ")" if trs else "") + ":")
@@ -265,6 +285,10 @@ def show_company(v: dict) -> None:
                   + (f" · applied as {p['app']}" if p.get("app") else ""))
         if len(mine) > 60:
             print(f"    … and {len(mine) - 60} more")
+    held = [tr for tr in trs if tr["id"] in (v.get("held_back") or [])]
+    if held and ps:
+        print("  its nature isn't filled in yet, so these tracks (for some kinds of company only) take none of its roles: "
+              + ", ".join(tr.get("name") or tr["id"] for tr in held) + ". Research it and send nature with `fill`")
     if len(listed) > len(ps):
         print(f"  probably over, still listed (closing date passed, or no date and posted over a year ago): "
               f"{len(listed) - len(ps)}, folded away in the window")
@@ -304,9 +328,10 @@ def main() -> int:
             p.add_argument("--name")
         else:
             p.add_argument("--different", action="store_true", help="its name is close to one on the list, but it is another company")
-        for opt in ("site", "industry", "strength", "hq", "size", "account", "subset", "note"):
+        for opt in ("site", "industry", "nature", "strength", "hq", "size", "account", "subset", "note"):
             p.add_argument("--" + opt, *(["--location"] if opt == "hq" else []),
-                           **({"help": "the city of its headquarters"} if opt == "hq" else {}))
+                           **({"help": "the city of its headquarters"} if opt == "hq" else
+                              {"help": "soe, public, academic, private, foreign or other (\"\" to clear)"} if opt == "nature" else {}))
         p.add_argument("--alias", action="append", help="another name it goes by (repeat for more; on edit-company "
                        "the flags are the whole list, so leave one out to drop it)")
         if name == "edit-company":
@@ -389,7 +414,9 @@ def main() -> int:
         show_company(r["company"]) if "company" in r else show_app(r["app"])
         return 0
     if c in ("add-company", "edit-company"):
-        a = pick("site", "industry", "strength", "hq", "size", "account", "subset", "note")
+        a = pick("site", "industry", "nature", "strength", "hq", "size", "account", "subset", "note")
+        if getattr(args, "nature", None) == "":
+            a["nature"] = ""
         if c == "add-company":
             a.update(name=args.name, different=args.different)
         else:
@@ -559,7 +586,8 @@ def main() -> int:
         for tr in trs:
             print(f"{tr['id']} {tr.get('name') or '(no name)'}: {', '.join(tr['keywords']) or '(no keywords)'}"
                   + (f"; not: {', '.join(tr['exclude'])}" if tr.get("exclude") else "")
-                  + (f"; resume {tr['subset']}" if tr.get("subset") else ""))
+                  + (f"; resume {tr['subset']}" if tr.get("subset") else "")
+                  + (f"; only at: {', '.join(tr['natures'])}" if tr.get("natures") else ""))
         return 0
     elif c == "keywords":
         r = call(url, "keywords", {"keywords": args.keywords})

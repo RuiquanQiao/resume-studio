@@ -1937,6 +1937,7 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 /* ================================================================ tracks (web/hunt.js editTracks, pickedPage) */
 .trk-btn { max-width: min(46ch, 100%); }
 .trk-btn > span, .trk-btn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trk-btn > span { min-width: 0; }
 .trk-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .trk-tag { padding: 0 6px; border-radius: 4px; background: var(--hover); color: var(--text-2); font-size: 12.5px; line-height: 18px; white-space: nowrap; max-width: 18em; overflow: hidden; text-overflow: ellipsis; }
 .modal.trk-modal { width: min(640px, 94vw); max-height: 88vh; display: flex; flex-direction: column; }
@@ -1949,6 +1950,14 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .trk-del { flex: none; padding: 0 6px; }
 .trk-field { display: grid; grid-template-columns: 9em minmax(0, 1fr); align-items: center; gap: 8px; }
 .trk-lab { font-size: 12.5px; color: var(--text-3); }
+.trk-nats { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.trk-nat { height: 26px; padding: 0 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text-2);
+  font: inherit; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+.trk-nat:hover { color: var(--text); border-color: var(--text-3); }
+.trk-nat.on { border-color: var(--accent); background: var(--accent-soft); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
+.trk-nat:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.trk-nat-any { margin-left: 4px; font-size: 12.5px; color: var(--text-3); }
+.co-nature-pick { max-width: 260px; }
 .trk-more { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 /* no track yet: one left-aligned column under the heading, two sample tracks, then the two ways in */
 .trk-empty { max-width: 620px; margin-top: 18px; }
