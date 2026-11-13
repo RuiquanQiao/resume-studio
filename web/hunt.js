@@ -18,13 +18,22 @@ const H = {
   notes: {},             // a timeline note typed but not added yet, per application: {text, on}; repaints keep it
 };
 
-const HUNT_TABS = { apps: "Progress", picked: "Picked for you", companies: "Companies", platforms: "Platforms" };
+const HUNT_TABS = { apps: "Progress", picked: "Matching roles", companies: "Companies", platforms: "Platforms" };
 const HSTATES = { saved: "Want to apply", applied: "Applied", assessment: "Tests", interview: "Interviewing", offer: "Offer",
   hired: "Hired", rejected: "Not successful", withdrawn: "Withdrawn", closed: "Posting closed" };
 const HCHANNELS = { site: "Its own site", platform: "A platform", referral: "Referral", other: "Other" };
 const huntState = (id) => t(HSTATES[id] || id || "—");
 const hChip = (id) => h("span", { class: "state-chip s-" + (id || "unknown") }, huntState(id));
-const huntCompany = (id) => ((H.data && H.data.companies) || []).find((c) => c.id === id) || null;
+// by id, from an index built once per load of the data: a search through 5,000 companies for each application's
+// cells took most of a repaint (2026-11-13)
+const HUNT_BY_ID = new WeakMap();   // the companies' list -> Map(id -> company); a list replaced is indexed anew
+function huntCompany(id) {
+  const cs = H.data && H.data.companies;
+  if (!cs) return null;
+  let m = HUNT_BY_ID.get(cs);
+  if (!m || m.size !== cs.length) { m = new Map(cs.map((c) => [c.id, c])); HUNT_BY_ID.set(cs, m); }
+  return m.get(id) || null;
+}
 const platformName = (id) => ((F.sites || []).find((s) => s.id === id) || {}).name || SITE_NAMES[id] || id || "";
 const OPEN_STATES = ["saved", "applied", "assessment", "interview"];
 const huntOpen = (a) => OPEN_STATES.includes(a.status);
@@ -81,24 +90,40 @@ async function loadHunt({ quiet = false } = {}) {
     if (W.ws === "fill" && dbvBusy()) DBV.pending = true;   // an open cell editor or view panel: after it closes
     else if (W.ws === "fill") paintFill();
   };
+  let changed = !H.data;   // nothing new (the same answer, the same views, no page open): nothing drawn anew
   H.loading = (async () => {
     try {
       do {
         H.again = false;
-        const [data] = await Promise.all([api("GET", "/api/hunt"), DBV.tables && !H.viewsStale ? null : loadViews()]);
+        const views = DBV.tables && !H.viewsStale ? null : loadViews();
+        const [data] = await Promise.all([huntFetch(), views]);
+        const now = data !== H.data || !!views || !!(H.page && H.page.kind !== "platform");
+        changed = changed || now;
         H.data = data; H.viewsStale = false;
         if (H.page && H.page.kind !== "platform") await loadHuntPage({ quiet: true });
         // each answer is shown as it comes: a scan says "changed" every few seconds, and painting only once the
         // changes stopped left the table at "Loading…" for the whole scan (user, 2026-11-12)
-        if (H.again) paint();
+        if (H.again && now) paint();
       } while (H.again);
       scanDone();
+      pickedAhead();
       if (!H.autoScan) { H.autoScan = true; api("POST", "/api/hunt/scan", { auto: true }).catch(() => {}); }
-    } catch (e) { if (!quiet) toast(e.message); }
+    } catch (e) { changed = true; if (!quiet) toast(e.message); }
     finally { H.loading = null; }
-    paint();
+    if (changed) paint();
   })();
   return H.loading;
+}
+
+// the overview, asked with the fingerprint of the one in hand: unchanged, the server answers with nothing (304) and
+// the one in hand stays, the very same object (the tables kept for going back stay good)
+async function huntFetch() {
+  const r = (!H.data && await early("/api/hunt")) || await fetch("/api/hunt", { headers: H.data && H.etag ? { "If-None-Match": H.etag } : {} });
+  if (r.status === 304 && H.data) return H.data;
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(data.error || r.statusText), { status: r.status, data: data.data });
+  H.etag = r.headers.get("ETag");
+  return data;
 }
 
 async function loadHuntPage({ quiet = false } = {}) {
@@ -180,7 +205,7 @@ async function setHuntTab(tab) {
   await flushTyping();
   H.tab = tab; H.page = null; H.view = null;
   storeHunt();
-  paintFill();
+  huntGo(paintFill);
   renderWsTools();
   welcomeAgain();
 }
@@ -205,9 +230,9 @@ async function openHunt(kind, id) {
   H.tab = kind === "company" ? "companies" : "apps";
   H.page = { kind, id }; H.view = null; H.editing = null;
   storeHunt();
-  paintFill();
+  huntGo(paintFill);
   await loadHuntPage();
-  paintFill();
+  huntGo(paintFill);
   welcomeAgain();
 }
 
@@ -240,9 +265,37 @@ function paintHunt() {
   const el = $("#fillspace");
   if (el) repaintKeeping(el, () => paintHuntNow(el));
 }
+// A table left for another tab, workspace or page is kept as it was drawn and put back when it is gone back to, as
+// long as nothing it shows has changed since: drawing it anew took a fifth of a second for 229 companies and more
+// for 5,000 (user, 2026-11-13: "切换不同的模块、表格全都有零点几秒的延迟"). Going somewhere (huntGo) changes only
+// what is shown; any other repaint is a change, and every kept table is drawn anew the next time it is shown.
+const HUNT_KEPT = new Map();   // pageKey -> {sc, stamp}
+let HUNT_EPOCH = 0, HUNT_GOING = false;
+function huntGo(paint) { HUNT_GOING = true; try { paint(); } finally { HUNT_GOING = false; } }
+// the platforms come in on their own, often with nothing new in them: only their own table goes by them
+const huntStamp = () => [H.data, H.q, DBV.tables, I18N.lang, HUNT_EPOCH, dbvLastPane, H.tab === "platforms" ? F.sites : null];
+const sameStamp = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+
 function paintHuntNow(el) {
   const old = el.querySelector(".hunt-scroll");
   const key = pageKey();
+  if (!HUNT_GOING) { HUNT_EPOCH++; HUNT_KEPT.clear(); }
+  else if (old && old.dataset.page === key && old._stamp && sameStamp(old._stamp, huntStamp()) && el.querySelector(".hunt-bar")) {
+    el.querySelector(".hunt-bar").replaceWith(huntBar());   // already showing it: only the tabs' counts
+    return;
+  }
+  const kept = HUNT_GOING && HUNT_KEPT.get(key);
+  if (HUNT_GOING && old && old._stamp && old.dataset.page !== key && sameStamp(old._stamp, huntStamp())) {   // the table being left: kept for going back
+    HUNT_SCROLL[old.dataset.page] = old.scrollTop;
+    HUNT_KEPT.set(old.dataset.page, { sc: old, stamp: old._stamp });
+  }
+  if (kept && sameStamp(kept.stamp, huntStamp())) {
+    el.replaceChildren(huntBar(), kept.sc);
+    kept.sc.scrollTop = HUNT_SCROLL[key] || 0;   // a box taken off the page forgets how far it was scrolled
+    dbvKeepX(kept.sc);
+    dbvLazy(kept.sc);
+    return;
+  }
   // a table left for a page keeps where it was, read now: its last scroll event may not have come yet
   if (old && old.dataset.page !== key && old.dataset.page.startsWith("table:") && H.data) HUNT_SCROLL[old.dataset.page] = old.scrollTop;
   // a table remembers where it was read to: back from a company's page, it opens there again (a page opens at its top)
@@ -253,8 +306,12 @@ function paintHuntNow(el) {
   else if (H.page && H.page.kind === "app") body = H.view && H.view.application ? appPage(H.view) : h("div", { class: "muted" }, t("Loading…"));
   else body = H.tab === "companies" ? companiesTable() : H.tab === "platforms" ? platformsTable() : H.tab === "picked" ? pickedPage() : appsTable();
   const sc = h("div", { class: "hunt-scroll", "data-page": key }, h("div", { class: "hunt-wrap" + (H.page ? " is-page" : "") }, body));
+  if (key.startsWith("table:") && H.data) sc._stamp = huntStamp();
   el.replaceChildren(huntBar(), sc);
+  dbvLazy(sc);           // the rows where it was read to drawn first, so the scroll below lands on them
   sc.scrollTop = scroll;
+  dbvLazy(sc);
+  if (sc.scrollTop !== scroll) sc.scrollTop = scroll;   // the blocks drawn there were taller or shorter than guessed
   // only a loaded table's scrolling counts: "Loading…" is too short to hold the place and would forget it
   if (key.startsWith("table:") && H.data)
     sc.addEventListener("scroll", () => { if (sc.isConnected) HUNT_SCROLL[key] = sc.scrollTop; }, { passive: true });
@@ -1124,18 +1181,32 @@ function askTracks() {
     { fresh: true, title: t("Set up tracks") }), check);
 }
 
-// ---- Picked for you: every company's open roles that fall in a track, in one list
+// ---- Matching roles: every company's open roles that fall in a track, in one list
+// fetched again once per change of the tracker: what a "hunt" event reloads into H.data, signed here
+const pickedSig = (d) => (d.scan.last_run || {}).at + "|" + JSON.stringify(huntTracks()) + "|" + d.companies.reduce((k, c) => k + ((c.postings || {}).matching || 0), 0)
+  + "|" + JSON.stringify(d.scan.reading || null) + "|" + d.applications.filter((x) => x.jd).length;   // a role added from here gets its fit once its description is read
 async function loadPicked() {
-  if (H.pickedLoading) return;
+  if (H.pickedLoading) { H.pickedAgain = true; return; }   // a change meanwhile: fetched again after this one
   H.pickedLoading = true;
-  try { H.picked = await api("GET", "/api/hunt/matches"); } catch (e) { toast(e.message); }
-  finally { H.pickedLoading = false; }
+  try {
+    do {
+      H.pickedAgain = false;
+      try { H.picked = await api("GET", "/api/hunt/matches"); } catch (e) { toast(e.message); }
+    } while (H.pickedAgain);
+  } finally { H.pickedLoading = false; }
   if (W.ws === "fill" && H.tab === "picked" && !H.page) paintHunt();
+}
+// fetched with the rest of Applying, not when its tab is first opened: the tab then opens at once (user,
+// 2026-11-13: "怎么就这个……显示'正在加载…'，而且我等好久都没加载出来")
+function pickedAhead() {
+  if (!H.data || !anyTracks()) return;
+  const sig = pickedSig(H.data);
+  if (H.pickedSig !== sig) { H.pickedSig = sig; loadPicked(); }
 }
 
 function pickedPage() {
   const d = H.data;
-  const head = h("div", { class: "hunt-head" }, h("h1", null, t("Picked for you")),
+  const head = h("div", { class: "hunt-head" }, h("h1", null, t("Matching roles")),
     h("p", null, t("Open roles from every company you follow whose titles fall in one of your tracks, newest first. Nothing here uses the AI: it is your tracks' words against each title.")));
   if (!anyTracks()) {
     // first use: what a track is, shown as two made-up ones, then the two ways to get one. Left-aligned with the
@@ -1144,7 +1215,7 @@ function pickedPage() {
       h("span", { class: "trk-ex-name" }, name),
       h("span", { class: "trk-tags" }, words.split(/[,，]\s*/).map((w) => h("span", { class: "trk-tag" }, w))),
       not && h("span", { class: "trk-ex-not" }, t("except {words}", { words: not })));
-    return [h("div", { class: "hunt-head" }, h("h1", null, t("Picked for you"))),
+    return [h("div", { class: "hunt-head" }, h("h1", null, t("Matching roles"))),
       h("section", { class: "trk-empty", "aria-labelledby": "trk-empty-title" },
         h("h2", { id: "trk-empty-title" }, t("Tell it which kinds of role you go for")),
         h("p", null, t("Each kind is a track: a name and the words its titles use. Every scan then picks the matching roles out of all your companies, no AI needed.")),
@@ -1156,10 +1227,7 @@ function pickedPage() {
           h("button", { class: "btn", onclick: () => editTracks() }, icon("plus"), t("Set them up myself"))),
         h("p", { class: "trk-empty-hint" }, t("The AI builds them from your resume subsets and the titles your companies really use; you can change them after.")))];
   }
-  // fetched once per change of the tracker: a "hunt" event reloads H.data, and a new sign makes this fetch again
-  const sig = (d.scan.last_run || {}).at + "|" + JSON.stringify(huntTracks()) + "|" + d.companies.reduce((k, c) => k + ((c.postings || {}).matching || 0), 0)
-    + "|" + JSON.stringify(d.scan.reading || null) + "|" + d.applications.filter((x) => x.jd).length;   // a role added from here gets its fit once its description is read
-  if (H.pickedSig !== sig) { H.pickedSig = sig; loadPicked(); }
+  pickedAhead();
   const m = H.picked;
   if (!m) return [head, h("div", { class: "muted" }, t("Loading…"))];
   const trs = huntTracks().filter((tr) => (tr.keywords || []).length);
@@ -1196,13 +1264,13 @@ function pickedPage() {
     h("div", { class: "hunt-tools picked-tools" },
       h("div", { class: "trk-segs", role: "group", "aria-label": t("Your tracks") },
         trs.length > 1 && seg("", t("All tracks"), m.total), trs.map((tr) => seg(tr.id, trackName(tr), m.counts[tr.id] || 0))),
-      h("button", { class: "btn sm ghost", id: "picked-edit-tracks", onclick: () => editTracks() }, icon("pen"), t("Edit tracks")),
+      h("button", { class: "btn ghost", id: "picked-edit-tracks", onclick: () => editTracks() }, icon("pen"), t("Edit tracks")),
       h("span", { class: "spacer" }),
       m.ranked && uiSelect({ id: "picked-sort", value: byFit ? "fit" : "new", cls: "pk-sort", label: t("Order"),
         options: [{ value: "new", label: t("Newest first") }, { value: "fit", label: t("Best fit first") }],
         onChange: (v) => { H.psort = v; H.plimit2 = 0; paintHunt(); } }).el,
-      h("button", { class: "btn sm ghost" + (H.pnew ? " on" : ""), "aria-pressed": String(!!H.pnew), onclick: () => { H.pnew = !H.pnew; paintHunt(); } }, t("New this week")),
-      h("button", { class: "btn sm ghost" + (H.papplied ? " on" : ""), "aria-pressed": String(!!H.papplied), onclick: () => { H.papplied = !H.papplied; paintHunt(); } }, t("Show added")),
+      h("button", { class: "btn ghost" + (H.pnew ? " on" : ""), "aria-pressed": String(!!H.pnew), onclick: () => { H.pnew = !H.pnew; paintHunt(); } }, t("New this week")),
+      h("button", { class: "btn ghost" + (H.papplied ? " on" : ""), "aria-pressed": String(!!H.papplied), onclick: () => { H.papplied = !H.papplied; paintHunt(); } }, t("Show added")),
       searchBox("picked-search", H.pq2 || "", t("Search these roles"), (v) => { H.pq2 = v; })),
     rankBar(m, trs),
     short.length > 0 && h("div", { class: "note-bar warn" }, icon("alert"), h("span", { class: "nb-text" },
@@ -1453,7 +1521,14 @@ let REPORT = { at: 0, data: null, busy: false };
 function reportBar() {
   if (!REPORT.busy && Date.now() - REPORT.at > 60000) {
     REPORT.busy = true;
-    api("GET", "/api/hunt/report").then((r) => { REPORT = { at: Date.now(), data: r, busy: false }; if (r.items.length) paintHunt(); })
+    // repainted only when what it offers changed: every minute's look repainted the page (and drew the tables anew)
+    api("GET", "/api/hunt/report").then((r) => {
+      const was = JSON.stringify((REPORT.data && REPORT.data.items) || []);
+      REPORT = { at: Date.now(), data: r, busy: false };
+      if (JSON.stringify(r.items || []) === was) return;
+      if (H.tab === "companies" && !H.page) paintHunt();
+      else HUNT_KEPT.delete("table:companies");   // it shows on the companies' table only: drawn anew when that is shown
+    })
       .catch(() => { REPORT = { ...REPORT, at: Date.now(), busy: false }; });
   }
   const items = (REPORT.data && REPORT.data.items) || [];
@@ -1818,7 +1893,7 @@ function backTo(tab) {
 }
 // from a company's 网申 profile back to the company it belongs to
 function backToCompany(cid) {
-  const c = ((H.data && H.data.companies) || []).find((x) => x.id === cid);
+  const c = huntCompany(cid);
   return h("button", { class: "btn sm ghost hunt-back", onclick: () => openHunt("company", cid) }, icon("chevLeft"), c ? c.name : t("All companies"));
 }
 

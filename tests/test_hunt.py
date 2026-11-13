@@ -798,3 +798,44 @@ def test_the_window_edits_and_deletes(live):
     assert live.req("DELETE", f"/api/hunt/apps/{aid}")[0] == 200 and live.req("GET", f"/api/hunt/apps/{aid}")[0] == 404
     assert live.req("DELETE", f"/api/hunt/companies/{c['id']}")[0] == 200
     assert live.req("GET", "/api/hunt")[1]["companies"] == []
+
+
+def test_the_cities_the_app_looked_at_are_named_without_reading_the_list_again(tmp_path, monkeypatch):
+    # 2026-11-13: each start read the list of 34,000 cities (half a second) to name the few hundred the job-hunt table
+    # has, and built the indexes for searching it (a second) to find the ones written as text
+    from jobhunt import geo
+    monkeypatch.setattr(geo, "_db", None)
+    monkeypatch.setattr(geo, "_memo", {"path": None, "rows": None, "key": ""})
+    monkeypatch.setattr(geo, "_found", {"path": None, "places": {}, "asked": {}})
+    g = geo.Geo(tmp_path / "hunt", cache_dir=tmp_path / "cache")
+    sh = geo.find("上海")["id"]
+    first = (geo.name(sh, "zh"), geo.label(sh, "en"), geo.country(sh), g.places([{"id": sh}], "en"), g.lookup(["悉尼"]))
+    geo._write_kept()                                          # what the timer writes a moment later
+    assert (tmp_path / "cache" / "cities.json").is_file() and (tmp_path / "cache" / "located.json").is_file()
+    # a new start: nothing in memory, and the list may not be read
+    monkeypatch.setattr(geo, "_db", None)
+    geo._memo.update(rows=None)
+    monkeypatch.setattr(geo, "_load", lambda: (_ for _ in ()).throw(AssertionError("the list was read")))
+    g = geo.Geo(tmp_path / "hunt", cache_dir=tmp_path / "cache")
+    assert (geo.name(sh, "zh"), geo.label(sh, "en"), geo.country(sh), g.places([{"id": sh}], "en"), g.lookup(["悉尼"])) == first
+    assert first[0] == "上海" and first[2] == "CN" and first[4]["悉尼"]["country"] == "AU"
+    assert geo.name("t:AU", "zh") == "澳大利亚" and geo.country("r:mainland-china") == "CN" and geo.countries()[0]["code"]
+
+
+def test_a_title_in_no_track_is_ruled_out_by_one_search_and_the_tracks_stay_the_same():
+    # 2026-11-13: 86,000 titles were each searched once per track (40 tracks: 6 s); one search over every track's
+    # keywords now rules out a title in none, and a title's tracks must come out as testing each track gives
+    from jobhunt import postings as P
+    tracks = P.clean_tracks([
+        {"name": "AI", "keywords": "AI, ML, 算法"}, {"name": "Product", "keywords": "AI+产品, Product Manager", "exclude": "实习"},
+        {"name": "Ops", "keywords": "运维, SRE"}, {"name": "Café", "keywords": "Barista"}, {"name": "empty", "keywords": ""},
+    ])
+    titles = ["AI工程师", "Maintenance Engineer", "Detail Designer", "ML Engineer", "AI产品经理", "AI产品实习生", "产品经理",
+              "Senior Product Manager", "SRE / 运维工程师", "Barista at Café", "BARISTA", "会计", "", "ai", "Retail Associate",
+              "算法实习生", "Sre", "Product Owner", "AI 产品 运营"]
+    P._TRACKED.clear()
+    for ti in titles:
+        folded = P._fold(ti)
+        each = tuple(tr["id"] for tr in tracks if tr["keywords"] and P._matches(folded, tr["keywords"], tr["exclude"]))
+        assert P._title_tracks(ti, tracks)[0] == each, ti
+    assert P._title_tracks("Maintenance Engineer", tracks)[0] == () and P._title_tracks("AI产品经理", tracks)[0] == ("T1", "T2")

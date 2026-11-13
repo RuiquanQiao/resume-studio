@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import base64
-import mimetypes
 import threading
 from pathlib import Path
 
@@ -10,7 +9,7 @@ from core import agents, session_lifecycle
 from core.agents import AgentHub
 from core.chat import IMAGE_TYPES, MODES, ChatRunner, valid_effort, valid_mode, valid_model
 from core.i18n import t
-from core.server import App, FileResponse, HttpError, Request
+from core.server import App, FileResponse, HttpError, Request, guess_type
 
 from . import evidence, model, prompts
 from .evidence import EvidenceTracker
@@ -453,7 +452,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
                 path = Path(str(it["path"]))
                 if not path.is_file():
                     raise HttpError(400, t("File not found: {path}", path=path))
-                mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+                mime = guess_type(path.name) or "application/octet-stream"
             else:
                 continue
             is_image = mime in IMAGE_TYPES and path.stat().st_size <= 5 * 1024 * 1024

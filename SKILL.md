@@ -101,12 +101,12 @@ profile:
   contacts:                  # every contact; a subset can hide some of them
     - {label: email, value: a@b.com, url: 'mailto:a@b.com'}
   notes: ...                 # fact layer
-  work:                      # never rendered: where the user may work (ISO country codes), for the job search
-    citizen: [CN]            # whose employers that take citizens only (APS, 公务员) they can apply to
-    resident: [AU]           # permanent residence
-    visa: [NZ]               # a visa that lets them work there
+  work:                      # never rendered: where the user may work, for the job search (ISO country codes)
+    rights:                  # one record per country; status: citizen | resident | work | study (a visa's work rights)
+      - {country: CN, status: citizen}       # employers that take citizens only (APS, 公务员) are open to them
+      - {country: AU, status: work, visa: 485 Temporary Graduate, from: 2027-07~, until: 2029-07~}
+                             # months (or years); a trailing ~ = only roughly known (EDTF); an exact end passed = no longer counts
     targets: [CN, AU]        # where they look for work: these countries' kinds of employer come first
-    note: 485 visa until 2028-03
 sections:                    # the sections every resume shares; each subset decides their order
   - {id: projects, title: {en: Projects, de: Projekte}, kind: timeline}   # timeline | list
 entries:                     # the library: every real experience, never limited to one page

@@ -745,7 +745,7 @@ function setWorkspace(ws, { path = null } = {}) {
     startWeb();
     loadJobs({ quiet: true });   // what changed in the tool meanwhile (a cv.md edited there, a failed check)
   } else if (ws === "fill") {
-    paintFill();
+    huntGo(paintFill);   // what it showed is put back as it was, unless something in it changed meanwhile
     loadFill();
     loadHunt();
   } else if (ws === "plan") {

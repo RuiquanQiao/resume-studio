@@ -2,7 +2,7 @@
 
     resume-studio-data/hunt/jds.json   {"P12": {"jd", "read", "deadline", "error"}, ...}
 
-Picked for you filters by title (tracks). A title says "this kind of role", not "a good one for me", so every
+Matching roles filters by title (tracks). A title says "this kind of role", not "a good one for me", so every
 picked role's own page is read (jobhunt/reader.py, the browser off the screen, one page at a time) and its
 description is compared with the resume subset its track goes out with. The score is a word match, shown as one:
 the skills the description names (Python, PyTorch, RAG, 机器学习…) and how many of them the subset's resume

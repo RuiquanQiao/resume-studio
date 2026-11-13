@@ -289,7 +289,7 @@ def filled_companies(c):
 
 
 def picked_roles(c):
-    """Two tracks, long names, and a company read in part: what "Picked for you" shows at its fullest."""
+    """Two tracks, long names, and a company read in part: what "Matching roles" shows at its fullest."""
     filled_companies(c)
     posts = c.server.inst.hunt.scanner.postings
     posts.settings(tracks=[{"name": "研发与算法（包括推荐、广告、搜索和 AI Agent 方向的所有岗位）", "keywords": "研发, 算法, Agent", "exclude": "安全"},
@@ -325,8 +325,12 @@ def work_status(c):
     tracks_by_nature(c)
     st = c.server.inst.studio
     prof = dict(st.state()["doc"]["profile"])
-    prof["work"] = {"citizen": ["CN"], "visa": ["AU", "NZ", "SG", "GB", "DE"], "targets": ["CN", "AU", "SG"],
-                    "note": "Temporary Graduate visa (subclass 485) until 2028-03, full work rights while it lasts"}
+    prof["work"] = {"rights": [
+        {"country": "CN", "status": "citizen"},
+        {"country": "AU", "status": "work", "visa": "Temporary Graduate visa (subclass 485), Post-Higher Education Work stream, full work rights",
+         "from": "2027-07~", "until": "2029-07~"},
+        {"country": "GB", "status": "study", "from": "2026-09", "until": "2027-12"}],
+        "targets": ["CN", "AU", "SG"]}
     st.update_item("profile", None, prof, None)
     c.server.inst.hunt.update_company("C1", {"nature": "au.aps"})
 
@@ -336,7 +340,7 @@ def work_in_australia(c):
     tracks_by_nature(c)
     st = c.server.inst.studio
     prof = dict(st.state()["doc"]["profile"])
-    prof["work"] = {"citizen": ["AU"], "targets": ["AU"]}
+    prof["work"] = {"rights": [{"country": "AU", "status": "citizen"}], "targets": ["AU"]}
     st.update_item("profile", None, prof, None)
 
 
@@ -584,9 +588,11 @@ STATES = [
     State("resume, long titles", lambda pg, c: open_entry(pg, "EXP-002"), ["#active"], prepare=long_entry),
     State("resume, line chips and issues", then(lambda pg, c: open_entry(pg, "EXP-002"), wait("#bullets .line-chip.long")),
           ["#issues .issue.warn"], prepare=lambda c: add_long_bullet(c.server)),
-    State("resume, the profile's where you can work", then(js("() => select('profile')"), wait("[data-key='work-citizen'] .cp-chip"),
-          js("() => document.querySelector('[data-key=work-citizen]').scrollIntoView({block: 'center'})")),
-          ["[data-key='work-visa'] .cp-chip", "[data-key='work-targets'] .cp-input"], prepare=work_status),
+    # one record per country: a citizen's, a work visa with a long name and rough dates, a student visa
+    State("resume, the profile's where you can work", then(js("() => select('profile')"), wait("[data-key='work-rights'] .wr-row .cp-chip"),
+          js("() => document.querySelector('[data-key=work-rights]').scrollIntoView({block: 'center'})")),
+          ["[data-key='work-rights'] .wr-row[data-status=work] .wr-dates .wr-rough", "[data-key='work-rights'] .wr-row[data-status=citizen] .cp-ed.single .cp-chip",
+           "[data-key='work-targets'] .cp-input"], prepare=work_status),
     State("resume, the data file's warnings", nothing, ["#library .warnings"], prepare=broken_subset),
     State("resume, an empty library", nothing, ["#library .empty", "#editor .doc-empty-lib"], prepare=empty_library),
     State("resume, sections & settings", js("() => select('sections')"), ["#editor .is-page"]),
@@ -927,13 +933,45 @@ def test_many_plugins_keep_room_to_drag_the_window(win, server):
 
 
 def test_an_empty_country_list_in_the_profile_shows_nothing(win, server):
-    """2026-11-13: a country list with nothing picked (permanent residence, here) showed the word "false"."""
+    """2026-11-13: a country list with nothing picked showed the word "false"; a record just added has none."""
     st = next(s for s in STATES if s.name == "resume, the profile's where you can work")
     work_status(Ctx(server))
     open_window(win, server, "en")
     st.show(win, Ctx(server))
-    text = win.inner_text("[data-key='work-resident']")
+    win.click("[data-key='work-rights'] .wr-add")
+    text = win.inner_text("[data-key='work-rights'] .wr-row >> nth=-1")
     assert "false" not in text and "true" not in text, text
+
+
+def test_where_you_can_work_is_one_record_per_country_with_rough_dates(win, server):
+    """2026-11-13: one record per country (China: citizen; Australia: a 485 visa from about 2027-07), each date
+    marked when only roughly known; the first shape (a list per status) is read as records and saved as them."""
+    st = next(s for s in STATES if s.name == "resume, the profile's where you can work")
+    studio = server.inst.studio
+    prof = dict(studio.state()["doc"]["profile"])
+    prof["work"] = {"citizen": ["CN"], "targets": ["AU"]}                 # the first shape
+    studio.update_item("profile", None, prof, None)
+    open_window(win, server, "en")
+    st.show(win, Ctx(server))
+    assert win.inner_text("[data-key='work-rights'] .wr-row >> nth=0 >> .cp-chip").startswith("China")
+    win.click("[data-key='work-rights'] .wr-add")
+    row = "[data-key='work-rights'] .wr-row >> nth=1"
+    win.locator(f"{row} >> .cp-input").type("Austral")
+    win.wait_for_selector("[data-key='work-rights'] .pl-sugg .pl-opt")
+    win.keyboard.press("Enter")
+    assert win.locator(f"{row} >> .wr-status").get_attribute("data-value") == "work"   # a second record starts as a work visa
+    win.locator(f"{row} >> .wr-visa").fill("485")
+    win.click(f"{row} >> .wr-month[data-key=from]")
+    win.click(".month-pop .mp-next")
+    win.click(".month-pop .mp-m >> nth=6")
+    win.click(f"{row} >> .wr-rough >> nth=0")
+    year = win.evaluate("() => new Date().getFullYear()") + 1
+    work = lambda: studio.state()["doc"]["profile"].get("work") or {}
+    wait_until(lambda: work().get("rights") == [{"country": "CN", "status": "citizen"},
+                                                {"country": "AU", "status": "work", "visa": "485", "from": f"{year}-07~"}],
+               msg="saved as records")
+    assert "citizen" not in work() and work()["targets"] == ["AU"]
+    assert win.get_attribute(f"{row} >> .wr-rough >> nth=0", "aria-checked") == "true"
 
 
 def test_a_country_is_found_by_the_start_of_its_name_and_kept_in_the_profile(win, server):

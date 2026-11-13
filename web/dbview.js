@@ -25,6 +25,7 @@ const DBV = {
   drag: null,          // {table, key} while a column heading is dragged
   saved: 0,            // when this window last saved: the "views" event that follows is its own echo
   month: {},           // table -> "YYYY-MM" the calendar shows (this window's, not saved)
+  rowH: {},            // "table:view" -> a row's height on average, as drawn: what a block not drawn yet stands for
 };
 const LAYOUT_ICONS = { table: "table", board: "columns", calendar: "calendar", gantt: "gantt", map: "map" };
 const LAYOUT_NAMES = { table: "Table", board: "Board", calendar: "Calendar", gantt: "Gantt", map: "Map" };
@@ -527,7 +528,8 @@ function dbvRefit(tries = 0) {
   DBV.refit = false;
   const w = dbvPane();
   if (w <= 0) { DBV.refit = false; if (tries < 60) setTimeout(() => dbvRefit(tries + 1), 100); return; }   // still hidden: look again shortly
-  if (w !== dbvLastPane && document.querySelector(".dbv-wrap") && typeof paintHunt === "function" && !dbvBusy()) { dbvLastPane = w; paintHunt(); }
+  // the same rows at another width: not a change in what they show (hunt.js keeps tables going back by the width too)
+  if (w !== dbvLastPane && document.querySelector(".dbv-wrap") && typeof paintHunt === "function" && !dbvBusy()) { dbvLastPane = w; huntGo(paintHunt); }
 }
 window.addEventListener("resize", () => { clearTimeout(DBV.resizeTimer); DBV.resizeTimer = setTimeout(dbvRefit, 120); });
 
@@ -660,8 +662,13 @@ function dbvTableEl(o, view, cols, rows, repaint) {
           if (folded.has(g.value)) folded.delete(g.value); else folded.add(g.value);
           view.folded = [...folded]; dbvSave(o.table, repaint);
         } }, icon(folded.has(g.value) ? "chevRight" : "chev"), gp.type === "select" ? dbvChip(g) : h("b", null, g.label), h("span", { class: "n" }, g.rows.length)))),
-      folded.has(g.value) ? null : g.rows.map(tr)));
-  } else bodies = [h("tbody", null, rows.map(tr))];
+      folded.has(g.value) || rows.length > DBV_WHOLE ? null : g.rows.map(tr)));
+    // a long table's groups: each group's rows in blocks after its heading
+    if (rows.length > DBV_WHOLE) bodies = bodies.flatMap((b, i) => {
+      const g = dbvGroups(gp, rows).filter((x) => x.rows.length)[i];
+      return [b, ...(folded.has(g.value) ? [] : dbvBlocks(o.table + ":" + view.id, g.rows, tr, shown.length + (sized ? 1 : 0)))];
+    });
+  } else bodies = dbvBlocks(o.table + ":" + view.id, rows, tr, shown.length + (sized ? 1 : 0));
   const pad = (tag) => sized && h(tag, { class: "dbv-pad" });
   const table = (...kids) => h("table", { class: "htable dbv" + (sized ? " sized" : ""), style: `width:${total}px` }, colgroup(), ...kids);
   tables = [table(h("thead", null, h("tr", null, ths, pad("th")))), table(...bodies)];
@@ -677,13 +684,98 @@ function dbvTableEl(o, view, cols, rows, repaint) {
     DBV.scrollX[key] = x;
     for (const o2 of boxes) if (o2 !== b && o2.scrollLeft !== x) o2.scrollLeft = x;
   }, { passive: true });
-  return h("div", { class: "htable-wrap dbv-wrap", "data-scrolls": wide, "data-x": key }, head, body, bar);
+  const wrap = h("div", { class: "htable-wrap dbv-wrap", "data-scrolls": wide, "data-x": key }, head, body, bar);
+  if (rows.length > DBV_WHOLE) requestAnimationFrame(() => { if (wrap.isConnected) dbvLazy(wrap.parentElement); });   // in case its painter doesn't
+  return wrap;
 }
 // after a repaint the table is where it was sideways (hunt.js calls this once the new view is on the page)
 function dbvKeepX(root) {
   for (const w of root.querySelectorAll(".dbv-wrap[data-x]")) {
     const x = DBV.scrollX[w.dataset.x] || 0;
     for (const b of w.querySelectorAll(":scope > .dbv-head, :scope > .dbv-body, :scope > .dbv-hbar")) b.scrollLeft = x;
+  }
+}
+
+// ---------------------------------------------------------------- rows drawn near the screen only
+// A long table draws its rows a block at a time, only the blocks on or near the screen; a block further away is an
+// empty row of its height. Drawing every row made a look at 229 companies take 0.4 s and one at 5,000 six seconds,
+// on every switch of tab or workspace (user, 2026-11-13: "就算有5000家公司也能无比流畅"). A short table is drawn whole.
+const DBV_BLOCK = 12;        // rows a block: a company's row is 130 px high on average, so 40 made a block five screens
+const DBV_WHOLE = 60;        // up to this many rows, every row is drawn at once
+const DBV_NEAR = 1;          // screens above and below the one shown that are drawn ahead
+const DBV_FAR = 4;           // screens away a drawn block is let go again (the page stays light however far it is read)
+
+function dbvBlocks(key, rows, tr, cols) {
+  if (rows.length <= DBV_WHOLE) return [h("tbody", null, rows.map(tr))];
+  const out = [];
+  for (let i = 0; i < rows.length; i += DBV_BLOCK) {
+    const b = h("tbody", { class: "dbv-blk" });
+    b._rows = rows.slice(i, i + DBV_BLOCK); b._tr = tr; b._cols = cols; b._key = key;
+    dbvGhost(b);
+    out.push(b);
+  }
+  return out;
+}
+
+function dbvGhost(b, height = 0) {
+  const hgt = height || b._rows.length * (DBV.rowH[b._key] || 45);
+  b.replaceChildren(h("tr", { class: "dbv-ghost", "aria-hidden": "true" }, h("td", { colspan: String(b._cols), style: `height:${Math.round(hgt)}px` })));
+  b._drawn = false;
+}
+
+function dbvDraw(b) {
+  b.replaceChildren(...b._rows.map(b._tr));
+  b._drawn = true;
+}
+
+// the box that scrolls the table up and down: the page around it (Applying's page, a plugin's: .hunt-scroll), else the nearest
+// one that scrolls (a look at each box's style costs a layout, so the known ones first)
+function dbvScroller(el) {
+  const known = el.closest(".hunt-scroll");
+  if (known) return known;
+  for (let n = el.parentElement; n; n = n.parentElement) {
+    const oy = getComputedStyle(n).overflowY;
+    if (oy === "auto" || oy === "scroll") return n;
+  }
+  return document.scrollingElement;
+}
+
+// draws the blocks near the screen and lets far ones go; at once, so the first frame already shows the rows
+function dbvLazyNow(sc) {
+  const blocks = sc.querySelectorAll("tbody.dbv-blk");
+  if (!blocks.length) return;
+  if (!sc.isConnected || !sc.clientHeight) return;   // hidden (another workspace): every block would look near
+  const r = sc.getBoundingClientRect(), hgt = r.height;
+  const near = [r.top - DBV_NEAR * hgt, r.bottom + DBV_NEAR * hgt], far = [r.top - DBV_FAR * hgt, r.bottom + DBV_FAR * hgt];
+  const keep = (b) => b.contains(document.activeElement) || (Float.cur && b.contains(Float.cur.anchor));
+  // every block's place read first, then the changes made: reading after each change made a layout per block
+  const rects = [...blocks].map((b) => b.getBoundingClientRect());
+  const drawn = [];
+  blocks.forEach((b, i) => {
+    const br = rects[i];
+    if (!b._drawn && br.bottom >= near[0] && br.top <= near[1]) { dbvDraw(b); drawn.push(b); }
+    else if (b._drawn && (br.bottom < far[0] || br.top > far[1]) && !keep(b)) dbvGhost(b, br.height);
+  });
+  // what a row came out as, for the blocks not drawn yet: read in one go, after the drawing
+  for (const b of drawn) {
+    const hgt = b.offsetHeight;
+    if (hgt > 0) DBV.rowH[b._key] = Math.round((((DBV.rowH[b._key] || hgt / b._rows.length) * 3) + hgt / b._rows.length) / 4);
+  }
+}
+
+// once the table is on the page: drawn as it is scrolled
+function dbvLazy(root) {
+  for (const wrap of root.querySelectorAll(".dbv-wrap")) {
+    if (!wrap.querySelector("tbody.dbv-blk")) continue;
+    const sc = dbvScroller(wrap);
+    if (!sc) continue;
+    dbvLazyNow(sc);
+    if (sc._dbvLazy) continue;   // one listener a scroller: it looks at whatever table is in it now
+    sc._dbvLazy = true;
+    let queued = false;
+    const look = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; if (sc.isConnected) dbvLazyNow(sc); }); };
+    sc.addEventListener("scroll", look, { passive: true });
+    new ResizeObserver(look).observe(sc);
   }
 }
 

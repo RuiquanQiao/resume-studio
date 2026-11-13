@@ -47,6 +47,8 @@ os.environ["RESUME_STUDIO_LANG"] = "zh-CN"
 os.environ["STUDIO_LOGOS"] = "off"
 # places the list doesn't know are looked up on OpenStreetMap; tests that want it hand in what it answers
 os.environ["STUDIO_PLACES"] = "off"
+# no warming of the postings at startup (jobhunt/api.py `warm`): a test reads what it just wrote, on its own thread
+os.environ["STUDIO_WARM"] = "off"
 # whether a careers site is on 北森 is asked of the site itself; tests' made-up sites are never asked
 os.environ["STUDIO_BEISEN_DETECT"] = "off"
 # and whether it is a Feishu tenant on its own domain, the same way

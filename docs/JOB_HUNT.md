@@ -664,7 +664,7 @@ rules copied, so the two agree: case and accents folded, 2-3 letter acronyms onl
 as a word edge, `+` joins words that must all appear, `exclude` rules titles out). Each track has a name, keywords,
 exclusions and the resume subset it goes out with. No AI runs per posting: it is free and instant on every scan.
 
-- **Picked for you** (a tab): every company's open roles in a track, newest first, switched by track, "New this
+- **Matching roles** (a tab): every company's open roles in a track, newest first, switched by track, "New this
   week", "Show added", one click to Want to apply. A company read in part is named above the list.
 - A company's page tags each role with its tracks and folds away the rest; the table counts only those.
 - **Let AI set them up**: the agent builds tracks from the resume subsets (one subset is one kind of role) and the
@@ -695,7 +695,7 @@ fill the site → submit → track progress. What still costs the user attention
    missing", then a stronger model when the user allows it), so a weak model's early stop costs no attention.
 4. **Deadlines as the driver.** Many campus postings carry no date on the list but do on the JD page. Read the JD for
    every picked role (not only applied ones), so the apply-by calendar is complete and the brief can warn in time.
-5. **Learn from what the user does.** Roles the user adds vs. ignores in Picked for you are labels. Suggest a missing
+5. **Learn from what the user does.** Roles the user adds vs. ignores in Matching roles are labels. Suggest a missing
    keyword ("you added 4 roles with 智能体 that no track caught") or an exclusion, never change tracks silently.
 6. **Batch the 网申 itself.** One sign-up per company covers several roles; once the subset and the choices are
    known, the agent pre-fills the form from the subset version and stops before Submit, for many companies in a

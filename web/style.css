@@ -64,7 +64,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .spacer { flex: 1; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .muted { color: var(--text-3); }
-.mono { font-family: var(--mono); font-size: 12px; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
 svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- controls ---------- */
@@ -413,8 +413,11 @@ body[data-ws="resume"][data-preview="off"][data-chat="off"] .workspace { grid-te
 .card-h h3 { margin: 0; font-size: 14px; line-height: 20px; font-weight: 600; white-space: nowrap; }
 .card-h .sub { font-size: 12.5px; line-height: 20px; color: var(--text-3); }
 .card-h .card-n { font-size: 12.5px; font-weight: 500; color: var(--text-3); font-variant-numeric: tabular-nums; }
-.card-h > .card-acts { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; align-self: center; }
+.card-h > .card-acts { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; align-self: center; min-width: 0; max-width: 100%; }
+/* a scan's note names a site's address, one long word: it breaks inside the card, not past its edge */
+.card-h > .card-acts .muted, .card-h > .card-acts .fs-status { overflow-wrap: anywhere; min-width: 0; }
 .card-h > .card-acts .muted { font-size: 12.5px; }
+.card-h > .card-acts .fs-status svg.i { flex: none; }
 /* a foldable card: its title is the toggle; folded, only the head stays */
 .card-fold { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; min-width: 0; margin: 0 0 0 -6px; padding: 0 6px 0 4px;
   border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
@@ -959,7 +962,7 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px va
 .act-main { display: flex; flex-direction: column; min-width: 0; }
 .act-l { font-weight: 500; }
 .act-d { font-size: 12.5px; color: var(--text-3); line-height: 1.4; }
-.card.report .card-h .sub { font-family: var(--mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+.card.report .card-h .sub { font-family: var(--mono); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
 .rep-sec { border-top: 1px solid var(--line); }
 .rep-sec:first-child { border-top: 0; }
 .rep-sec > summary { padding: 8px 2px; cursor: pointer; font-weight: 500; list-style: none; display: flex; align-items: center; gap: 6px; }
@@ -1385,7 +1388,9 @@ mark.w-add { background: color-mix(in srgb, var(--ok) 30%, transparent); }
 .hunt-tab.on { background: var(--panel); color: var(--text); box-shadow: var(--shadow-sm); }
 .hunt-tab .n { font-size: 12.5px; font-weight: 500; color: var(--text-3); font-variant-numeric: tabular-nums; }
 /* scroll-padding: a row brought into view (Tab, scrollIntoView) clears a card's stuck head (.card-foldable) */
-.hunt-scroll { flex: 1; min-height: 0; overflow: auto; scroll-padding-top: 56px; }
+/* the scrollbar's room kept whether or not the page is long enough to need it: a table fitted to the pane (dbvFit) was
+   drawn twice going from a short page to a long one, once before the bar came and once after */
+.hunt-scroll { flex: 1; min-height: 0; overflow: auto; scroll-padding-top: 56px; scrollbar-gutter: stable; }
 .hunt-wrap { width: 100%; padding: 16px 28px 28px; display: flex; flex-direction: column; gap: 12px; }
 .hunt-wrap.is-page { gap: 0; }
 .hunt-wrap.is-page > .row:first-child, .hunt-wrap.is-page > .hunt-back { margin-bottom: 8px; }
@@ -1394,6 +1399,9 @@ mark.w-add { background: color-mix(in srgb, var(--ok) 30%, transparent); }
 .hunt-head h1 { margin: 0 0 4px; font-size: 21px; font-weight: 600; letter-spacing: -.1px; }
 .hunt-head p { margin: 0; color: var(--text-2); font-size: 14px; line-height: 1.55; max-width: 720px; text-wrap: pretty; }
 .hunt-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+/* a toolbar's buttons are controls, at the controls' size (14px, 30px high, like the search box beside them), even where
+   they are made as .btn.sm for use elsewhere */
+.hunt-tools .btn.sm { height: 30px; padding: 0 12px; font-size: 14px; }
 .hunt-search { width: 220px; max-width: 100%; height: 30px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--r-sm); background: var(--fill); color: var(--text); font: inherit; }
 .hunt-search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 .hunt-empty { padding: 28px 16px; border: 1px dashed var(--line-strong); border-radius: var(--r-lg); text-align: center; color: var(--text-2); font-size: 14px; }
@@ -1535,6 +1543,11 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-sel
 .dbv-in .c-link { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
 .dbv-in .c-link:hover { text-decoration: underline; }
 .htable.dbv tbody tr { cursor: default; }
+/* a long table's rows in blocks (dbvBlocks): a line between one block and the next, as between any two rows; a block
+   not drawn yet is one empty row of its height */
+.htable.dbv tbody.dbv-blk + tbody.dbv-blk > tr:first-child > td { border-top: 1px solid var(--line); }
+.htable.dbv tr.dbv-ghost > td { padding: 0; border-left: 0; }
+.htable.dbv tbody tr.dbv-ghost:hover { background: none; }
 .co-chip { gap: 5px; }
 .co-logo.xs { width: 16px; height: 16px; border-radius: 4px; }
 .dbv-grouphead td { padding: 0 !important; background: var(--panel-2); border-left: 0 !important; }
@@ -1692,7 +1705,7 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 /* the document: a reading width, a text size and leading made for reading, headings that step clearly */
 .plan-doc { width: min(720px, 100%); margin: 0 auto; padding: 48px 40px 96px; box-sizing: border-box; font-size: 16px; line-height: 1.75; color: var(--text); overflow-wrap: anywhere; }
 .plan-doc > :first-child { margin-top: 0; }
-.plan-doc h1 { margin: 0 0 20px; font-size: 27px; line-height: 1.3; font-weight: 600; letter-spacing: -.3px; }
+.plan-doc h1 { margin: 0 0 20px; font-size: 21px; line-height: 1.3; font-weight: 600; letter-spacing: -.3px; }
 .plan-doc h2 { margin: 36px 0 10px; font-size: 21px; line-height: 1.4; font-weight: 600; }
 .plan-doc h3 { margin: 26px 0 8px; font-size: 16px; line-height: 1.45; font-weight: 600; }
 .plan-doc h4 { margin: 20px 0 6px; font-size: 16px; font-weight: 600; color: var(--text-2); }
@@ -1866,6 +1879,30 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .pl-input { flex: 1 1 auto; width: 100%; min-width: 160px; height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--panel); color: var(--text); font: inherit; }
 .cp-ed { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .cp-ed .pl-combo { flex: none; }
+/* one country: once picked it fills the box like a value, not a tag (filled like the form's other typed fields) */
+.cp-ed.single .pl-list { height: 32px; padding: 0 4px 0 10px; border: 1px solid transparent; border-radius: var(--r-sm); background: var(--fill); flex-wrap: nowrap; }
+.cp-ed.single .pl-chip { flex: 1; min-width: 0; height: auto; padding: 0; background: none; color: var(--text); justify-content: space-between; }
+.cp-chip > .cp-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cp-ed.single .pl-chip > .pl-x { flex: none; width: 22px; height: 22px; margin-right: 0; }
+.cp-ed.single .pl-combo, .cp-ed.single .pl-input { min-width: 0; }
+/* the profile's "Where you can work": one record per country. Country, status and delete on the first line; a
+   visa's name, then its two dates (each a label over a month and its "roughly" tick), side by side when they fit */
+.wr-list { display: flex; flex-direction: column; gap: 8px; }
+.wr-list:not(:empty) { margin-bottom: 10px; }
+.wr-row { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel); }
+/* the country and its status side by side while both have room ("United Kingdom", "Vereinigtes Königreich"); in a
+   narrow pane the status and the remove button go under the country, not over it (2026-11-13, at 1280) */
+.wr-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.wr-head > .cp-ed { flex: 1 1 210px; min-width: 0; }
+.wr-head > .wr-status { flex: 1 0 140px; max-width: 170px; height: 32px; min-width: 0; }
+.wr-head > .wr-del { flex: none; margin-left: auto; }
+.wr-dates { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 14px; }
+.wr-when { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.wr-dl { font-size: 12.5px; font-weight: 500; color: var(--text-2); }
+.wr-pick { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.wr-pick > .wr-month { flex: 1 1 auto; min-width: 0; width: auto; }
+.wr-pick > .wr-rough { flex: none; width: auto; padding: 0; align-items: center; color: var(--text-2); }
+.wr-pick > .wr-rough:disabled { opacity: .5; cursor: default; }
 .pl-pop { padding: 10px; width: min(460px, calc(100vw - 32px)); }
 /* ---- the world map (web/dbview.js; docs/JOB_HUNT.md, 2026-10-21) ---- */
 .dbv-map { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 10px; min-height: 420px; height: calc(100vh - 270px); }
@@ -1982,10 +2019,12 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .trk-empty-do { display: flex; flex-wrap: wrap; gap: 8px; }
 .trk-empty > .trk-empty-hint { margin-top: 10px; font-size: 12.5px; color: var(--text-3); }
 @media (max-width: 560px) { .trk-ex { grid-template-columns: 1fr; } .trk-ex-not { grid-column: 1; } }
-.picked-tools { margin: 4px 0 10px; }
+/* the tracks row: controls at the controls' size (14px, like the search box beside them); only counts are 12.5px.
+   No margin of its own: .hunt-wrap's gap spaces it like every other block (a margin on top doubled it) */
+.picked-tools { margin: 0; }
 .trk-segs { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 9px; background: var(--hover); border: 1px solid var(--line); max-width: 100%; }
 .trk-seg { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text-2);
-  font: inherit; font-size: 12.5px; cursor: pointer; max-width: 22em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  font: inherit; cursor: pointer; max-width: 22em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trk-seg:hover { color: var(--text); }
 .trk-seg.on { background: var(--panel); color: var(--text); box-shadow: var(--shadow-sm); }
 .trk-seg .n { font-size: 12.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
@@ -2000,7 +2039,7 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
   background: var(--hover); color: var(--text-2); }
 .pk-fit.hi { background: var(--ok-soft); color: var(--ok); }
 .pk-fit.lo { color: var(--text-3); }
-.select.pk-sort { height: 28px; font-size: 12.5px; }
+
 
 /* ---- plugins (web/plugins.js, docs/PLUGINS.md) ---- */
 /* a plugin's option colours, from the app's own tokens: quiet, like the job hunt's states */
@@ -2016,14 +2055,14 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .plugin-row:first-child { border-top: 0; }
 .plugin-row > .check-row { flex: 1; min-width: 0; }
 .plugin-row > .btn { flex: none; }
-.plugin-meta { display: block; margin-top: 2px; font-size: 12px; color: var(--text-3); }
+.plugin-meta { display: block; margin-top: 2px; font-size: 12.5px; color: var(--text-3); }
 /* the market: a layer over Settings */
 .modal-back.over { z-index: 95; }
 .modal.market { width: min(560px, 94vw); max-height: 86vh; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
 .market-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; align-content: start; margin: 6px 0 4px; }
 .market-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
 .market-row:first-child { border-top: 0; }
-.market-text { flex: 1; min-width: 0; display: grid; gap: 2px; font-size: 13px; }
+.market-text { flex: 1; min-width: 0; display: grid; gap: 2px; font-size: 14px; }
 .market-text .hint { font-size: 12.5px; color: var(--text-2); }
 .market-row > .btn, .market-row > .state-chip { flex: none; }
 .grid2.plugin-pair > .field { justify-content: flex-start; }
@@ -2042,7 +2081,7 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .plugin-relpick .lb-empty { padding: 6px 10px; font-size: 12.5px; }
 .plugin-linklist { display: grid; }
 .plugin-linkrow { display: flex; align-items: center; gap: 10px; min-width: 0; width: 100%; padding: 7px 8px; border: 0; border-radius: 6px;
-  background: none; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+  background: none; color: var(--text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
 .plugin-linkrow + .plugin-linkrow { border-top: 1px solid var(--line); border-radius: 0; }
 .plugin-linkrow:hover, .plugin-linkrow:focus-visible { background: var(--hover); outline: none; }
 .plugin-linkname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

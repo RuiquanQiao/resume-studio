@@ -15,6 +15,7 @@ Singapore is English before Chinese. Simplified and traditional Chinese stand in
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import Any
 
 from . import geo
@@ -76,6 +77,7 @@ def research_text(company: dict) -> str:
     return "\n".join(str(x) for x in parts if x)
 
 
+@lru_cache(maxsize=20000)   # the table asks for every company on each look: the same texts, again and again
 def written_in(text: str, expected: str = "en") -> str:
     """The language a text is in, near enough to tell it from another: Japanese (kana), Korean (hangul),
     Chinese (Chinese characters that outnumber the Latin words, which names like "RSM Australia" bring), or a

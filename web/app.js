@@ -13,8 +13,15 @@ const langShort = (code) => SHORT_LANG[code] || String(code).toUpperCase();
 
 // h(), icon(), $ and the custom controls live in ui.js
 
+// the answer the page asked for in its <head> (index.html), once: the first look of the page takes it
+function early(url) {
+  const r = window.EARLY && EARLY[url];
+  if (r) delete EARLY[url];
+  return r ? r.catch(() => null) : null;
+}
+
 async function api(method, url, body) {
-  const r = await fetch(url, {
+  const r = (method === "GET" && await early(url)) || await fetch(url, {
     method,
     headers: body ? { "Content-Type": "application/json" } : {},
     body: body ? JSON.stringify(body) : undefined,
@@ -1529,24 +1536,80 @@ function profileForm(p = ui.draft) {
 
 // Where the user may work (resume.yaml profile.work, jobhunt/natures.py): never on a resume. The job search puts these
 // countries' kinds of employer first and says when an employer takes only citizens or residents the user isn't
+// One record per country (China: citizen; Australia: a 485 work visa from about 2027-07 to about 2029-07), then where
+// the user looks for work. A month only roughly known keeps a trailing "~" (EDTF), shown as "约".
+const WORK_STATUSES = () => [
+  { value: "citizen", label: t("Citizen") }, { value: "resident", label: t("Permanent resident") },
+  { value: "work", label: t("Work visa") }, { value: "study", label: t("Student visa") }];
+function workRights(w) {
+  if (Array.isArray(w.rights)) return w.rights;
+  // the first shape (2026-11-13): a list of countries per status and one note, read as records
+  const rights = [];
+  for (const [k, s] of [["citizen", "citizen"], ["resident", "resident"], ["visa", "work"]]) {
+    for (const cc of Array.isArray(w[k]) ? w[k] : []) rights.push({ country: cc, status: s });
+    delete w[k];
+  }
+  const first = rights.find((r) => r.status === "work");
+  if (first && w.note) first.visa = w.note;
+  delete w.note;
+  w.rights = rights;
+  return rights;
+}
 function workCard(p) {
   const w = p.work = p.work && typeof p.work === "object" ? p.work : {};
-  const row = (key, label, hint) => h("div", { class: "field", "data-key": "work-" + key },
-    h("label", null, label, hint && h("span", { class: "hint" }, hint)),
-    countryPicker(w[key] || [], (v) => { if (v.length) w[key] = v; else delete w[key]; touch(); }, label));
+  const rights = workRights(w);
+  const list = h("div", { class: "wr-list" });
+  const paint = () => {
+    list.replaceChildren(...rights.map((r, i) => {
+      const visa = r.status === "work" || r.status === "study";
+      const status = uiSelect({ cls: "wr-status", label: t("Status"), options: WORK_STATUSES(), value: r.status || "citizen",
+        onChange: (v) => { r.status = v; if (v !== "work" && v !== "study") { delete r.visa; delete r.from; delete r.until; } touch(); paint(); } });
+      // country and status on one line with its delete; a visa's name and its two dates below, each a line of its own
+      return h("div", { class: "wr-row", "data-i": i, "data-status": r.status },
+        h("div", { class: "wr-head" },
+          countryPicker(r.country ? [r.country] : [], (v) => { r.country = v[0] || ""; touch(); }, t("Country"), { single: true }),
+          status.el,
+          h("button", { type: "button", class: "btn icon sm ghost danger wr-del", title: t("Remove"), "aria-label": t("Remove"),
+            onclick: () => { rights.splice(i, 1); touch(); paint(); } }, icon("x"))),
+        visa && h("input", { class: "wr-visa", value: r.visa || "", spellcheck: "false", "aria-label": t("Visa name"),
+          placeholder: t("Visa name, e.g. 485 Temporary Graduate"), oninput: (e) => { if (e.target.value.trim()) r.visa = e.target.value; else delete r.visa; touch(); } }),
+        visa && h("div", { class: "wr-dates" }, roughMonth(t("Valid from"), r, "from"), roughMonth(t("Valid until"), r, "until")));
+    }));
+  };
+  paint();
+  const add = h("button", { class: "btn sm wr-add", onclick: () => { rights.push({ country: "", status: rights.length ? "work" : "citizen" }); touch(); paint();
+    const last = list.lastElementChild; if (last) last.querySelector("input").focus(); } }, icon("plus"), t("Add a country"));
   return card(t("Where you can work"), t("Never on a resume: the job search goes by it"), [
-    h("div", { class: "grid2" }, row("citizen", t("Citizen of")), row("resident", t("Permanent resident of"))),
-    h("div", { class: "grid2" }, row("visa", t("Work visa for"), t("a visa that lets you work there")), row("targets", t("Looking for work in"))),
-    tfield(t("Visa details"), w, "note", { placeholder: t("e.g. graduate visa until 2028-03, open work rights") }),
+    h("div", { class: "field", "data-key": "work-rights" }, list, add),
+    h("div", { class: "field", "data-key": "work-targets" }, h("label", null, t("Looking for work in")),
+      countryPicker(w.targets || [], (v) => { if (v.length) w.targets = v; else delete w.targets; touch(); }, t("Looking for work in"))),
   ]);
+}
+// a month that may be only roughly known: "2027-07", or "2027-07~" with 约 ticked
+function roughMonth(label, r, key) {
+  const btn = h("button", { type: "button", class: "select month-pick wr-month", "data-key": key, "aria-haspopup": "dialog", "aria-expanded": "false", "aria-label": label });
+  const tick = h("button", { type: "button", class: "check-row wr-rough", role: "checkbox" });
+  setTip(tick, t("Only roughly known, e.g. a visa not granted yet"));
+  const paint = () => {
+    const v = String(r[key] || ""), month = v.replace(/~$/, ""), rough = v.endsWith("~");
+    btn.replaceChildren(icon("calendar"), h("span", { class: "sel-label" + (month ? "" : " ph") }, month ? shortDate(month) : t("Pick a month")), icon("chev"));
+    tick.setAttribute("aria-checked", String(rough));
+    tick.disabled = !month;
+    tick.replaceChildren(h("span", { class: "check" + (rough ? " on" : "") }), t("Roughly"));
+  };
+  const set = (month, rough) => { if (month) r[key] = month + (rough ? "~" : ""); else delete r[key]; touch(); paint(); };
+  btn.onclick = () => openMonthPicker(btn, label, String(r[key] || ""), (v) => set(v, String(r[key] || "").endsWith("~")));
+  tick.onclick = () => { const v = String(r[key] || ""); if (v) set(v.replace(/~$/, ""), !v.endsWith("~")); };
+  paint();
+  return h("div", { class: "wr-when" }, h("span", { class: "wr-dl" }, label), h("div", { class: "wr-pick" }, btn, tick));
 }
 
 // the profile's "Where you can work", from a page that says what an employer asks of the user
 async function openProfileWork() {
   if (W.ws !== "resume") setWorkspace("resume");
   await select("profile");
-  const el = document.querySelector('#editor [data-key="work-citizen"]');
-  if (el) { el.scrollIntoView({ block: "center" }); const i = el.querySelector("input"); if (i) i.focus({ preventScroll: true }); }
+  const el = document.querySelector('#editor [data-key="work-rights"]');
+  if (el) { el.scrollIntoView({ block: "center" }); const i = el.querySelector("input, .wr-add"); if (i) i.focus({ preventScroll: true }); }
 }
 
 // countries by ISO code, picked by any part of their name (in the interface's language or English) or code
@@ -1555,7 +1618,8 @@ async function loadCountries() {
   if (!COUNTRIES) COUNTRIES = api("GET", "/api/hunt/countries").then((r) => r.countries).catch(() => { COUNTRIES = null; return []; });
   return COUNTRIES;
 }
-function countryPicker(list, change, label) {
+// `single`: one country; once picked it shows alone, and removing it brings the box back
+function countryPicker(list, change, label, { single = false } = {}) {
   let cur = [...list];
   let all = [];
   const wrap = h("div", { class: "cp-ed" });
@@ -1566,7 +1630,12 @@ function countryPicker(list, change, label) {
       "aria-expanded": "false", "aria-autocomplete": "list", "aria-label": label, placeholder: t("Type a country") });
     const sugg = h("div", { class: "pl-sugg", role: "listbox", hidden: true });
     let found = [], active = 0;
-    const pick = (cc) => { cur = [...cur.filter((x) => x !== cc), cc]; change(cur); paint(); wrap.querySelector(".cp-input").focus(); };
+    const pick = (cc) => {
+      cur = single ? [cc] : [...cur.filter((x) => x !== cc), cc];
+      change(cur); paint();
+      const next = wrap.querySelector(".cp-input") || wrap.querySelector(".pl-x");
+      if (next) next.focus();
+    };
     const show = () => {
       const q = input.value.trim().toLowerCase();
       found = !q ? [] : all.filter((x) => !cur.includes(x.code) && (x.name.toLowerCase().includes(q) || x.en.toLowerCase().includes(q) || x.code.toLowerCase() === q))
@@ -1590,11 +1659,12 @@ function countryPicker(list, change, label) {
       else if (e.key === "Backspace" && !input.value && cur.length) { cur = cur.slice(0, -1); change(cur); paint(); wrap.querySelector(".cp-input").focus(); }
     });
     input.addEventListener("blur", () => setTimeout(() => { if (!wrap.contains(document.activeElement)) sugg.hidden = true; }, 120));
+    wrap.classList.toggle("single", single);
     wrap.replaceChildren(...[
-      cur.length > 0 && h("div", { class: "pl-list" }, cur.map((cc) => h("span", { class: "pl-chip cp-chip", "data-code": cc }, nameOf(cc),
+      cur.length > 0 && h("div", { class: "pl-list" }, cur.map((cc) => h("span", { class: "pl-chip cp-chip", "data-code": cc, title: nameOf(cc) }, h("span", { class: "cp-name" }, nameOf(cc)),
         h("button", { type: "button", class: "pl-x", title: t("Remove"), "aria-label": t("Remove {name}", { name: nameOf(cc) }),
-          onclick: () => { cur = cur.filter((x) => x !== cc); change(cur); paint(); } }, icon("x"))))),
-      h("div", { class: "pl-combo" }, input, sugg)].filter(Boolean));   // replaceChildren would write "false" as text
+          onclick: () => { cur = cur.filter((x) => x !== cc); change(cur); paint(); const i = wrap.querySelector(".cp-input"); if (single && i) i.focus(); } }, icon("x"))))),
+      !(single && cur.length) && h("div", { class: "pl-combo" }, input, sugg)].filter(Boolean));   // replaceChildren would write "false" as text
   };
   paint();
   loadCountries().then((xs) => { all = xs; if (cur.length) paint(); });
@@ -2769,13 +2839,20 @@ function onScreen() {
       "moved-left": t("Your data is now in {path}. A few old files were still in use and stayed behind; delete them when the window is closed.", { path: S.data_path }) };
     toast(msg[switched] || msg.open, { ms: switched === "moved-left" ? 9000 : 5000 });
   }
-  select("profile");
+  // the resume's document is painted first only when the window opens on it: opened on another workspace, it is
+  // painted hidden once the window shows (laid out on screen, it held the first screen 0.3 s: 2026-11-13)
+  const onResume = !["jobs", "fill", "plan"].includes(store("ws")) && !wsPlugin(store("ws"));
+  if (onResume) select("profile");
   initWorkspaces();
+  // opened on Applying: the window shows with its table, not with "Loading…" (asked for in the <head>, the answer
+  // is usually here by now); a slow one doesn't keep the window hidden for more than a second
+  if (W.ws === "fill" && H.loading) await Promise.race([H.loading, new Promise((r) => setTimeout(r, 1000))]);
   // the first screen is drawn: the window, hidden until now, shows (resume/app.py /api/drawn). What loads next
   // (jobs, chats, the preview) waits until it is on screen: that work keeps Python busy, and a window shown
   // meanwhile drew its title bar late (2026-11-11)
   await api("POST", "/api/drawn").catch(() => {});
   await onScreen();
+  if (!onResume) select("profile");
   connect();
   const chats = loadChats().catch(() => {});
   loadJobs({ quiet: true });

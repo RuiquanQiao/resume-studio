@@ -5,6 +5,7 @@ Deliberately dependency-free so a Skill can ship its UI and start with one
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 import os
@@ -54,10 +55,22 @@ class Request:
             raise HttpError(400, f"invalid JSON: {e}")
 
 
+# file types from Python's own table, never the Windows registry: reading the registry made the first file the
+# window asked for wait 0.4 s on every start (2026-11-13), and a registry can call .js text/plain
+MIME = mimetypes.MimeTypes()
+for _ext, _type in ((".woff2", "font/woff2"), (".woff", "font/woff"), (".ttf", "font/ttf"), (".otf", "font/otf"),
+                   (".avif", "image/avif"), (".mjs", "text/javascript"), (".map", "application/json")):
+    MIME.add_type(_type, _ext)
+
+
+def guess_type(name: str) -> str | None:
+    return MIME.guess_type(name)[0]
+
+
 class FileResponse:
     def __init__(self, path: Path, content_type: str | None = None):
         self.path = path
-        self.content_type = content_type or mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+        self.content_type = content_type or guess_type(str(path)) or "application/octet-stream"
 
 
 class TextResponse:
@@ -107,12 +120,25 @@ class App:
             def log_message(self, fmt: str, *args: Any) -> None:  # keep the console quiet
                 pass
 
-            def _send_json(self, status: int, obj: Any) -> None:
+            def _send_json(self, status: int, obj: Any, *, tag: bool = False) -> None:
                 data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+                # `tag`: an answer to a GET carries a fingerprint of itself; asked again with it (If-None-Match),
+                # an unchanged answer is an empty 304: the window keeps what it has and draws nothing anew
+                # (Applying's overview: 21 MB for 5,000 companies, fetched on every change anywhere, 2026-11-13)
+                etag = f'"{hashlib.blake2b(data, digest_size=12).hexdigest()}"' if tag and status == 200 else ""
+                if etag and self.headers.get("If-None-Match") == etag:
+                    self.send_response(304)
+                    self.send_header("ETag", etag)
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(data)))
                 self.send_header("Cache-Control", "no-store")
+                if etag:
+                    self.send_header("ETag", etag)
                 self.end_headers()
                 self.wfile.write(data)
 
@@ -208,7 +234,7 @@ class App:
                         self.end_headers()
                         self.wfile.write(result.data)
                     else:
-                        self._send_json(200, result if result is not None else {"ok": True})
+                        self._send_json(200, result if result is not None else {"ok": True}, tag=method == "GET")
                     return
                 if method == "GET" and app.static_dir is not None:
                     rel = path.lstrip("/") or "index.html"

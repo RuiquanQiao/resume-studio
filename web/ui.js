@@ -394,9 +394,24 @@ function closeFloat() {
 function pointAnchor(x, y) {
   return { getBoundingClientRect: () => new DOMRect(x, y, 0, 0), contains: () => false };
 }
+// A press outside closes the panel. A press on what opened it closes it too (a dropdown, a cell, a menu button:
+// pressed again, it shuts, as in every app), and the click that follows is swallowed so it doesn't open it again.
+// Typing places (a combobox's input) keep it open: a press there moves the caret.
+const typingPlace = (el) => el.closest && el.closest("input, textarea, [contenteditable=''], [contenteditable=true]");
 document.addEventListener("pointerdown", (e) => {
+  Float.swallow = null;
   const f = Float.cur;
-  if (f && !f.panel.contains(e.target) && !f.anchor.contains(e.target)) closeFloat();
+  if (!f || f.panel.contains(e.target)) return;
+  if (f.anchor.contains(e.target)) {
+    if (e.button !== 0 || typingPlace(e.target)) return;
+    Float.swallow = f.anchor;
+  }
+  closeFloat();
+}, true);
+document.addEventListener("click", (e) => {
+  const a = Float.swallow;
+  Float.swallow = null;
+  if (a && a.contains(e.target)) { e.stopPropagation(); e.preventDefault(); }
 }, true);
 // something scrolled (the chat streaming, the form): follow the anchor; close only once it is off screen
 document.addEventListener("scroll", (e) => {

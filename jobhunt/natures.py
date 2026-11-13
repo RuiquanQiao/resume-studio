@@ -128,43 +128,83 @@ def takes(entry: str, nid: str) -> bool:
 
 
 # ---- the user's status: resume.yaml profile.work ----
-WORK_KEYS = ("citizen", "resident", "visa", "targets")
+# One record per country: {country, status, visa, from, until}. status is citizen, resident (permanent), work (a
+# work visa) or study (a student visa, whose limited work rights still count for internships). from / until are
+# months, "2027-07", or a year, "2027"; a trailing "~" marks one only roughly known (ISO 8601-2 / EDTF), as a 485
+# visa's start is: it is applied for within six months of graduating and granted some months later.
+STATUSES = ("citizen", "resident", "work", "study")
+LEVEL = {"citizen": "citizen", "resident": "resident", "work": "work", "study": "work"}
+_FUZZY = re.compile(r"\d{4}(-(0[1-9]|1[0-2]))?~?")
+
+
+def _codes(xs: Any) -> list[str]:
+    xs = re.split(r"[,，、;；\s]+", xs) if isinstance(xs, str) else xs if isinstance(xs, list) else []
+    return [c for c in dict.fromkeys(str(x or "").strip().upper() for x in xs) if re.fullmatch(r"[A-Z]{2}", c)]
+
+
+def _when(v: Any) -> str:
+    s = str(v or "").strip().replace("～", "~").replace(".", "-")
+    return s if _FUZZY.fullmatch(s) else ""
 
 
 def clean_work(v: Any) -> dict:
-    """{citizen, resident, visa, targets: [country codes], note}: what the user is in each country, and where they
-    look for work. Codes are ISO 3166 (CN, AU); anything else is left out."""
+    """{rights: [{country, status, visa, from, until}], targets: [country codes]}: what the user is in each country,
+    and where they look for work. Codes are ISO 3166 (CN, AU); anything unreadable is left out. The first shape
+    ({citizen, resident, visa: [codes], note}, 2026-11-13) is read as records."""
     v = v if isinstance(v, dict) else {}
-    out: dict[str, Any] = {}
-    for k in WORK_KEYS:
-        xs = v.get(k)
-        xs = re.split(r"[,，、;；\s]+", xs) if isinstance(xs, str) else xs if isinstance(xs, list) else []
-        out[k] = [c for c in dict.fromkeys(str(x or "").strip().upper() for x in xs) if re.fullmatch(r"[A-Z]{2}", c)]
-    out["note"] = " ".join(str(v.get("note") or "").split())[:300]
-    return out
+    raw = v.get("rights") if isinstance(v.get("rights"), list) else []
+    if not raw:   # the first shape
+        old = [(k, s) for k, s in (("citizen", "citizen"), ("resident", "resident"), ("visa", "work"))]
+        raw = [{"country": cc, "status": s} for k, s in old for cc in _codes(v.get(k))]
+        note = " ".join(str(v.get("note") or "").split())
+        first = next((r for r in raw if r["status"] == "work"), None)
+        if note and first:
+            first["visa"] = note
+    rights, seen = [], set()
+    for r in raw:
+        if not isinstance(r, dict):
+            continue
+        cc = (_codes([r.get("country")]) or [""])[0]
+        st = str(r.get("status") or "").strip().lower()
+        if not cc or st not in STATUSES or (cc, st) in seen:
+            continue
+        seen.add((cc, st))
+        out = {"country": cc, "status": st}
+        if st in ("work", "study"):
+            visa = " ".join(str(r.get("visa") or "").split())[:200]
+            out.update({k: x for k, x in (("visa", visa), ("from", _when(r.get("from"))), ("until", _when(r.get("until")))) if x})
+        rights.append(out)
+    return {"rights": rights, "targets": _codes(v.get("targets"))}
 
 
-def status(work: dict, cc: str) -> str:
+def _over(until: str, today: str) -> bool:
+    """A visa whose last month, known exactly, is before this month: it no longer counts. A rough one still does."""
+    if not until or until.endswith("~"):
+        return False
+    return (until + "-12")[:7] < today[:7]
+
+
+def status(work: dict, cc: str, today: str = "") -> str:
     """What the user is in a country: citizen, resident, work (a visa that lets them work) or ""."""
-    for k, level in (("citizen", "citizen"), ("resident", "resident"), ("visa", "work")):
-        if cc in work.get(k, []):
-            return level
-    return ""
+    import datetime as _dt
+    today = today or _dt.date.today().isoformat()
+    have = [LEVEL[r["status"]] for r in work.get("rights", []) if r.get("country") == cc and not _over(r.get("until", ""), today)]
+    return max(have, key=NEEDS.index) if have else ""
 
 
-def short_of(nid: str, cc: str, work: dict) -> str:
+def short_of(nid: str, cc: str, work: dict, today: str = "") -> str:
     """What a company of this nature in country `cc` asks that the user doesn't have ("" when they have it, or
     when it can't be told: nature, country or the user's status not known)."""
     cc = country(nid) or cc
-    if not nid or not cc or not any(work.get(k) for k in ("citizen", "resident", "visa")):
+    if not nid or not cc or not work.get("rights"):
         return ""
-    need, have = needs(nid), status(work, cc)
+    need, have = needs(nid), status(work, cc, today)
     return "" if have and NEEDS.index(have) >= NEEDS.index(need) else need
 
 
 def countries_first(work: dict, extra: str = "") -> list[str]:
     """The countries whose own kinds the user is shown first: where they look for work, then where they may work."""
-    xs = [*work.get("targets", []), *work.get("citizen", []), *work.get("resident", []), *work.get("visa", []), extra]
+    xs = [*work.get("targets", []), *(r["country"] for r in work.get("rights", [])), extra]
     return [c for c in dict.fromkeys(xs) if c]
 
 

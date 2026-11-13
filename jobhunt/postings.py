@@ -24,14 +24,17 @@ or that has none and was posted over a year ago, is `stale`: kept and shown fold
 from __future__ import annotations
 
 import functools
+import hashlib
 import json
 import re
 import threading
 import unicodedata
 import time
+from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
 
+from core.derived import Derived, code_key, stat_key
 from core.i18n import t
 
 from .natures import nature as _nature, takes as _takes
@@ -176,6 +179,26 @@ def _any_of(keywords: tuple) -> Callable[[str], bool]:
     return test
 
 
+@functools.lru_cache(maxsize=64)
+def _could_match(keywords: tuple) -> Callable[[str], bool]:
+    """Whether a folded title could be in any of the tracks: it has at least one keyword of one of them (of an
+    "AI+产品", its first part). Most titles are in none, and this one search spares them a search per track (86,000
+    titles and 40 tracks: 3.4 million searches, 6 s, 2026-11-13)."""
+    pats = []
+    for k in keywords:
+        parts = _keyword(k) if k else None
+        if parts:
+            pats.append(parts[0].pattern if not isinstance(parts[0], str) else re.escape(parts[0]))
+    rx = re.compile("|".join(dict.fromkeys(pats))) if pats else None
+    return (lambda folded: rx.search(folded) is not None) if rx is not None else (lambda folded: False)
+
+
+@functools.lru_cache(maxsize=64)
+def _could_match_for(key: tuple) -> Callable[[str], bool]:
+    """_could_match for a set of tracks, by its key (_tracks_key): worked out once per set, not once per title."""
+    return _could_match(tuple(k for _, kws, _ in key for k in kws))
+
+
 def _matches(folded: str, keywords: Any, exclude: Any) -> bool:
     if exclude and _any_of(tuple(exclude))(folded):
         return False
@@ -266,7 +289,8 @@ def _title_tracks(title: str, tracks: list[dict]) -> tuple[tuple[str, ...], dict
     got = seen.get(title)
     if got is None:
         folded = _fold(title)
-        got = tuple(tr["id"] for tr in tracks if tr["keywords"] and _matches(folded, tr["keywords"], tr["exclude"]))
+        could = _could_match_for(key)
+        got =tuple(tr["id"] for tr in tracks if tr["keywords"] and _matches(folded, tr["keywords"], tr["exclude"])) if could(folded) else ()
         if len(seen) < 200_000:
             seen[title] = got
     return got, only
@@ -307,12 +331,16 @@ class Postings:
     while the file stays as it is, for what only reads it (the table, a company's page, the news); what writes
     reads it fresh, under the tracker's lock. Each read hands out copies, so nothing changes the kept one."""
 
-    def __init__(self, hunt: Hunt):
+    def __init__(self, hunt: Hunt, cache_dir: Path | None = None):
         self.hunt = hunt
         self._kept: tuple[tuple[int, int], dict] | None = None
         self._scans_kept: tuple[tuple[int, int], dict] | None = None
-        self._summary_kept: tuple | None = None
+        # worked out from the postings once per change of them, and kept between starts (core/derived.py): the
+        # table's first look after a start needs neither the 29 MB file nor 86,000 titles matched again
+        self._summary = Derived(cache_dir / "summary.json" if cache_dir else None)
+        self._changes = Derived(cache_dir / "changes.json" if cache_dir else None)
         self._kept_lock = threading.Lock()
+        self._load_lock = threading.Lock()
 
     # ---- files ----
     def _sig(self) -> tuple[int, int]:
@@ -356,10 +384,17 @@ class Postings:
         with self._kept_lock:
             if self._kept and self._kept[0] == sig:
                 return self._kept[1]
-        data = self._data()
-        with self._kept_lock:
-            self._kept = (sig, data)
-        return data
+        # one parse at a time: a second look meanwhile (the warm-up and the window's first look, 2026-11-13) waits
+        # for it instead of parsing the same 29 MB beside it, which made both take twice as long
+        with self._load_lock:
+            sig = self._sig()
+            with self._kept_lock:
+                if self._kept and self._kept[0] == sig:
+                    return self._kept[1]
+            data = self._data()
+            with self._kept_lock:
+                self._kept = (sig, data)
+            return data
 
     def slim_file(self) -> bool:
         """A file written before 2026-11-04 (indented, every empty field) is written again the short way, once."""
@@ -448,8 +483,9 @@ class Postings:
     def tracks(self) -> list[dict]:
         return self.scans()["tracks"]
 
-    def scan_state(self, cid: str) -> dict:
-        return self.scans()["companies"].get(cid) or {}
+    def scan_state(self, cid: str, scans: dict | None = None) -> dict:
+        """`scans`: scans() already in hand, for a whole table (a look at the file per company otherwise)."""
+        return (scans or self.scans())["companies"].get(cid) or {}
 
     def set_scan_state(self, cid: str, **fields: Any) -> dict:
         with self.hunt.lock:
@@ -651,21 +687,22 @@ class Postings:
     def summary(self) -> dict:
         """Per company: open postings, how many match the keywords, what the last scan brought (for the table).
         Stale ones (still listed, probably over) count apart, never as open. Counted again only when the postings,
-        the scans or the day change; each company's row is the caller's to add to."""
-        d = self.scans()
-        view = self._view()
-        natures = self.natures()
-        sig = (id(view), id(d), time.strftime("%Y-%m-%d"), tuple(sorted(natures.items())))
-        kept = self._summary_kept
-        if not kept or kept[0] != sig:
-            kept = self._summary_kept = (sig, self._summary(d, view["postings"], natures), (view, d))   # holds them: ids stay theirs
-        return {cid: dict(s) for cid, s in kept[1].items()}
+        the scans, the companies' natures or the day change; each company's row is the caller's to add to."""
+        kept = self._summary.get(self._derived_key(), lambda: self._work_out_summary(self.scans(), self._view()["postings"], self.natures()))
+        return {cid: dict(s) for cid, s in kept.items()}
+
+    def _derived_key(self) -> str:
+        """What the summary and the changes are worked out from: the postings, the scans (and the tracks in them),
+        each company's nature, and the day (a role whose closing date passes is no longer open)."""
+        natures = hashlib.blake2b(json.dumps(sorted(self.natures().items()), ensure_ascii=False).encode(), digest_size=12).hexdigest()
+        return json.dumps([code_key(__name__, "jobhunt.natures", "jobhunt.store"), list(self._sig()), stat_key(self.hunt._file("scans.json")),
+                           natures, time.strftime("%Y-%m-%d")])
 
     def natures(self) -> dict[str, str]:
         """Each company's nature ("" not known): what a track for some natures only goes by."""
         return {c["id"]: c.get("nature") or "" for c in self.hunt.companies()}
 
-    def _summary(self, d: dict, ps: list[dict], natures: dict[str, str]) -> dict:
+    def _work_out_summary(self, d: dict, ps: list[dict], natures: dict[str, str]) -> dict:
         trs = d["tracks"]
         out: dict[str, dict] = {}
         today = time.strftime("%Y-%m-%d")
@@ -694,11 +731,19 @@ class Postings:
 
     def changes(self, since_hours: float = 24) -> list[dict]:
         """What the scans of the last day brought, per company: matching new, closed and changed postings."""
+        cut = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - since_hours * 3600))
+        if since_hours != 24:
+            return self._work_out_changes(cut)
+        # kept with the cut it was worked out for: as time passes a company's row only drops out (a newer scan
+        # changes scans.json, so the key), so the kept rows, cut again now, are what working them out gives
+        rows = self._changes.get(self._derived_key(), lambda: self._work_out_changes(cut))
+        return [{**r, **{k: [dict(p) for p in r[k]] for k in ("new", "closed", "changed")}} for r in rows if r["at"] >= cut]
+
+    def _work_out_changes(self, cut: str) -> list[dict]:
         d = self.scans()
         trs = d["tracks"]
         natures = self.natures()
         by_id = {p["id"]: p for p in self._view()["postings"]}
-        cut = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - since_hours * 3600))
         out = []
         for cid, st in d["companies"].items():
             if not st.get("at") or st["at"] < cut:

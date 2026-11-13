@@ -334,11 +334,11 @@ class Scanner:
                     known = {}
                 self.hunt._write(KNOWN, {**known, **now})
 
-    def live_state(self, c: dict) -> dict:
+    def live_state(self, c: dict, scans: dict | None = None) -> dict:
         """The company's scan state as its sites are now: a site that can't be scanned is warned about only while it
         is still one of the company's sites (the AI or the user may have replaced it since the last scan), and a
         company whose unscannable sites are all gone no longer needs the AI."""
-        st = dict(self.postings.scan_state(c["id"]))
+        st = dict(self.postings.scan_state(c["id"], scans))
         was = st.get("unrouted") or []
         if was:
             now = {s["url"] for s in self.sites_of(c)}

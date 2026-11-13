@@ -127,9 +127,10 @@ def test_the_tracks_named_for_state_employers_are_for_chinas_after_the_update(hu
 
 
 def test_an_employer_that_takes_only_citizens_says_so_to_who_isnt_one():
-    au_citizen = N.clean_work({"citizen": ["au"], "targets": "CN, AU, nonsense, 1"})
-    assert au_citizen == {"citizen": ["AU"], "resident": [], "visa": [], "targets": ["CN", "AU"], "note": ""}
-    cn = N.clean_work({"citizen": ["CN"], "visa": ["AU"]})
+    au_citizen = N.clean_work({"rights": [{"country": "au", "status": "citizen"}], "targets": "CN, AU, nonsense, 1"})
+    assert au_citizen == {"rights": [{"country": "AU", "status": "citizen"}], "targets": ["CN", "AU"]}
+    cn = N.clean_work({"rights": [{"country": "CN", "status": "citizen"},
+                                  {"country": "AU", "status": "work", "visa": "485", "from": "2027-07~", "until": "2029-07~"}]})
     assert N.short_of("cn.civil", "", au_citizen) == "citizen"          # a subtype's own country, not the company's hq
     assert N.short_of("cn.civil", "", cn) == ""
     assert N.short_of("au.aps", "", cn) == "citizen"                    # a work visa isn't citizenship
@@ -139,7 +140,32 @@ def test_an_employer_that_takes_only_citizens_says_so_to_who_isnt_one():
     assert N.short_of("private", "NZ", cn) == "work"
     # nothing to tell by: no nature, no country, or nothing in the profile
     assert N.short_of("", "AU", cn) == "" and N.short_of("private", "", cn) == "" and N.short_of("au.aps", "", N.clean_work({})) == ""
-    assert N.countries_first(N.clean_work({"targets": ["AU"], "citizen": ["CN"]}), "SG") == ["AU", "CN", "SG"]
+    assert N.countries_first(N.clean_work({"targets": ["AU"], "rights": [{"country": "CN", "status": "citizen"}]}), "SG") == ["AU", "CN", "SG"]
+
+
+def test_work_rights_are_one_record_per_country_with_rough_dates():
+    """2026-11-13: one record per country (China: citizen; Australia: a 485 visa, from about 2027-07 for two
+    years), and a date only roughly known is kept as such (EDTF "~")."""
+    w = N.clean_work({"rights": [
+        {"country": "CN", "status": "citizen", "visa": "ignored", "from": "2001"},
+        {"country": "AU", "status": "work", "visa": " 485  Temporary Graduate ", "from": "2027.07~", "until": "2029-07～"},
+        {"country": "AU", "status": "work"},                                 # the same twice: the first is kept
+        {"country": "NZ", "status": "study", "from": "July", "until": "2026-13"},   # unreadable dates are left out
+        {"country": "XX1", "status": "citizen"}, {"country": "US", "status": "tourist"}, "nonsense"]})
+    assert w["rights"] == [{"country": "CN", "status": "citizen"},
+                           {"country": "AU", "status": "work", "visa": "485 Temporary Graduate", "from": "2027-07~", "until": "2029-07~"},
+                           {"country": "NZ", "status": "study"}]
+    assert N.status(w, "NZ") == "work"                                       # a student visa's work rights count
+    # a visa that ended, known exactly, no longer counts; one whose end is only rough still does
+    ended = N.clean_work({"rights": [{"country": "AU", "status": "work", "until": "2026-10"}]})
+    assert N.short_of("private", "AU", ended, today="2026-11-13") == "work"
+    assert N.short_of("private", "AU", ended, today="2026-10-31") == ""
+    rough = N.clean_work({"rights": [{"country": "AU", "status": "work", "until": "2026~"}]})
+    assert N.short_of("private", "AU", rough, today="2027-03-01") == ""
+    # the first shape (lists per status, one note) reads as records
+    old = N.clean_work({"citizen": ["CN"], "visa": ["AU"], "targets": ["AU"], "note": "485 until 2028-03"})
+    assert old == {"rights": [{"country": "CN", "status": "citizen"}, {"country": "AU", "status": "work", "visa": "485 until 2028-03"}],
+                   "targets": ["AU"]}
 
 
 def test_the_window_says_what_an_employer_asks_from_the_profile(live, data_file):
@@ -154,7 +180,8 @@ def test_the_window_says_what_an_employer_asks_from_the_profile(live, data_file)
     assert {"kinds", "subtypes", "work"} <= set(d["natures"]) and any(s["id"] == "au.aps" for s in d["natures"]["subtypes"])
     code, st = live.req("GET", "/api/state")
     prof = dict(st["doc"]["profile"])
-    prof["work"] = {"citizen": ["CN"], "visa": ["AU"], "targets": ["CN", "AU"]}
+    prof["work"] = {"rights": [{"country": "CN", "status": "citizen"}, {"country": "AU", "status": "work", "visa": "485"}],
+                    "targets": ["CN", "AU"]}
     assert live.req("PUT", "/api/item", {"kind": "profile", "data": prof, "base": st["hashes"]["profile"]})[0] == 200
     d = live.req("GET", "/api/hunt")[1]
     by = {c["name"]: c for c in d["companies"]}

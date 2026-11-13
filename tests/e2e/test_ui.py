@@ -252,7 +252,7 @@ def test_conflict_banner_when_both_edit(page, server, data_file):
     text = data_file.read_text(encoding="utf-8").replace("Solo developer", "Changed elsewhere")
     data_file.write_text(text, encoding="utf-8")                      # same entry changes on disk
     page.wait_for_selector(".banner.warn", timeout=5000)
-    page.click(".banner.warn button:text('放弃我的修改，载入最新')")
+    page.click(".banner.warn button:text('放弃我的修改并载入最新版本')")
     page.click(".modal .btn.danger-soft")                                      # dropping what was typed asks first
     page.wait_for_selector(".banner.warn", state="detached")
     assert page.input_value("#active input[data-key=subtitle]") == "Changed elsewhere"
@@ -404,7 +404,7 @@ def test_add_resume_language_from_the_preview(page, server):
 
 def test_jobs_create_switch_delete(page, server):
     page.click("#subset-menu-btn")
-    page.click(".float .menu-item:has(.mi-hint:text('空白，自己勾选'))")
+    page.click(".float .menu-item:has(.mi-hint:text('空白，手动勾选'))")
     page.fill(".modal input", "管培生")
     page.click(".modal button:text('创建')")
     wait_until(lambda: value_of(page, "#subset-select") == "SUB-001", msg="switched to new job")
@@ -450,9 +450,9 @@ def test_subset_versions_keep_compare_preview_and_go_back(page, server):
     page.wait_for_selector("#pages img[src*='/subsets/RES-TECH-EN/page/1']")
     # go back to v1: now is v2 already, so nothing extra is kept
     page.click(".vrow[data-n='1'] .btn.icon")
-    page.click(".float .menu-item:has-text('退回到 v1')")
-    page.wait_for_selector(".modal:has-text('就是 v2')")
-    page.click(".modal button:text('退回到这一版')")
+    page.click(".float .menu-item:has-text('恢复到 v1')")
+    page.wait_for_selector(".modal:has-text('当前内容即为 v2')")
+    page.click(".modal button:text('恢复到此版本')")
     wait_until(lambda: chip.inner_text().strip() == "v1", msg="back to v1")
     e = next(x for x in state(server)["doc"]["entries"] if x["id"] == eid)
     assert "Shipped v2" not in json.dumps(e) and page.locator(".vrow").count() == 2
@@ -551,7 +551,7 @@ def test_chat_rows_show_what_claude_code_shows_and_stay_open(page, server, fake_
     # eight steps in a row fold into one line saying what they did; opened, each step is its own row
     group = page.locator(".msg-ai .tool-group")
     assert group.count() == 1 and group.get_attribute("open") is None
-    assert group.locator(":scope > summary .tg-t").inner_text() == "读了 1 个文件，改了 2 个文件，运行了 2 条命令，搜索了 1 次，查看了 1 个网页，跑了 1 个子任务"
+    assert group.locator(":scope > summary .tg-t").inner_text() == "读取了 1 个文件，修改了 2 个文件，运行了 2 条命令，搜索了 1 次，查看了 1 个网页，运行了 1 个子任务"
     assert group.locator(":scope > summary .tg-fail").inner_text() == "1 步失败" and group.locator(":scope > summary .trow-stat").inner_text().split() == ["+33", "−2"]
     group.locator(":scope > summary").click()
     rows = group.locator(".tool")
@@ -633,7 +633,7 @@ def test_polish_shows_diff_and_undo_restores(page, server, data_file, fake_claud
     page.fill("#polish-box input", "更简洁")
     page.click("#polish-box button")
     page.wait_for_selector(".msg-user:has-text('QuizLoom')")
-    page.wait_for_selector(".card.diff h3:text('AI 改了这一条')", timeout=15000)
+    page.wait_for_selector(".card.diff h3:text('AI 已修改此条')", timeout=15000)
     assert "Solo developer (polished)" in page.inner_text(".card.diff")
     page.click(".card.diff button:text('撤销，恢复到改动前')")
     wait_until(lambda: "Solo developer (polished)" not in data_file.read_text(encoding="utf-8"), msg="undo applied")
@@ -740,7 +740,7 @@ def test_mock_interview_predicts_hides_answers_and_follows_up(page, server, data
     wait_until(lambda: "最难的问题是什么？" in data_file.read_text(encoding="utf-8"), msg="my question saved")
     page.fill(f"{q2} .mq-ans", "把课件切块。")
     assert page.is_visible(f"{q2} .mq-probe") and not page.is_visible(f"{q2} .mq-answer")
-    page.click(f"{q2} > .mq-top button[aria-label='自己加一个追问']")
+    page.click(f"{q2} > .mq-top button[aria-label='手动添加追问']")
     page.wait_for_selector(f"{q2} .mq[data-path='[1,0]'] .mq-q:focus")
     page.keyboard.type("怎么切的？")
     wait_until(lambda: "怎么切的？" in data_file.read_text(encoding="utf-8"), msg="my follow-up saved")
@@ -749,7 +749,7 @@ def test_mock_interview_predicts_hides_answers_and_follows_up(page, server, data
     assert len(e["interview"][0]["follow_ups"]) == 1
 
     # delete a question with follow-ups: asked first
-    page.click(f"{q2} > .mq-top button[aria-label='删除这个问题']")
+    page.click(f"{q2} > .mq-top button[aria-label='删除此问题']")
     page.click("#modal-root button:text('删除')")
     wait_until(lambda: "最难的问题是什么？" not in data_file.read_text(encoding="utf-8"), msg="deleted")
 
@@ -855,6 +855,31 @@ def test_custom_select_mouse_and_keyboard(page, server):
     page.click("#subset-select")
     page.mouse.click(5, 880)                                                          # click outside closes
     page.wait_for_selector(".float", state="detached")
+
+
+def test_a_second_press_on_what_opened_a_panel_closes_it(page_all, server):
+    """2026-11-13: a table cell's options (nature, cities) stayed open when the cell was clicked again. A dropdown, a
+    cell editor or a menu button closes on a second press, like everywhere else, and is not opened again by it."""
+    pg = page_all
+    c1 = server.req("POST", "/api/hunt/companies", {"name": "星河科技"})[1]["company"]["id"]
+    server.req("POST", f"/api/hunt/companies/{c1}/roles", {"role": "服务端研发工程师"})
+    shut = lambda: pg.wait_for_timeout(300) or pg.locator(".float").count() == 0
+
+    def twice(sel):
+        pg.click(sel)
+        pg.wait_for_selector(".float")
+        pg.click(sel)
+        assert shut(), f"{sel}: still open after a second press"
+        pg.click(sel)                                   # and a third opens it again
+        pg.wait_for_selector(".float")
+        pg.keyboard.press("Escape")
+        pg.wait_for_selector(".float", state="detached")
+
+    twice("#subset-select")                             # a dropdown
+    twice("#subset-menu-btn")                           # a menu button
+    pg.keyboard.press("Control+3")
+    pg.wait_for_selector(".dbv-view[data-table=apps] tbody tr")
+    twice(".dbv-view[data-table=apps] tbody tr td[data-key=status]")   # a table cell's options
 
 
 def test_tooltips_are_the_apps_own(page):
@@ -991,7 +1016,7 @@ def test_writing_the_other_language(page, server, data_file):
     assert third.locator(".line-chip").inner_text() == "缺中文"
     page.wait_for_function("() => document.querySelectorAll('#bullets .line-chip.ok').length === 2", timeout=40000)  # zh measured too
     third.hover()
-    third.locator("button[data-tip^='简体中文简历不要这一条']").click()
+    third.locator("button[data-tip^='简体中文简历不显示此条']").click()
     entry = lambda: next(x for x in state(server)["doc"]["entries"] if x["id"] == "EXP-002")  # noqa: E731
     wait_until(lambda: entry()["bullets"][2] == {"en": LONG, "zh": ""}, msg="hidden in zh")
     assert page.locator("#bullets .bullet").nth(2).locator(".line-chip").inner_text() == "不显示"
@@ -1003,7 +1028,7 @@ def test_translate_button_sends_a_native_rewrite_request(page, server, fake_clau
     open_entry(page, "EXP-002")
     page.click(".doc-top .seg button:text('中文')")
     page.click("#bullet-notes button:has-text('让 AI 写简体中文版')")
-    page.wait_for_selector(".msg-user.is-action .msg-action:text('写另一种语言')")
+    page.wait_for_selector(".msg-user.is-action .msg-action:text('添加其他语言版本')")
     wait_until(lambda: len(calls(fake_claude)) == 1, msg="claude called")
     assert "不是逐句翻译" in calls(fake_claude)[0]["stdin"] and "--lang zh" in calls(fake_claude)[0]["stdin"]
     page.wait_for_selector(".card.diff", timeout=15000)                       # every AI action gets diff + undo
@@ -1044,7 +1069,7 @@ def test_project_folder_pick_sync_and_update(page, server, data_file, fake_claud
     page.wait_for_selector(".entry[data-id='EXP-002'] .e-dot")
     page.click("#evidence .ev-more")
     assert "feat: evaluation harness" in page.inner_text("#evidence .change-detail")
-    page.click("#evidence .sync-bar button:has-text('让 AI 按新进展更新')")
+    page.click("#evidence .sync-bar button:has-text('让 AI 根据最新进展更新')")
     page.wait_for_selector(".msg-action:text('按项目更新')")
     page.wait_for_selector(".card.diff", timeout=15000)
     page.wait_for_selector(".entry[data-id='EXP-002'] .e-dot", state="detached", timeout=8000)   # read, so in sync again
@@ -1131,7 +1156,7 @@ def test_permission_card_in_the_chat(page, server, fake_claude):
     assert "+ hello" in card.locator(".ask-diff").inner_text()
     page.wait_for_selector("#chat-toggle .tab-dot.wait")                        # the Claude button says Claude is waiting for you
     page.wait_for_selector("#chat-select .sel-mark .chat-mark.waiting")         # and so does the chat's own sign
-    card.locator("button:has-text('允许，并切到「自动接受编辑」')").click()
+    card.locator("button:has-text('允许，并切换到「自动接受编辑」')").click()
     page.wait_for_selector(".ask.ask-perm.done.allowed")
     page.wait_for_selector("#chat-select .chat-mark.waiting", state="detached")
     page.wait_for_selector(".msg-ai .md:has-text('已写入。')", timeout=10000)
@@ -1289,7 +1314,7 @@ def test_queue_stop_tasks_and_fork(page, server, fake_claude):
     # rewind inside this chat: back to before "PERM 第一条"
     first = page.locator(".msg-user-wrap").nth(1)
     first.hover()
-    first.locator("button[aria-label^='回到这条消息之前']").click()
+    first.locator("button[aria-label^='回退到此消息之前']").click()
     page.click(".modal button:has-text('回退')")
     page.wait_for_function("() => document.querySelectorAll('.msg-user-wrap').length === 1")
     assert page.input_value("#chat-input") == "PERM 第一条"
@@ -1427,7 +1452,7 @@ def test_screenshots_of_new_parts(page, server, fake_claude, monkeypatch, tmp_pa
     page.keyboard.press("Enter")
     page.locator(".ask.ask-plan.pending").wait_for()
     page.screenshot(path=str(ART / f"new-plan-{scheme}.png"))
-    page.click(".ask.ask-plan.pending button:has-text('批准，编辑前问我')")
+    page.click(".ask.ask-plan.pending button:has-text('批准，编辑前询问')")
     page.wait_for_selector("#chat-stop.hidden", state="attached", timeout=10000)
     page.fill("#chat-input", "TASKS SLOW")
     page.keyboard.press("Enter")
@@ -1608,7 +1633,7 @@ def test_a_link_the_scan_found_is_added_without_the_ai(page, server):
     pg.click("#hunt-from-link")
     pg.fill("#fm-url", jobs + "/1?utm_source=boss")
     pg.click(".modal .btn.primary")
-    pg.wait_for_selector("#toast.show:has-text('想投')")
+    pg.wait_for_selector("#toast.show:has-text('待投递')")
     pg.wait_for_selector(".hunt-wrap.is-page .ed-head h1:has-text('服务端研发工程师')")
     a = hunt.applications()
     assert [(x["role"], x["status"]) for x in a] == [("服务端研发工程师", "saved")]
@@ -1620,7 +1645,7 @@ def test_a_link_the_scan_found_is_added_without_the_ai(page, server):
     pg.click("#hunt-from-link")
     pg.fill("#fm-url", jobs + "/1")
     pg.click(".modal .btn.primary")
-    pg.wait_for_selector("#toast.show:has-text('已经在列表里')")
+    pg.wait_for_selector("#toast.show:has-text('已在列表中')")
     assert len(hunt.applications()) == 1
     # off the role's page: the next test has no A1. A click that lands while the role's page is still being drawn
     # (the toast's repaint) is lost now and then: clicked again until the page is gone
@@ -1835,7 +1860,7 @@ def test_the_browser_chip_says_whether_it_runs_in_the_background_or_a_window(pag
         pg.wait_for_function("() => document.querySelector('#browser-here').dataset.mode === 'background'", timeout=6000)
         assert pg.evaluate("getComputedStyle(document.querySelector('#browser-here .fb-dot')).animationName") == "none"
         show({"state": "running", "shown": True, "working": True, "url": page_url}, "window")
-        assert pg.inner_text("#browser-here .bchip-mode") == "已显示" and pg.get_attribute("#browser-show", "aria-label") == "切到浏览器"
+        assert pg.inner_text("#browser-here .bchip-mode") == "已显示" and pg.get_attribute("#browser-show", "aria-label") == "切换到浏览器"
         # a long address stays inside the bar
         show({"state": "running", "shown": False, "working": False, "url": page_url + "?source=university&" + "x" * 300}, "background")
         for size, scheme in (((2000, 1000), "light"), ((900, 800), "dark"), ((1440, 900), "light")):
@@ -1980,8 +2005,9 @@ def test_the_company_table_shows_while_changes_keep_coming(page_all, server):
     pg.click(".hunt-tab[data-tab=companies]")
     pg.wait_for_selector(".dbv-view tbody:has-text('星河 Loading')")
     pg.evaluate("""() => {
-      window.__api = api;
-      api = async (...a) => { if (a[1] === '/api/hunt') await new Promise((r) => setTimeout(r, 300)); return window.__api(...a); };
+      // the overview's own fetch (huntFetch, with its ETag), slow, and each answer a new one as a scan's are
+      window.__fetch = huntFetch;
+      huntFetch = async () => { await new Promise((r) => setTimeout(r, 300)); const d = await window.__fetch(); return { ...d }; };
       H.data = null; paintFill();
       window.__tick = setInterval(() => loadHunt({ quiet: true }), 100);   // what a scan's "hunt" events do
     }""")
@@ -1989,7 +2015,7 @@ def test_the_company_table_shows_while_changes_keep_coming(page_all, server):
         pg.wait_for_selector(".dbv-view tbody:has-text('星河 Loading')", timeout=3000)
         assert pg.evaluate("() => !!H.loading")   # still loading again and again: the table didn't wait for that
     finally:
-        pg.evaluate("() => { clearInterval(window.__tick); api = window.__api; }")
+        pg.evaluate("() => { clearInterval(window.__tick); huntFetch = window.__fetch; }")
         server.req("DELETE", f"/api/hunt/companies/{cid}")
 
 
@@ -2272,12 +2298,12 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.wait_for_selector(".dbv-chip[data-key=company]")
     assert pg.locator(".dbv-view tbody tr").count() == 1
     pg.click(".dbv-chip[data-key=company]")
-    pg.click(".float .btn[aria-label='删除这个筛选']")
+    pg.click(".float .btn[aria-label='删除此筛选']")
     pg.wait_for_selector(".dbv-chip[data-key=company]", state="detached")
     pg.click("#dbv-apps-group")
     pg.click(".float .menu-item:has-text('状态')")
     pg.wait_for_selector(".dbv-group[data-group=rejected]")
-    assert pg.locator(".dbv-group").count() == 3                             # 想投, 面试中, 未通过: empty groups don't show
+    assert pg.locator(".dbv-group").count() == 3                             # 待投递, 面试中, 未通过: empty groups don't show
     pg.click(".dbv-group[data-group=rejected] .dbv-fold")
     pg.wait_for_selector(f".dbv-group[data-group=rejected] {row(a3)[len('.dbv-view '):]}", state="detached")
 
@@ -2292,7 +2318,7 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.click(".float .menu-item:has-text('表格')")
     pg.wait_for_selector(".dbv-tab.on[data-view=v7]")
     pg.click(".dbv-tab.on")
-    pg.click(".float .menu-item:has-text('改名')")
+    pg.click(".float .menu-item:has-text('重命名')")
     pg.fill("#fm-name", "本周截止")
     pg.click(".modal .btn.primary")
     pg.wait_for_selector(".dbv-tab.on:has-text('本周截止')")
@@ -2305,7 +2331,7 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.emulate_media(color_scheme="light")
     pg.click(".dbv-tab[data-view=v7]")
     pg.click(".dbv-tab.on")
-    pg.click(".float .menu-item:has-text('删除这个视图')")
+    pg.click(".float .menu-item:has-text('删除此视图')")
     pg.click(".modal .btn.danger-soft")                                        # its filters and columns go: asked first
     pg.wait_for_selector(".dbv-tab[data-view=v7]", state="detached")
     no_native(pg)
@@ -2716,7 +2742,7 @@ def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, m
     pg.wait_for_selector("#fillspace .fill-start")
     assert not pg.is_visible("#editor") and not pg.is_visible(".pane.right") and pg.is_visible("#chat")
     assert pg.get_attribute(".fs-site.on", "data-site") == "linkedin"
-    assert "读取 LinkedIn" in pg.inner_text("#fill-check") and "记下读取路线" in pg.inner_text("#fillspace")
+    assert "读取 LinkedIn" in pg.inner_text("#fill-check") and "记录读取路线" in pg.inner_text("#fillspace")
     assert "false" not in pg.inner_text("#ws-tools") and "false" not in pg.inner_text("#fillspace")
     for scheme in ("light", "dark"):
         pg.emulate_media(color_scheme=scheme)
@@ -2767,7 +2793,7 @@ def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, m
     assert "Hello from LinkedIn." in pg.inner_text(".ff-conflict") and "Open to ML roles." in pg.inner_text(".ff-conflict")
     assert pg.locator("#fill-tabs .fv-tab .fs-n.warn").count() == 1
     pg.screenshot(path=str(ART / "autofill-conflict-light.png"))
-    pg.click(".ff-conflict button >> text=保留我的")
+    pg.click(".ff-conflict button >> text=保留我的版本")
     pg.wait_for_selector(".ff-conflict", state="detached")
 
     # the changes to push: git-style, ticked, one unticked
@@ -2799,7 +2825,7 @@ def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, m
     assert "LinkedIn" in pg.inner_text("#chat-context")                        # the chat is told which profile is open
     pg.wait_for_selector("#chat-log .msg-ai .md >> text=已经处理", timeout=30000)
     steps = pg.locator("#chat-log .tool-step .tn").all_inner_texts()
-    assert steps[:3] == ["打开 127.0.0.1/api/instance", "截个图", "已完成：标题"], steps
+    assert steps[:3] == ["打开 127.0.0.1/api/instance", "截图", "已完成：标题"], steps
     pg.wait_for_function("() => { const i = document.querySelector('#chat-log .step-shot img'); return i && i.complete && i.naturalWidth > 0; }")
     assert "browser.py" not in pg.inner_text("#chat-log .msg-ai")
     pg.screenshot(path=str(ART / "autofill-steps-light.png"))
@@ -2829,7 +2855,7 @@ def test_autofill_sites_are_the_users_to_pick(page_all, server):
     # any other site, by its address, with notes for Claude
     pg.click("#fill-add-site")
     pg.wait_for_selector(".modal.site-dialog")
-    assert "认识的网站" not in pg.inner_text(".site-dialog")   # LinkedIn and BOSS are on the list already
+    assert "支持的网站" not in pg.inner_text(".site-dialog")   # LinkedIn and BOSS are on the list already
     pg.click(".site-dialog .btn.primary")                         # no address: says so, stays open
     assert pg.is_visible(".modal.site-dialog")
     pg.fill("#site-name", "SEEK")
@@ -2865,12 +2891,12 @@ def test_autofill_sites_are_the_users_to_pick(page_all, server):
         pg.click(".menu-item >> text=从列表中移除")
         pg.click(".modal .btn.danger-soft")
         pg.wait_for_selector(f".fs-site[data-site='{sid}']", state="detached")
-    pg.wait_for_selector("#fillspace >> text=你在哪些网站上有资料？")
+    pg.wait_for_selector("#fillspace >> text=你在哪些网站上有个人资料？")
     pg.screenshot(path=str(ART / "autofill-no-sites-light.png"))
     assert "LinkedIn" not in pg.inner_text("#chat .chat-welcome")   # no site to name
     assert pg.locator("#fillspace .btn.primary").count() == 0                 # the known sites lead, "another" doesn't outshine them
     pg.click("#fillspace .btn:has-text('其他网站')")
-    pg.wait_for_selector(".site-dialog >> text=Resume Studio 认识的网站")
+    pg.wait_for_selector(".site-dialog >> text=Resume Studio 支持的网站")
     pg.wait_for_timeout(400)   # the dialog's fade-in
     pg.screenshot(path=str(ART / "autofill-add-site-presets-light.png"))
     pg.keyboard.press("Escape")
@@ -2913,7 +2939,7 @@ def test_the_plan_is_one_document_with_versions(page_all, server, data_file):
     pg.keyboard.press("Control+4")
     pg.wait_for_selector("#planspace .plan-empty:not(.loading)")   # "Loading…" sits in the same place
     assert pg.inner_text("#planspace").strip() == "有任何顾虑，都可以告诉 AI，它会协助你在此梳理清楚。"   # one line, no template
-    assert "跟 Claude 说说你在担心什么" in pg.inner_text("#chat .chat-welcome")
+    assert "向 Claude 说明你的顾虑" in pg.inner_text("#chat .chat-welcome")
     assert pg.locator("#chat .chat-welcome .suggest").count() == 0
     assert "你的计划" in pg.inner_text("#chat-context")
     assert pg.is_disabled("#plan-versions")
@@ -2948,9 +2974,9 @@ def test_the_plan_is_one_document_with_versions(page_all, server, data_file):
     pg.click(".plan-vbar [role=radio] >> text=之后的改动")
     pg.wait_for_selector(".plan-diff .dl-del >> text=每天 2 道题")
     pg.wait_for_selector(".plan-diff .dl-add >> text=每天 1 道题")
-    pg.click(".plan-vbar .btn >> text=回到这一版")
+    pg.click(".plan-vbar .btn >> text=恢复到此版本")
     wait_until(lambda: len(plan()["versions"]) == 3, msg="restored as v3")
-    assert "每天 2 道题" in plan()["text"] and plan()["versions"][-1]["why"] == "回到 v1"
+    assert "每天 2 道题" in plan()["text"] and plan()["versions"][-1]["why"] == "恢复到 v1"
     pg.wait_for_selector(".plan-side .ps-item.on >> text=当前")
     no_native(pg)
 
@@ -3014,13 +3040,13 @@ def test_an_ai_button_checks_its_work_when_the_chat_ends(page_all):
     assert out["warn"] and out["say"] == "AI 已尝试，扫描仍无法读取：join.test.example/Default.aspx。其调查结果见对话。", out
     assert pg.evaluate("window.tried") == [["/api/hunt/companies/C91/learn-tried", {"sites": ["https://join.test.example/Default.aspx"]}]] * 3
     # the AI is handed the sites no scan reads, by name, and told to leave the others alone (星河科技, 2026-11-03)
-    assert "只学这些：测试大学（https://join.test.example/Default.aspx）" in out["sent"][0] and "不要动" in out["sent"][0], out["sent"]
+    assert "仅限这些：测试大学（https://join.test.example/Default.aspx）" in out["sent"][0] and "请勿改动" in out["sent"][0], out["sent"]
     # not done is never handed in ("AI老是不负责任地撂挑子", 2026-11-09): sent back by itself twice, with what is
     # missing and that stopping needs proof, before the window asks the user
     assert len(out["sent"]) == 3 and len(out["autos"]) == 2, out
     assert all(a.startswith("尚未完成，") and "join.test.example" in a for a in out["autos"]), out["autos"]
-    assert all("scan-route" in m and "做完之前不要停" in m for m in out["sent"][1:]), out["sent"]
-    assert out["again"] == "再让 AI 做一次"
+    assert all("scan-route" in m and "完成之前请勿停止" in m for m in out["sent"][1:]), out["sent"]
+    assert out["again"] == "让 AI 重新执行"
     pg.click("#toast button")
     pg.wait_for_function("() => window.sent.length === 4")
     assert "scan-route" in pg.evaluate("window.sent[3]") and pg.evaluate("AI_WORK.has('learn:C91')")
@@ -3028,7 +3054,7 @@ def test_an_ai_button_checks_its_work_when_the_chat_ends(page_all):
     pg.evaluate("() => { AI_WORK.clear(); }")
     c["postings"] = {"needs": "", "unrouted": []}
     out = pg.evaluate(AI_CHECK, {"run": "askLearn([{id: 'C91', name: '测试大学'}])", "data": {"companies": [c], "applications": []}})
-    assert not out["warn"] and out["say"] == "测试大学 的招聘网址现在都能自动扫描了" and out["again"] is None, out
+    assert not out["warn"] and out["say"] == "测试大学 的招聘网址现已全部支持自动扫描" and out["again"] is None, out
 
 
 def test_every_hunt_ai_button_checks_its_own_result(page_all):
@@ -3051,16 +3077,16 @@ def test_every_hunt_ai_button_checks_its_own_result(page_all):
     assert "规模" not in out["say"]
     # its roles are part of filling it in (user, 2026-11-04): asked for in the same message, and a site the scan
     # still can't read is not done
-    assert "扫进来" in out["sent"][0] and "先学会再扫" in out["sent"][0], out["sent"]
-    assert out["sent"][0].startswith("填好 星河（C92）"), out["sent"]
+    assert "导入其在招岗位" in out["sent"][0] and "需先学习读取方式再扫描" in out["sent"][0], out["sent"]
+    assert out["sent"][0].startswith("填写 星河（C92）"), out["sent"]
     # short (user, 2026-11-10): one line for the fields, one for its roles; the check names any field left empty
     assert len(out["sent"][0]) < 90, out["sent"]
     # added from the window: its row is written before the chat starts, and the AI is told it is new, with its id, or
     # it finds the row and says the company was already on the list (小米集团, 2026-11-09)
     pg.evaluate("() => AI_WORK.clear()")
     out = pg.evaluate(AI_CHECK, {"run": "askFill([{id: 'C92', name: '星河'}], {adding: true})", "data": data})
-    assert out["sent"][0].startswith("填好刚加的公司 星河（C92）"), out["sent"]
-    assert "扫进来" in out["sent"][0], out["sent"]
+    assert out["sent"][0].startswith("填写刚添加的公司 星河（C92）"), out["sent"]
+    assert "导入其在招岗位" in out["sent"][0], out["sent"]
     full = {**co, "kept": ["size", "hq", "places", "logo"], "sources": {k: "https://a.example" for k in ("industry", "strength", "hq", "size")},
             "postings": {"needs": "claude", "unrouted": ["https://campus.example.com/"]}}
     pg.evaluate("() => AI_WORK.clear()")
@@ -3069,7 +3095,7 @@ def test_every_hunt_ai_button_checks_its_own_result(page_all):
     full["postings"] = {"needs": "", "unrouted": [], "open": 12}
     pg.evaluate("() => AI_WORK.clear()")
     out = pg.evaluate(AI_CHECK, {"run": "askFill([{id: 'C92', name: '星河'}])", "data": {"companies": [full], "applications": []}})
-    assert not out["warn"] and out["say"] == "已填好，每项都有出处，岗位也已扫进来：星河", out
+    assert not out["warn"] and out["say"] == "已填写完毕，每项均附出处，岗位已导入：星河", out
     # the chat ended while its scan still ran (货拉拉, 2026-11-10): judged then, it had no "can't read" yet and passed.
     # Now the button keeps spinning, and the work is judged once the scan ends, so the site it can't read goes back
     pg.evaluate("() => AI_WORK.clear()")
@@ -3097,16 +3123,16 @@ def test_every_hunt_ai_button_checks_its_own_result(page_all):
     pg.evaluate("() => AI_WORK.clear()")
     run = "askRead({id: 'A9', role: '芯片验证', url: '" + url + "', jd: ''}, {name: '星河'})"
     out = pg.evaluate(AI_CHECK, {"run": run, "data": data})
-    assert out["warn"] and out["say"] == "芯片验证 的岗位描述还是空的" and out["again"] == "再让 AI 做一次", out
+    assert out["warn"] and out["say"] == "芯片验证 的岗位描述为空" and out["again"] == "让 AI 重新执行", out
     data["applications"][0]["jd"] = "职责：验证"
     pg.evaluate("() => AI_WORK.clear()")
     out = pg.evaluate(AI_CHECK, {"run": run, "data": data})
-    assert not out["warn"] and out["say"] == "芯片验证 的岗位描述已填好", out
+    assert not out["warn"] and out["say"] == "芯片验证 的岗位描述已填写", out
     # rewriting in a company's language
     pg.evaluate("() => AI_WORK.clear()")
     co["research"] = {"rewrite": "en", "rewrite_name": "英语", "lang_name": "中文"}
     out = pg.evaluate(AI_CHECK, {"run": "askRewrite([{id: 'C92', name: '星河', research: {lang_name: '中文'}}])", "data": data})
-    assert out["warn"] and "仍然不是它们自己的语言：星河" in out["say"], out
+    assert out["warn"] and "仍未使用各自的语言：星河" in out["say"], out
 
 
 def test_postings_read_by_hand_say_the_site_has_no_scan_route(page_all):
@@ -3125,8 +3151,8 @@ def test_postings_read_by_hand_say_the_site_has_no_scan_route(page_all):
               part: say({at, ok: true, how: 'route', needs: 'claude', found: 3, unrouted}),
               route: say({at, ok: true, how: 'route', needs: '', found: 3})};
     }""")
-    assert "AI 手动读的" in out["hand"]["warn"] and "campus.test.example, careers.test.example 还不能自动扫描" in out["hand"]["warn"] and out["hand"]["learn"]
-    assert "campus.test.example, careers.test.example 还不能自动扫描" in out["part"]["warn"] and out["part"]["learn"]
+    assert "AI 手动读取" in out["hand"]["warn"] and "campus.test.example, careers.test.example 尚不支持自动扫描" in out["hand"]["warn"] and out["hand"]["learn"]
+    assert "campus.test.example, careers.test.example 尚不支持自动扫描" in out["part"]["warn"] and out["part"]["learn"]
     assert out["route"] == {"warn": None, "learn": False}
 
 
@@ -3155,7 +3181,7 @@ def test_a_site_the_scan_missed_is_named_on_the_status_and_its_row(page_all):
     assert out["none"].endswith("读取方式：mokahr · join.huolala.example 本次未能读取"), out
     assert out["part"].endswith("读取方式：mokahr · join.huolala.example 部分页面未能读取"), out
     assert out["old"].endswith("读取方式：mokahr · 部分页面未能读取"), out   # a route's page: as before
-    assert out["rows"] == [["能自动扫描（内置读法）", "本次未能读取"], ["能自动扫描（内置读法）"]], out
+    assert out["rows"] == [["支持自动扫描（内置读取方式）", "本次未能读取"], ["支持自动扫描（内置读取方式）"]], out
 
 
 def test_scan_wording_names_sites_never_a_company(page_all):
@@ -3176,11 +3202,11 @@ def test_scan_wording_names_sites_never_a_company(page_all):
       const rows = [...ed.querySelectorAll('.co-site-edit')].map((r) => { const s = r.querySelector('.site-scan'); return [s.textContent, s.className]; });
       return {toastSay, cell, rows, system: ed.querySelector('.co-site-edit .muted').textContent};
     }""")
-    assert out["toastSay"] == "扫描完成：0 个新 · 0 个已关闭 · 2 个网址还不能自动扫描：campus.xinghe.example, careers.xinghe.example", out
-    assert out["cell"] == "campus.xinghe.example, careers.xinghe.example 还不能自动扫描：要先让 AI 学会读", out
+    assert out["toastSay"] == "扫描完成：0 个新增 · 0 个已关闭 · 2 个网址尚不支持自动扫描：campus.xinghe.example, careers.xinghe.example", out
+    assert out["cell"] == "campus.xinghe.example, careers.xinghe.example 尚不支持自动扫描：需先由 AI 学习读取方式", out
     # read by code built into the app, or by a route the AI recorded once: told apart (user, 2026-11-12)
-    assert out["rows"] == [["还不能自动扫描", "site-scan warn"], ["能自动扫描（内置读法）", "site-scan ok"],
-                           ["能自动扫描（AI 记录的读法）", "site-scan ok"], ["未检查", "site-scan "]], out
+    assert out["rows"] == [["尚不支持自动扫描", "site-scan warn"], ["支持自动扫描（内置读取方式）", "site-scan ok"],
+                           ["支持自动扫描（AI 记录的读取方式）", "site-scan ok"], ["未检查", "site-scan "]], out
     assert out["system"] == "公司自建"                                       # never the AI's English "own site"
 
 
@@ -3266,7 +3292,7 @@ def test_working_timer_restarts_for_each_reply(page_all):
 
 def test_tracks_are_set_in_a_dialog_and_pick_roles_from_every_company(page, server):
     """2026-11-04: scanned roles weren't narrowed to the ones they'd want, for more than one kind of role.
-    Tracks are set in a dialog (saved on Done), and "Picked for you" lists every company's roles in a track."""
+    Tracks are set in a dialog (saved on Done), and "Matching roles" lists every company's roles in a track."""
     pg = page
     hunt = server.inst.hunt
     posts = hunt.scanner.postings

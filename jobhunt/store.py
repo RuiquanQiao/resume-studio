@@ -382,6 +382,8 @@ class Hunt:
     def __init__(self, state_dir: Path):
         self.dir = Path(state_dir) / "hunt"
         self.lock = threading.RLock()
+        self._peeked: dict[str, tuple[tuple[int, int], dict]] = {}   # file → (its time and size, parsed): _peek
+        self._peek_lock = threading.Lock()
         self.on_change: Callable[[], None] | None = None
         self.scanner: Any = None   # set by jobhunt/api.py: scanning the companies' sites (jobhunt/scan.py)
         # set by jobhunt/api.py: finding a logo on a company's own sites (jobhunt/logos.py), and asking for it
@@ -421,6 +423,26 @@ class Hunt:
         data.setdefault("next", 1)
         data[key] = [x for x in data.get(key) or [] if isinstance(x, dict) and x.get("id")]
         return data
+
+    def _peek(self, name: str, key: str) -> dict:
+        """_read for a look only, parsed once per change of the file: the window's table asked for the companies
+        eight times a look, each a parse of the whole file (5,000 companies: 5.6 s a look, 2026-11-13). The rows
+        are copies, one level deep, so a caller's own fields stay its own; a change is written from _read's fresh
+        copy, never from this one."""
+        try:
+            st = self._file(name).stat()
+            sig = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            sig = None
+        with self._peek_lock:
+            kept = self._peeked.get(name)
+        if sig is None or not kept or kept[0] != sig:
+            kept = (sig, self._read(name, key))
+            if sig is not None:   # read after the look at its time: a change in between shows as another time next look
+                with self._peek_lock:
+                    self._peeked[name] = kept
+        data = kept[1]
+        return {**data, key: [dict(x) for x in data[key]]}
 
     def _read_rows(self, name: str, key: str) -> dict:
         """A file _write wrote with `rows=key`, read a record at a time. Parsing postings.json (27 MB) in one call
@@ -526,7 +548,7 @@ class Hunt:
 
     # ---- companies -----------------------------------------------------------------
     def companies(self) -> list[dict]:
-        return self._companies()["companies"]
+        return self._peek("companies.json", "companies")["companies"]
 
     def company(self, ref: str, exact: bool = False) -> dict:
         """By id ("C2") or by name or alias, any case and spacing; a unique part of one is enough unless `exact`.
@@ -959,7 +981,7 @@ class Hunt:
 
     # ---- applications --------------------------------------------------------------
     def applications(self, company: str | None = None) -> list[dict]:
-        apps = self._apps()["applications"]
+        apps = self._peek("applications.json", "applications")["applications"]
         if company:
             cid = self.company(company)["id"]
             apps = [a for a in apps if a["company"] == cid]
@@ -1294,13 +1316,15 @@ class Hunt:
             last[ev["app"]] = ev
         by_c = {c["id"]: c for c in cs}
         rows = []
+        of: dict[str, list[dict]] = {}   # each company's applications, gathered once (not a pass over all of them each)
         for a in apps:
             c = by_c.get(a["company"]) or {}
             rows.append({**a, "company_name": c.get("name", ""), "last": last.get(a["id"])})
+            of.setdefault(a["company"], []).append(a)
         rank = {s: i for i, s in enumerate(STATE_IDS)}
         companies = []
         for c in cs:
-            mine = [a for a in apps if a["company"] == c["id"]]
+            mine = list(of.get(c["id"]) or [])
             live = [a for a in mine if a["status"] in OPEN or a["status"] in ("offer", "hired")]
             best = max(live or mine, key=lambda a: rank.get(a["status"], 0))["status"] if mine else ""
             mine.sort(key=lambda a: a.get("order") or 0)

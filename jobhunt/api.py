@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import base64
 import binascii
-import mimetypes
+import hashlib
+import json
 import os
 import re
 import threading
@@ -11,9 +12,10 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from core.derived import Derived, code_key, stat_key
 from core.i18n import t
 from core.lost_text import HOW, first_lost, sample
-from core.server import App, BytesResponse, FileResponse, HttpError, Request
+from core.server import App, BytesResponse, FileResponse, HttpError, Request, guess_type
 from core.watcher import SignatureWatcher
 from jobs.base import JobTool, ToolError
 from jobs.signups import Signups
@@ -80,7 +82,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         to_link.set()
 
     hunt.on_change = changed
-    posts = Postings(hunt)
+    posts = Postings(hunt, cache_dir=studio.store.cache_dir)
 
     def warm() -> None:
         """An older file written the short way once; then the postings parsed and every title matched against the
@@ -94,12 +96,18 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         try:
             posts.slim_file()
             posts.summary()
-            place_list.known("t:CN")   # the list of places, read once (1.2 s): each company's research language needs it
+            if os.environ.get("STUDIO_WARM", "on") != "off":
+                # what Applying shows next to the table: the latest changes, and the roles in the tracks (86,000 titles
+                # took 10 s on the first look at either, with "Loading…" all along: 2026-11-13)
+                posts.changes()
+                matches()
+                # the postings themselves, for a company's page: the counts above no longer need them
+                posts._view()
         except Exception:  # noqa: BLE001 (a file being written: the first look reads it then)
             pass
     threading.Thread(target=warm, name="hunt-warm-postings", daemon=True).start()
     views = Views(hunt.dir)
-    geo = Geo(hunt.dir)
+    geo = Geo(hunt.dir, cache_dir=studio.store.cache_dir)
     scanner = Scanner(hunt, posts, tool, browser, lambda: app.bus.publish("hunt", {}))
     hunt.scanner = scanner   # the app (and tests) reach the scanner through the tracker
     descs = Descriptions(hunt, lambda: scanner.browser, lambda: app.bus.publish("hunt", {}))
@@ -118,14 +126,66 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     threading.Thread(target=linker, name="hunt-places", daemon=True).start()
     to_link.set()   # what was written before: once the migrations above are done
 
-    def every_place() -> list[dict]:
-        return ([p for x in hunt.applications() + hunt.companies() for p in x.get("places") or []]
-                + [c["hq"] for c in hunt.companies() if c.get("hq")])
+    # The roles in the user's tracks (Matching roles) are worked out from every posting a scan kept (postings.json,
+    # 29 MB for 229 companies), each company's nature, the tracks, the descriptions read and the resume subsets. The
+    # result is kept, in memory and in the cache folder, with the state of everything it came from, and worked out
+    # again only once one of those has changed: the first look after a start parsed 29 MB and took 11 s, every
+    # look after it half a second (user, 2026-11-13: "难道你每次都扫一遍！难道不该存下来？").
+    # the roles in the tracks, ranked: worked out once per change of what they come from, kept between starts
+    matches_kept = Derived(studio.store.cache_dir / "matches.json")
 
-    def located() -> dict:
+    def matches_key() -> str:
+        cs = hunt.companies()
+        names = hashlib.blake2b(json.dumps([[c["id"], c["name"], c.get("nature") or ""] for c in cs], ensure_ascii=False)
+                                .encode(), digest_size=12).hexdigest()
+        return json.dumps([code_key(__name__, "jobhunt.postings", "jobhunt.rank", "jobhunt.natures"), list(posts._sig()),
+                           stat_key(hunt._file("jds.json")), stat_key(hunt._file("applications.json")),
+                           stat_key(studio.store.path), posts.tracks(), names, time.strftime("%Y-%m-%d")],
+                          ensure_ascii=False, sort_keys=True)
+
+    def work_out_matches() -> dict:
+        m = posts.matched()
+        jds = descs.all()
+        doc, _ = studio.store.load()
+        have: dict[str, set[str]] = {}   # subset id -> the skills its resume names, in every resume language
+        for tr in m["tracks"]:
+            sid = tr.get("subset") or ""
+            if sid and sid not in have and model.get_item(doc, "subset", sid) is not None:
+                from jobs.fit import subset_text
+                have[sid] = skill_words(subset_text(doc, model.get_item(doc, "subset", sid)))
+        subset_of = {tr["id"]: tr.get("subset") for tr in m["tracks"]}
+        apps = {a["id"]: a for a in hunt.applications()}
+        for p in m["postings"]:
+            j = jds.get(p["id"]) or {}
+            a = apps.get(p.get("app") or "") or {}
+            if not j.get("jd") and a.get("jd"):   # read when it was added (Want to apply): its fit comes from that
+                j = {"jd": a["jd"]}
+            p["jd"] = "read" if j.get("jd") else "failed" if j.get("error") else ""
+            if not p.get("deadline") and j.get("deadline"):
+                p["deadline"] = j["deadline"]
+            best = None
+            for tid in p["tracks"]:
+                sid = subset_of.get(tid)
+                f = fit(j["jd"], have[sid]) if j.get("jd") and sid in have else None
+                if f and (best is None or f["score"] > best["score"]):
+                    best = {**f, "subset": sid}
+            p["fit"] = best
+        m["ranked"] = bool(have)
+        m["unread"] = sum(1 for p in m["postings"] if not p["jd"] and re.match(r"https?://", p.get("url") or ""))
+        return m
+
+    def matches() -> dict:
+        return matches_kept.get(matches_key(), work_out_matches)
+
+    def every_place(tb: dict | None = None) -> list[dict]:
+        """`tb`: the companies and applications already in hand (the overview), not read again."""
+        apps, cs = (tb["applications"], tb["companies"]) if tb else (hunt.applications(), hunt.companies())
+        return [p for x in apps + cs for p in x.get("places") or []] + [c["hq"] for c in cs if c.get("hq")]
+
+    def located(places: list[dict] | None = None) -> dict:
         """Where every place written as text (none picked from the list) is, for the world maps:
         {area: {lat, lon, name, country} | None}."""
-        return geo.lookup([p["area"] for p in every_place() if not p.get("id") and p.get("kind") != "remote"])
+        return geo.lookup([p["area"] for p in (every_place() if places is None else places) if not p.get("id") and p.get("kind") != "remote"])
 
     def resume_langs(doc: Any = None) -> list[str]:
         """The languages the user's resume is written in (its own setting): what company research may be in."""
@@ -141,9 +201,9 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         return {**r, "lang_name": name(r["lang"]), "place_name": place_list.english(r["place"]) if r["place"] else "",
                 "rewrite": bad, "rewrite_name": name(bad) if bad else ""}
 
-    def place_names() -> dict:
+    def place_names(places: list[dict] | None = None) -> dict:
         """Every picked place: {id: {name, detail, lat, lon}}, in the interface's language."""
-        return geo.places(every_place())
+        return geo.places(every_place() if places is None else places)
 
     def tracker() -> str:
         v = (prefs.load() or {}).get("tracker")
@@ -170,13 +230,19 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         sub = model.get_item(doc, "subset", sid) if sid else None
         return str((sub or {}).get("label") or sid or "")
 
-    def logo_url(c: dict) -> str:
-        """Versioned by the picture itself, so a logo file changed from outside the app shows up too."""
+    def logo_url(c: dict, files: dict[str, tuple[int, int]] | None = None) -> str:
+        """Versioned by the picture itself, so a logo file changed from outside the app shows up too. `files`: the
+        logos folder listed once (logo_files), for a whole table: a look at each file took 0.6 s for 5,000."""
+        if not c.get("logo"):
+            return ""
+        if files is not None:
+            st = files.get(c["logo"])
+            return f"/api/hunt/logos/{c['id']}?v={st[0]}-{st[1]}" if st else ""
         try:
-            st = (hunt.dir / "logos" / c["logo"]).stat() if c.get("logo") else None
+            st = (hunt.dir / "logos" / c["logo"]).stat()
         except OSError:
-            st = None
-        return f"/api/hunt/logos/{c['id']}?v={st.st_mtime_ns}-{st.st_size}" if st else ""
+            return ""
+        return f"/api/hunt/logos/{c['id']}?v={st.st_mtime_ns}-{st.st_size}"
 
     # ---- logos: a company with a site gets its logo from it, in the background, with no Claude ----
     tried: set[tuple[str, tuple[str, ...]]] = set()   # (company, its sites) already looked at this run
@@ -493,26 +559,33 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     # ---- the window ------------------------------------------------------------
     @app.route("GET", "/api/hunt")
     def overview(req: Request):
+        # each file read once for the whole table, never once per company (5,000 companies: 5.6 s, 2026-11-13)
         tb = hunt.table()
         summ = posts.summary()
         langs = resume_langs()
         w = work()
+        logos = {name: (ns, size) for name, ns, size in logo_files()}
+        scans = posts.scans()
+        apps_of: dict[str, list[dict]] = {}
+        for a in tb["applications"]:
+            apps_of.setdefault(a["company"], []).append(a)
         for c in tb["companies"]:
-            c["logo_url"] = logo_url(c)
+            c["logo_url"] = logo_url(c, logos)
             c.update(employer(c, w))
-            c["research"] = research(c, [a for a in tb["applications"] if a["company"] == c["id"]], langs)
+            c["research"] = research(c, apps_of.get(c["id"]) or [], langs)
             c["postings"] = summ.get(c["id"]) or {"open": 0, "matching": 0}
-            st = scanner.live_state(c)
+            st = scanner.live_state(c, scans)
             c["postings"]["needs"] = st.get("needs") or ""
             c["postings"]["unrouted"] = st.get("unrouted") or []
             c["postings"]["tried"] = st["tried"]
-        sc = posts.scans()
+        sc = scans
+        places = every_place(tb)
         return {**tb, "platforms": platforms(), "tracker": tracker(), "career_ops": tool.installed(),
                 "scan": {"keywords": sc["keywords"], "tracks": sc["tracks"], "daily": sc["daily"], "last_all": sc["last_all"],
                          "running": dict(scanner.running), "providers": scanner.providers_ready(),
                          "last_run": scanner.last_run, "queued": list(scanner.queue), "reading": descs.status(),
                          "batch": dict(scanner.batch) if scanner.batch else None},
-                "changes": posts.changes(), "geo": located(), "places": place_names(), "natures": nature_catalog()}
+                "changes": posts.changes(), "geo": located(places), "places": place_names(places), "natures": nature_catalog()}
 
     @app.route("GET", "/api/hunt/places")
     def find_places(req: Request):
@@ -545,37 +618,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     @app.route("GET", "/api/hunt/matches")
     def matches_view(req: Request):
         """Every open role, of every company, in one of the user's tracks: the roles picked for them (user,
-        2026-11-04: "scanned, but nothing picked out the roles I'd want")."""
-        m = posts.matched()
-        jds = descs.all()
-        doc, _ = studio.store.load()
-        have: dict[str, set[str]] = {}   # subset id -> the skills its resume names, in every resume language
-        for tr in m["tracks"]:
-            sid = tr.get("subset") or ""
-            if sid and sid not in have and model.get_item(doc, "subset", sid) is not None:
-                from jobs.fit import subset_text
-                have[sid] = skill_words(subset_text(doc, model.get_item(doc, "subset", sid)))
-        subset_of = {tr["id"]: tr.get("subset") for tr in m["tracks"]}
-        apps = {a["id"]: a for a in hunt.applications()}
-        for p in m["postings"]:
-            j = jds.get(p["id"]) or {}
-            a = apps.get(p.get("app") or "") or {}
-            if not j.get("jd") and a.get("jd"):   # read when it was added (Want to apply): its fit comes from that
-                j = {"jd": a["jd"]}
-            p["jd"] = "read" if j.get("jd") else "failed" if j.get("error") else ""
-            if not p.get("deadline") and j.get("deadline"):
-                p["deadline"] = j["deadline"]
-            best = None
-            for tid in p["tracks"]:
-                sid = subset_of.get(tid)
-                f = fit(j["jd"], have[sid]) if j.get("jd") and sid in have else None
-                if f and (best is None or f["score"] > best["score"]):
-                    best = {**f, "subset": sid}
-            p["fit"] = best
-        m["ranked"] = bool(have)
-        m["reading"] = descs.status()
-        m["unread"] = sum(1 for p in m["postings"] if not p["jd"] and re.match(r"https?://", p.get("url") or ""))
-        return m
+        2026-11-04: "scanned, but nothing picked out the roles I'd want"). Worked out once per change (matches)."""
+        return {**matches(), "reading": descs.status()}
 
     @app.route("POST", "/api/hunt/matches/read")
     def read_matches(req: Request):
@@ -635,7 +679,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         try:
             if b.get("path"):
                 p = Path(str(b["path"]))
-                ctype = mimetypes.guess_type(p.name)[0] or ""
+                ctype = guess_type(p.name) or ""
                 if not ctype.startswith("image/") or not p.is_file() or p.stat().st_size > 2_000_000:
                     raise ValueError
                 data = p.read_bytes()

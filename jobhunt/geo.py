@@ -27,6 +27,7 @@ What it can't find stays as written; where it is, or a place the map puts wrong,
 from __future__ import annotations
 
 import bisect
+import functools
 import gzip
 import json
 import math
@@ -39,6 +40,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from core.derived import Derived, code_key, stat_key
 from core.i18n import UI_LANGS, current, t
 
 DATA = Path(__file__).resolve().parent / "data"
@@ -87,38 +89,25 @@ def _key(s: str) -> str:
 
 
 def _load() -> dict:
-    """Everything, read once: the places, their names, and the indexes that find them."""
+    """The places and their names, read once. The indexes that find a place by what someone wrote are built on
+    the first search (_indexed): keying and sorting 127,000 names took a second, and the job-hunt table, which only
+    names the places it has, waited for it on every start (2026-11-13)."""
     global _db
     with _lock:
         if _db is not None:
             return _db
         cities: dict[str, tuple] = {}     # id -> (lat, lon, pop, country, state, {lang: name})
-        index: dict[str, str] = {}        # name key -> id of the biggest place with that name
-        # (name key, id, 0 for a name the window shows in some language, 1 for another), sorted: what a typed
-        # start finds ("san f" is San Francisco before San Francisco de Quito)
-        prefix: list[tuple[str, str, int]] = []
+        others: dict[str, str] = {}       # id -> the other names it goes by, "|"-separated, for the indexes
         with gzip.open(DATA / "cities.tsv.gz", "rt", encoding="utf-8") as f:
             langs = f.readline().rstrip("\n").split("\t")[1].split("|")
             for line in f:
-                gid, lat, lon, pop, cc, state, names, others = line.rstrip("\n").split("\t")
+                gid, lat, lon, pop, cc, state, names, more = line.rstrip("\n").split("\t")
                 pid = "g" + gid
-                local = dict(zip(langs, names.split("|")))
-                cities[pid] = (float(lat), float(lon), int(pop), cc, state, local)
-                shown = {_key(n) for n in local.values() if n}
-                for k in shown | {_key(n) for n in others.split("|") if n}:
-                    if not k:
-                        continue
-                    prefix.append((k, pid, 0 if k in shown else 1))
-                    if k not in index or cities[index[k]][2] < int(pop):
-                        index[k] = pid
-        prefix.sort()
-        states: dict[str, dict] = {}
-        with gzip.open(DATA / "admin1.tsv.gz", "rt", encoding="utf-8") as f:
-            slangs = f.readline().rstrip("\n").split("\t")[1].split("|")
-            for line in f:
-                code, names = line.rstrip("\n").split("\t")
-                states[code] = dict(zip(slangs, names.split("|")))
-        terr = json.loads((DATA / "territories.json").read_text(encoding="utf-8"))
+                cities[pid] = (float(lat), float(lon), int(pop), cc, state, dict(zip(langs, names.split("|"))))
+                if more:
+                    others[pid] = more
+        states = _states()
+        terr = _small()["terr"]
         regions: dict[str, str] = {}      # name key -> region id (t:… or r:…)
         for code, names in terr.items():
             for n in names.values():
@@ -132,8 +121,8 @@ def _load() -> dict:
         heads = {_key(n) for names in [*states.values(), *terr.values()] for n in names.values() if _CJK.search(n or "")}
         heads |= {h.removesuffix(x) for h in heads for x in ("省", "州", "県", "도") if h.endswith(x) and len(h) > len(x) + 1}
         heads |= {h + "省" for h in heads}   # 广东 and 广东省
-        _db = {"cities": cities, "index": index, "prefix": prefix, "pkeys": [x[0] for x in prefix], "states": states,
-               "terr": terr, "regions": regions, "heads": heads, "langs": json.loads((DATA / "languages.json").read_text(encoding="utf-8"))}
+        _db = {"cities": cities, "others": others, "found": {}, "states": states,
+               "terr": terr, "regions": regions, "heads": heads, "langs": _small()["langs"]}
         for pid, e in _found["places"].items():   # those found for the open data folder (use())
             try:
                 _insert(_db, pid, e)
@@ -142,25 +131,149 @@ def _load() -> dict:
         return _db
 
 
+def _indexed() -> dict:
+    """The places with the indexes that find one by what someone wrote, built once, on the first search."""
+    db = _load()
+    with _lock:
+        if "index" in db:
+            return db
+        cities, found = db["cities"], db["found"]
+        index: dict[str, str] = {}        # name key -> id of the biggest place with that name
+        # (name key, id, 0 for a name the window shows in some language, 1 for another), sorted: what a typed
+        # start finds ("san f" is San Francisco before San Francisco de Quito)
+        prefix: list[tuple[str, str, int]] = []
+        for pid, (_, _, pop, _, _, local) in cities.items():
+            if pid in found:
+                continue
+            shown = {_key(n) for n in local.values() if n}
+            for k in shown | {_key(n) for n in db["others"].get(pid, "").split("|") if n}:
+                if not k:
+                    continue
+                prefix.append((k, pid, 0 if k in shown else 1))
+                if k not in index or cities[index[k]][2] < pop:
+                    index[k] = pid
+        for pid, keys in found.items():   # found ones (use, look_up) after the list's own, as when added later
+            for k in keys:
+                index.setdefault(k, pid)
+                prefix.append((k, pid, 0))
+        prefix.sort()
+        db.update(index=index, prefix=prefix, pkeys=[x[0] for x in prefix])
+        return db
+
+
+@functools.cache
+def _states() -> dict[str, dict]:
+    """Each state's (province's) names by its code: a small file, read without the list of cities."""
+    states: dict[str, dict] = {}
+    with gzip.open(DATA / "admin1.tsv.gz", "rt", encoding="utf-8") as f:
+        slangs = f.readline().rstrip("\n").split("\t")[1].split("|")
+        for line in f:
+            code, names = line.rstrip("\n").split("\t")
+            states[code] = dict(zip(slangs, names.split("|")))
+    return states
+
+
+@functools.cache
+def _small() -> dict:
+    """The countries' names and languages: two small files, read without the list of cities."""
+    return {"terr": json.loads((DATA / "territories.json").read_text(encoding="utf-8")),
+            "langs": json.loads((DATA / "languages.json").read_text(encoding="utf-8"))}
+
+
+# the cities the app has looked at, kept between starts (the cache folder's cities.json, set by Geo): the job-hunt
+# table names a few hundred places, and reading the list of 34,000 for them took half a second on every start
+_memo: dict[str, Any] = {"path": None, "rows": None, "key": ""}
+
+
+def _memo_key() -> str:
+    return json.dumps([code_key(__name__), stat_key(DATA / "cities.tsv.gz"), stat_key(DATA / "admin1.tsv.gz")])
+
+
+def _city(pid: str) -> tuple | None:
+    """(lat, lon, pop, country, state, {lang: name}, {lang: state's name}) for a city in the list or found on
+    OpenStreetMap, or None: from the list once it is read, else from the cities kept from earlier starts."""
+    if not isinstance(pid, str) or not pid or pid.startswith(("t:", "r:")):
+        return None
+    e = None
+    if _db is None:
+        with _lock:
+            rows = _memo["rows"]
+            if rows is None:
+                rows = {}
+                if _memo["path"]:
+                    try:
+                        saved = json.loads(Path(_memo["path"]).read_text(encoding="utf-8"))
+                        if isinstance(saved, dict) and saved.get("key") == _memo_key() and isinstance(saved.get("rows"), dict):
+                            rows = {k: tuple(v[:5]) + (dict(v[5]), dict(v[6])) if v else None for k, v in saved["rows"].items()}
+                    except (OSError, ValueError, TypeError, IndexError):
+                        rows = {}
+                _memo["rows"] = rows
+            if pid in rows:
+                return rows[pid]
+            e = _found["places"].get(pid)
+        if isinstance(e, dict):   # found on OpenStreetMap for this data folder: its own record has all of it
+            try:
+                st = e.get("state") or ""
+                return (float(e["lat"]), float(e["lon"]), 0, e.get("country") or "", st, dict(e["names"]), dict(_states().get(st) or {}))
+            except (KeyError, TypeError, ValueError):
+                pass
+    db = _load()
+    c = db["cities"].get(pid)
+    row = c + (dict(db["states"].get(c[4]) or {}),) if c else None
+    if pid.startswith("g"):   # one found on OpenStreetMap comes from the data folder, not the list: never kept here
+        _keep(pid, row)       # nor one the list doesn't have: None, so it isn't looked for again on every start
+    return row
+
+
+def _keep(pid: str, row: tuple | None) -> None:
+    """A city joins the kept ones; they are written a moment later, once for all the table looked at."""
+    with _lock:
+        rows = _memo["rows"] if _memo["rows"] is not None else {}
+        _memo["rows"] = rows
+        if pid in rows:
+            return
+        rows[pid] = row
+        if _memo["path"] and not _memo.get("timer"):
+            _memo["timer"] = threading.Timer(1.0, _write_kept)
+            _memo["timer"].daemon = True
+            _memo["timer"].start()
+
+
+def _write_kept() -> None:
+    with _lock:
+        _memo["timer"] = None
+        path, rows = _memo["path"], dict(_memo["rows"] or {})
+    if not path or not rows:
+        return
+    try:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        tmp = Path(path).with_name(Path(path).name + ".tmp")
+        tmp.write_text(json.dumps({"key": _memo_key(), "rows": rows}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:   # kept in memory all the same; the next start reads the list again
+        pass
+
+
 def _local(names: dict[str, str], lang: str) -> str:
     return names.get(lang) or names.get("en") or ""
 
 
 def _country(cc: str, lang: str) -> str:
-    return _local(_load()["terr"].get(cc) or {}, lang) or cc
+    return _local(_small()["terr"].get(cc) or {}, lang) or cc
 
 
 def name(pid: str, lang: str | None = None) -> str:
     """A place's name in the interface's language (or `lang`); "" for an id the list doesn't have."""
     lang = lang or current()
-    db = _load()
-    if pid in db["cities"]:
-        return _local(db["cities"][pid][5], lang)
-    if pid.startswith("t:") and pid[2:] in db["terr"]:
-        return _local(db["terr"][pid[2:]], lang)
-    if pid.startswith("r:") and pid[2:] in REGIONS:
-        return t(REGIONS[pid[2:]][0], ui=lang)
-    return ""
+    if not isinstance(pid, str):
+        return ""
+    if pid.startswith("t:"):
+        terr = _small()["terr"]
+        return _local(terr[pid[2:]], lang) if pid[2:] in terr else ""
+    if pid.startswith("r:"):
+        return t(REGIONS[pid[2:]][0], ui=lang) if pid[2:] in REGIONS else ""
+    c = _city(pid)
+    return _local(c[5], lang) if c else ""
 
 
 def known(pid: Any) -> bool:
@@ -170,18 +283,18 @@ def known(pid: Any) -> bool:
 def label(pid: str, lang: str | None = None) -> dict:
     """{id, name, detail, lat, lon}: detail tells two places of one name apart (江苏, 中国 / Anhui, China)."""
     lang = lang or current()
-    db = _load()
     out = {"id": pid, "name": name(pid, lang), "detail": "", "lat": None, "lon": None}
-    if pid in db["cities"]:
-        lat, lon, _, cc, state, _ = db["cities"][pid]
-        st = _local(db["states"].get(state) or {}, lang)
+    c = _city(pid)
+    if c:
+        lat, lon, _, cc, _, _, state = c
+        st = _local(state, lang)
         out.update(lat=lat, lon=lon, detail=", ".join(x for x in (st, _country(cc, lang)) if x and x != out["name"]))
     return out
 
 
 def find(area: str) -> dict | None:
     """{id, lat, lon, name, country} for a city as someone wrote it, or None."""
-    db = _load()
+    db = _indexed()
     whole = _key(area)
     if not whole:
         return None
@@ -237,19 +350,19 @@ def country(pid: Any) -> str:
     """The country a place is in (CN for 杭州, for t:CN and for r:mainland-china), or "" for a region of many."""
     if not isinstance(pid, str):
         return ""
-    db = _load()
-    if pid in db["cities"]:
-        return db["cities"][pid][3]
-    if pid.startswith("t:") and len(pid) == 4 and pid[2:].isalpha():
-        return pid[2:]
-    return "CN" if pid == "r:mainland-china" else ""
+    if pid.startswith("t:"):
+        return pid[2:] if len(pid) == 4 and pid[2:].isalpha() else ""
+    if pid.startswith("r:"):
+        return "CN" if pid == "r:mainland-china" else ""
+    c = _city(pid)
+    return c[3] if c else ""
 
 
 def countries(lang: str | None = None) -> list[dict]:
     """Every country (ISO 3166 code, name in the interface's language, its English name), by name: what the user picks
     their citizenship, visas and where they look for work from."""
     lang = lang or current()
-    terr = _load()["terr"]
+    terr = _small()["terr"]
     out = [{"code": cc, "name": _local(n, lang) or cc, "en": n.get("en") or cc} for cc, n in terr.items()
            if len(cc) == 2 and cc.isalpha() and cc not in ("EU", "EZ", "UN", "QO", "XA", "XB", "ZZ")]
     return sorted(out, key=lambda x: x["name"])
@@ -257,7 +370,7 @@ def countries(lang: str | None = None) -> list[dict]:
 
 def languages(cc: str) -> list[str]:
     """A country's official languages a resume can be written in, the most spoken first (CLDR): SG en, zh, ms."""
-    return list(_load()["langs"].get(cc) or [])
+    return list(_small()["langs"].get(cc) or [])
 
 
 # ---- what the list doesn't know: looked up on OpenStreetMap, once -------------------------------------------
@@ -339,9 +452,11 @@ def _insert(db: dict, pid: str, e: dict) -> None:
     if pid in db["cities"]:
         return
     db["cities"][pid] = (float(e["lat"]), float(e["lon"]), 0, e.get("country") or "", e.get("state") or "", dict(e["names"]))
-    for k in {_key(n) for n in e["names"].values() if n} | {_key(n) for n in e.get("asked") or []}:
-        if not k:
-            continue
+    keys = sorted(k for k in {_key(n) for n in e["names"].values() if n} | {_key(n) for n in e.get("asked") or []} if k)
+    db["found"][pid] = keys
+    if "index" not in db:   # not built yet: _indexed takes them then
+        return
+    for k in keys:
         db["index"].setdefault(k, pid)
         i = bisect.bisect_left(db["prefix"], (k, pid, 0))
         db["prefix"].insert(i, (k, pid, 0))
@@ -433,7 +548,7 @@ def look_up(area: str) -> str | None:
 def search(q: str, *, kind: str = "onsite", lang: str | None = None, limit: int = 8) -> list[dict]:
     """What a typed start finds, the most likely first: cities by size (and regions first for a remote role)."""
     lang = lang or current()
-    db = _load()
+    db = _indexed()
     k = _key(q)
     if not k:
         return []
@@ -453,9 +568,16 @@ def search(q: str, *, kind: str = "onsite", lang: str | None = None, limit: int 
 
 
 class Geo:
-    def __init__(self, hunt_dir: Path) -> None:
+    def __init__(self, hunt_dir: Path, cache_dir: Path | None = None) -> None:
         self.path = Path(hunt_dir) / "geo.json"
         self.lock = threading.Lock()
+        if cache_dir:   # the cities looked at, kept here between starts (_city)
+            with _lock:
+                if _memo["path"] != cache_dir / "cities.json":
+                    _memo.update(path=cache_dir / "cities.json", rows=None)
+        # where the table's places written as text are, kept between starts: finding them needs the indexes of
+        # 127,000 names, built in a second (2026-11-13)
+        self._found_kept = Derived(cache_dir / "located.json" if cache_dir else None)
 
     def pins(self) -> dict[str, list[float]]:
         try:
@@ -467,6 +589,9 @@ class Geo:
     def lookup(self, areas: Any) -> dict[str, dict | None]:
         """Every area -> where it is (pinned by hand first), or None when it can't be placed."""
         pins = self.pins()
+        want = sorted({a for a in (str(x or "").strip() for x in areas) if a and a not in pins})
+        key = json.dumps([code_key(__name__), want, stat_key(_found["path"]) if _found["path"] else None])
+        found = self._found_kept.get(key, lambda: {a: find(a) for a in want})
         out: dict[str, dict | None] = {}
         for a in areas:
             a = str(a or "").strip()
@@ -475,7 +600,7 @@ class Geo:
             if a in pins:
                 out[a] = {"lat": pins[a][0], "lon": pins[a][1], "name": a, "country": "", "pinned": True}
             else:
-                out[a] = find(a)
+                out[a] = dict(found[a]) if found.get(a) else None
         return out
 
     def places(self, items: Any, lang: str | None = None) -> dict[str, dict]:
