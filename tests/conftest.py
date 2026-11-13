@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
+import subprocess
 import sys
 import time
 import urllib.request
@@ -33,10 +35,69 @@ def pytest_configure(config):
         for p in PYTEST_CACHE.iterdir():
             if p not in (base, tmp) and p.stat().st_mtime < old:
                 shutil.rmtree(p, ignore_errors=True) if p.is_dir() else p.unlink(missing_ok=True)
+    end_browsers(base)   # an earlier run cut short leaves its browsers holding files in here
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(parents=True, exist_ok=True)
     for k in ("TMP", "TEMP", "TMPDIR"):
         os.environ[k] = str(tmp)
+
+
+def pytest_sessionfinish(session):
+    end_browsers(Path(session.config.option.basetemp or PYTEST_CACHE / "main").resolve())
+
+
+def browsers_in(base: Path) -> list[tuple[int, str]]:
+    """(pid, command line) of every Chrome / Edge process started on a profile inside this run's temp folders."""
+    if os.name != "nt":
+        return []
+    ps = ("Get-CimInstance Win32_Process -Filter \"Name='msedge.exe' or Name='chrome.exe'\" | "
+          "ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }")
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps], capture_output=True,
+                             text=True, encoding="utf-8", errors="replace", timeout=30,
+                             creationflags=subprocess.CREATE_NO_WINDOW).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    marks = [str(base).lower(), str(base.with_name(base.name + ".tmp")).lower()]
+    found = []
+    for line in out.splitlines():
+        pid, _, cmd = line.partition("\t")
+        if pid.strip().isdigit() and any(m in cmd.lower() for m in marks):
+            found.append((int(pid), cmd))
+    return found
+
+
+def end_browsers(base: Path) -> None:
+    """Close every browser this run's tests started and left behind (a test that failed before closing its own, a
+    group cut short): each one left open keeps processes running and, for Edge, tiles in Alt+Tab. Only this run's
+    own: groups running side by side have temp folders of their own."""
+    for pid, _ in browsers_in(base):
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True,
+                       creationflags=subprocess.CREATE_NO_WINDOW)
+
+
+def _playwright_disabled_features() -> list[str]:
+    """The features Playwright turns off for every Chromium it starts. A second --disable-features would replace
+    them (only the last switch counts), so EDGE_ARGS adds to this list instead. Read from Playwright's own code;
+    fails loudly, rather than dropping the list, if a new version keeps it elsewhere."""
+    import playwright
+
+    lib = Path(playwright.__file__).parent / "driver" / "package" / "lib"
+    for js in sorted(lib.rglob("*.js")):
+        text = js.read_text(encoding="utf-8", errors="replace")
+        m = re.search(r"disabledFeatures\s*=\s*\[(.*?)\]", text, re.S)
+        if m:
+            body = re.sub(r"//[^\n]*", "", m.group(1))
+            return re.findall(r"\"([A-Za-z0-9_]+)\"", body)
+    raise RuntimeError(f"Playwright's list of disabled features was not found under {lib}")
+
+
+def edge_args() -> list[str]:
+    """Extra arguments for the tests' Playwright browsers: Playwright's disabled features plus Edge's Alt+Tab
+    tabs (core.browser.NO_ALT_TAB), in one switch."""
+    from core.browser import NO_ALT_TAB_FEATURE
+
+    return ["--disable-features=" + ",".join([*_playwright_disabled_features(), NO_ALT_TAB_FEATURE])]
 
 
 # The interface follows the computer's language; pin it so the suite runs the same on every

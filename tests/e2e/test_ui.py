@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import ROOT, calls
+from conftest import ROOT, calls, edge_args
 
 pytestmark = pytest.mark.e2e
 ART = ROOT / "tests" / "artifacts"
@@ -32,7 +32,7 @@ def browser_ctx():
     profile = ROOT / ".cache" / ("pw-profile-" + group if group else "pw-profile")
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(str(profile), channel="msedge", headless=True,
-                                                   viewport={"width": 1440, "height": 900})
+                                                   args=edge_args(), viewport={"width": 1440, "height": 900})
         yield ctx
         ctx.close()
 

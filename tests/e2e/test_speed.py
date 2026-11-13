@@ -14,7 +14,7 @@ import time
 
 import pytest
 
-from conftest import ROOT
+from conftest import ROOT, edge_args
 
 pytestmark = pytest.mark.e2e
 N = 5000
@@ -27,7 +27,7 @@ def speed_ctx():
     profile = ROOT / ".cache" / ("pw-profile-" + (os.environ.get("STUDIO_TEST_GROUP") or "speed"))
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(str(profile), channel="msedge", headless=True,
-                                                   viewport={"width": 1440, "height": 900})
+                                                   args=edge_args(), viewport={"width": 1440, "height": 900})
         yield ctx
         ctx.close()
 

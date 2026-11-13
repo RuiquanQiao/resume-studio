@@ -212,6 +212,16 @@ def find_browser(prefer: str | None = None) -> tuple[str, str] | None:
 
 NAMES = {"chrome": "Google Chrome", "msedge": "Microsoft Edge"}
 
+# A browser nobody sees. Edge hands each tab to Windows 11's Alt+Tab (WindowTabManager, "show tabs from apps")
+# even with no window on screen, and Windows keeps those entries after the browser has gone: every test run
+# left "Resume Studio" tiles in Alt+Tab that could not be clicked (2026-11-14). Edge's own log shows the feature
+# turned off registers no tab; Chrome ignores the name. Of repeated --disable-features switches only the last
+# counts: nothing else here passes one, and the tests' Playwright launches merge it into Playwright's own list
+# (tests/conftest.py EDGE_ARGS).
+NO_ALT_TAB_FEATURE = "msWindowTabManagerPublic"
+NO_ALT_TAB = "--disable-features=" + NO_ALT_TAB_FEATURE
+HEADLESS_ARGS = ["--headless=new", "--window-size=1280,900", NO_ALT_TAB]
+
 
 def profile_holder(profile: Path) -> int | None:
     """The process id of the browser that has this profile open, if one does. Chromium finds its own
@@ -542,7 +552,7 @@ class ManagedBrowser:
                 "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding",
                 "--disable-background-timer-throttling"]
         if self.headless or not window:   # self.headless: the tests', never with a window
-            args += ["--headless=new", "--window-size=1280,900"]
+            args += HEADLESS_ARGS
         args.append("about:blank")
         flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
         with open(self.log, "ab") as logf:
@@ -668,7 +678,7 @@ class ManagedBrowser:
             args = [exe, f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
                     "--disable-search-engine-choice-screen"]
             if self.headless:
-                args += ["--headless=new", "--window-size=1280,900"]
+                args += HEADLESS_ARGS
             args.append(url)
             flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
             with open(self.log, "ab") as logf:

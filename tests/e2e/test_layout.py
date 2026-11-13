@@ -22,7 +22,7 @@ from typing import Callable
 
 import pytest
 
-from conftest import ROOT
+from conftest import ROOT, edge_args
 from test_ui import FILL_NOW, add_long_bullet, choose, connected, open_entry, open_facts, open_job_search, state, wait_until  # noqa: F401
 
 pytestmark = pytest.mark.e2e
@@ -51,7 +51,7 @@ def layout_ctx():
     profile = ROOT / ".cache" / "pw-profile-layout"     # not test_ui's: both contexts live for the whole run
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(str(profile), channel="msedge", headless=True,
-                                                   viewport={"width": 1440, "height": 900})
+                                                   args=edge_args(), viewport={"width": 1440, "height": 900})
         yield ctx
         ctx.close()
 
