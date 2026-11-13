@@ -72,6 +72,7 @@ from urllib.parse import urlsplit
 from core.i18n import t
 
 from . import geo
+from .natures import nature   # what kind of employer a company is: a track can be for some kinds only
 
 # id, label (English; the window translates it), career-ops' state id (for copying rows there)
 STATES = [
@@ -122,27 +123,6 @@ PLACE_WORDS = {"remote": "remote", "远程": "remote", "wfh": "remote", "居家"
 # what Claude fills on a company (the name stays the user's: an official name goes into the aliases)
 FILLABLE = ["aliases", "industry", "nature", "strength", "hq", "places", "size", "site", "sites", "logo", "about"]
 SITE_KINDS = ["campus", "intern", "social", "other"]
-# what kind of employer a company is (2026-11-13): a track can be for some kinds only ("信息科技（国央企）" matched
-# every company's 后端开发工程师, a private game studio's too). Kept by id; "" is not known yet, never a guess
-NATURES = ["soe", "public", "academic", "private", "foreign", "other"]
-NATURE_WORDS = {"国央企": "soe", "国企": "soe", "央企": "soe", "国有企业": "soe", "state-owned": "soe",
-                "事业单位": "public", "高校/科研院所": "academic", "高校": "academic", "科研院所": "academic",
-                "university": "academic", "民企": "private", "民营企业": "private", "民营": "private",
-                "外企": "foreign", "外资": "foreign", "其他": "other"}
-
-
-def nature(v: Any) -> str:
-    """A company's nature as kept ("" for not known); a word the list doesn't have is an error, not a guess."""
-    s = _text(v, 40)
-    if not s:
-        return ""
-    k = s.lower()
-    if k in NATURES:
-        return k
-    if k in NATURE_WORDS or s in NATURE_WORDS:
-        return NATURE_WORDS.get(k) or NATURE_WORDS[s]
-    raise ValueError(t("“{value}” isn't a company nature: use one of {list}, or leave it empty", value=s,
-                       list=", ".join(f"{x} ({w})" for x, w in zip(NATURES, ("国央企", "事业单位", "高校/科研院所", "民企", "外企", "其他")))))
 LOGO_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif",
               "image/svg+xml": "svg", "image/x-icon": "ico", "image/vnd.microsoft.icon": "ico"}
 EVENT_KINDS = ["created", "status", "note", "sent"]

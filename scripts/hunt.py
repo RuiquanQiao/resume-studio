@@ -54,6 +54,7 @@ import urllib.request
 from pathlib import Path
 
 from _bootstrap import guard_args, read_input, resolve_data, server_state
+from jobhunt import natures  # noqa: E402  (after _bootstrap: it puts the app on the path)
 
 CHANNELS = {"site": "its own site", "platform": "via {platform}", "referral": "referral", "other": "other"}
 # built-in events keep no title (they read in the window's language): their names here
@@ -80,12 +81,15 @@ A keyword matches a part of the title, case and accents aside; a 2-3 letter one 
 that kind of role goes out with.
 
 `natures` (optional) makes a track for some kinds of company only: a role is in it only when its company's
-nature (`fill` sets it) is one of them. Left out or [], the track is for every company. A company whose nature
+nature (`fill` sets it) is one of them. A kind (soe) takes every country's subtypes of it; a country's own
+subtype (cn.central_soe) only itself. Left out or [], the track is for every company. A company whose nature
 isn't filled in yet is in none of these tracks (`show` says which tracks can't judge it): fill its nature in,
-never guess it. The kinds: soe (国央企), public (事业单位), academic (高校/科研院所), private (民企),
-foreign (外企), other (其他); their Chinese names are understood too.
+never guess it. A track for China's state employers:
 
-  {"id": "T4", "name": "信息科技（国央企）", "keywords": ["研发", "开发工程师"], "natures": ["soe", "public"]}"""
+  {"id": "T4", "name": "信息科技（国央企）", "keywords": ["研发", "开发工程师"],
+   "natures": ["cn.central_soe", "cn.local_soe", "cn.state_finance", "cn.public"]}
+
+""" + natures.help_text()
 
 FILL_HELP = """Claude's research on a company, every field at once, as JSON on stdin:
 
@@ -93,13 +97,12 @@ FILL_HELP = """Claude's research on a company, every field at once, as JSON on s
    "aliases": ["星河科技", "Xinghe", "Nebula"],
    "industry": "E-commerce / internet",              # industry, strength, size and about: in the language `show`
                                                      # names ("write … in"), whatever language the chat is in
-   "nature": "private",                              # what kind of employer: soe (国央企), public (事业单位),
-                                                     # academic (高校/科研院所), private (民企), foreign (外企), other.
-                                                     # Read it from who owns it: the shareholders in the business
-                                                     # register (国家企业信用信息公示系统, 企查查, 天眼查), a listed parent's
-                                                     # 实际控制人 in its annual report; an old owner is not the owner
-                                                     # (a studio ByteDance sold is not ByteDance's). Needs sources.nature;
-                                                     # not sure: leave it out, never guess
+   "nature": "cn.private",                           # what kind of employer the entity that hires is, by how one
+                                                     # prepares to apply: a country's own kind when the list below has
+                                                     # one for its country, else a kind. Read from who owns it now (an
+                                                     # old owner is not the owner: a studio ByteDance sold is not
+                                                     # ByteDance's); a local subsidiary of a foreign group is foreign.
+                                                     # Needs sources.nature; not sure: leave it out, never guess
    "strength": "Market cap about US$160 bn (NASDAQ: XHT, 2026-10-17)",   # listed: market cap, exchange, ticker,
                                                      # date; not listed: valuation, latest round or headcount, with the date
    "hq": "Shanghai",                                 # the city of its headquarters: a city's name, nothing more
@@ -115,7 +118,10 @@ FILL_HELP = """Claude's research on a company, every field at once, as JSON on s
    "about": {"summary": "...", "points": [{"topic": "...", "text": "...", "sources": ["https://..."]}], "read_at": "2026-10-18"}}
 
 Every key is optional; send what you found. Fields the user edited in the window are theirs and are left as
-they are (the reply says which). site kinds: campus, intern, social, other."""
+they are (the reply says which). site kinds: campus, intern, social, other.
+
+Natures:
+""" + natures.help_text()
 
 
 LOOK = ("look at the logo as the window shows it (on white): {path}\n"
@@ -212,11 +218,14 @@ def show_company(v: dict) -> None:
     if c.get("places"):
         print("  hires in: " + "; ".join(place_text(x) for x in c["places"]) + ("  [" + src["places"] + "]" if src.get("places") else "")
               + ("  (the user's: fill leaves it)" if "places" in kept else ""))
-    names = {"soe": "soe (国央企)", "public": "public (事业单位)", "academic": "academic (高校/科研院所)",
-             "private": "private (民企)", "foreign": "foreign (外企)", "other": "other (其他)"}
     if c.get("nature"):
-        print(f"  nature: {names.get(c['nature'], c['nature'])}" + (f"  [{src['nature']}]" if src.get("nature") else "")
+        print(f"  nature: {natures.label(c['nature'])}" + (f"  [{src['nature']}]" if src.get("nature") else "")
               + ("  (the user's: fill leaves it)" if "nature" in kept else ""))
+    short = {"citizen": "its roles take citizens of {cc} only, and the user's profile says they aren't one",
+             "resident": "its roles take citizens or permanent residents of {cc} only, which the user's profile says they aren't",
+             "work": "its roles need the right to work in {cc}, which the user's profile doesn't list"}
+    if c.get("short_of"):
+        print("  the user can't apply as they are: " + short[c["short_of"]].format(cc=c.get("country") or "?"))
     for k, label in (("industry", "industry"), ("strength", "strength"), ("hq", "headquarters"), ("size", "size"),
                      ("site", "careers site"), ("account", "account"), ("subset", "filled from")):
         if c.get(k):
@@ -288,7 +297,7 @@ def show_company(v: dict) -> None:
     held = [tr for tr in trs if tr["id"] in (v.get("held_back") or [])]
     if held and ps:
         print("  its nature isn't filled in yet, so these tracks (for some kinds of company only) take none of its roles: "
-              + ", ".join(tr.get("name") or tr["id"] for tr in held) + ". Research it and send nature with `fill`")
+              + ", ".join(tr.get("name") or tr["id"] for tr in held) + ". Research it and send nature with `fill` (`fill --help` lists the natures and where to read who owns a company)")
     if len(listed) > len(ps):
         print(f"  probably over, still listed (closing date passed, or no date and posted over a year ago): "
               f"{len(listed) - len(ps)}, folded away in the window")
@@ -331,7 +340,7 @@ def main() -> int:
         for opt in ("site", "industry", "nature", "strength", "hq", "size", "account", "subset", "note"):
             p.add_argument("--" + opt, *(["--location"] if opt == "hq" else []),
                            **({"help": "the city of its headquarters"} if opt == "hq" else
-                              {"help": "soe, public, academic, private, foreign or other (\"\" to clear)"} if opt == "nature" else {}))
+                              {"help": "a nature's id from `fill --help` (cn.central_soe, private…; \"\" to clear)"} if opt == "nature" else {}))
         p.add_argument("--alias", action="append", help="another name it goes by (repeat for more; on edit-company "
                        "the flags are the whole list, so leave one out to drop it)")
         if name == "edit-company":
@@ -587,7 +596,7 @@ def main() -> int:
             print(f"{tr['id']} {tr.get('name') or '(no name)'}: {', '.join(tr['keywords']) or '(no keywords)'}"
                   + (f"; not: {', '.join(tr['exclude'])}" if tr.get("exclude") else "")
                   + (f"; resume {tr['subset']}" if tr.get("subset") else "")
-                  + (f"; only at: {', '.join(tr['natures'])}" if tr.get("natures") else ""))
+                  + (f"; only at: {', '.join(natures.label(x) for x in tr['natures'])}" if tr.get("natures") else ""))
         return 0
     elif c == "keywords":
         r = call(url, "keywords", {"keywords": args.keywords})

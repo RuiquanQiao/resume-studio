@@ -245,6 +245,16 @@ def country(pid: Any) -> str:
     return "CN" if pid == "r:mainland-china" else ""
 
 
+def countries(lang: str | None = None) -> list[dict]:
+    """Every country (ISO 3166 code, name in the interface's language, its English name), by name: what the user picks
+    their citizenship, visas and where they look for work from."""
+    lang = lang or current()
+    terr = _load()["terr"]
+    out = [{"code": cc, "name": _local(n, lang) or cc, "en": n.get("en") or cc} for cc, n in terr.items()
+           if len(cc) == 2 and cc.isalpha() and cc not in ("EU", "EZ", "UN", "QO", "XA", "XB", "ZZ")]
+    return sorted(out, key=lambda x: x["name"])
+
+
 def languages(cc: str) -> list[str]:
     """A country's official languages a resume can be written in, the most spoken first (CLDR): SG en, zh, ms."""
     return list(_load()["langs"].get(cc) or [])

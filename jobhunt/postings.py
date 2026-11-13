@@ -34,7 +34,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 from core.i18n import t
 
-from .store import Hunt, _date, _key, _now, _places, _text, nature as _nature
+from .natures import nature as _nature, takes as _takes
+from .store import Hunt, _date, _key, _now, _places, _text
 
 BATCHES = ["campus", "intern", "social", "other"]
 
@@ -193,6 +194,10 @@ def _words(v: Any, limit: int = 40) -> list[str]:
     return [k for k in dict.fromkeys(_text(x, 40) for x in xs) if k][:limit]
 
 
+# what a track named "（国央企）" means: China's state employers
+CN_STATE = ("cn.central_soe", "cn.local_soe", "cn.state_finance", "cn.public")
+
+
 def _natures(v: Any) -> list[str]:
     """A track's kinds of company: ids or their words (国央企, 民企…), in any order; an unknown one is an error."""
     xs = re.split(r"[,，、;；]", v) if isinstance(v, str) else v if isinstance(v, list) else []
@@ -202,8 +207,9 @@ def _natures(v: Any) -> list[str]:
 def clean_tracks(v: Any) -> list[dict]:
     """The kinds of role the user goes for, each its own filter (2026-11-04: someone may go for an engineering and a
     product role at once): {id, name, keywords, exclude, subset, natures}. `subset` is the resume that kind of role goes
-    out with; `natures`, when it lists any, the kinds of company the track is for (jobhunt/store.py NATURES): a 国央企
-    track takes no role of a private company, nor of one whose nature isn't known yet (2026-11-13)."""
+    out with; `natures`, when it lists any, the kinds of company the track is for (jobhunt/natures.py: a kind
+    takes its every subtype, a subtype only itself): a 国央企 track takes no role of a private company, nor of one
+    whose nature isn't known yet (2026-11-13)."""
     rows = [x for x in (v if isinstance(v, list) else []) if isinstance(x, dict)]
     taken = {str(x.get("id")) for x in rows if re.fullmatch(r"T\d+", str(x.get("id") or ""))}
     out, used = [], set()
@@ -235,7 +241,7 @@ def _tracks_key(tracks: list[dict]) -> tuple[tuple, dict]:
     if last[0] is tracks:
         return last[1], last[2]
     key = tuple((tr["id"], tuple(tr["keywords"]), tuple(tr.get("exclude") or ())) for tr in tracks)
-    only = {tr["id"]: frozenset(tr["natures"]) for tr in tracks if tr.get("natures")}
+    only = {tr["id"]: tuple(tr["natures"]) for tr in tracks if tr.get("natures")}
     _LAST_TRACKS[:] = [tracks, key, only]   # one assignment: a thread reading it sees the old three or the new
     return key, only
 
@@ -244,7 +250,7 @@ def tracks_of(title: str, tracks: list[dict], nature: str = "") -> list[str]:
     """The tracks a title belongs to (their ids), at a company of this nature ("" not known); a track with no keywords
     takes none, and one for some natures only takes none of a company of another nature or of one not known yet."""
     got, only = _title_tracks(title, tracks)
-    return [x for x in got if x not in only or nature in only[x]] if only else list(got)
+    return [x for x in got if x not in only or any(_takes(e, nature) for e in only[x])] if only else list(got)
 
 
 def _title_tracks(title: str, tracks: list[dict]) -> tuple[tuple[str, ...], dict]:
@@ -403,8 +409,15 @@ class Postings:
             # filled in, these tracks take none of its roles
             for tr in d["tracks"]:
                 if "国央企" in tr["name"] and not tr["natures"]:
-                    tr["natures"] = ["soe", "public"]
+                    tr["natures"] = list(CN_STATE)
             d["migrated"].append("track-natures")
+        if "track-natures-cn" not in d["migrated"]:
+            # once more (2026-11-13): natures became a catalog of every country's; the 国央企 tracks set an hour
+            # before to every country's SOEs and public institutions are for China's
+            for tr in d["tracks"]:
+                if "国央企" in tr["name"] and tr["natures"] == ["soe", "public"]:
+                    tr["natures"] = list(CN_STATE)
+            d["migrated"].append("track-natures-cn")
         d.setdefault("daily", True)
         d.setdefault("last_all", "")
         return d

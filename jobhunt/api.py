@@ -22,7 +22,7 @@ from resume.langs import LANGS as RESUME_LANGS
 from resume.service import Studio
 
 from . import geo as place_list
-from . import ics, logos, reader, writing
+from . import ics, logos, natures, reader, writing
 from .geo import Geo
 from .history import History, describe
 from .logos import fetch_logo, fetch_logo_in_browser
@@ -347,6 +347,25 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         return {"company": company_view(c["id"]), "kept": kept, "logo_error": logo_error, "logo_look": look,
                 "lang_error": lang_error, "text": "filled"}
 
+    # ---- what kind of employer, and whether the user's status lets them apply (jobhunt/natures.py) ----
+    def work() -> dict:
+        """The user's citizenships, residences, work visas and where they look for work: resume.yaml profile.work."""
+        return natures.clean_work(((studio.store.peek() or {}).get("profile") or {}).get("work"))
+
+    def employer(c: dict, w: dict) -> dict:
+        """Its country (its nature's, else its headquarters') and what it asks that the user doesn't have."""
+        hq = c.get("hq") or {}
+        cc = natures.country(c.get("nature") or "") or (place_list.country(hq["id"]) if hq.get("id") else "")
+        return {"country": cc, "country_name": (place_list.name("t:" + cc) or cc) if cc else "",
+                "short_of": natures.short_of(c.get("nature") or "", cc, w)}
+
+    def nature_catalog() -> dict:
+        return {**natures.catalog(t, lambda cc: place_list.name("t:" + cc) or cc), "work": work()}
+
+    @app.route("GET", "/api/hunt/countries")
+    def countries(req: Request):
+        return {"countries": place_list.countries()}
+
     def company_view(ref: str) -> dict:
         c = hunt.company(ref)
         doc = studio.store.peek()   # only read
@@ -354,7 +373,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         evs = [e for e in hunt.events() if e["app"] in {a["id"] for a in apps}]
         st = scanner.live_state(c)
         trs = posts.tracks()
-        return {"company": {**c, "logo_url": logo_url(c), "subset_label": subset_label(doc, c.get("subset") or ""),
+        return {"company": {**c, **employer(c, work()), "logo_url": logo_url(c), "subset_label": subset_label(doc, c.get("subset") or ""),
                             "research": research(c, apps, resume_langs(doc)),
                             "subset_exists": bool(c.get("subset")) and model.get_item(doc, "subset", c["subset"]) is not None},
                 "applications": apps, "events": evs,
@@ -477,8 +496,10 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         tb = hunt.table()
         summ = posts.summary()
         langs = resume_langs()
+        w = work()
         for c in tb["companies"]:
             c["logo_url"] = logo_url(c)
+            c.update(employer(c, w))
             c["research"] = research(c, [a for a in tb["applications"] if a["company"] == c["id"]], langs)
             c["postings"] = summ.get(c["id"]) or {"open": 0, "matching": 0}
             st = scanner.live_state(c)
@@ -491,7 +512,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                          "running": dict(scanner.running), "providers": scanner.providers_ready(),
                          "last_run": scanner.last_run, "queued": list(scanner.queue), "reading": descs.status(),
                          "batch": dict(scanner.batch) if scanner.batch else None},
-                "changes": posts.changes(), "geo": located(), "places": place_names()}
+                "changes": posts.changes(), "geo": located(), "places": place_names(), "natures": nature_catalog()}
 
     @app.route("GET", "/api/hunt/places")
     def find_places(req: Request):

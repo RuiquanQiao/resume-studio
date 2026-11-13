@@ -1033,6 +1033,33 @@ function tracksButton() {
   h("span", null, trs.length ? t("Tracks: {names}", { names: trs.map(trackName).join(", ") }) : t("Set up your tracks")));
 }
 
+// a track's kinds of company, as toggles grouped by country: the user's countries and the kinds every country has;
+// other countries behind "Other countries" (always shown when one of theirs is picked)
+function trackNatures(r, labelId) {
+  const box = h("div", { class: "trk-nats", role: "group", "aria-labelledby": labelId });
+  let more = false;
+  const paint = () => {
+    const opts = natureOptions();
+    const picked = new Set(opts.filter((o) => r.natures.includes(o.value)).map((o) => o.group));
+    const show = opts.filter((o) => !o.more || more || picked.has(o.group));
+    const groups = [];
+    for (const o of show) { const g = groups.find((x) => x.name === o.group); if (g) g.opts.push(o); else groups.push({ name: o.group, opts: [o] }); }
+    const hidden = show.length < opts.length;
+    box.replaceChildren(...groups.map((g) => h("div", { class: "trk-nat-group" }, h("span", { class: "trk-nat-country" }, g.name),
+      h("div", { class: "trk-nat-pills" }, g.opts.map((o) => {
+        const on = r.natures.includes(o.value);
+        return h("button", { type: "button", class: "trk-nat" + (on ? " on" : ""), "aria-pressed": String(on), "data-nature": o.value,
+          onclick: () => { r.natures = on ? r.natures.filter((x) => x !== o.value) : [...r.natures, o.value]; paint(); } }, o.label);
+      })))),
+    h("div", { class: "trk-nat-foot" },
+      h("span", { class: "trk-nat-any" }, r.natures.length ? t("{n} picked", { n: r.natures.length }) : t("any company")),
+      (hidden || more) && h("button", { type: "button", class: "linkish trk-nat-more", "aria-expanded": String(more),
+        onclick: () => { more = !more; paint(); } }, more ? t("Fewer countries") : t("Other countries"))));
+  };
+  paint();
+  return box;
+}
+
 // Tracks, edited in a dialog: nothing is saved until Done (a pick inside a dialog waits for Done)
 function editTracks() {
   const root = $("#modal-root");
@@ -1060,18 +1087,8 @@ function editTracks() {
       field(t("But not"), h("input", { class: "trk-ex", value: r.exclude, spellcheck: "false", placeholder: t("销售, 售前"),
         oninput: (e) => { r.exclude = e.target.value; } })),
       // none picked: every company; some: only companies of those kinds (a company not filled in yet: none)
-      h("div", { class: "trk-field" }, h("span", { class: "trk-lab", id: `trk-nat-lab-${i}` }, t("Only at")),
-        h("div", { class: "trk-nats", role: "group", "aria-labelledby": `trk-nat-lab-${i}` },
-          natureOptions().map((o) => {
-            const on = () => r.natures.includes(o.value);
-            return h("button", { type: "button", class: "trk-nat" + (on() ? " on" : ""), "aria-pressed": String(on()), "data-nature": o.value,
-              onclick: (e) => {
-                r.natures = on() ? r.natures.filter((x) => x !== o.value) : [...r.natures, o.value];
-                e.currentTarget.classList.toggle("on", on()); e.currentTarget.setAttribute("aria-pressed", String(on()));
-                e.currentTarget.parentElement.querySelector(".trk-nat-any").hidden = r.natures.length > 0;
-              } }, o.label);
-          }),
-          h("span", { class: "trk-nat-any", hidden: r.natures.length > 0 }, t("any company")))))));
+      h("div", { class: "trk-field trk-nat-field" }, h("span", { class: "trk-lab", id: `trk-nat-lab-${i}` }, t("Only at")),
+        trackNatures(r, `trk-nat-lab-${i}`)))));
   };
   paint();
   const done = async () => {
@@ -1168,7 +1185,9 @@ function pickedPage() {
       fitBadge(p),
       h("span", { class: "pr-meta" }, [h("button", { class: "linkish pk-co", onclick: () => openCompanyAt(p.company, p.id) }, p.company_name),
         p.location, p.batch && t(BATCH_NAMES[p.batch] || p.batch), p.posted && t("posted {date}", { date: p.posted }),
-        p.deadline && h("span", { class: "c-due" + (p.deadline < today() ? " late" : "") }, t("closes {date}", { date: p.deadline }))]
+        p.deadline && h("span", { class: "c-due" + (p.deadline < today() ? " late" : "") }, t("closes {date}", { date: p.deadline })),
+        // an employer that takes only citizens or residents the user's profile says they aren't
+        byCo[p.company] && byCo[p.company].short_of && h("span", { class: "c-due late pk-short" }, shortOfText(byCo[p.company]))]
         .filter(Boolean).flatMap((x, i) => (i ? [" · ", x] : [x])))),
     p.app ? h("button", { class: "btn sm ghost pr-added", title: t("In your applications: open it"), onclick: () => openHunt("app", p.app) }, icon("check"), t("Added"))
       : h("button", { class: "btn sm", title: t("Add it to your applications"), onclick: async () => { await applyPosting(p); H.pickedSig = null; } }, icon("plus"), t("Want to apply")));
@@ -1311,10 +1330,36 @@ function postingsCard(v) {
 }
 
 const BATCH_NAMES = { campus: "Campus", intern: "Internship", social: "Experienced", other: "Other" };
-// what kind of employer a company is (jobhunt/store.py NATURES): a track can be for some kinds only
-const NATURE_NAMES = { soe: "State-owned", public: "Public institution", academic: "University / research",
-  private: "Private", foreign: "Foreign-owned", other: "Other" };
-const natureOptions = () => Object.entries(NATURE_NAMES).map(([value, label]) => ({ value, label: t(label), cls: "s-plain" }));
+// ---- what kind of employer a company is (jobhunt/natures.py): the kinds every country has, and each country's
+// own (央企, the APS…). The countries in the user's profile (where they may work, where they look) come first;
+// the others stay a click away, never gone
+const NAT = () => (H.data && H.data.natures) || { kinds: [], subtypes: [], work: {} };
+function natureName(id) {
+  const n = NAT();
+  const x = n.kinds.find((k) => k.id === id) || n.subtypes.find((s) => s.id === id);
+  return x ? x.name : id || "";
+}
+function natureCountries(extra = "") {
+  const w = NAT().work || {};
+  return [...new Set([...(w.targets || []), ...(w.citizen || []), ...(w.resident || []), ...(w.visa || []), extra].filter(Boolean))];
+}
+// [{value, label, group, more}]: the user's countries' own kinds, the kinds of every country, then other countries'
+// (`more`)
+function natureOptions(extra = "") {
+  const n = NAT(), first = natureCountries(extra), by = new Map();
+  for (const s of n.subtypes) { if (!by.has(s.country)) by.set(s.country, []); by.get(s.country).push(s); }
+  const own = (cc, more) => (by.get(cc) || []).map((s) => ({ value: s.id, label: s.name, group: s.country_name, cls: "s-plain", more }));
+  return [...first.flatMap((cc) => own(cc, false)),
+    ...n.kinds.map((k) => ({ value: k.id, label: k.name, group: t("Every country"), cls: "s-plain", more: false })),
+    ...[...by.keys()].filter((cc) => !first.includes(cc)).flatMap((cc) => own(cc, true))];
+}
+// what an employer asks that the user's profile says they don't have (jobhunt/natures.py short_of)
+function shortOfText(c) {
+  const cc = c.country_name || c.country || "";
+  return c.short_of === "citizen" ? t("Takes citizens of {country} only", { country: cc })
+    : c.short_of === "resident" ? t("Takes citizens or permanent residents of {country} only", { country: cc })
+    : c.short_of === "work" ? t("Needs the right to work in {country}", { country: cc }) : "";
+}
 // the sites a scan read nothing of, or only some pages of, by name: "join.huolala.cn wasn't read this time"
 function missedSay(missed) {
   const of = (w) => Object.entries(missed || {}).filter(([, x]) => x === w).map(([u]) => siteName(u)).join(", ");
@@ -1355,7 +1400,7 @@ function companyProps() {
           (c.aliases || []).length > 0 && h("span", { class: "c-alias" }, c.aliases.join(" · ")))) },
     text("industry", t("Industry"), 150, { group: true }),
     // not filled in: an empty cell (no chip on most of the rows); "No Nature" when grouped, "is empty" when filtered
-    { key: "nature", label: t("Nature"), type: "select", width: 170, get: (c) => c.nature || "", options: natureOptions,
+    { key: "nature", label: t("Nature"), type: "select", width: 190, get: (c) => c.nature || "", options: () => natureOptions(),
       set: (c, v) => cellCompany(c, { nature: v }) },
     text("strength", t("Strength"), 200),
     { key: "roles", label: t("Roles"), type: "relation", width: 300, get: (c) => (c.apps || []).map((a) => a.role),
@@ -1382,7 +1427,7 @@ function companyProps() {
 
 function companiesTable() {
   const d = H.data;
-  const shown = d.companies.filter((c) => matches(c.name, (c.aliases || []).join(" "), c.industry, c.nature && t(NATURE_NAMES[c.nature] || ""), c.strength, c.note, c.hq ? placeName(c.hq) : "", ...(c.places || []).map(placeText)));
+  const shown = d.companies.filter((c) => matches(c.name, (c.aliases || []).join(" "), c.industry, natureName(c.nature), c.strength, c.note, c.hq ? placeName(c.hq) : "", ...(c.places || []).map(placeText)));
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Companies")),
       h("p", null, t("What each company is and how it is doing, your notes, and its own careers site: one profile there, several roles in your order of preference."))),
@@ -1871,9 +1916,11 @@ function companyPage(v) {
       hfield(t("Industry"), c.industry, save("industry"), { hint: keptHint(c, "industry"), multiline: true, rows: 1 }),
       h("div", { class: "field", id: "company-nature" }, h("label", null, t("Nature"),
         h("span", { class: "hint" }, keptHint(c, "nature") || t("tracks for some kinds of company only go by it"))),
-        uiSelect({ id: "company-nature-pick", label: t("Nature"), value: c.nature || "", menuWidth: 260, cls: "co-nature-pick",
-          options: [{ value: "", label: t("Not filled in") }, ...natureOptions()],
-          onChange: (v) => { c.nature = v; save("nature")(v); } }).el),
+        uiSelect({ id: "company-nature-pick", label: t("Nature"), value: c.nature || "", menuWidth: 320, cls: "co-nature-pick",
+          options: [{ value: "", label: t("Not filled in") }, ...natureOptions(c.country)],
+          onChange: (v) => { c.nature = v; save("nature")(v); } }).el,
+        c.short_of && h("p", { class: "co-short", id: "company-short-of" }, icon("alert"), h("span", null, shortOfText(c),
+          " ", h("button", { class: "linkish", onclick: () => openProfileWork() }, t("Your status is in your profile"))))),
       hfield(t("Strength"), c.strength, save("strength"), { placeholder: t("e.g. market cap, or the latest valuation"), hint: keptHint(c, "strength"), multiline: true, rows: 1 }),
       hfield(t("Size"), c.size, save("size"), { hint: keptHint(c, "size"), multiline: true, rows: 1 }),
       h("div", { class: "field", id: "company-hq" }, h("label", null, t("Headquarters"), keptHint(c, "hq") && h("span", { class: "hint" }, keptHint(c, "hq"))),

@@ -1519,11 +1519,86 @@ function profileForm(p = ui.draft) {
       headlineField(v, job),
     ]),
     card(t("Contacts"), job ? t("Shown in order under the name; ticked = shown in “{job}”", { job: subsetName(v) }) : t("Shown in order under the name; switch to a subset to hide some of them"), rows),
+    workCard(p),
     h("details", { class: "fact-fold", open: ui.factOpen.has("profile") || null,
       ontoggle: (x) => { if (x.target.open) ui.factOpen.add("profile"); else ui.factOpen.delete("profile"); } },
     h("summary", null, icon("chevRight"), h("span", { class: "ff-t" }, t("Fact layer")), h("span", { class: "ff-sub" }, t("Only the AI sees this"))),
     h("div", { class: "card fact" }, h("div", { class: "card-b" }, tfield(t("Job search background, constraints, preferences"), p, "notes", { multiline: true, rows: 5 })))),
   ];
+}
+
+// Where the user may work (resume.yaml profile.work, jobhunt/natures.py): never on a resume. The job search puts these
+// countries' kinds of employer first and says when an employer takes only citizens or residents the user isn't
+function workCard(p) {
+  const w = p.work = p.work && typeof p.work === "object" ? p.work : {};
+  const row = (key, label, hint) => h("div", { class: "field", "data-key": "work-" + key },
+    h("label", null, label, hint && h("span", { class: "hint" }, hint)),
+    countryPicker(w[key] || [], (v) => { if (v.length) w[key] = v; else delete w[key]; touch(); }, label));
+  return card(t("Where you can work"), t("Never on a resume: the job search goes by it"), [
+    h("div", { class: "grid2" }, row("citizen", t("Citizen of")), row("resident", t("Permanent resident of"))),
+    h("div", { class: "grid2" }, row("visa", t("Work visa for"), t("a visa that lets you work there")), row("targets", t("Looking for work in"))),
+    tfield(t("Visa details"), w, "note", { placeholder: t("e.g. graduate visa until 2028-03, open work rights") }),
+  ]);
+}
+
+// the profile's "Where you can work", from a page that says what an employer asks of the user
+async function openProfileWork() {
+  if (W.ws !== "resume") setWorkspace("resume");
+  await select("profile");
+  const el = document.querySelector('#editor [data-key="work-citizen"]');
+  if (el) { el.scrollIntoView({ block: "center" }); const i = el.querySelector("input"); if (i) i.focus({ preventScroll: true }); }
+}
+
+// countries by ISO code, picked by any part of their name (in the interface's language or English) or code
+let COUNTRIES = null;
+async function loadCountries() {
+  if (!COUNTRIES) COUNTRIES = api("GET", "/api/hunt/countries").then((r) => r.countries).catch(() => { COUNTRIES = null; return []; });
+  return COUNTRIES;
+}
+function countryPicker(list, change, label) {
+  let cur = [...list];
+  let all = [];
+  const wrap = h("div", { class: "cp-ed" });
+  const nameOf = (cc) => (all.find((x) => x.code === cc) || {}).name || cc;
+  const starts = (x, q) => (x.name.toLowerCase().startsWith(q) || x.en.toLowerCase().startsWith(q) ? 1 : 0);
+  const paint = () => {
+    const input = h("input", { type: "text", class: "pl-input cp-input", spellcheck: "false", autocomplete: "off", role: "combobox",
+      "aria-expanded": "false", "aria-autocomplete": "list", "aria-label": label, placeholder: t("Type a country") });
+    const sugg = h("div", { class: "pl-sugg", role: "listbox", hidden: true });
+    let found = [], active = 0;
+    const pick = (cc) => { cur = [...cur.filter((x) => x !== cc), cc]; change(cur); paint(); wrap.querySelector(".cp-input").focus(); };
+    const show = () => {
+      const q = input.value.trim().toLowerCase();
+      found = !q ? [] : all.filter((x) => !cur.includes(x.code) && (x.name.toLowerCase().includes(q) || x.en.toLowerCase().includes(q) || x.code.toLowerCase() === q))
+        // its code typed whole first, then names that start with what was typed (日 is 日本 before 尼日利亚)
+        .sort((a, b) => (b.code.toLowerCase() === q) - (a.code.toLowerCase() === q) || starts(b, q) - starts(a, q))
+        .slice(0, 8);
+      active = Math.min(active, Math.max(0, found.length - 1));
+      sugg.replaceChildren(...found.map((x, i) => h("button", { type: "button", role: "option", tabindex: "-1", class: "lb-opt pl-opt" + (i === active ? " on" : ""),
+        "aria-selected": String(i === active), onmousedown: (e) => e.preventDefault(), onclick: () => pick(x.code) },
+        h("span", { class: "pl-oname" }, x.name), x.en !== x.name && h("span", { class: "pl-odetail" }, x.en))));
+      sugg.hidden = !found.length;
+      input.setAttribute("aria-expanded", String(!sugg.hidden));
+    };
+    input.addEventListener("input", () => { active = 0; show(); });
+    input.addEventListener("keydown", (e) => {
+      const n = sugg.hidden ? 0 : found.length;
+      if (e.key === "ArrowDown" && n) { e.preventDefault(); active = (active + 1) % n; show(); }
+      else if (e.key === "ArrowUp" && n) { e.preventDefault(); active = (active - 1 + n) % n; show(); }
+      else if (e.key === "Escape" && n) { e.preventDefault(); e.stopPropagation(); sugg.hidden = true; }
+      else if (e.key === "Enter" && !e.isComposing && n) { e.preventDefault(); pick(found[active].code); }
+      else if (e.key === "Backspace" && !input.value && cur.length) { cur = cur.slice(0, -1); change(cur); paint(); wrap.querySelector(".cp-input").focus(); }
+    });
+    input.addEventListener("blur", () => setTimeout(() => { if (!wrap.contains(document.activeElement)) sugg.hidden = true; }, 120));
+    wrap.replaceChildren(...[
+      cur.length > 0 && h("div", { class: "pl-list" }, cur.map((cc) => h("span", { class: "pl-chip cp-chip", "data-code": cc }, nameOf(cc),
+        h("button", { type: "button", class: "pl-x", title: t("Remove"), "aria-label": t("Remove {name}", { name: nameOf(cc) }),
+          onclick: () => { cur = cur.filter((x) => x !== cc); change(cur); paint(); } }, icon("x"))))),
+      h("div", { class: "pl-combo" }, input, sugg)].filter(Boolean));   // replaceChildren would write "false" as text
+  };
+  paint();
+  loadCountries().then((xs) => { all = xs; if (cur.length) paint(); });
+  return wrap;
 }
 
 // The headline under the name belongs to the resume picked at the top (ALL or a job), so it is

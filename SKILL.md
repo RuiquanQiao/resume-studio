@@ -101,6 +101,12 @@ profile:
   contacts:                  # every contact; a subset can hide some of them
     - {label: email, value: a@b.com, url: 'mailto:a@b.com'}
   notes: ...                 # fact layer
+  work:                      # never rendered: where the user may work (ISO country codes), for the job search
+    citizen: [CN]            # whose employers that take citizens only (APS, 公务员) they can apply to
+    resident: [AU]           # permanent residence
+    visa: [NZ]               # a visa that lets them work there
+    targets: [CN, AU]        # where they look for work: these countries' kinds of employer come first
+    note: 485 visa until 2028-03
 sections:                    # the sections every resume shares; each subset decides their order
   - {id: projects, title: {en: Projects, de: Projekte}, kind: timeline}   # timeline | list
 entries:                     # the library: every real experience, never limited to one page
@@ -331,11 +337,15 @@ python scripts/hunt.py apply P12                          # the user goes for po
 - **A company fills itself** (docs/JOB_HUNT.md, 2026-10-18): when one is added or asked about, research it and
   send everything with one `fill` (official name, aliases, industry, nature, strength, HQ, size, its careers sites and
   their hiring systems, a logo link, the About), never only the About. Fields the user edited stay theirs.
-  **Nature** (soe 国央企, public 事业单位, academic 高校/科研院所, private 民企, foreign 外企, other) is read from who
-  owns the company now: its shareholders in the business register (国家企业信用信息公示系统, 企查查, 天眼查) or a
-  listed parent's 实际控制人 in its annual report, with that page as `sources.nature` (`fill` refuses it without one).
-  A former owner is not the owner (a studio ByteDance sold on is not 字节's). Not sure: leave it out, never guess;
-  tracks for 国央企 only take none of a company's roles until its nature is in.
+  **Nature** is what kind of employer the entity that hires is, by how one prepares to apply to it
+  (`jobhunt/natures.py`; `fill --help` lists them): a kind every country has (government, public, soe, academic,
+  nonprofit, intl_org, private, foreign, other) or, for a country the catalog has, its own (cn.central_soe 央企,
+  cn.public 事业单位, cn.foreign 外企 / 合资, au.aps…), which is preferred there. 外企 is the local entity's own fact: a
+  foreign group's subsidiary (wholly owned or a joint venture) is `foreign` wherever the user is from. Read who owns
+  it now from the business register or a listed parent's filings (`fill --help` names each country's: 企查查,
+  Companies House, ASIC, SEC EDGAR…), with that page as `sources.nature` (`fill` refuses it without one). A former
+  owner is not the owner (a studio ByteDance sold on is not 字节's). Not sure: leave it out, never guess; tracks for
+  some kinds only take none of a company's roles until its nature is in.
   Industry, strength, size and the About are written in the language `show` names (where the user applies, else
   the headquarters' country, among the resume's languages; else English), never the chat's or the window's.
   Every `fill` sends a `logo_url`, also when the company has a careers site (a careers site's icon is often blank,
@@ -353,7 +363,8 @@ python scripts/hunt.py apply P12                          # the user goes for po
 - **Open postings** are scanned, never typed: career-ops' providers (Moka, Feishu/ByteDance, Tencent, Meituan,
   Alibaba, Greenhouse, Lever, Ashby…) read public job APIs; any other site gets a read route Claude records
   once in the browser (`scan-route`), replayed with no Claude. `tracks` are the kinds of role the user goes for, each with its own title keywords, and optionally `natures`:
-  the kinds of company it is for (a "（国央企）" track is `["soe", "public"]`; `tracks --help`); a route returns the site's own `total`, so a scan that reads fewer roles is reported as not done.
+  the kinds of company it is for (a kind takes every country's subtypes of it; a "（国央企）" track is
+  `["cn.central_soe", "cn.local_soe", "cn.state_finance", "cn.public"]`; `tracks --help`); a route returns the site's own `total`, so a scan that reads fewer roles is reported as not done.
 
 - **Statuses**: saved (wants to apply), applied, assessment (测评/笔试), interview, offer, hired, rejected,
   withdrawn; the user's own words work (一面 → interview). Interview rounds are notes, not statuses.

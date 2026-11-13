@@ -212,9 +212,15 @@ def keep_version(c):
 
 
 # -- Job search
-JOBS_TROUBLE = js("""() => { const st = J.data.status;
-    st.checks = [{id: 'tracker', ok: false}, {id: 'reports', ok: false}];
-    st.cv = {...(st.cv || {}), sync: true, conflicts: ['cv.md']};
+# kept through the job search's own refreshes of /api/jobs (one can land after this, and would take them away)
+JOBS_TROUBLE = js("""() => { const trouble = (st) => {
+      st.checks = [{id: 'tracker', ok: false}, {id: 'reports', ok: false}];
+      st.cv = {...(st.cv || {}), sync: true, conflicts: ['cv.md']}; };
+    // a refresh already on its way when this runs lands after it: whatever J.data becomes keeps the trouble
+    let data = J.data;
+    Object.defineProperty(J, 'data', { configurable: true, get: () => data,
+      set: (v) => { if (v && v.status) trouble(v.status); data = v; } });
+    trouble(J.data.status);
     paintJobspace(); }""")
 
 
@@ -311,6 +317,27 @@ def tracks_by_nature(c):
     hunt.scanner.postings.settings(tracks=[
         {"name": "信息科技 / 软件开发（国央企，含研究院与各地分公司）", "keywords": "研发, 开发工程师", "natures": ["soe", "public", "academic"]},
         {"name": "Graduate engineering", "keywords": "Engineer, 算法, 前端, 客户端, 产品"}])
+
+
+def work_status(c):
+    """The profile says where the user may work (a citizen of China, a work visa for Australia), and an Australian
+    employer takes citizens only: the company's page and its picked roles say so."""
+    tracks_by_nature(c)
+    st = c.server.inst.studio
+    prof = dict(st.state()["doc"]["profile"])
+    prof["work"] = {"citizen": ["CN"], "visa": ["AU", "NZ", "SG", "GB", "DE"], "targets": ["CN", "AU", "SG"],
+                    "note": "Temporary Graduate visa (subclass 485) until 2028-03, full work rights while it lasts"}
+    st.update_item("profile", None, prof, None)
+    c.server.inst.hunt.update_company("C1", {"nature": "au.aps"})
+
+
+def work_in_australia(c):
+    """The profile names Australia only: China's own kinds of employer fold under "Other countries"."""
+    tracks_by_nature(c)
+    st = c.server.inst.studio
+    prof = dict(st.state()["doc"]["profile"])
+    prof["work"] = {"citizen": ["AU"], "targets": ["AU"]}
+    st.update_item("profile", None, prof, None)
 
 
 def no_tracks(c):
@@ -557,6 +584,9 @@ STATES = [
     State("resume, long titles", lambda pg, c: open_entry(pg, "EXP-002"), ["#active"], prepare=long_entry),
     State("resume, line chips and issues", then(lambda pg, c: open_entry(pg, "EXP-002"), wait("#bullets .line-chip.long")),
           ["#issues .issue.warn"], prepare=lambda c: add_long_bullet(c.server)),
+    State("resume, the profile's where you can work", then(js("() => select('profile')"), wait("[data-key='work-citizen'] .cp-chip"),
+          js("() => document.querySelector('[data-key=work-citizen]').scrollIntoView({block: 'center'})")),
+          ["[data-key='work-visa'] .cp-chip", "[data-key='work-targets'] .cp-input"], prepare=work_status),
     State("resume, the data file's warnings", nothing, ["#library .warnings"], prepare=broken_subset),
     State("resume, an empty library", nothing, ["#library .empty", "#editor .doc-empty-lib"], prepare=empty_library),
     State("resume, sections & settings", js("() => select('sections')"), ["#editor .is-page"]),
@@ -678,6 +708,12 @@ STATES = [
           [".trk-modal .trk-row .trk-kw", ".trk-modal .trk-subset", ".trk-modal .trk-more"], prepare=picked_roles),
     State("applying, editing tracks for some kinds of company only", then(picked, click("#picked-edit-tracks"), wait(".trk-modal .trk-row")),
           [".trk-modal .trk-nats .trk-nat.on", ".trk-modal .trk-nat-any:not([hidden])"], prepare=tracks_by_nature),
+    State("applying, a company that takes citizens only", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
+          ["#company-short-of", "#company-nature-pick"], prepare=work_status),
+    State("applying, picked for you, an employer that takes citizens only", picked, [".picked-row .pk-short"], prepare=work_status),
+    State("applying, editing tracks with the profile's countries", then(picked, click("#picked-edit-tracks"), wait(".trk-modal .trk-row"),
+                                                                       click(".trk-modal .trk-nat-more >> nth=0")),
+          [".trk-modal .trk-nat-group .trk-nat-country", ".trk-modal .trk-nat-more[aria-expanded=true]"], prepare=work_in_australia),
     State("applying, companies, one with its nature", applying("companies"), [".htable td[data-key='nature'] .state-chip"],
           prepare=tracks_by_nature),
     State("applying, a company whose nature isn't filled in", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
@@ -888,6 +924,35 @@ def test_many_plugins_keep_room_to_drag_the_window(win, server):
         settle(win)
         problems += win.evaluate(MANY_PLUGINS)
     assert not problems, "\n" + "\n".join(problems)
+
+
+def test_an_empty_country_list_in_the_profile_shows_nothing(win, server):
+    """2026-11-13: a country list with nothing picked (permanent residence, here) showed the word "false"."""
+    st = next(s for s in STATES if s.name == "resume, the profile's where you can work")
+    work_status(Ctx(server))
+    open_window(win, server, "en")
+    st.show(win, Ctx(server))
+    text = win.inner_text("[data-key='work-resident']")
+    assert "false" not in text and "true" not in text, text
+
+
+def test_a_country_is_found_by_the_start_of_its_name_and_kept_in_the_profile(win, server):
+    """2026-11-13: typing 日 offered 尼日利亚 before 日本 (names that start with what was typed came last)."""
+    st = next(s for s in STATES if s.name == "resume, the profile's where you can work")
+    work_status(Ctx(server))
+    open_window(win, server, "zh")
+    st.show(win, Ctx(server))
+    inp = win.locator("[data-key='work-targets'] .cp-input")
+    inp.click()
+    inp.type("日")
+    win.wait_for_selector("[data-key='work-targets'] .pl-sugg .pl-opt")
+    assert win.inner_text("[data-key='work-targets'] .pl-sugg .pl-opt >> nth=0").startswith("日本")
+    inp.press("Enter")
+    wait_until(lambda: "JP" in (server.inst.studio.state()["doc"]["profile"].get("work") or {}).get("targets", []))
+    inp = win.locator("[data-key='work-targets'] .cp-input")
+    inp.type("new zea")                                                  # by its English name too
+    win.wait_for_selector("[data-key='work-targets'] .pl-sugg .pl-opt")
+    assert "新西兰" in win.inner_text("[data-key='work-targets'] .pl-sugg")
 
 
 def test_a_long_tracks_button_is_cut_at_its_end_not_its_start(win, server):

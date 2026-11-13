@@ -28,7 +28,7 @@ _JS_TABLES = {
     "chat.js": ["BUILTIN_DESC", "CHAT_STATES"],
     "jobs.js": ["STATE_NAMES", "DECISIONS", "IMPORTANCE", "VALUE_NAMES", "CHECK_NAMES", "STEP_NAMES", "MODE_NAMES", "WEB_STEPS"],
     "autofill.js": ["OPS", "APPLIED", "SECTION_NAMES", "FIELD_NAMES", "ADD_ONE"],
-    "hunt.js": ["HUNT_TABS", "HSTATES", "HCHANNELS", "SITE_KINDS", "BATCH_NAMES", "NATURE_NAMES", "PLACE_KINDS", "BOOKED_KINDS",
+    "hunt.js": ["HUNT_TABS", "HSTATES", "HCHANNELS", "SITE_KINDS", "BATCH_NAMES", "PLACE_KINDS", "BOOKED_KINDS",
                "CHANGE_FIELDS", "CHANGE_CMDS"],
     "dbview.js": ["FILTER_OPS", "LAYOUT_NAMES", "LAYOUT_AS"],
 }
@@ -101,6 +101,11 @@ def _data_keys() -> dict[str, str | None]:
             out[m["tag"]] = None
     for name, _ in REGIONS.values():
         out[name] = None
+    from jobhunt import natures
+    for _, name, _ in natures.KINDS:
+        out[name] = None
+    for s in natures.SUBTYPES:
+        out[s[3]] = None
     out["Claude Code default"] = None
     out["~2× usage vs Sonnet"] = None
     return out
