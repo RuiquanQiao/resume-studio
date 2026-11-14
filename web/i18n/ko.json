@@ -410,7 +410,6 @@
  "Evaluate: {posting}": "평가: {posting}",
  "Evaluated": "평가함",
  "Evaluated on": "평가일",
- "Evaluates postings and tracks applications; open source, runs in its own folder": "채용 공고를 평가하고 지원을 기록합니다. 오픈 소스이며 자체 폴더에서 실행됩니다",
  "Events": "일정",
  "Every bullet in the current preview already fits on one line": "현재 미리보기의 항목이 모두 이미 한 줄입니다",
  "Every bullet must fit on one line with the current template and layout (the user's hard rule: one line looks better). When done, run {cmd} to check: keep shortening the bullets it lists as \"take more than one line\" until all fit; the percentage is how much of a line the text fills, so 112% means cutting about 12%.": "모든 항목은 현재 템플릿과 레이아웃에서 한 줄이어야 합니다(사용자의 필수 조건: 한 줄이 더 보기 좋음). 끝나면 {cmd}를 실행해 확인하고, 출력에 \"take more than one line\"으로 나온 항목을 모두 한 줄이 될 때까지 줄이세요. 백분율은 글이 한 줄의 얼마를 차지하는지이며, 112%면 약 12%를 줄여야 합니다.",
@@ -578,7 +577,6 @@
  "Its {n} application goes too. The versions that were sent stay with their subsets.": "지원 {n}건도 함께 삭제됩니다. 보낸 버전은 서브셋에 남습니다.",
  "JD": "JD",
  "Job description": "채용 공고(JD)",
- "Job postings: {name}": "채용 공고: {name}",
  "Job search background, constraints, preferences": "구직 배경, 제약, 선호",
  "Job titles to also search": "함께 찾아볼 직무명",
  "Kai / Fangsong": "해서 / 방송",
@@ -2281,5 +2279,14 @@
  "Evaluates job postings, scores how well they fit your resume and keeps a tracker of your applications, in its own interface (a workspace in the top bar). Turning it off keeps its folder, evaluations and tracker.": "채용 공고를 평가하고 이력서와의 적합도를 점수로 매기며 지원 현황을 기록합니다. 자체 화면(상단 표시줄의 작업 공간)에서 사용합니다. 사용을 중지해도 폴더, 평가, 기록은 유지됩니다.",
  "Open source (MIT) by santifer": "오픈 소스(MIT), 제작자 santifer",
  "Optional workspaces, each with its own place in the top bar: career-ops, talent programmes, civil service exams, PhDs… Turning one off keeps its records.": "선택형 작업 공간입니다. 각 플러그인은 상단 표시줄에 별도의 자리를 갖습니다: career-ops, 인재 유치, 공무원 시험, 박사 과정 등. 사용을 중지해도 기록은 유지됩니다.",
- "career-ops": "career-ops"
+ "career-ops": "career-ops",
+ "A workspace of its own in the top bar. Turning it off keeps its records.": "상단 표시줄에 별도의 작업 공간을 갖습니다. 사용을 중지해도 기록은 유지됩니다.",
+ "About this plugin": "이 플러그인 정보",
+ "Blocked: the AI tried to change Resume Studio's own code ({path})": "차단됨: AI가 Resume Studio 자체 코드를 변경하려 했습니다 ({path})",
+ "Its folder": "폴더",
+ "Its tables": "표",
+ "Kept in your data folder, with the rest of your data": "다른 데이터와 함께 데이터 폴더에 저장됩니다",
+ "This plugin is no longer installed.": "이 플러그인은 제거되었습니다.",
+ "Turn it on and press Done: its version, checks and the CV it reads then show here.": "사용하도록 설정하고 완료를 누르면 버전, 점검 결과, 읽는 이력서가 여기에 표시됩니다.",
+ "{n} record": "{n}건"
 }

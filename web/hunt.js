@@ -555,7 +555,6 @@ function placesEditor(list, change, { single = false } = {}) {
         h("button", { type: "button", class: "bk-chip", onclick: () => set([...cur, { kind, area: p.area, ...(p.id ? { id: p.id } : {}) }]) }, placeName(p))))] : []));
   };
   paint();
-  box.repaint = paint;   // Settings → Plugins turning career-ops on or off changes what it offers
   return wrap;
 }
 
@@ -2466,6 +2465,7 @@ function trackerField() {
         h("span", null, t("Scan the companies' sites once a day, when the window opens"), h("span", { class: "hint" }, t("by their providers and recorded routes; never AI, so a site with no scan route is left out")))); })()].filter(Boolean));
   };
   paint();
+  box.repaint = paint;   // Settings → Plugins turning career-ops on or off changes what it offers
   if (!H.data) loadHunt({ quiet: true }).then(paint);
   return box;
 }

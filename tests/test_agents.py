@@ -168,6 +168,26 @@ def test_codex_chat_resumes_its_thread(server, agent_log, data_file):
     assert server.req("GET", "/api/claude?agent=codex")[1]["limits"]["windows"]["five_hour"]["utilization"] == 0.12
 
 
+def test_codex_can_never_change_the_apps_code(server, agent_log):
+    """User, 2026-11-14: Codex, asked to adjust a track, edited the app's source. The window answers Codex's
+    approvals itself: a change to the code is declined (and the chat says so), one to the app's data accepted,
+    and the reviewer is always the window, never Codex's own auto-reviewer."""
+    root = server.inst.chats.guard.root
+    cid = new_chat(server, "codex", mode="auto")
+    say(server, cid, f"EDIT:{root / 'web' / 'app.js'}")
+    m = reply(server, cid)
+    assert text(m).startswith('edit="decline"')
+    assert any(b["type"] == "note" and "app.js" in b["text"] for b in m["blocks"])
+    steer = sent(agent_log, "turn/steer")
+    assert steer and "read-only" in steer[-1]["params"]["input"][0]["text"]
+    start = sent(agent_log, "thread/start")[-1]["params"]
+    assert start["approvalsReviewer"] == "user" and start["config"]["sandbox_workspace_write"]["network_access"] is True
+    assert not any(server.inst.chats.guard.contains_code(d) for d in start["config"]["sandbox_workspace_write"]["writable_roots"])
+    assert "read-only" in start["developerInstructions"]
+    say(server, cid, f"EDIT:{root / '.cache' / 'scratch.yaml'}")
+    assert text(reply(server, cid)).startswith('edit="accept"')
+
+
 def test_a_typed_codex_chat_is_named_by_codex(server, agent_log):
     """The chat's own agent names it: Codex in its one-shot mode (`exec`), nothing kept, the answer read from -o."""
     cid = new_chat(server, "codex")

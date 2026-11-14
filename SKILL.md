@@ -57,6 +57,14 @@ career-ops page), where the data file and this SKILL.md are, and the tracker's a
 (below). So when called from the window, just follow the rules below; "this" in a message usually means
 what is on screen. (A chat started in the career-ops workspace runs in career-ops' folder instead, see below.)
 
+**The app's own code is read-only to the window's chats** (`core/codeguard.py`). Whatever the request, a chat
+changes the user's data only: the data file, `resume-studio-data/`, `.local/` and `.cache/`. Claude Code runs
+with a PreToolUse hook (`scripts/codeguard_hook.py`) that refuses Edit / Write / NotebookEdit on any other path
+inside the app folder and Bash / PowerShell commands that write there, in every permission mode. Codex runs in
+the data folder with the app folder outside its sandbox's writable roots, and the window answers its approvals:
+a change to the code is declined, one to the data file accepted. When a request seems to need a change to the
+app, change the data that drives it, or tell the user what you found.
+
 The window talks to Claude Code over the SDK's two-way stream-json channel (`--input-format
 stream-json --permission-prompt-tool stdio`), so everything the terminal has is there: permission
 prompts appear as allow / deny cards; AskUserQuestion shows option cards; in plan mode, ExitPlanMode

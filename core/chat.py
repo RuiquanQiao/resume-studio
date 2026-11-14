@@ -54,6 +54,13 @@ IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 
 # Agents on Windows run commands in Windows PowerShell, which pipes text into a program as ASCII: Codex sent a
 # company's Chinese name as ?????????? that way, and it was saved. The scripts refuse such text; this says why first.
+GUARD_NOTE = ("## Resume Studio's own code is read-only\n"
+              "The app in {root} (its scripts, web interface, tests, SKILL.md) is not yours to change, whatever the "
+              "request: edits and writes to it are refused. You work on the user's data (the data file, "
+              "resume-studio-data, the tracker through its commands). When a request seems to need a change to the "
+              "app (a track that matches wrongly, a page that shows something wrong), change the data that drives "
+              "it, or tell the user what you found and leave the app as it is.")
+
 WINDOWS_TEXT_NOTE = """\
 ## Sending text with Chinese (or any non-ASCII letter) on Windows
 
@@ -287,6 +294,8 @@ class ChatRunner:
         self.turns: dict[str, Turn] = {}
         self.limits: dict[str, dict] = {}   # agent id -> its plan's usage windows
         self.default_agent: Any = lambda: agents.DEFAULT   # callable() -> the agent a new chat runs on
+        # the app's own code is read-only to every chat (core/codeguard.py); None in tests that don't need it
+        self.guard: Any = None
 
     def workspace(self, chat: dict | None) -> Workspace | None:
         return self.workspaces.get(str((chat or {}).get("workspace") or ""))
@@ -375,6 +384,8 @@ class ChatRunner:
             context = "\n".join([context.rstrip(), *(n() for n in self.notes)]).strip() + "\n"
             if os.name == "nt":
                 context += "\n" + WINDOWS_TEXT_NOTE
+        if self.guard is not None:
+            context = context.rstrip() + "\n\n" + GUARD_NOTE.format(root=self.guard.root) + "\n"
         self.store.append(chat_id, msg)
         if chat.get("title") in (None, "", *UNTITLED, t("New chat")):
             if title and str(title).strip():
@@ -395,7 +406,8 @@ class ChatRunner:
                 "cwd": ws.cwd if ws else self.cwd,
                 # scripts/browser.py sends the chat's id, so the chat drives a browser tab of its own; Python the
                 # agent runs speaks UTF-8, not the console's code page (GBK), which the agent read back as "��"
-                "env": {"PYTHONUTF8": "1", **os.environ, **(ws.env if ws else {}), "RESUME_STUDIO_CHAT": chat_id},
+                "env": {"PYTHONUTF8": "1", **os.environ, **(ws.env if ws else {}), "RESUME_STUDIO_CHAT": chat_id,
+                        **(self.guard.env() if self.guard else {})},
                 "workspace": ws}
         turn = Turn(chat_id, on_done)
         turn.driver = driver_for(agent)

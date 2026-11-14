@@ -14,6 +14,11 @@
     try {
       EARLY["/api/state"] = fetch("/api/state");
       if (localStorage.getItem("rs:ws") === "fill") EARLY["/api/hunt"] = fetch("/api/hunt");
+      // workspaces dragged into another order: the bar waits for it rather than jump (plugins.js orderWsSwitch)
+      if ((localStorage.getItem("rs:ws-order") || "[]") !== "[]") {
+        document.documentElement.classList.add("ws-ordering");
+        setTimeout(function () { document.documentElement.classList.remove("ws-ordering"); }, 3000);   // never hidden for good
+      }
     } catch (e) {}
   </script>
   <link rel="stylesheet" href="fonts/noto-sc.css">

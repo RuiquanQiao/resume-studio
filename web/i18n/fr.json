@@ -413,7 +413,6 @@
  "Evaluate: {posting}": "Évaluer : {posting}",
  "Evaluated": "Évaluée",
  "Evaluated on": "Évaluée le",
- "Evaluates postings and tracks applications; open source, runs in its own folder": "Évalue les offres et suit les candidatures ; open source, tourne dans son propre dossier",
  "Events": "Rendez-vous",
  "Every bullet in the current preview already fits on one line": "Tous les points de l'aperçu tiennent déjà sur une ligne",
  "Every bullet must fit on one line with the current template and layout (the user's hard rule: one line looks better). When done, run {cmd} to check: keep shortening the bullets it lists as \"take more than one line\" until all fit; the percentage is how much of a line the text fills, so 112% means cutting about 12%.": "Chaque point doit tenir sur une ligne avec le modèle et la mise en page actuels (règle absolue de l'utilisateur : une ligne rend mieux). Ensuite, lancez {cmd} pour vérifier : continuez à raccourcir les points signalés comme \"take more than one line\" jusqu'à ce que tout tienne ; le pourcentage indique la part d'une ligne occupée par le texte, donc 112 % signifie retirer environ 12 %.",
@@ -584,7 +583,6 @@
  ],
  "JD": "Description",
  "Job description": "Description du poste",
- "Job postings: {name}": "Offres d'emploi : {name}",
  "Job search background, constraints, preferences": "Contexte de recherche d'emploi, contraintes, préférences",
  "Job titles to also search": "Autres intitulés à chercher",
  "Kai / Fangsong": "Kai / Fangsong",
@@ -2464,5 +2462,17 @@
  "Evaluates job postings, scores how well they fit your resume and keeps a tracker of your applications, in its own interface (a workspace in the top bar). Turning it off keeps its folder, evaluations and tracker.": "Évalue les offres d’emploi, note leur adéquation avec votre CV et tient le suivi de vos candidatures, dans sa propre interface (un espace de travail dans la barre supérieure). Le désactiver conserve son dossier, ses évaluations et son suivi.",
  "Open source (MIT) by santifer": "Open source (MIT), par santifer",
  "Optional workspaces, each with its own place in the top bar: career-ops, talent programmes, civil service exams, PhDs… Turning one off keeps its records.": "Espaces de travail optionnels, chacun avec sa place dans la barre supérieure : career-ops, programmes de talents, concours de la fonction publique, doctorats… Désactiver un plugin conserve ses fiches.",
- "career-ops": "career-ops"
+ "career-ops": "career-ops",
+ "A workspace of its own in the top bar. Turning it off keeps its records.": "Un espace de travail à part dans la barre supérieure. Le désactiver conserve ses fiches.",
+ "About this plugin": "À propos de ce plugin",
+ "Blocked: the AI tried to change Resume Studio's own code ({path})": "Bloqué : l’IA a tenté de modifier le code de Resume Studio ({path})",
+ "Its folder": "Son dossier",
+ "Its tables": "Ses tableaux",
+ "Kept in your data folder, with the rest of your data": "Conservées dans votre dossier de données, avec le reste de vos données",
+ "This plugin is no longer installed.": "Ce plugin n’est plus installé.",
+ "Turn it on and press Done: its version, checks and the CV it reads then show here.": "Activez-le puis cliquez sur Terminé : sa version, ses vérifications et le CV qu’il lit s’afficheront ici.",
+ "{n} record": [
+  "{n} fiche",
+  "{n} fiches"
+ ]
 }

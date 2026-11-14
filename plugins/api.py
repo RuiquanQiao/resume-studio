@@ -73,7 +73,20 @@ def register(app: App, studio: Studio, chats: ChatRunner, prefs: Any, installed_
                     records[p["id"]] = Records(state, p["manifest"]).all()
                 except ValueError as e:
                     records[p["id"]] = {"error": str(e)}
-        return {"plugins": [summary(p) for p in allp], "records": records}
+        return {"plugins": [summary(p) for p in allp], "records": records, "ws_order": ws_order()}
+
+    # ---- the order of the workspaces in the top bar, as the user dragged them (this computer's, in prefs.json) ----
+    def ws_order() -> list[str]:
+        v = (prefs.load() or {}).get("ws_order")
+        return [str(x) for x in v][:200] if isinstance(v, list) else []
+
+    @app.route("PUT", "/api/workspace-order")
+    def set_ws_order(req: Request):
+        v = body(req).get("order")
+        if not isinstance(v, list) or not all(isinstance(x, str) and 0 < len(x) <= 120 for x in v):
+            raise HttpError(400, "order must be a list of workspace ids")
+        prefs.save(ws_order=list(dict.fromkeys(v))[:200])
+        return {"ws_order": ws_order()}
 
     @app.route("PUT", "/api/plugins/{pid}")
     def switch(req: Request):

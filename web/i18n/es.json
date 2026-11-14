@@ -413,7 +413,6 @@
  "Evaluate: {posting}": "Evaluar: {posting}",
  "Evaluated": "Evaluada",
  "Evaluated on": "Evaluada el",
- "Evaluates postings and tracks applications; open source, runs in its own folder": "Evalúa ofertas y registra candidaturas; código abierto, se ejecuta en su propia carpeta",
  "Events": "Citas",
  "Every bullet in the current preview already fits on one line": "Todos los puntos de la vista previa ya caben en una línea",
  "Every bullet must fit on one line with the current template and layout (the user's hard rule: one line looks better). When done, run {cmd} to check: keep shortening the bullets it lists as \"take more than one line\" until all fit; the percentage is how much of a line the text fills, so 112% means cutting about 12%.": "Cada punto debe caber en una línea con la plantilla y el diseño actuales (regla firme del usuario: una línea queda mejor). Al terminar, ejecuta {cmd} para comprobarlo: sigue acortando los puntos que aparezcan como \"take more than one line\" hasta que todos quepan; el porcentaje indica cuánto de una línea ocupa el texto, así que 112 % significa recortar un 12 % aproximadamente.",
@@ -584,7 +583,6 @@
  ],
  "JD": "Descripción",
  "Job description": "Descripción del puesto",
- "Job postings: {name}": "Ofertas de empleo: {name}",
  "Job search background, constraints, preferences": "Contexto de la búsqueda de empleo, limitaciones, preferencias",
  "Job titles to also search": "Otros puestos que buscar",
  "Kai / Fangsong": "Kai / Fangsong",
@@ -2464,5 +2462,17 @@
  "Evaluates job postings, scores how well they fit your resume and keeps a tracker of your applications, in its own interface (a workspace in the top bar). Turning it off keeps its folder, evaluations and tracker.": "Evalúa ofertas de empleo, puntúa cuánto encajan con tu currículum y lleva el registro de tus candidaturas, en su propia interfaz (un espacio de trabajo en la barra superior). Al desactivarlo se conservan su carpeta, sus evaluaciones y su registro.",
  "Open source (MIT) by santifer": "Código abierto (MIT), de santifer",
  "Optional workspaces, each with its own place in the top bar: career-ops, talent programmes, civil service exams, PhDs… Turning one off keeps its records.": "Espacios de trabajo opcionales, cada uno con su lugar en la barra superior: career-ops, programas de talento, oposiciones, doctorados… Al desactivar uno se conservan sus registros.",
- "career-ops": "career-ops"
+ "career-ops": "career-ops",
+ "A workspace of its own in the top bar. Turning it off keeps its records.": "Un espacio de trabajo propio en la barra superior. Al desactivarlo se conservan sus registros.",
+ "About this plugin": "Acerca de este complemento",
+ "Blocked: the AI tried to change Resume Studio's own code ({path})": "Bloqueado: la IA intentó cambiar el código de Resume Studio ({path})",
+ "Its folder": "Su carpeta",
+ "Its tables": "Sus tablas",
+ "Kept in your data folder, with the rest of your data": "Se guardan en tu carpeta de datos, con el resto de tus datos",
+ "This plugin is no longer installed.": "Este complemento ya no está instalado.",
+ "Turn it on and press Done: its version, checks and the CV it reads then show here.": "Actívalo y pulsa Listo: aquí aparecerán su versión, las comprobaciones y el currículum que lee.",
+ "{n} record": [
+  "{n} registro",
+  "{n} registros"
+ ]
 }

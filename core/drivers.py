@@ -23,6 +23,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -143,6 +144,28 @@ def runner_kill(turn: Turn) -> None:
         turn.proc.terminate()
 
 
+def _guard_settings(runner) -> str | None:
+    """Claude Code settings that hold the chat to the app's data: a PreToolUse hook (core/codeguard.py) that
+    refuses edits and writes to the app's own code, in every permission mode."""
+    if getattr(runner, "guard", None) is None:
+        return None
+    # it runs before every edit and command, so it starts as fast as Python can: the base interpreter (a venv's
+    # python.exe on Windows starts a second one), no site packages (-S), nothing from the environment (-I);
+    # it needs only the standard library. About 0.1 s a call.
+    py = Path(getattr(sys, "_base_executable", "") or sys.executable)
+    if py.name.lower() == "pythonw.exe" and (py.parent / "python.exe").exists():
+        py = py.parent / "python.exe"   # the hook talks over stdin / stderr
+    hook = Path(__file__).resolve().parent.parent / "scripts" / "codeguard_hook.py"
+    cmd = f'"{py.as_posix()}" -S -I "{hook.as_posix()}"'
+    path = runner.store.root / "codeguard.settings.json"
+    body = json.dumps({"hooks": {"PreToolUse": [{"matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell",
+                                                  "hooks": [{"type": "command", "command": cmd, "timeout": 15}]}]}})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists() or path.read_text(encoding="utf-8") != body:
+        path.write_text(body, encoding="utf-8")
+    return str(path)
+
+
 def _context_file(runner, turn: Turn, context: str) -> str | None:
     if not context.strip():
         return None
@@ -211,6 +234,9 @@ class ClaudeDriver(Driver):
             cmd += ["--append-system-prompt-file", ctx]
         for d in spec["add_dirs"]:
             cmd += ["--add-dir", d]
+        guard = _guard_settings(runner)
+        if guard:
+            cmd += ["--settings", guard]
         return cmd
 
     def close(self, turn):
@@ -505,7 +531,17 @@ class CodexDriver(Driver):
         rpc, spec = turn.state["rpc"], turn.state["spec"]
         chat = spec["chat"]
         rpc.notify("initialized")
-        params: dict = {"cwd": str(spec["cwd"])}
+        guard = getattr(runner, "guard", None)
+        cwd, roots = Path(spec["cwd"]), list(spec["add_dirs"])
+        if guard is not None:
+            # its sandbox writes the folder it runs in and the writable roots: neither may hold the app's code, so
+            # a chat in a data folder that sits inside the app folder runs in resume-studio-data, and the data
+            # file next to it is written on an approval the window gives itself (_request)
+            if guard.contains_code(cwd):
+                cwd = guard.safe_cwd() or cwd
+            roots = [d for d in roots if not guard.contains_code(d)]
+        turn.state["cwd"] = str(cwd)
+        params: dict = {"cwd": str(cwd)}
         if spec["context"].strip():
             params["developerInstructions"] = spec["context"]
         if chat.get("model_choice"):
@@ -513,8 +549,10 @@ class CodexDriver(Driver):
         mode = CODEX_MODES.get(chat.get("mode") or "")
         if mode:
             params.update(mode)
-        if spec["add_dirs"]:
-            params["config"] = {"sandbox_workspace_write": {"writable_roots": spec["add_dirs"]}}
+            if guard is not None:
+                params["approvalsReviewer"] = "user"   # the window sees every approval, so none can open the code
+        if roots or guard is not None:
+            params["config"] = {"sandbox_workspace_write": {"writable_roots": roots, **({"network_access": True} if guard is not None else {})}}
         fork = chat.get("fork") or {}
 
         def started(r, e):
@@ -546,7 +584,7 @@ class CodexDriver(Driver):
         mode = CODEX_MODES.get(chat.get("mode") or "")
         if mode:
             params["approvalPolicy"] = mode["approvalPolicy"]
-            params["approvalsReviewer"] = mode.get("approvalsReviewer", "user")
+            params["approvalsReviewer"] = "user" if getattr(runner, "guard", None) is not None else mode.get("approvalsReviewer", "user")
 
         def started(r, e):
             if e:
@@ -700,8 +738,40 @@ class CodexDriver(Driver):
             _tool(runner, turn, iid, name, *codex_tool_input(item))
         _tool_end(runner, turn, iid, ok, result if isinstance(result, str) else json.dumps(result, ensure_ascii=False))
 
+    def _guarded(self, runner, turn, rid, method, p) -> bool:
+        """The window answers an approval itself when the app's code decides it (core/codeguard.py): a change
+        to the code is declined and the agent told why; a change only to the user's data is accepted."""
+        guard = getattr(runner, "guard", None)
+        if guard is None:
+            return False
+        rpc: Rpc = turn.state["rpc"]
+        cwd = turn.state.get("cwd") or (turn.state.get("spec") or {}).get("cwd")
+        hit = None
+        if method == "item/fileChange/requestApproval":
+            item = turn.state["items"].get(p.get("itemId")) or {}
+            paths = [str(c.get("path") or "") for c in item.get("changes") or [] if c.get("path")]
+            if p.get("grantRoot"):
+                paths.append(str(p["grantRoot"]))
+            hit = next((x for x in paths if guard.blocked_path(x, cwd) or (x == p.get("grantRoot") and guard.contains_code(x))), None)
+            if not hit and paths and all(guard.data_path(x, cwd) for x in paths):
+                rpc.reply(rid, {"decision": "accept"})   # the data file: what the chat is for
+                return True
+        elif method == "item/commandExecution/requestApproval":
+            hit = guard.blocked_command(str(p.get("command") or ""), p.get("cwd") or cwd)
+        if not hit:
+            return False
+        from .codeguard import refusal
+        rpc.reply(rid, {"decision": "decline"})
+        runner._block(turn, {"type": "note", "text": t("Blocked: the AI tried to change Resume Studio's own code ({path})", path=hit)})
+        if turn.state.get("turn"):
+            rpc.call("turn/steer", {"threadId": turn.state["thread"], "expectedTurnId": turn.state["turn"],
+                                    "input": [{"type": "text", "text": refusal(hit)}]})
+        return True
+
     def _request(self, runner, turn, rid, method, p):
         rpc: Rpc = turn.state["rpc"]
+        if self._guarded(runner, turn, rid, method, p):
+            return
         if method == "item/commandExecution/requestApproval":
             inp = {"command": p.get("command") or "", "description": p.get("reason") or ""}
             sug: list[dict] = [{"type": "session"}]

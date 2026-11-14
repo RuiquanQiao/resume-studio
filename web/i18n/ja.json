@@ -410,7 +410,6 @@
  "Evaluate: {posting}": "評価：{posting}",
  "Evaluated": "評価済み",
  "Evaluated on": "評価日",
- "Evaluates postings and tracks applications; open source, runs in its own folder": "求人票を評価し、応募を記録します。オープンソースで、専用フォルダーで動きます",
  "Events": "予定",
  "Every bullet in the current preview already fits on one line": "現在のプレビューの項目はすべて 1 行に収まっています",
  "Every bullet must fit on one line with the current template and layout (the user's hard rule: one line looks better). When done, run {cmd} to check: keep shortening the bullets it lists as \"take more than one line\" until all fit; the percentage is how much of a line the text fills, so 112% means cutting about 12%.": "各項目は現在のテンプレートとレイアウトで 1 行に収めてください（ユーザーの必須条件。1 行の方が見栄えが良い）。終わったら {cmd} を実行して確認し、出力で「take more than one line」と表示された項目をすべて 1 行に収まるまで短くしてください。パーセンテージは文章が 1 行の何割を占めるかで、112% なら約 12% 削る必要があります。",
@@ -578,7 +577,6 @@
  "Its {n} application goes too. The versions that were sent stay with their subsets.": "{n} 件の応募も削除されます。送った版はサブセットに残ります。",
  "JD": "JD",
  "Job description": "求人票（JD）",
- "Job postings: {name}": "求人票：{name}",
  "Job search background, constraints, preferences": "就職活動の背景、制約、希望",
  "Job titles to also search": "ほかに探せる職種名",
  "Kai / Fangsong": "楷書 / 仿宋",
@@ -2281,5 +2279,14 @@
  "Evaluates job postings, scores how well they fit your resume and keeps a tracker of your applications, in its own interface (a workspace in the top bar). Turning it off keeps its folder, evaluations and tracker.": "求人を評価し、履歴書との適合度を採点し、応募状況を記録します。専用の画面（トップバーのワークスペース）で使用します。無効にしてもフォルダー、評価、記録は保持されます。",
  "Open source (MIT) by santifer": "オープンソース（MIT）、作者 santifer",
  "Optional workspaces, each with its own place in the top bar: career-ops, talent programmes, civil service exams, PhDs… Turning one off keeps its records.": "追加のワークスペースです。各プラグインはトップバーに専用の場所を持ちます：career-ops、人材招致、公務員試験、博士課程など。無効にしても記録は保持されます。",
- "career-ops": "career-ops"
+ "career-ops": "career-ops",
+ "A workspace of its own in the top bar. Turning it off keeps its records.": "トップバーに専用のワークスペースを持ちます。無効にしても記録は保持されます。",
+ "About this plugin": "このプラグインについて",
+ "Blocked: the AI tried to change Resume Studio's own code ({path})": "ブロックしました：AI が Resume Studio 自身のコードを変更しようとしました（{path}）",
+ "Its folder": "フォルダー",
+ "Its tables": "テーブル",
+ "Kept in your data folder, with the rest of your data": "他のデータと同じくデータフォルダーに保存されます",
+ "This plugin is no longer installed.": "このプラグインはアンインストールされています。",
+ "Turn it on and press Done: its version, checks and the CV it reads then show here.": "有効にして「完了」を押すと、バージョン、チェック結果、読み込む履歴書がここに表示されます。",
+ "{n} record": "{n} 件"
 }

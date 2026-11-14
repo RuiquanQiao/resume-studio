@@ -582,9 +582,9 @@ function paintJobsSettings(el = $("#jobs-settings")) {
   if (!shown) { el.replaceChildren(); return; }
   const st = J.data.status;
   const name = st.tool.name;
-  const label = h("label", null, t("Job postings: {name}", { name }), h("span", { class: "hint" }, t("Evaluates postings and tracks applications; open source, runs in its own folder")));
+  // on its own page in Settings (web/plugins.js openPluginPage), whose heading names it
   if (!st.installed) {
-    el.replaceChildren(label, h("div", { class: "row wrap" }, h("span", { class: "muted" }, t("Not connected")),
+    el.replaceChildren(h("div", { class: "row wrap" }, h("span", { class: "muted" }, t("Not connected")),
       h("button", { class: "btn sm", onclick: () => { closeSettings(); setWorkspace("jobs"); } }, t("Set it up in {name}", { name }))));
     return;
   }
@@ -603,7 +603,7 @@ function paintJobsSettings(el = $("#jobs-settings")) {
   const cvLang = s.cv_lang && resumeLangs.includes(s.cv_lang) ? s.cv_lang : (resumeLangs.includes("en") ? "en" : resumeLangs[0]);
   const checkRow = (key, text) => h("button", { type: "button", class: "check-row", role: "checkbox", "aria-checked": String(!!s[key]),
     onclick: () => { jobsPending[key] = !s[key]; paintJobsSettings(); } }, h("span", { class: "check" + (s[key] ? " on" : "") }), text);
-  el.replaceChildren(...[label,
+  el.replaceChildren(...[h("div", { class: "sub-label" }, t("Its folder")),
     h("div", { class: "data-path" }, st.root),
     h("div", { class: "row wrap" },
       h("span", { class: "chip" }, `v${st.version || "?"}`), upLine,
@@ -1061,7 +1061,8 @@ function initWorkspaces() {
   restoreHunt();
   restorePw();
   paintJobsSwitch();
-  paintPluginButtons();   // the plugins are loaded by now (app.js main)
+  paintPluginButtons();   // the plugins are loaded by now (app.js main); the whole bar takes its saved order
+  initWsDrag();
   const last = store("ws");
   setWorkspace(["jobs", "fill", "plan"].includes(last) || wsPlugin(last) ? last : "resume");
 }

@@ -16,6 +16,7 @@ from core import dialogs, i18n
 from core.browser import ManagedBrowser
 from core.agents import AgentHub
 from core.chat import ChatRunner, ChatStore
+from core.codeguard import CodeGuard
 from core.server import App, HttpError, TextResponse, running_instance
 from core.watcher import FileWatcher, SignatureWatcher
 from core.webhost import WebHost
@@ -151,6 +152,10 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
     hub = AgentHub(studio.data_dir, studio.store.cache_dir)
     chats = ChatRunner(app.bus, ChatStore(studio.store.state_dir / "chats"), cwd=studio.data_dir, hub=hub)
     chats.naming_dir = studio.store.cache_dir / "naming"
+    # the app's own code is read-only to every chat; what inside its folder is data stays writable
+    local = inst.prefs.path.parent if inst.prefs else LOCAL
+    chats.guard = CodeGuard(ROOT, lambda: [studio.store.state_dir, studio.store.path, studio.store.cache_dir,
+                                           local, ROOT / ".local", ROOT / ".cache"])
     tracker = EvidenceTracker(studio.store.state_dir)
     for agent_id, info in hub.infos.items():
         if agent_id == "claude" or info.agent.installed():

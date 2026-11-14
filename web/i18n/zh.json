@@ -410,7 +410,6 @@
  "Evaluate: {posting}": "评估：{posting}",
  "Evaluated": "已评估",
  "Evaluated on": "评估日期",
- "Evaluates postings and tracks applications; open source, runs in its own folder": "评估招聘信息、记录投递；开源，在独立文件夹中运行",
  "Events": "事件",
  "Every bullet in the current preview already fits on one line": "当前预览中所有要点均为单行",
  "Every bullet must fit on one line with the current template and layout (the user's hard rule: one line looks better). When done, run {cmd} to check: keep shortening the bullets it lists as \"take more than one line\" until all fit; the percentage is how much of a line the text fills, so 112% means cutting about 12%.": "每条要点在当前模板和版面下只占一行（这是用户的硬要求，一行更美观）。改完运行 {cmd} 检查：输出里列出的「take more than one line」的要点要继续精简，直到全部一行；百分比表示文字占一行的多少，112% 就是大约要删掉 12%。",
@@ -578,7 +577,6 @@
  "Its {n} application goes too. The versions that were sent stay with their subsets.": "其 {n} 条投递将一并删除。已提交的版本仍保留在各自的子集中。",
  "JD": "JD",
  "Job description": "职位描述（JD）",
- "Job postings: {name}": "招聘信息：{name}",
  "Job search background, constraints, preferences": "求职背景、限制、偏好",
  "Job titles to also search": "其他可搜索的职位名称",
  "Kai / Fangsong": "楷体 / 仿宋",
@@ -2281,5 +2279,14 @@
  "Evaluates job postings, scores how well they fit your resume and keeps a tracker of your applications, in its own interface (a workspace in the top bar). Turning it off keeps its folder, evaluations and tracker.": "评估招聘岗位，按简历计算匹配度，并记录投递进度；在其自身的界面中使用（顶栏中的独立工作区）。停用后，其文件夹、评估结果与投递记录均予保留。",
  "Open source (MIT) by santifer": "开源（MIT），作者 santifer",
  "Optional workspaces, each with its own place in the top bar: career-ops, talent programmes, civil service exams, PhDs… Turning one off keeps its records.": "可选的工作区，每个插件在顶栏中拥有独立的位置：career-ops、人才引进、考公考编、博士申请等。停用插件不会删除其记录。",
- "career-ops": "career-ops"
+ "career-ops": "career-ops",
+ "A workspace of its own in the top bar. Turning it off keeps its records.": "在顶栏中拥有独立的工作区。停用后其记录予以保留。",
+ "About this plugin": "关于此插件",
+ "Blocked: the AI tried to change Resume Studio's own code ({path})": "已阻止：AI 试图修改 Resume Studio 自身的代码（{path}）",
+ "Its folder": "所在文件夹",
+ "Its tables": "数据表",
+ "Kept in your data folder, with the rest of your data": "与其他数据一同保存在数据文件夹中",
+ "This plugin is no longer installed.": "此插件已卸载。",
+ "Turn it on and press Done: its version, checks and the CV it reads then show here.": "启用并点击“完成”后，此处将显示其版本、检查结果及其读取的简历。",
+ "{n} record": "{n} 条记录"
 }

@@ -89,6 +89,15 @@ def codex():
             decision = (got.get("result") or {}).get("decision")
             answer = f"decision={json.dumps(decision)} "
             n("item/completed", {"item": {**item, "status": "completed" if decision != "decline" else "declined", "aggregatedOutput": "hi\n", "exitCode": 0}})
+        if "EDIT:" in text:   # a file change outside the sandbox's writable roots: Codex asks first
+            path = text.split("EDIT:", 1)[1].split()[0]
+            item = {"type": "fileChange", "id": "fc-1", "changes": [{"path": path, "kind": {"type": "update"}, "diff": "-a\n+b"}], "status": "inProgress"}
+            n("item/started", {"item": item})
+            out({"method": "item/fileChange/requestApproval", "id": 902, "params": {"threadId": tid, "turnId": turn_id, "itemId": "fc-1", "reason": "outside the sandbox"}})
+            got = wait_answer(902, timeout=3) or {}
+            decision = (got.get("result") or {}).get("decision")
+            answer = f"edit={json.dumps(decision)} "
+            n("item/completed", {"item": {**item, "status": "completed" if decision == "accept" else "declined"}})
         if "QUESTION" in text:
             out({"method": "item/tool/requestUserInput", "id": 901, "params": {"threadId": tid, "turnId": turn_id, "itemId": "q-1", "isBlocking": True,
                  "questions": [{"id": "colour", "header": "Colour", "question": "Which colour?", "options": [{"label": "Red", "description": ""}, {"label": "Blue", "description": ""}]}]}})

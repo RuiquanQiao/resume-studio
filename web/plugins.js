@@ -4,7 +4,9 @@
 // here is drawn from its manifest.
 "use strict";
 
-const PL = { list: [], records: {}, loaded: false };
+const PL = { list: [], records: {}, loaded: false, order: (() => {   // order: the top bar's workspaces, as dragged
+  try { const v = JSON.parse(localStorage.getItem("rs:ws-order") || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+})() };
 // a plugin's {lang: text} label in the window's language, else English, else any
 const L = (x) => !x ? "" : typeof x === "string" ? x : x[I18N.lang] || x.en || Object.values(x)[0] || "";
 const PCHIP = { gray: "s-plain", blue: "pc-blue", green: "pc-green", yellow: "pc-yellow", orange: "pc-orange", red: "pc-red", purple: "pc-purple" };
@@ -14,6 +16,7 @@ async function loadPlugins() {
   try {
     const r = await api("GET", "/api/plugins");
     PL.list = r.plugins || []; PL.records = r.records || {};
+    if (Array.isArray(r.ws_order)) { PL.order = r.ws_order; store("ws-order", JSON.stringify(r.ws_order)); }
   } catch (e) { /* kept as they were */ }
   PL.loaded = true;
 }
@@ -95,11 +98,15 @@ function paintPluginspaceNow(el) {
 // to drag the window by: buttons that don't fit go into a "more" menu, the one on screen never (the priority+
 // pattern, as browsers' bookmark bars and VS Code's activity bar do)
 const DRAG_ROOM = 120;   // px of the top bar left empty, at the least
+// the plugins in the order the top bar shows them (Ctrl+5… follow it)
+const wsRank = (ws, i) => { const k = PL.order.indexOf(ws); return k < 0 ? 1000 + i : k; };
+const pluginsInBar = () => pluginsOn().map((p, i) => [p, wsRank("p." + p.id, i)]).sort((a, b) => a[1] - b[1]).map(([p]) => p);
+
 function paintPluginButtons() {
   const sw = $("#ws-switch");
   if (!sw) return;
   for (const b of sw.querySelectorAll(".plugin-ws, .ws-more")) b.remove();
-  pluginsOn().forEach((p, i) => {
+  pluginsInBar().forEach((p, i) => {
     const name = L(p.manifest.name), ws = "p." + p.id;
     sw.append(h("button", { type: "button", class: "ws-btn plugin-ws" + (W.ws === ws ? " on" : ""), role: "tab", "data-ws": ws,
       "aria-selected": String(W.ws === ws), title: i < 5 ? `${name} (Ctrl+${i + 5})` : name, onclick: () => setWorkspace(ws) },
@@ -107,7 +114,77 @@ function paintPluginButtons() {
   });
   sw.append(h("button", { type: "button", class: "ws-btn ws-more hidden", "aria-haspopup": "menu", title: t("More workspaces"),
     "aria-label": t("More workspaces"), onclick: (e) => openMoreWorkspaces(e.currentTarget) }, icon("more")));
+  orderWsSwitch(sw);
   fitWsSwitch();
+}
+
+// ---- the top bar's workspaces are dragged into any order, like a browser's tabs; the order is this computer's
+// (prefs.json ws_order), so a new port or a restart keeps it. A workspace never placed keeps its default spot
+function orderWsSwitch(sw = $("#ws-switch")) {
+  if (!sw) return;
+  const btns = [...sw.querySelectorAll(".ws-btn:not(.ws-more)")];
+  const more = sw.querySelector(".ws-more");
+  btns.map((b, i) => [b, wsRank(b.dataset.ws, i)]).sort((a, b) => a[1] - b[1]).forEach(([b]) => sw.insertBefore(b, more));
+  document.documentElement.classList.remove("ws-ordering");
+}
+
+function initWsDrag(sw = $("#ws-switch")) {
+  if (!sw || sw.dataset.drag) return;
+  sw.dataset.drag = "1";
+  sw.addEventListener("pointerdown", (e) => {
+    const b = e.target.closest(".ws-btn");
+    if (!b || b.classList.contains("ws-more") || e.button !== 0) return;
+    const x0 = e.clientX;
+    let grab = 0, moved = false;
+    const shown = () => [...sw.querySelectorAll(".ws-btn:not(.ws-more)")].filter((x) => x !== b && x.getClientRects().length);
+    const move = (ev) => {
+      if (!moved) {
+        if (Math.abs(ev.clientX - x0) < 5) return;   // a click, not a drag
+        moved = true;
+        grab = x0 - b.getBoundingClientRect().left;
+        b.setPointerCapture(ev.pointerId);
+        sw.classList.add("ws-sorting"); b.classList.add("ws-dragging");
+        closeFloat();
+      }
+      // the button follows the pointer; the one it passes the middle of trades places with it, sliding over
+      const box = sw.getBoundingClientRect();
+      const left = Math.max(box.left, Math.min(box.right - b.offsetWidth, ev.clientX - grab));
+      const mid = left + b.offsetWidth / 2;
+      const others = shown();
+      const before = others.find((x) => { const r = x.getBoundingClientRect(); return mid < r.left + r.width / 2; }) || sw.querySelector(".ws-more");
+      if (b.nextElementSibling !== before) {
+        const was = new Map(others.map((x) => [x, x.getBoundingClientRect().left]));
+        sw.insertBefore(b, before);
+        for (const [x, l] of was) {
+          const dx = l - x.getBoundingClientRect().left;
+          if (!dx) continue;
+          x.style.transition = "none"; x.style.transform = `translateX(${dx}px)`;
+          requestAnimationFrame(() => { x.style.transition = ""; x.style.transform = ""; });
+        }
+      }
+      b.style.transform = "";
+      b.style.transform = `translateX(${left - b.getBoundingClientRect().left}px)`;
+    };
+    const up = () => {
+      sw.removeEventListener("pointermove", move);
+      sw.removeEventListener("pointerup", up);
+      sw.removeEventListener("pointercancel", up);
+      if (!moved) return;
+      b.classList.remove("ws-dragging"); sw.classList.remove("ws-sorting");
+      b.style.transform = "";
+      // the click that ends a drag doesn't switch the workspace (it comes right after pointerup, if at all)
+      const eat = (c) => { c.stopPropagation(); c.preventDefault(); };
+      sw.addEventListener("click", eat, { capture: true, once: true });
+      setTimeout(() => sw.removeEventListener("click", eat, { capture: true }), 0);
+      PL.order = [...sw.querySelectorAll(".ws-btn:not(.ws-more)")].map((x) => x.dataset.ws);
+      store("ws-order", JSON.stringify(PL.order));
+      api("PUT", "/api/workspace-order", { order: PL.order }).catch((err) => toast(err.message));
+      paintPluginButtons();   // Ctrl+5… and their tips follow the new order
+    };
+    sw.addEventListener("pointermove", move);
+    sw.addEventListener("pointerup", up);
+    sw.addEventListener("pointercancel", up);
+  });
 }
 
 // the empty width of the top bar: what its buttons and texts don't take
@@ -437,30 +514,19 @@ function pluginsSettingsField() {
   pendingPlugins = {};
   const box = h("div", { class: "field", id: "plugins-settings" });
   const paint = () => {
-    // career-ops comes first: a plugin with code of its own (jobs.js), its switch saved with its other settings
-    const coOn = jobsPending.on ?? jobsOn();
+    // each plugin: its switch, and a gear that opens its own page of settings (openPluginPage); career-ops first
+    const gear = (id, name) => h("button", { type: "button", class: "btn icon ghost plugin-gear", "data-open": id,
+      title: t("{name} settings", { name }), "aria-label": t("{name} settings", { name }), onclick: () => openPluginPage(id) }, icon("settings"));
     const co = h("div", { class: "plugin-row", "data-plugin": "career-ops" },
-      h("button", { type: "button", class: "check-row", role: "checkbox", "aria-checked": String(coOn),
-        onclick: () => {
-          if (coOn === jobsOn()) jobsPending.on = !coOn; else delete jobsPending.on;
-          paint(); paintJobsSettings();
-          const tb = $("#tracker-settings"); if (tb && tb.repaint) tb.repaint();
-        } },
-        h("span", { class: "check" + (coOn ? " on" : "") }),
-        h("span", null, jobsTool().name,
-          h("span", { class: "hint" }, t("Evaluates job postings, scores how well they fit your resume and keeps a tracker of your applications, in its own interface (a workspace in the top bar). Turning it off keeps its folder, evaluations and tracker.")),
-          h("span", { class: "plugin-meta" }, [t("Comes with Resume Studio"), t("Open source (MIT) by santifer")].join(" · ")))));
+      coSwitch(paint, jobsTool().name, h("span", { class: "hint" }, t("Evaluates job postings, scores how well they fit your resume and keeps a tracker of your applications, in its own interface (a workspace in the top bar). Turning it off keeps its folder, evaluations and tracker.")),
+        h("span", { class: "plugin-meta" }, [t("Comes with Resume Studio"), t("Open source (MIT) by santifer")].join(" · "))),
+      gear("career-ops", jobsTool().name));
     const rows = [co, ...PL.list.map((p) => {
       if (!p.manifest) return h("div", { class: "plugin-row bad" }, h("span", { class: "fs-status bad" }, icon("alert"), t("{name} doesn't load: {why}", { name: p.id, why: p.error })));
       const m = p.manifest;
-      const on = pendingPlugins[p.id] ?? p.on;
       return h("div", { class: "plugin-row", "data-plugin": p.id },
-        h("button", { type: "button", class: "check-row", role: "checkbox", "aria-checked": String(on), onclick: () => { pendingPlugins[p.id] = !on; paint(); } },
-          h("span", { class: "check" + (on ? " on" : "") }),
-          h("span", null, L(m.name),
-            h("span", { class: "hint" }, L(m.description)),
-            h("span", { class: "plugin-meta" }, [`v${m.version}`, p.source === "bundled" ? t("Comes with Resume Studio") : m.author, p.source === "market" && t("From the plugin market")].filter(Boolean).join(" · ")))),
-        p.source === "market" && h("button", { class: "btn sm ghost", onclick: () => uninstallPlugin(p, paint) }, t("Uninstall")));
+        pluginSwitch(p, paint, L(m.name), h("span", { class: "hint" }, L(m.description)), h("span", { class: "plugin-meta" }, pluginMeta(p))),
+        gear(p.id, L(m.name)));
     })];
     box.replaceChildren(
       h("label", null, t("Plugins"), h("span", { class: "hint" }, t("Optional workspaces, each with its own place in the top bar: career-ops, talent programmes, civil service exams, PhDs… Turning one off keeps its records."))),
@@ -468,7 +534,92 @@ function pluginsSettingsField() {
       h("div", { class: "row wrap" }, h("button", { class: "btn sm", id: "plugin-market-open", onclick: () => openMarket(paint) }, icon("download"), t("Browse the plugin market"))));
   };
   paint();
+  box.repaint = paint;   // a plugin's page changed a switch: the list shows it on the way back
   return box;
+}
+
+const pluginMeta = (p) => [`v${p.manifest.version}`, p.source === "bundled" ? t("Comes with Resume Studio") : p.manifest.author,
+  p.source === "market" && t("From the plugin market")].filter(Boolean).join(" · ");
+
+// a plugin's switch (saved on Done, like the rest of Settings), as a row with its name and `extra` under it
+function pluginSwitch(p, repaint, label, ...extra) {
+  const on = pendingPlugins[p.id] ?? p.on;
+  return h("button", { type: "button", class: "check-row", role: "checkbox", "aria-checked": String(on),
+    onclick: () => { pendingPlugins[p.id] = !on; repaint(); } },
+  h("span", { class: "check" + (on ? " on" : "") }), h("span", null, label, ...extra));
+}
+function coSwitch(repaint, label, ...extra) {
+  const on = jobsPending.on ?? jobsOn();
+  return h("button", { type: "button", class: "check-row", role: "checkbox", "aria-checked": String(on),
+    onclick: () => {
+      if (on === jobsOn()) jobsPending.on = !on; else delete jobsPending.on;
+      repaint(); paintJobsSettings();
+      const tb = $("#tracker-settings"); if (tb && tb.repaint) tb.repaint();
+    } },
+  h("span", { class: "check" + (on ? " on" : "") }), h("span", null, label, ...extra));
+}
+
+// ---- a plugin's own page, inside the Settings dialog: the list steps aside, Back brings it back where it was
+// (as macOS System Settings and VS Code's extension pages do). What is changed here is saved on Done too.
+function openPluginPage(id) {
+  const body = $(".modal.settings .settings-body");
+  const main = body && body.querySelector(".settings-main");
+  if (!main) return;
+  const old = body.querySelector(".settings-sub");
+  if (old) old.remove();
+  const scroll = body.scrollTop;
+  const sub = h("div", { class: "settings-sub", "data-plugin": id });
+  const back = () => {
+    sub.remove();
+    main.classList.remove("hidden");
+    const list = $("#plugins-settings");
+    if (list && list.repaint) list.repaint();
+    const tb = $("#tracker-settings"); if (tb && tb.repaint) tb.repaint();
+    body.scrollTop = scroll;
+    const g = list && list.querySelector(`.plugin-gear[data-open="${CSS.escape(id)}"]`);
+    if (g) g.focus();
+  };
+  const head = () => h("button", { type: "button", class: "btn sm ghost settings-back", onclick: back }, icon("chevLeft"), t("Settings"));
+  sub.back = back;
+  // replaceChildren writes false and null as text: they are dropped first
+  const draw = () => { sub.replaceChildren(head(), ...pluginPage(id, draw).filter(Boolean)); };
+  draw();
+  main.classList.add("hidden");
+  body.append(sub);
+  body.scrollTop = 0;
+  const first = sub.querySelector(".check-row");
+  if (first) first.focus();
+}
+
+function pluginPage(id, repaint) {
+  if (id === "career-ops") {
+    return [
+      h("h3", null, jobsTool().name),
+      h("p", null, t("Evaluates job postings, scores how well they fit your resume and keeps a tracker of your applications, in its own interface (a workspace in the top bar). Turning it off keeps its folder, evaluations and tracker.")),
+      h("div", { class: "field" }, coSwitch(repaint, t("Turn on"), h("span", { class: "hint" }, [t("Comes with Resume Studio"), t("Open source (MIT) by santifer")].join(" · ")))),
+      jobsOn() && jobsPending.on !== false ? jobsSettingsSection()
+        : h("p", { class: "settings-note", id: "jobs-off-note" }, t("Turn it on and press Done: its version, checks and the CV it reads then show here.")),
+    ];
+  }
+  const p = PL.list.find((x) => x.id === id);
+  if (!p || !p.manifest) return [h("p", { class: "muted" }, t("This plugin is no longer installed."))];
+  const m = p.manifest;
+  const recs = PL.records[p.id] || {};
+  return [
+    h("h3", null, L(m.name)),
+    h("p", null, L(m.description)),
+    h("div", { class: "field" }, pluginSwitch(p, repaint, t("Turn on"), h("span", { class: "hint" }, t("A workspace of its own in the top bar. Turning it off keeps its records.")))),
+    h("div", { class: "field" }, h("label", null, t("Its tables"), h("span", { class: "hint" }, t("Kept in your data folder, with the rest of your data"))),
+      h("div", { class: "plugin-tables" }, m.collections.map((c) => h("div", { class: "plugin-table", "data-collection": c.id },
+        h("span", { class: "plugin-table-name" }, L(c.name)),
+        // an off plugin's records aren't read (they stay in the data folder): no count rather than a false 0
+        p.on && h("span", { class: "plugin-table-n" }, t("{n} record", { n: (recs[c.id] || []).length }, "{n} records")))))),
+    h("div", { class: "field" }, h("label", null, t("About this plugin")),
+      h("p", { class: "plugin-meta" }, pluginMeta(p)),
+      m.homepage && h("a", { href: m.homepage, "data-ext": "", class: "c-link plugin-home" }, siteName(m.homepage))),
+    p.source === "market" && h("div", { class: "row" }, h("button", { class: "btn sm danger-soft", onclick: () => uninstallPlugin(p, () => { const s = $(".settings-sub"); if (s && s.back) s.back(); }) },
+      icon("trash"), t("Uninstall"))),
+  ];
 }
 
 async function applyPlugins() {

@@ -1766,7 +1766,8 @@ function openSettings(section = null) {
   document.addEventListener("keydown", onKey);
   root.replaceChildren(h("div", { class: "modal-back", onmousedown: (e) => { if (e.target === e.currentTarget) close(); } },
     h("div", { class: "modal settings", role: "dialog", "aria-modal": "true", "aria-label": t("Settings") },
-      h("div", { class: "settings-body" },
+      // a plugin's own page takes the place of this list (web/plugins.js openPluginPage)
+      h("div", { class: "settings-body" }, h("div", { class: "settings-main" },
       h("h3", null, t("Settings")),
       h("p", null, t("These belong to this computer, not to your resume.")),
       agentSettingsField(),
@@ -1782,11 +1783,10 @@ function openSettings(section = null) {
           h("button", { class: "btn sm", onclick: exportData }, icon("download"), t("Export all as a zip…")),
           h("button", { class: "btn sm", onclick: () => changeDataFile("move") }, icon("folder"), t("Move to another folder…")))),
       trackerField(),
-      pluginsSettingsField(),
-      jobsSettingsSection()),
+      pluginsSettingsField())),
       h("div", { class: "acts" }, h("button", { class: "btn primary", onclick: done }, t("Done"))))));
   setTimeout(() => {
-    if (section === "jobs") { const el = $("#jobs-settings"); el.scrollIntoView({ block: "start" }); el.classList.add("flash"); }
+    if (section === "jobs") openPluginPage("career-ops");
     else $(".modal .select", root).focus();
   }, 0);
 }
@@ -2794,7 +2794,7 @@ function wire() {
     if ((e.ctrlKey || e.metaKey) && e.key === ",") { e.preventDefault(); openSettings(); }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && ["1", "2", "3", "4"].includes(e.key) && (e.key !== "2" || jobsOn())) { e.preventDefault(); setWorkspace({ 1: "resume", 2: "jobs", 3: "fill", 4: "plan" }[e.key]); }
     // Ctrl+5…9: the plugins' workspaces, in the top bar's order (web/plugins.js)
-    else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && /^[5-9]$/.test(e.key) && pluginsOn()[e.key - 5]) { e.preventDefault(); setWorkspace("p." + pluginsOn()[e.key - 5].id); }
+    else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && /^[5-9]$/.test(e.key) && pluginsInBar()[e.key - 5]) { e.preventDefault(); setWorkspace("p." + pluginsInBar()[e.key - 5].id); }
     if (e.key === "Escape" && !Float.cur && ui.layoutOpen) { ui.layoutOpen = false; renderPreviewToolbar(); }
   });
   window.addEventListener("beforeunload", () => { saveDraft(); if (ui.headPending) ui.headPending(); });

@@ -2608,11 +2608,21 @@ def test_career_ops_is_an_optional_plugin(connected, page_all, server, data_file
         row = "#plugins-settings .plugin-row[data-plugin=career-ops] .check-row"
         assert pg.get_attribute(row, "aria-checked") == "true"
         assert pg.locator("#plugins-settings .plugin-row").first.get_attribute("data-plugin") == "career-ops"
-        pg.wait_for_selector("#jobs-settings .chk")
+        assert not pg.is_visible("#jobs-settings")                              # its details are on its own page
         assert pg.locator("#tracker-settings .seg").count() == 1
-        pg.click(row)
-        assert pg.get_attribute(row, "aria-checked") == "false"
-        assert not pg.is_visible("#jobs-settings") and pg.locator("#tracker-settings .seg").count() == 0
+        # its gear opens its page in place of the list; Back brings the list back
+        pg.click("#plugins-settings .plugin-gear[data-open=career-ops]")
+        pg.wait_for_selector(".settings-sub[data-plugin=career-ops] #jobs-settings .chk")
+        assert not pg.is_visible(".settings-main")
+        sub = ".settings-sub[data-plugin=career-ops]"
+        assert pg.inner_text(f"{sub} h3").strip() == "career-ops"
+        pg.click(f"{sub} > .field .check-row")                                   # off, on its page
+        pg.wait_for_selector(f"{sub} #jobs-off-note")
+        assert not pg.is_visible("#jobs-settings")
+        pg.click(f"{sub} .settings-back")
+        assert pg.is_visible(".settings-main") and pg.locator(".settings-sub").count() == 0
+        assert pg.get_attribute(row, "aria-checked") == "false"                  # the list shows what the page did
+        assert pg.locator("#tracker-settings .seg").count() == 0
         assert "false" not in pg.inner_text("#tracker-settings") and "null" not in pg.inner_text("#tracker-settings")
         assert on() is True                                                    # nothing saved before Done
         pg.click(".modal .acts .btn.primary")
@@ -2626,13 +2636,65 @@ def test_career_ops_is_an_optional_plugin(connected, page_all, server, data_file
         assert not pg.is_visible(tab)                                           # a new window opens without it
         pg.click("#settings-btn")
         pg.click(row)
-        assert pg.is_visible("#jobs-settings") is False                         # its details come after Done
+        pg.click("#plugins-settings .plugin-gear[data-open=career-ops]")
+        pg.wait_for_selector(".settings-sub #jobs-off-note")                     # its details come after Done
         pg.click(".modal .acts .btn.primary")
         wait_until(lambda: on() is True, msg="turned on")
         pg.wait_for_selector(tab, state="visible")
         open_job_search(pg)
     finally:
         server.req("PUT", "/api/jobs/settings", {"on": True})
+
+
+def test_a_plugins_gear_opens_its_own_settings(page_all, server):
+    """Every plugin has a gear in Settings → Plugins that opens its own page (user, 2026-11-14): its switch, its
+    tables and their records, where it comes from."""
+    pg = page_all
+    pg.click("#settings-btn")
+    pid = pg.locator("#plugins-settings .plugin-row[data-plugin]:not([data-plugin=career-ops])").first.get_attribute("data-plugin")
+    assert pg.locator("#plugins-settings .plugin-gear").count() == pg.locator("#plugins-settings .plugin-row:not(.bad)").count()
+    pg.click(f"#plugins-settings .plugin-gear[data-open={pid}]")
+    sub = f".settings-sub[data-plugin={pid}]"
+    pg.wait_for_selector(f"{sub} .plugin-table")
+    on = server.req("GET", "/api/plugins")[1]
+    on = next(p for p in on["plugins"] if p["id"] == pid)["on"]
+    assert pg.locator(f"{sub} .plugin-table").count() >= 1
+    assert pg.locator(f"{sub} .plugin-table-n").count() == (pg.locator(f"{sub} .plugin-table").count() if on else 0)   # off: no false 0
+    text = pg.inner_text(sub)
+    assert "false" not in text and "null" not in text and "undefined" not in text
+    before = pg.get_attribute(f"{sub} > .field .check-row", "aria-checked")
+    pg.click(f"{sub} > .field .check-row")
+    pg.click(f"{sub} .settings-back")
+    assert pg.get_attribute(f"#plugins-settings .plugin-row[data-plugin={pid}] .check-row", "aria-checked") != before
+    pg.keyboard.press("Escape")                                                 # nothing saved: Done wasn't pressed
+    pg.wait_for_selector(".modal.settings", state="detached")
+
+
+def test_workspaces_are_dragged_into_any_order(page_all, server):
+    """The top bar's workspaces are dragged into another order like a browser's tabs (user, 2026-11-14); the end
+    of a drag doesn't switch the workspace, and the order outlives a reload."""
+    pg = page_all
+    order = lambda: pg.eval_on_selector_all("#ws-switch .ws-btn:not(.ws-more)", "bs => bs.map(b => b.dataset.ws)")   # noqa: E731
+    try:
+        assert order()[:4] == ["resume", "jobs", "fill", "plan"]
+        was = pg.get_attribute("body", "data-ws")
+        src, dst = pg.locator(".ws-btn[data-ws=plan]").bounding_box(), pg.locator(".ws-btn[data-ws=resume]").bounding_box()
+        pg.mouse.move(src["x"] + src["width"] / 2, src["y"] + src["height"] / 2)
+        pg.mouse.down()
+        pg.mouse.move(dst["x"] + 4, dst["y"] + dst["height"] / 2, steps=12)
+        pg.mouse.up()
+        assert order()[:4] == ["plan", "resume", "jobs", "fill"]
+        assert pg.get_attribute("body", "data-ws") == was                         # a drag is not a click
+        assert server.req("GET", "/api/plugins")[1]["ws_order"][:4] == ["plan", "resume", "jobs", "fill"]
+        pg.reload()
+        pg.wait_for_selector("#ws-switch .ws-btn")
+        assert order()[:4] == ["plan", "resume", "jobs", "fill"]
+        pg.click(".ws-btn[data-ws=plan]")                                        # a plain click still switches
+        pg.wait_for_selector("body[data-ws=plan]")
+    finally:
+        server.req("PUT", "/api/workspace-order", {"order": []})
+        pg.evaluate("localStorage.removeItem('rs:ws-order')")
+        pg.reload()
 
 
 # ---------------------------------------------------------------- the Job search workspace
