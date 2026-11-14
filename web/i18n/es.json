@@ -2592,5 +2592,10 @@
  "from your skill levels, no AI": "según tus niveles, sin IA",
  "{n} more": "{n} más",
  "{n} of {all} skills set": "{n} de {all} indicadas",
- "Mastery {n}% · coverage {m}% ({k} not rated)": "Dominio {n} % · cobertura {m} % ({k} sin valorar)"
+ "Mastery {n}% · coverage {m}% ({k} not rated)": "Dominio {n} % · cobertura {m} % ({k} sin valorar)",
+ "Create “{name}”": "Crear «{name}»",
+ "in {n} entry": [
+  "en {n} entrada",
+  "en {n} entradas"
+ ]
 }

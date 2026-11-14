@@ -2403,5 +2403,7 @@
  "from your skill levels, no AI": "依据你的技能掌握程度，未使用 AI",
  "{n} more": "另有 {n} 项",
  "{n} of {all} skills set": "已设置 {n} / {all} 项",
- "Mastery {n}% · coverage {m}% ({k} not rated)": "掌握 {n}% · 覆盖 {m}%（{k} 项待评定）"
+ "Mastery {n}% · coverage {m}% ({k} not rated)": "掌握 {n}% · 覆盖 {m}%（{k} 项待评定）",
+ "Create “{name}”": "新建“{name}”",
+ "in {n} entry": "用于 {n} 段经历"
 }

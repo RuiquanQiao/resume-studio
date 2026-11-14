@@ -62,6 +62,42 @@ def digest(c: dict) -> str:
     return fingerprint({**c, "subset": {k: v for k, v in c["subset"].items() if k not in UNCOUNTED}})
 
 
+def shape(c: dict) -> list:
+    """What a version's number is made of: which entries it picks, in what order, and how its sections are
+    ordered and hidden. A version whose shape differs from the one before is a new major number (v2);
+    one that only changes the wording, the layout or the skills is a minor one (v2.1)."""
+    s = c.get("subset") or {}
+    used = {str(e.get("section")) for e in c.get("entries") or []}
+    hidden = {str(x) for x in s.get("hide_sections") or []}
+    order = [i for i in model.section_order({"sections": c.get("sections") or []}, s) if i in used and i not in hidden]
+    return [[str(x) for x in s.get("entries") or []], order]
+
+
+def names(vs: list[dict]) -> dict[int, str]:
+    """Each version's number as the user sees it, from the versions in the order they were kept: "2", "2.1"…"""
+    out, major, minor, prev = {}, 0, 0, None
+    for v in vs:
+        sh = shape(v.get("content") or {})
+        if prev is None or sh != prev:
+            major, minor = major + 1, 0
+        else:
+            minor += 1
+        out[v["n"]] = f"{major}" if not minor else f"{major}.{minor}"
+        prev = sh
+    return out
+
+
+def next_name(vs: list[dict], c: dict) -> str:
+    """The number `c` gets when it is kept next."""
+    if not vs:
+        return "1"
+    last = names(vs)[vs[-1]["n"]]
+    major, _, minor = last.partition(".")
+    if shape(vs[-1].get("content") or {}) != shape(c):
+        return str(int(major) + 1)
+    return f"{major}.{int(minor or 0) + 1}"
+
+
 def as_doc(c: dict) -> dict:
     """A version as a data file of its own, so the normal view and renderer can show it."""
     sub = {**c["subset"], "_shown": c.get("skills_shown") or {}}
@@ -120,12 +156,18 @@ class Versions:
         last = vs[-1] if vs else None
         h = digest(current)
         same = next((v["n"] for v in reversed(vs) if v.get("hash") == h), None)
+        # `latest` / `same_as` are the versions' running numbers (what an application keeps); `names` are what
+        # the window shows for them (v2.1), and `next` is the name the subset gets when kept now
         return {"count": len(vs), "latest": last["n"] if last else None,
-                "changed": last is None or last.get("hash") != h, "same_as": same}
+                "changed": last is None or last.get("hash") != h, "same_as": same,
+                "names": {str(k): x for k, x in names(vs).items()}, "next": next_name(vs, current)}
+
+    def name(self, subset_id: str, n: int) -> str:
+        return names(self.all(subset_id)).get(int(n), str(n))
 
     @staticmethod
-    def summary(v: dict) -> dict:
-        return {k: v.get(k) for k in ("n", "at", "note", "hash", "auto")}
+    def summary(v: dict, name: str | None = None) -> dict:
+        return {**{k: v.get(k) for k in ("n", "at", "note", "hash", "auto")}, "name": name or str(v.get("n"))}
 
     # ---- writing ---------------------------------------------------------
     def commit(self, subset_id: str, c: dict, note: str = "", auto: bool = False) -> tuple[dict, bool]:

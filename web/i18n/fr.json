@@ -2592,5 +2592,10 @@
  "from your skill levels, no AI": "d'après vos niveaux, sans IA",
  "{n} more": "{n} de plus",
  "{n} of {all} skills set": "{n} sur {all} indiquées",
- "Mastery {n}% · coverage {m}% ({k} not rated)": "Maîtrise {n} % · couverture {m} % ({k} non évaluées)"
+ "Mastery {n}% · coverage {m}% ({k} not rated)": "Maîtrise {n} % · couverture {m} % ({k} non évaluées)",
+ "Create “{name}”": "Créer « {name} »",
+ "in {n} entry": [
+  "dans {n} entrée",
+  "dans {n} entrées"
+ ]
 }

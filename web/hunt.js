@@ -80,7 +80,7 @@ function sentRoleChip(a) {
 function sentText(s) {
   if (!s) return "";
   const v = subsets().find((x) => x.id === s.subset);
-  return `${subsetName(v) || s.subset} · v${s.n}`;
+  return `${subsetName(v) || s.subset} · v${vName(s.subset, s.n)}`;
 }
 
 // ================================================================ data
@@ -804,14 +804,14 @@ function openSentPop(td, a) {
       const r = await api("POST", `/api/hunt/apps/${encodeURIComponent(a.id)}/sent`, { subset: pick.subset, ...(pick.n ? { n: pick.n } : {}) });
       applyState(r);
       closeFloat();
-      toast(t("Sent with “{name}” v{n}", { name: label, n: r.n }));
+      toast(t("Sent with “{name}” v{n}", { name: label, n: r.name || r.n }));
     } catch (e) { toast(e.message, { ms: 9000 }); }
     loadHunt({ quiet: true });
   };
   const paint = () => {
     const st = (pick.subset && versionStatus(pick.subset)) || {};
     const vs = pick.subset ? vers[pick.subset] : [];
-    const now = !pick.subset ? "" : st.same_as ? t("Same as v{n}", { n: st.same_as }) : t("kept as v{n}", { n: (st.latest || 0) + 1 });
+    const now = !pick.subset ? "" : st.same_as ? t("Same as v{n}", { n: vName(pick.subset, st.same_as) }) : t("kept as v{n}", { n: vNext(pick.subset) });
     panel.replaceChildren(...[
       h("div", { class: "sentpop-head" }, h("b", null, t("Resume sent")), h("span", { class: "muted" }, [c.name, a.role].filter(Boolean).join(" / "))),
       h("div", { class: "lb-group" }, t("Resume")),
@@ -822,7 +822,7 @@ function openSentPop(td, a) {
       pick.subset && h("div", { class: "sentpop-list", id: "sentpop-versions" },
         opt(pick.n === 0, t("As it is now"), { hint: now, onClick: () => { pick.n = 0; paint(); } }),
         vs == null ? h("div", { class: "muted sentpop-p" }, h("span", { class: "spin" }), t("Loading…"))
-          : vs.map((v) => opt(pick.n === v.n, `v${v.n}`, { hint: fmtWhen(v.at), desc: v.note || "", onClick: () => { pick.n = v.n; paint(); } }))),
+          : vs.map((v) => opt(pick.n === v.n, `v${v.name || v.n}`, { hint: fmtWhen(v.at), desc: v.note || "", onClick: () => { pick.n = v.n; paint(); } }))),
       (a.sent || []).length > 0 && h("div", { class: "lb-group" }, t("Sent so far")),
       (a.sent || []).length > 0 && h("div", { class: "sentpop-sent" }, [...a.sent].reverse().map((x) => h("div", { class: "sentpop-row" },
         h("span", { class: "sentpop-what" }, sentText(x)), h("span", { class: "muted" }, fmtWhen(x.at)),
@@ -1991,7 +1991,7 @@ function companyPage(v) {
   });
   const choices = subsets().filter((x) => x.id !== ALL);
   const pick = uiSelect({ id: "company-subset", label: t("Subset"), menuWidth: 300, value: c.subset || null, placeholder: t("Pick a subset"),
-    options: choices.map((x) => ({ value: x.id, label: subsetName(x), hint: (versionStatus(x.id) || {}).latest ? "v" + versionStatus(x.id).latest : "" })),
+    options: choices.map((x) => ({ value: x.id, label: subsetName(x), hint: (versionStatus(x.id) || {}).latest ? "v" + vName(x.id, versionStatus(x.id).latest) : "" })),
     onChange: (val) => editCompany(c.id, { subset: val }) });
   const st = c.subset ? versionStatus(c.subset) : null;
   const siteApps = apps.filter((a) => a.channel === "site");
@@ -2044,7 +2044,7 @@ function companyPage(v) {
       h("div", { class: "grid2" }, hfield(t("Where you sign up"), c.site, save("site"), { placeholder: "https://careers.example.com/campus", hint: keptHint(c, "site"), link: true }),
         hfield(t("Account"), c.account, save("account"), { placeholder: t("e.g. the phone or email you signed up with"), hint: t("never a password") })),
       h("div", { class: "field" }, h("label", null, t("Filled from"), h("span", { class: "hint" }, t("the subset this site gets"))), h("div", { class: "su-subset" }, pick.el,
-        st && h("span", { class: "chip" + (st.latest && !st.same_as ? " vd-changed" : "") }, !st.latest ? t("No versions yet") : st.same_as ? `v${st.same_as}` : t("v{n} · changed", { n: st.latest })),
+        st && h("span", { class: "chip" + (st.latest && !st.same_as ? " vd-changed" : "") }, !st.latest ? t("No versions yet") : st.same_as ? `v${vName(c.subset, st.same_as)}` : t("v{n} · changed", { n: vName(c.subset, st.latest) })),
         c.subset && c.subset_exists && h("button", { class: "btn sm ghost", onclick: () => previewSubset(c.subset) }, icon("file"), t("Preview")))),
       c.subset && !c.subset_exists && h("p", { class: "muted card-p" }, t("This subset is gone; pick another.")),
       companyProfileField(c),
@@ -2323,8 +2323,8 @@ async function sendCompany(c, unsent) {
   const st = versionStatus(c.subset) || {};
   const label = subsetName(subsets().find((x) => x.id === c.subset)) || c.subset;
   const lines = [
-    st.same_as ? t("“{name}” goes out as v{n}, as it is now.", { name: label, n: st.same_as })
-      : t("“{name}” is kept as v{n} first, so you'll always know what this site got.", { name: label, n: (st.latest || 0) + 1 }),
+    st.same_as ? t("“{name}” goes out as v{n}, as it is now.", { name: label, n: vName(c.subset, st.same_as) })
+      : t("“{name}” is kept as v{n} first, so you'll always know what this site got.", { name: label, n: vNext(c.subset) }),
     t("{n} role is marked Applied: {roles}.", { n: unsent.length, roles: unsent.map((a) => a.role).join(", ") }, "{n} roles are marked Applied: {roles}."),
     H.data && H.data.tracker === "career-ops" && t("They also go into {name}'s tracker.", { name: jobsTool().name }),
   ].filter(Boolean);
@@ -2333,7 +2333,7 @@ async function sendCompany(c, unsent) {
     const r = await api("POST", `/api/hunt/companies/${encodeURIComponent(c.id)}/sent`, {});
     applyState(r);
     H.view = { company: r.company, applications: r.applications, events: r.events };
-    toast(t("Sent with “{name}” v{n}", { name: label, n: r.n }));
+    toast(t("Sent with “{name}” v{n}", { name: label, n: r.name || r.n }));
     await loadHunt({ quiet: true });
   } catch (e) { toast(e.message, { ms: 9000 }); }
 }
@@ -2579,14 +2579,14 @@ async function addAppNote(a, text, on) {
 async function sendApp(a, subId) {
   const st = versionStatus(subId) || {};
   const label = subsetName(subsets().find((x) => x.id === subId)) || subId;
-  const msg = st.same_as ? t("“{name}” goes out as v{n}, as it is now.", { name: label, n: st.same_as })
-    : t("“{name}” is kept as v{n} first, so you'll always know what this posting got.", { name: label, n: (st.latest || 0) + 1 });
+  const msg = st.same_as ? t("“{name}” goes out as v{n}, as it is now.", { name: label, n: vName(subId, st.same_as) })
+    : t("“{name}” is kept as v{n} first, so you'll always know what this posting got.", { name: label, n: vNext(subId) });
   if (!(await modal({ title: t("Mark this application as sent?"), message: msg, ok: t("Mark as sent") }))) return;
   try {
     const r = await api("POST", `/api/hunt/apps/${encodeURIComponent(a.id)}/sent`, { subset: subId });
     applyState(r);
     H.view = { application: r.application, company: r.company, events: r.events };
-    toast(t("Sent with “{name}” v{n}", { name: label, n: r.n }));
+    toast(t("Sent with “{name}” v{n}", { name: label, n: r.name || r.n }));
     paintHunt();
     loadHunt({ quiet: true });
   } catch (e) { toast(e.message, { ms: 9000 }); }

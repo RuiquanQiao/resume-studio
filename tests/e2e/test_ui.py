@@ -440,8 +440,9 @@ def test_subset_versions_keep_compare_preview_and_go_back(page, server):
     assert "Shipped v2 to every user" in page.inner_text(".vdiff .dl-add")
     page.fill(".vnote-input", "加了一条")
     page.click(".vkeep .btn.primary")
-    wait_until(lambda: chip.inner_text().strip() == "v2", msg="kept as v2")
-    assert page.inner_text(".vrow[data-n='2'] .vtext") == "加了一条"
+    # only the wording changed: a minor number (2026-11-15), shown in the list too; the file still counts 1, 2
+    wait_until(lambda: chip.inner_text().strip() == "v1.1", msg="kept as v1.1")
+    assert page.inner_text(".vrow[data-n='2'] .vtext") == "加了一条" and page.inner_text(".vrow[data-n='2'] .vnum") == "v1.1"
     # look at v1 as it was, then back to now
     page.click(".vrow[data-n='1'] .vline .btn.sm")
     page.wait_for_selector("#viewing:not(.hidden)")
@@ -453,11 +454,18 @@ def test_subset_versions_keep_compare_preview_and_go_back(page, server):
     # go back to v1: now is v2 already, so nothing extra is kept
     page.click(".vrow[data-n='1'] .btn.icon")
     page.click(".float .menu-item:has-text('恢复到 v1')")
-    page.wait_for_selector(".modal:has-text('当前内容即为 v2')")
+    page.wait_for_selector(".modal:has-text('当前内容即为 v1.1')")
     page.click(".modal button:text('恢复到此版本')")
     wait_until(lambda: chip.inner_text().strip() == "v1", msg="back to v1")
     e = next(x for x in state(server)["doc"]["entries"] if x["id"] == eid)
     assert "Shipped v2" not in json.dumps(e) and page.locator(".vrow").count() == 2
+    # leaving an entry out changes what the resume is made of: the next one kept is a major number
+    v = subset(server)
+    v["entries"] = v["entries"][1:]
+    assert server.req("PUT", "/api/item", {"kind": "subset", "id": "RES-TECH-EN", "data": v, "base": None})[0] == 200
+    wait_until(lambda: "定稿为 v2" in page.inner_text(".vkeep .btn.primary"), msg="offered as v2")
+    page.click(".vkeep .btn.primary")
+    wait_until(lambda: chip.inner_text().strip() == "v2", msg="kept as v2")
 
 
 def test_job_from_all_starts_full_and_has_own_headline(page_all, server):
@@ -3557,3 +3565,46 @@ def test_skills_are_chips_with_how_well_you_have_them(page, server, data_file):
     pg.click(".skx-pop button:text-is('仍然显示')")
     wait_until(lambda: subset(server).get("show_skills") == ["Next.js"], msg="pinned on the subset")
     pg.wait_for_selector(chip + ":not(.off)")
+
+
+def test_typing_a_skill_searches_the_ones_you_have_and_enter_makes_a_new_one(page, server):
+    """2026-11-15: the tech field is a combobox. Typing searches the skills already in the catalog (any entry's);
+    Enter takes the highlighted one under its own name, or, when nothing matches, makes what was typed."""
+    pg = page
+    open_entry(pg, "EXP-005")
+    have = pg.evaluate("() => entryById('EXP-005').tech.map((x) => skillKey(display(x)))")
+    other = next(r for r in state(server)["skills"] if r["key"] not in have and len(r["name"]) > 3)
+    pg.click("#active .skx-input")
+    pg.keyboard.type(other["name"][:3].lower())
+    opt = pg.wait_for_selector(".skx-suggest:not([hidden]) .lb-opt.sel-hl")
+    assert opt.inner_text().startswith(other["name"]) or pg.locator(".skx-suggest .lb-opt", has_text=other["name"]).count() == 1
+    while pg.locator(".skx-suggest .lb-opt.sel-hl .lb-label").inner_text() != other["name"]:
+        pg.keyboard.press("ArrowDown")
+    pg.keyboard.press("Enter")
+    pg.wait_for_selector(f"#active .skx-chip:has(.skx-name:text-is('{other['name']}'))")   # the catalog's spelling
+    assert pg.locator("#active .skx-input").input_value() == ""
+
+    pg.keyboard.type("Zzqx Lang")                      # in no entry: the one choice is to make it
+    opts = pg.locator(".skx-suggest:not([hidden]) .lb-opt")
+    assert opts.count() == 1 and "Zzqx Lang" in opts.first.inner_text()
+    pg.keyboard.press("Enter")
+    pg.wait_for_selector("#active .skx-chip:has(.skx-name:text-is('Zzqx Lang'))")
+    wait_until(lambda: "Zzqx Lang" in json.dumps(next(e for e in state(server)["doc"]["entries"] if e["id"] == "EXP-005")["tech"]),
+               msg="the new skill saved")
+
+    pg.keyboard.type("zzqx lang")                      # already on this line: not offered again, nor made twice
+    assert pg.locator(".skx-suggest:not([hidden])").count() == 0
+    pg.keyboard.press("Control+a")
+    pg.keyboard.press("Backspace")
+    pg.keyboard.press("ArrowDown")                     # ↓ on an empty field lists what there is; Esc closes it
+    pg.wait_for_selector(".skx-suggest:not([hidden])")
+    pg.keyboard.press("Escape")
+    assert pg.locator(".skx-suggest:not([hidden])").count() == 0
+    assert pg.locator("#active").count() == 1          # Esc closed the list, not the card
+
+    pg.keyboard.type("Kub")                            # half a search, then a click elsewhere: kept in the box, nothing made
+    pg.click("#active .field > label >> nth=0")
+    assert pg.locator("#active .skx-input").input_value() == "Kub"
+    assert pg.locator(".skx-suggest:not([hidden])").count() == 0
+    pg.wait_for_timeout(600)
+    assert "Kub" not in json.dumps(next(e for e in state(server)["doc"]["entries"] if e["id"] == "EXP-005")["tech"])

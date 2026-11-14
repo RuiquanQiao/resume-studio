@@ -448,8 +448,8 @@ function openSubsetMenu() {
     { label: t("New subset"), hint: t("Blank, tick entries yourself"), icon: "plus", onClick: () => newSubset(null) },
     v && { label: job ? t("Duplicate this subset") : t("New subset (with every entry ticked)"), icon: "copy", onClick: () => newSubset(ui.subsetId) },
     job && "sep",
-    job && { label: t("Keep as v{n}…", { n: ((versionStatus() || {}).latest || 0) + 1 }), icon: "commit", disabled: !!(versionStatus() || {}).same_as,
-      hint: (versionStatus() || {}).same_as ? t("Same as v{n}", { n: versionStatus().same_as }) : "", onClick: () => commitVersion() },
+    job && { label: t("Keep as v{n}…", { n: vNext() }), icon: "commit", disabled: !!(versionStatus() || {}).same_as,
+      hint: (versionStatus() || {}).same_as ? t("Same as v{n}", { n: vName(ui.subsetId, versionStatus().same_as) }) : "", onClick: () => commitVersion() },
     job && { label: t("Version history"), icon: "history", onClick: () => select("versions", ui.subsetId) },
     "sep",
     { header: job ? t("Ask AI about this subset") : t("Ask AI about all entries") },
@@ -558,7 +558,7 @@ function outlineRows({ pop = false } = {}) {
     const st = versionStatus(v.id) || {};
     const row = nav("versions", t("Versions"), "history", v.id);
     row.append(h("span", { class: "nav-count" + (st.latest && !st.same_as ? " changed" : "") },
-      !st.latest ? "" : st.same_as ? `v${st.same_as}` : t("v{n} · changed", { n: st.latest })));
+      !st.latest ? "" : st.same_as ? `v${vName(v.id, st.same_as)}` : t("v{n} · changed", { n: vName(v.id, st.latest) })));
     out.push(nav("subset", t("Subset settings"), "settings", v.id), row);
   }
   out.push(h("div", { class: "lib-hint" + (job ? " job" : "") }, job
@@ -1886,6 +1886,10 @@ const VS = {
   viewing: null,                           // {subset, n}: the preview shows that version instead of now
 };
 const versionStatus = (id = ui.subsetId) => (S && S.subset_versions && S.subset_versions[id]) || null;
+// a version's number as shown (v2, v2.1: resume/versions.py `names`); `n` is its running number, kept by applications
+const vName = (id, n) => (n == null ? "" : ((versionStatus(id) || {}).names || {})[n]
+  || (VS.for === id && VS.list && ((VS.list.versions || []).find((x) => x.n === n) || {}).name) || String(n));
+const vNext = (id = ui.subsetId) => { const st = versionStatus(id) || {}; return st.next || String((st.latest || 0) + 1); };
 const versionsUrl = (id, rest = "") => `/api/subsets/${encodeURIComponent(id)}/versions${rest}`;
 const fmtWhen = (at) => { const d = new Date(at); return isNaN(d) ? at || "" : d.toLocaleString(LOCALE, { dateStyle: "medium", timeStyle: "short" }); };
 
@@ -1898,19 +1902,19 @@ function renderVersionChip() {
   if (!v || isAll() || !st) return;
   const changed = st.latest && !st.same_as;
   b.className = "vchip" + (changed ? " changed" : "") + (st.latest ? "" : " none");
-  b.replaceChildren(icon("history"), h("span", null, !st.latest ? t("No versions yet") : changed ? t("v{n} · changed", { n: st.latest }) : `v${st.same_as}`));
+  b.replaceChildren(icon("history"), h("span", null, !st.latest ? t("No versions yet") : changed ? t("v{n} · changed", { n: vName(ui.subsetId, st.latest) }) : `v${vName(ui.subsetId, st.same_as)}`));
   setTip(b, !st.latest ? t("Keep this subset as a version when you send it, so you always know what went out")
-    : changed ? t("Changed since v{n}: keep it as a version when you send it", { n: st.latest }) : t("Same as v{n}", { n: st.same_as }));
+    : changed ? t("Changed since v{n}: keep it as a version when you send it", { n: vName(ui.subsetId, st.latest) }) : t("Same as v{n}", { n: vName(ui.subsetId, st.same_as) }));
   b.onclick = () => openVersionMenu(b);
 }
 
 function openVersionMenu(anchor) {
   const st = versionStatus() || {};
-  const next = (st.latest || 0) + 1;
+  const next = vNext();
   openMenu(anchor, [
     { header: subsetName(subset()) },
     { label: t("Keep as v{n}…", { n: next }), icon: "commit", disabled: !!st.same_as,
-      hint: st.same_as ? t("Same as v{n}", { n: st.same_as }) : "", onClick: () => commitVersion() },
+      hint: st.same_as ? t("Same as v{n}", { n: vName(ui.subsetId, st.same_as) }) : "", onClick: () => commitVersion() },
     { label: t("Version history"), icon: "history", hint: st.count ? t("{n} version", { n: st.count }, "{n} versions") : "",
       onClick: () => select("versions", ui.subsetId) },
   ], { align: "start", focusFirst: false });
@@ -1929,8 +1933,7 @@ async function loadVersions(id, { quiet = false } = {}) {
 
 async function commitVersion(note = null) {
   const id = ui.subsetId;
-  const st = versionStatus(id) || {};
-  const n = (st.latest || 0) + 1;
+  const n = vNext(id);
   if (note === null) {
     note = await modal({ title: t("Keep as v{n}", { n }), optional: true, input: "", ok: t("Keep"),
       message: t("A version freezes what this subset says now, shared entries included. Send it, and you can always see, export or go back to exactly this."),
@@ -1943,13 +1946,13 @@ async function commitVersion(note = null) {
     const r = await api("POST", versionsUrl(id), { note });
     VS.for = id; VS.list = r;
     applyState(await api("GET", "/api/state"));
-    toast(r.created ? t("Kept as v{n}", { n: r.made.n }) : t("Nothing changed since v{n}", { n: r.made.n }));
+    toast(r.created ? t("Kept as v{n}", { n: r.made.name }) : t("Nothing changed since v{n}", { n: r.made.name }));
     if (ui.sel.kind === "versions") paintEditor({ keepScroll: true });
   } catch (e) { toast(t("Couldn't keep the version: {error}", { error: e.message })); }
 }
 
 async function editVersionNote(v) {
-  const note = await modal({ title: t("Note for v{n}", { n: v.n }), optional: true, input: v.note || "", ok: t("Save"),
+  const note = await modal({ title: t("Note for v{n}", { n: v.name || v.n }), optional: true, input: v.note || "", ok: t("Save"),
     placeholder: t("A note, e.g. sent with the autumn applications") });
   if (note === null) return;
   try { VS.list = await api("PUT", versionsUrl(VS.for, "/" + v.n), { note }); paintEditor({ keepScroll: true }); }
@@ -1992,16 +1995,16 @@ function versionsView() {
   const st = L.status;
   const out = [head];
   if (st) {
-    const next = (st.latest || 0) + 1;
+    const next = st.next || String((st.latest || 0) + 1);
     const note = h("input", { class: "vnote-input", placeholder: t("A note, e.g. sent with the autumn applications"), maxlength: 300, spellcheck: "false",
       "aria-label": t("Note for v{n}", { n: next }), onkeydown: (e) => { if (e.key === "Enter" && !e.isComposing && !keep.disabled) keep.click(); } });
     const keep = h("button", { class: "btn primary", disabled: !!st.same_as, onclick: () => commitVersion(note.value.trim()) }, icon("commit"), t("Keep as v{n}", { n: next }));
     const nowKey = st.latest ? `${st.latest}>now` : null;
-    out.push(card(t("Now"), !st.latest ? t("No versions yet") : st.same_as ? t("Same as v{n}", { n: st.same_as }) : t("Changed since v{n}", { n: st.latest }), [
+    out.push(card(t("Now"), !st.latest ? t("No versions yet") : st.same_as ? t("Same as v{n}", { n: vName(id, st.same_as) }) : t("Changed since v{n}", { n: vName(id, st.latest) }), [
       h("p", { class: "card-p muted" }, t("Keep a version whenever this subset goes out. The library is shared, so a version also freezes the wording of every entry it picks; notes and evidence stay private and aren't kept.")),
       h("div", { class: "vkeep" }, note, keep),
       nowKey && st.changed && h("button", { class: "btn sm ghost vshow" + (VS.open === nowKey ? " on" : ""), "aria-expanded": String(VS.open === nowKey), onclick: () => toggleChanges(st.latest, "now") },
-        icon(VS.open === nowKey ? "down" : "chevRight"), t("What changed since v{n}", { n: st.latest })),
+        icon(VS.open === nowKey ? "down" : "chevRight"), t("What changed since v{n}", { n: vName(id, st.latest) })),
       nowKey && VS.open === nowKey && changesEl(nowKey),
     ]));
   } else {
@@ -2014,8 +2017,8 @@ function versionsView() {
     const went = sentWith(id, x.n) || [];
     return h("div", { class: "vrow" + (open ? " open" : "") + (viewing ? " viewing" : ""), "data-n": x.n },
       h("div", { class: "vline" },
-        h("button", { class: "vtoggle", "aria-expanded": String(open), title: x.n > 1 ? t("What v{n} changed from v{m}", { n: x.n, m: x.n - 1 }) : t("What v1 holds"),
-          onclick: () => toggleChanges(x.n - 1, x.n) }, icon(open ? "down" : "chevRight"), h("span", { class: "vnum" }, "v" + x.n)),
+        h("button", { class: "vtoggle", "aria-expanded": String(open), title: x.n > 1 ? t("What v{n} changed from v{m}", { n: x.name, m: vName(id, x.n - 1) }) : t("What v1 holds"),
+          onclick: () => toggleChanges(x.n - 1, x.n) }, icon(open ? "down" : "chevRight"), h("span", { class: "vnum" }, "v" + (x.name || x.n))),
         h("div", { class: "vmain" },
           h("div", { class: "vtext" + (x.note ? "" : " muted") }, x.note || (x.auto ? t("Kept by itself before going back") : t("No note"))),
           h("div", { class: "vmeta" }, fmtWhen(x.at), st && st.same_as === x.n ? " · " + t("same as now") : "")),
@@ -2034,10 +2037,10 @@ function versionRowMenu(anchor, x) {
   const st = (VS.list && VS.list.status) || null;
   openMenu(anchor, [
     st && { label: t("Compare with now"), icon: "git", onClick: () => toggleChanges(x.n, "now") },
-    { label: t("Export PDF"), hint: `${VS.for}-v${x.n}.pdf`, icon: "file", onClick: () => exportVersion(VS.for, x.n) },
+    { label: t("Export PDF"), hint: `${VS.for}-v${x.name || x.n}.pdf`, icon: "file", onClick: () => exportVersion(VS.for, x.n) },
     { label: t("Edit note"), icon: "pen", onClick: () => editVersionNote(x) },
     "sep",
-    { label: st ? t("Go back to v{n}…", { n: x.n }) : t("Bring the subset back as v{n}…", { n: x.n }), icon: "undo", onClick: () => restoreVersion(x.n) },
+    { label: st ? t("Go back to v{n}…", { n: x.name || x.n }) : t("Bring the subset back as v{n}…", { n: x.name || x.n }), icon: "undo", onClick: () => restoreVersion(x.n) },
   ], { minWidth: 240 });
 }
 
@@ -2070,7 +2073,7 @@ function paintViewing() {
   box.classList.toggle("hidden", !on);
   renderIssues();
   if (!on) { box.replaceChildren(); return; }
-  box.replaceChildren(icon("history"), h("span", { class: "vw-text" }, t("Previewing v{n}, as it was kept. Edits you make now don't show here.", { n: VS.viewing.n })),
+  box.replaceChildren(icon("history"), h("span", { class: "vw-text" }, t("Previewing v{n}, as it was kept. Edits you make now don't show here.", { n: vName(VS.viewing.subset, VS.viewing.n) })),
     h("button", { class: "btn sm", onclick: stopViewing }, t("Back to now")));
 }
 
@@ -2089,16 +2092,17 @@ async function restoreVersion(n) {
   try { imp = await api("GET", versionsUrl(id, `/${n}/restore`)); } catch (e) { toast(e.message); return; }
   const st = VS.list && VS.list.status;
   const name = subsetName(subsets().find((x) => x.id === id)) || id;
+  const nn = vName(id, n);
   const list = (xs) => xs.map((x) => t("“{name}”", { name: x })).join(t(", "));
-  const lines = [!st ? t("“{name}” comes back as it was in v{n}.", { name, n })
-    : st.same_as ? t("What “{name}” says now is v{m}, so you can come back to it.", { name, m: st.same_as })
+  const lines = [!st ? t("“{name}” comes back as it was in v{n}.", { name, n: nn })
+    : st.same_as ? t("What “{name}” says now is v{m}, so you can come back to it.", { name, m: vName(id, st.same_as) })
     : t("What “{name}” says now is kept as a version first, so you can come back to it.", { name })];
   if (imp.entries.length) lines.push(t("These library entries go back to their wording then: {list}.", { list: list(imp.entries) }));
   if (imp.others.length) lines.push(t("Other subsets that use them change too: {list}.", { list: list(imp.others) }));
   if (imp.back.length) lines.push(t("Deleted since, and put back into the library: {list}.", { list: list(imp.back) }));
   if (imp.profile) lines.push(t("Your name and contacts go back too, and every subset shows them."));
   if (imp.sections) lines.push(t("Section titles go back too."));
-  const ok = await modal({ title: t("Go back to v{n}?", { n }), message: h("div", { class: "modal-lines" }, lines.map((l) => h("p", null, l))),
+  const ok = await modal({ title: t("Go back to v{n}?", { n: nn }), message: h("div", { class: "modal-lines" }, lines.map((l) => h("p", null, l))),
     ok: t("Go back to it"), danger: imp.others.length > 0 || imp.profile });
   if (!ok) return;
   await saveDraft();
@@ -2110,7 +2114,7 @@ async function restoreVersion(n) {
     paintViewing();
     await loadVersions(id, { quiet: true });
     const kept = VS.list && VS.list.versions[0];
-    toast(kept && kept.auto && kept.n !== n ? t("Back to v{n}; what it said before is v{m}", { n, m: kept.n }) : t("Back to v{n}", { n }));
+    toast(kept && kept.auto && kept.n !== n ? t("Back to v{n}; what it said before is v{m}", { n: vName(id, n), m: kept.name || kept.n }) : t("Back to v{n}", { n: vName(id, n) }));
     clearPages();
     scheduleRender(0);
   } catch (e) { toast(t("Couldn't go back: {error}", { error: e.message })); }

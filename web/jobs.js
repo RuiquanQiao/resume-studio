@@ -241,8 +241,8 @@ function applicationsList() {
 function sentChip(sent) {
   if (!sent) return null;
   const v = subsets().find((x) => x.id === sent.subset);
-  return h("span", { class: "chip sent-chip", title: t("Sent on {date} with “{name}” v{n}", { date: (sent.at || "").slice(0, 10), name: subsetName(v) || sent.subset, n: sent.n }) },
-    `${subsetName(v) || sent.subset} · v${sent.n}`);
+  return h("span", { class: "chip sent-chip", title: t("Sent on {date} with “{name}” v{n}", { date: (sent.at || "").slice(0, 10), name: subsetName(v) || sent.subset, n: vName(sent.subset, sent.n) }) },
+    `${subsetName(v) || sent.subset} · v${vName(sent.subset, sent.n)}`);
 }
 
 function appRow(a, { inGroup = false } = {}) {
@@ -275,14 +275,14 @@ async function sendPosting(a) {
   const linked = (a.subsets || [])[0];
   if (!linked) return;
   const st = versionStatus(linked.id) || {};
-  const msg = st.same_as ? t("“{name}” goes out as v{n}, as it is now.", { name: linked.label, n: st.same_as })
-    : t("“{name}” is kept as v{n} first, so you'll always know what this posting got.", { name: linked.label, n: (st.latest || 0) + 1 });
+  const msg = st.same_as ? t("“{name}” goes out as v{n}, as it is now.", { name: linked.label, n: vName(linked.id, st.same_as) })
+    : t("“{name}” is kept as v{n} first, so you'll always know what this posting got.", { name: linked.label, n: vNext(linked.id) });
   if (!(await modal({ title: t("Mark this application as sent?"), message: msg, ok: t("Mark as sent") }))) return;
   try {
     const r = await api("POST", `/api/jobs/app/${encodeURIComponent(a.id)}/sent`, { subset_id: linked.id });
     applyState(r);
     J.detail = { ...J.detail, ...r.application };
-    toast(t("Sent with “{name}” v{n}", { name: linked.label, n: r.n }));
+    toast(t("Sent with “{name}” v{n}", { name: linked.label, n: r.name || vName(linked.id, r.n) }));
     loadJobs({ quiet: true });
     paintEditor({ keepScroll: true });
   } catch (e) { toast(e.message, { ms: 8000 }); }
@@ -467,7 +467,7 @@ function resumeCard(a) {
   const linked = (F && F.linked) || a.subsets || [];
   const sent = a.sent;
   const sentBar = linked.length > 0 && h("div", { class: "sent-bar" + (sent ? " done" : "") },
-    sent ? [icon("check"), h("span", { class: "sb-text" }, t("Sent on {date} with “{name}” v{n}", { date: (sent.at || "").slice(0, 10), name: subsetName(subsets().find((x) => x.id === sent.subset)) || sent.subset, n: sent.n })),
+    sent ? [icon("check"), h("span", { class: "sb-text" }, t("Sent on {date} with “{name}” v{n}", { date: (sent.at || "").slice(0, 10), name: subsetName(subsets().find((x) => x.id === sent.subset)) || sent.subset, n: vName(sent.subset, sent.n) })),
       h("button", { class: "btn sm ghost", onclick: () => showSent(sent.subset, sent.n) }, icon("history"), t("See what went out"))]
       : [h("span", { class: "sb-text" }, t("Applied? Mark it sent: the subset is kept as a version and pinned on this posting."))],
     h("button", { class: "btn sm" + (sent ? "" : " primary"), id: "posting-send", onclick: () => sendPosting({ ...a, subsets: linked }) }, icon("check"), sent ? t("Mark as sent again") : t("Mark as sent")));

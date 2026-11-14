@@ -22,10 +22,12 @@ def edit_subset(st: Studio, sid: str, fn) -> None:
 
 def test_a_version_freezes_what_the_subset_renders(data_file):
     st = Studio(data_file)
-    assert st.state()["subset_versions"]["RES-TECH-EN"] == {"count": 0, "latest": None, "changed": True, "same_as": None}
+    assert st.state()["subset_versions"]["RES-TECH-EN"] == {"count": 0, "latest": None, "changed": True, "same_as": None,
+                                                                "names": {}, "next": "1"}
     r = st.commit_subset("RES-TECH-EN", "  sent to the first round  ")
     assert r["created"] and r["made"]["n"] == 1 and r["made"]["note"] == "sent to the first round"
-    assert st.state()["subset_versions"]["RES-TECH-EN"] == {"count": 1, "latest": 1, "changed": False, "same_as": 1}
+    assert st.state()["subset_versions"]["RES-TECH-EN"] == {"count": 1, "latest": 1, "changed": False, "same_as": 1,
+                                                                "names": {"1": "1"}, "next": "1.1"}
     assert not st.commit_subset("RES-TECH-EN")["created"]                # nothing changed: no new version
 
     # the fact layer, the name and the linked postings are not what was sent
@@ -94,7 +96,8 @@ def test_going_back_keeps_now_as_a_version_and_says_who_else_is_affected(data_fi
     assert "Shipped v2" not in json.dumps(e) and json.loads(before)["bullets"] == e["bullets"]
     vs = st.subset_versions("RES-TECH-EN")
     assert [v["n"] for v in vs["versions"]] == [2, 1] and vs["versions"][0]["auto"]   # what it said before is v2
-    assert vs["status"] == {"count": 2, "latest": 2, "changed": True, "same_as": 1}   # now = v1 again, not v2
+    assert vs["status"] == {"count": 2, "latest": 2, "changed": True, "same_as": 1,   # now = v1 again, not v2
+                          "names": {"1": "1", "2": "1.1"}, "next": "1.2"}   # v2 only changed wording: it is v1.1
     assert st.compare_versions("RES-TECH-EN", 1)["items"] == []
 
 

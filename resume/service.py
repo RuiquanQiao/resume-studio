@@ -369,7 +369,7 @@ class Studio:
         doc, _ = self.store.load()
         export_dir = self.data_dir / str((doc.get("settings") or {}).get("export_dir") or "exports")
         export_dir.mkdir(parents=True, exist_ok=True)
-        name = self._safe(subset_id) + (f"-v{int(n)}" if n else "")
+        name = self._safe(subset_id) + (f"-v{self.versions.name(subset_id, n)}" if n else "")
         out_pdf = export_dir / f"{name}.pdf"
         shutil.copyfile(result["pdf"], out_pdf)
         exported = {"pdf": str(out_pdf)}
@@ -399,8 +399,9 @@ class Studio:
         doc, sub = self._subset_now(subset_id)
         vs = self.versions.all(subset_id)
         status = self.versions.status(subset_id, versions.content(doc, sub)) if sub is not None else None
+        named = versions.names(vs)
         return {"subset": subset_id, "exists": sub is not None, "status": status,
-                "versions": [versions.Versions.summary(v) for v in reversed(vs)]}
+                "versions": [versions.Versions.summary(v, named.get(v["n"])) for v in reversed(vs)]}
 
     def commit_subset(self, subset_id: str, note: str = "") -> dict:
         """Keep what the subset says now as its next version (nothing new when it hasn't changed)."""
@@ -409,7 +410,8 @@ class Studio:
             if sub is None:
                 raise KeyError(t("Subset {id} doesn't exist", id=subset_id))
             v, created = self.versions.commit(subset_id, versions.content(doc, sub), note)
-        return {**self.subset_versions(subset_id), "made": versions.Versions.summary(v), "created": created}
+        return {**self.subset_versions(subset_id), "made": versions.Versions.summary(v, self.versions.name(subset_id, v["n"])),
+                "created": created}
 
     def set_version_note(self, subset_id: str, n: int, note: str) -> dict:
         self.versions.set_note(subset_id, int(n), note)
@@ -439,7 +441,7 @@ class Studio:
         with self.store.lock:
             doc, sub = self._subset_now(subset_id)
             if sub is not None:
-                self.versions.commit(subset_id, versions.content(doc, sub), t("Before going back to v{n}", n=n), auto=True)
+                self.versions.commit(subset_id, versions.content(doc, sub), t("Before going back to v{n}", n=self.versions.name(subset_id, n)), auto=True)
             versions.restore(doc, c)
             self.store.save(doc)
         return self.state()

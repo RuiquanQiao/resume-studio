@@ -2403,5 +2403,7 @@
  "from your skill levels, no AI": "당신의 숙련도 기준, AI 없음",
  "{n} more": "{n}개 더",
  "{n} of {all} skills set": "{all}개 중 {n}개 지정",
- "Mastery {n}% · coverage {m}% ({k} not rated)": "숙련 {n}% · 커버리지 {m}%(미평가 {k}개)"
+ "Mastery {n}% · coverage {m}% ({k} not rated)": "숙련 {n}% · 커버리지 {m}%(미평가 {k}개)",
+ "Create “{name}”": "“{name}” 새로 만들기",
+ "in {n} entry": "경력 {n}개에서 사용"
 }

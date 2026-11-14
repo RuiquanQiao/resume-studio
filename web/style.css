@@ -2192,6 +2192,12 @@ body[data-ws="plugin"][data-chat="off"] .workspace { grid-template-columns: minm
 .skx-chip.drop { box-shadow: -3px 0 0 var(--accent); }
 .skx-chip.pool { padding-right: 9px; }
 
+/* the skills already in the catalog, as you type one (skills.js skillSuggest) */
+.skx-suggest { max-width: min(440px, calc(100vw - 16px)); }
+.skx-suggest[hidden] { display: none; }
+.skx-suggest .lb-opt.sel-hl { background: var(--hover); }
+.skx-suggest .skx-make { color: var(--accent); }
+.skx-suggest .skx-make svg.i { flex: none; width: 14px; height: 14px; }
 .skx-pop { width: 360px; max-width: calc(100vw - 24px); padding: 12px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
 .skx-p-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .skx-p-k { flex: 0 0 auto; min-width: 7em; font-size: 12.5px; color: var(--text-3); }

@@ -1205,7 +1205,7 @@ class Hunt:
         self._changed()
         return ev
 
-    def mark_sent(self, ref: str, subset: str, n: int, *, source: str = "window", where: str = "") -> dict:
+    def mark_sent(self, ref: str, subset: str, n: int, *, source: str = "window", where: str = "", name: str = "") -> dict:
         """This application went out with version n of `subset`: pinned on it, and Applied if it was only saved."""
         with self.lock:
             aid = self.application(ref)["id"]
@@ -1218,7 +1218,7 @@ class Hunt:
                 a["applied"] = a.get("applied") or time.strftime("%Y-%m-%d")
             a["updated"] = _now()
             self._write("applications.json", data)
-            self._log(aid, "sent", frm=frm, to=a["status"], source=source, note=f"{subset} v{n}" + (f" · {where}" if where else ""))
+            self._log(aid, "sent", frm=frm, to=a["status"], source=source, note=f"{subset} v{name or n}" + (f" · {where}" if where else ""))
         self._changed()
         return a
 

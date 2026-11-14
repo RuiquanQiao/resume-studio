@@ -2403,5 +2403,7 @@
  "from your skill levels, no AI": "あなたの習熟度から、AI なし",
  "{n} more": "他 {n} 件",
  "{n} of {all} skills set": "{all} 件中 {n} 件設定済み",
- "Mastery {n}% · coverage {m}% ({k} not rated)": "習熟 {n}% · カバー {m}%（未評価 {k} 件）"
+ "Mastery {n}% · coverage {m}% ({k} not rated)": "習熟 {n}% · カバー {m}%（未評価 {k} 件）",
+ "Create “{name}”": "「{name}」を新規作成",
+ "in {n} entry": "{n} 件の経歴で使用"
 }

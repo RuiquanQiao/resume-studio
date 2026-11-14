@@ -179,6 +179,10 @@ subsets:
   version. They live in `resume-studio-data/subsets/<subset id>.json` next to the data file; don't edit them. To
   see what was sent, read that file (each version's `content` is a small data file of its own); going
   back to one, previewing and exporting it are done in the window (Versions page).
+  Version numbers are worked out, never typed: a version that picks other entries, orders them differently,
+  or orders / hides its sections differently from the one before is a new major number (v2); one that only
+  changes wording, layout or skills is a minor one (v2.1). In the file each version keeps its running `n`
+  (1, 2, 3…), which is what an application's `sent` record points at; `names` in the status maps n to v2.1.
 - **Resume languages** are codes from `resume/langs.py`: Latin-script languages (en, de, fr, es, it, pt,
   nl, the Nordic and Central European languages, tr, vi, id, ms…), Greek, Cyrillic (ru, uk, bg), and
   Chinese (zh, zh-TW), Japanese (ja) and Korean (ko). Right-to-left scripts are not supported by the

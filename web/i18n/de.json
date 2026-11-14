@@ -2592,5 +2592,10 @@
  "from your skill levels, no AI": "aus Ihren Kenntnisstufen, ohne KI",
  "{n} more": "{n} weitere",
  "{n} of {all} skills set": "{n} von {all} festgelegt",
- "Mastery {n}% · coverage {m}% ({k} not rated)": "Beherrscht {n} % · Abdeckung {m} % ({k} nicht bewertet)"
+ "Mastery {n}% · coverage {m}% ({k} not rated)": "Beherrscht {n} % · Abdeckung {m} % ({k} nicht bewertet)",
+ "Create “{name}”": "„{name}“ neu anlegen",
+ "in {n} entry": [
+  "in {n} Eintrag",
+  "in {n} Einträgen"
+ ]
 }

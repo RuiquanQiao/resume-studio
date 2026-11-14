@@ -556,7 +556,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         return a
 
     # ---- sending: the subset is kept as a version and pinned; career-ops gets the rows if it is the tracker ----
-    def copy_to_tracker(apps: list[dict], c: dict, label: str, n: int) -> int:
+    def copy_to_tracker(apps: list[dict], c: dict, label: str, n: str) -> int:
         if tracker() != "career-ops" or not co_on():
             return 0
         new = [a for a in apps if not a.get("co_app")]
@@ -577,10 +577,11 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         if not todo:
             raise HttpError(409, t("Every role on {company}'s site has already gone out", company=c["name"]))
         n = keep_version(studio, sub, c["name"])
-        out = [hunt.mark_sent(a["id"], sub, n, source=source) for a in todo]
+        name = studio.versions.name(sub, n)
+        out = [hunt.mark_sent(a["id"], sub, n, source=source, name=name) for a in todo]
         doc = studio.store.peek()   # only read
-        copied = guard(lambda: copy_to_tracker(out, c, subset_label(doc, sub), n))
-        return {"n": n, "subset": sub, "sent": [a["id"] for a in out], "copied": copied}
+        copied = guard(lambda: copy_to_tracker(out, c, subset_label(doc, sub), name))
+        return {"n": n, "name": name, "subset": sub, "sent": [a["id"] for a in out], "copied": copied}
 
     def send_app(ref: str, subset: str | None, source: str, version: int | None = None) -> dict:
         """`version`: an older version the user says went out (sent before it was marked here); none: what the
@@ -590,16 +591,17 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         sub = subset_to_send(studio, subset or a.get("subset") or c.get("subset") or None)
         if version:
             if not studio.versions.get(sub, int(version)):
-                raise HttpError(404, t("{subset} has no v{n}", subset=subset_label(studio.store.peek(), sub), n=version))
+                raise HttpError(404, t("{subset} has no v{n}", subset=subset_label(studio.store.peek(), sub), n=studio.versions.name(sub, version)))
             n = int(version)
         else:
             n = keep_version(studio, sub, f"{c['name']} — {a['role']}")
         if subset and subset != (a.get("subset") or c.get("subset")):
             hunt.update_application(a["id"], {"subset": subset})   # what it went out with is what it goes out with
-        a = hunt.mark_sent(a["id"], sub, n, source=source)
+        name = studio.versions.name(sub, n)
+        a = hunt.mark_sent(a["id"], sub, n, source=source, name=name)
         doc = studio.store.peek()   # only read
-        copied = guard(lambda: copy_to_tracker([a], c, subset_label(doc, sub), n))
-        return {"n": n, "subset": sub, "sent": [a["id"]], "copied": copied}
+        copied = guard(lambda: copy_to_tracker([a], c, subset_label(doc, sub), name))
+        return {"n": n, "name": name, "subset": sub, "sent": [a["id"]], "copied": copied}
 
     # ---- the window ------------------------------------------------------------
     @app.route("GET", "/api/hunt")

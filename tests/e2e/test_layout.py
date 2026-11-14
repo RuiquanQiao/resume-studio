@@ -605,7 +605,12 @@ STATES = [
     State("resume, a skills line with its levels bar",
           then(lambda pg, c: choose(pg, "#subset-select", "RES-TECH-EN"), lambda pg, c: open_entry(pg, "EXP-005"), wait(".skx-strip[data-sec=skills]")),
           ["#editor .skx-strip", "#active .skx-chip"]),
-    State("resume, long titles",lambda pg, c: open_entry(pg, "EXP-002"), ["#active"], prepare=long_entry),
+    # typing a skill: the catalog's skills that match, each with its level and how many entries use it, then "Create …"
+    State("resume, a skill being typed, the matches listed",
+          then(lambda pg, c: open_entry(pg, "EXP-005"), click("#active .skx-input"), lambda pg, c: pg.keyboard.type("py"),
+               wait(".skx-suggest:not([hidden]) .lb-opt")),
+          [".skx-suggest .lb-opt", ".skx-suggest .skx-make"]),
+    State("resume, long titles", lambda pg, c: open_entry(pg, "EXP-002"), ["#active"], prepare=long_entry),
     State("resume, line chips and issues", then(lambda pg, c: open_entry(pg, "EXP-002"), wait("#bullets .line-chip.long")),
           ["#issues .issue.warn"], prepare=lambda c: add_long_bullet(c.server)),
     # one record per country: a citizen's, a work visa with a long name and rough dates, a student visa

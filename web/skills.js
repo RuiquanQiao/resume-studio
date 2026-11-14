@@ -106,9 +106,11 @@ function techField(e) {
     box.skxPaint();
     return true;
   };
+  const sug = skillSuggest(e, input, box, (name) => { input.value = name; add(); });
   input.addEventListener("keydown", (ev) => {
     if (ev.isComposing) return;
-    if (ev.key === "Enter") { ev.preventDefault(); add(); }
+    if (sug.keys(ev)) return;
+    if (ev.key === "Enter") { ev.preventDefault(); add(); sug.paint(); }
     else if (ev.key === "Backspace" && !input.value && e.tech.length) { ev.preventDefault(); const last = chips.lastElementChild; if (last) last.focus(); }
   });
   // a comma outside brackets (typed, pasted, or from an input method) ends an item; what follows it stays to type on
@@ -120,8 +122,10 @@ function techField(e) {
     input.value = input.value.slice(0, cut);
     add();
     input.value = rest.trimStart();
+    sug.paint();
   });
-  input.addEventListener("blur", () => { if (input.value.trim()) add(); });
+  // leaving the field keeps what was typed there but makes nothing: it may be half a search (Enter or a comma adds)
+  input.addEventListener("blur", () => sug.hide());
   box.skxPaint = () => {
     // one of these chips has its panel open (its name may be being typed): they are drawn again when it closes
     if (Float.cur && Float.cur.panel.classList.contains("skx-pop") && chips.contains(Float.cur.anchor)) return;
@@ -131,6 +135,81 @@ function techField(e) {
   box.skxPaint();
   return h("div", { class: "field" }, h("label", null, list ? t("Items") : t("Tech / keywords"),
     h("span", { class: "hint" }, t("Enter or a comma adds one; click one to set how well you have it"))), box);
+}
+
+// typing in the field searches the skills already in the catalog (by name or alias); Enter takes the highlighted
+// one, or, when none matches, makes a new one of what was typed. ↑ ↓ move, Esc closes, a click picks.
+function skillSuggest(e, input, field, pick) {
+  const list = h("div", { class: "float listbox skx-suggest in", role: "listbox", id: "skx-sug-" + Math.random().toString(36).slice(2, 8), hidden: true });
+  let opts = [], hl = -1;
+  input.setAttribute("role", "combobox");
+  input.setAttribute("aria-autocomplete", "list");
+  input.setAttribute("aria-controls", list.id);
+  input.setAttribute("aria-expanded", "false");
+  input.setAttribute("autocomplete", "off");
+  const place = () => {
+    const r = field.getBoundingClientRect();
+    const below = innerHeight - r.bottom - 8, above = r.top - 8;
+    const up = below < 180 && above > below;
+    list.dataset.side = up ? "top" : "bottom";
+    Object.assign(list.style, { left: Math.max(8, r.left) + "px", width: Math.min(r.width, innerWidth - 16) + "px",
+      maxHeight: Math.max(120, Math.min(300, up ? above : below)) + "px",
+      top: up ? "" : r.bottom + 4 + "px", bottom: up ? innerHeight - r.top + 4 + "px" : "" });
+  };
+  const hide = () => {
+    if (list.hidden) return;
+    list.hidden = true; list.remove(); input.setAttribute("aria-expanded", "false"); input.removeAttribute("aria-activedescendant");
+    removeEventListener("scroll", onScroll, true); removeEventListener("resize", hide);
+  };
+  const onScroll = (ev) => { if (!list.contains(ev.target)) place(); };
+  const mark = () => {
+    list.querySelectorAll(".lb-opt").forEach((b, i) => { b.classList.toggle("sel-hl", i === hl); b.setAttribute("aria-selected", String(i === hl)); });
+    const cur = list.querySelectorAll(".lb-opt")[hl];
+    if (cur) { input.setAttribute("aria-activedescendant", cur.id); cur.scrollIntoView({ block: "nearest" }); }
+  };
+  const paint = () => {
+    if (document.activeElement !== input) { hide(); return; }
+    const typed = splitSkills(input.value).pop() || "";
+    const q = skillKey(typed);
+    const have = new Set(e.tech.map((x) => skillRec(x).key));
+    const score = (r) => {
+      const names = [r.name, ...(r.aliases || [])].map(skillKey);
+      if (!q) return 3;
+      if (names.includes(q)) return 0;
+      if (names.some((n) => n.startsWith(q))) return 1;
+      if (names.some((n) => n.includes(q))) return 2;
+      return -1;
+    };
+    const hits = ((S && S.skills) || []).filter((r) => !have.has(r.key)).map((r) => [score(r), r]).filter(([s]) => s >= 0)
+      .sort((a, b) => a[0] - b[0] || (b[1].used_in || []).length - (a[1].used_in || []).length || a[1].name.localeCompare(b[1].name))
+      .slice(0, 8).map(([, r]) => r);
+    const exact = q && (hits.some((r) => r.key === q) || have.has(q));
+    opts = [...hits.map((r) => ({ name: r.name, rec: r })), ...(q && !exact ? [{ name: typed.trim(), make: true }] : [])];
+    if (!opts.length) { hide(); return; }
+    list.replaceChildren(...opts.map((o, i) => h("button", { type: "button", role: "option", class: "lb-opt" + (o.make ? " skx-make" : ""), id: `${list.id}-${i}`, tabindex: "-1",
+      onmousedown: (ev) => ev.preventDefault(), onclick: () => { pick(o.name); paint(); } },
+      o.make ? [icon("plus"), h("span", { class: "lb-main" }, h("span", { class: "lb-label" }, t("Create “{name}”", { name: o.name })))]
+        : [h("span", { class: "lb-main" }, h("span", { class: "lb-label" }, o.rec.name)),
+          h("span", { class: "lb-hint" }, [skillLevelName(o.rec.level), (o.rec.used_in || []).length ? t("in {n} entry", { n: o.rec.used_in.length }, "in {n} entries") : ""].filter(Boolean).join(t(", ")))])));
+    // a typed name already in the catalog, or the only thing left to pick: Enter takes the first; else what was typed
+    hl = !q ? -1 : 0;
+    if (list.hidden) {
+      list.hidden = false; document.body.append(list); input.setAttribute("aria-expanded", "true");
+      addEventListener("scroll", onScroll, true); addEventListener("resize", hide);
+    }
+    place(); mark();
+  };
+  const keys = (ev) => {
+    if (list.hidden) { if (ev.key === "ArrowDown") { ev.preventDefault(); paint(); return true; } return false; }
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") { ev.preventDefault(); hl = (hl + (ev.key === "ArrowDown" ? 1 : -1) + opts.length + 1) % (opts.length + 1); if (hl === opts.length) hl = -1; mark(); return true; }
+    if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); hide(); return true; }
+    if (ev.key === "Enter" && hl >= 0 && opts[hl]) { ev.preventDefault(); pick(opts[hl].name); paint(); return true; }
+    if (ev.key === "Tab") hide();
+    return false;
+  };
+  input.addEventListener("input", paint);
+  input.addEventListener("focus", paint);
+  return { paint, hide, keys };
 }
 
 function skillChip(e, i, box) {
