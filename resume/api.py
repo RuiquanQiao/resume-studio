@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import threading
 from pathlib import Path
 
@@ -472,6 +473,45 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
             return studio.set_skill_level(name, level, b.get("why") if isinstance(b.get("why"), str) else None)
         except ValueError as e:
             raise HttpError(400, str(e))
+
+    @app.route("POST", "/api/diag/scroll")
+    def diag_scroll(req: Request):
+        """One scroll gesture over a floating panel, measured by the page (web/ui.js ScrollProbe): timings only.
+        Kept in resume-studio-data/diag/scroll.jsonl, the last 200, to judge scrolling from the real window."""
+        b = body(req)
+        line = json.dumps(b, ensure_ascii=False)[:20000]
+        path = studio.store.state_dir / "diag" / "scroll.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            old = path.read_text(encoding="utf-8").splitlines()[-199:]
+        except OSError:
+            old = []
+        path.write_text("\n".join([*old, line]) + "\n", encoding="utf-8")
+        return {"ok": True}
+
+    @app.route("POST", "/api/skills/use")
+    def skill_use(req: Request):
+        """{name, entry, on}: name the skill in that entry's tech, or take it out."""
+        b = body(req)
+        name, entry = str(b.get("name") or "").strip(), str(b.get("entry") or "")
+        if not name or not entry:
+            raise HttpError(400, t("Missing skill name"))
+        try:
+            return studio.use_skill(name, entry, bool(b.get("on")))
+        except KeyError as e:
+            raise HttpError(404, str(e.args[0] if e.args else e))
+
+    @app.route("POST", "/api/skills/show")
+    def skill_show(req: Request):
+        """{name, subset, on}: show the skill on that subset's skills lines, or hide it there."""
+        b = body(req)
+        name, sub = str(b.get("name") or "").strip(), str(b.get("subset") or "")
+        if not name or not sub:
+            raise HttpError(400, t("Missing skill name"))
+        try:
+            return studio.show_skill(name, sub, bool(b.get("on")))
+        except KeyError as e:
+            raise HttpError(404, str(e.args[0] if e.args else e))
 
     @app.route("POST", "/api/skills/settle")
     def skill_settle(req: Request):

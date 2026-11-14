@@ -6,14 +6,9 @@
 // only the skills its chosen entries back (user, 2026-11-14: "专业技能应该写有经历支撑的"); the rest stay as chips,
 // dimmed, one click from showing anyway. What the resume prints is unchanged: the names, as text.
 
-const SKILL_LEVELS = ["strong", "working", "basic", "none"];
-const skillLevelName = (lv) => ({ strong: t("Proficient"), working: t("Can use"), basic: t("Familiar"), none: t("Can't use yet") })[lv] || "";
-const skillLevelHint = (lv) => ({
-  strong: t("You could explain it and build on it without help"),
-  working: t("You use it with the documentation at hand"),
-  basic: t("You have used or followed it, but couldn't build with it alone"),
-  none: t("It is in a project, but AI or someone else wrote that part"),
-})[lv] || "";
+// Two levels (user, 2026-11-15: "只要不是熟练，不都可以算作尚不会"): what a job can count on, or not yet.
+const SKILL_LEVELS = ["strong", "none"];
+const skillLevelName = (lv) => ({ strong: t("Proficient"), none: t("Can't use yet") })[lv] || "";
 
 function skillKey(name) {
   const s = String(name ?? "").normalize("NFKC").split(/\s+/).filter(Boolean).join(" ");
@@ -223,31 +218,81 @@ function skillChip(e, i, box) {
     r.suggest ? t("The AI suggests: {level}", { level: skillLevelName(r.suggest.level) }) : "",
     shown === "unbacked" ? t("Not on this resume: no entry it picks uses it") : shown === "hidden" ? t("Hidden on this resume") : ""].filter(Boolean).join("\n");
   const chip = h("span", { class: "skx-chip" + (lv ? " lv-" + lv : "") + (r.suggest ? " sug" : "") + (off ? " off" : ""), tabindex: "0", role: "button",
-    draggable: "true", "data-i": i, "aria-haspopup": "dialog", title: tip,
-    onclick: (ev) => { if (!ev.target.closest(".skx-x")) openSkillPanel(chip, e, i, box); },
+    "data-i": i, "aria-haspopup": "dialog", title: tip,
+    onclick: (ev) => { if (chip.skxDragged) { chip.skxDragged = false; return; } if (!ev.target.closest(".skx-x")) openSkillPanel(chip, e, i, box); },
     onkeydown: (ev) => {
       if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openSkillPanel(chip, e, i, box); }
       else if (ev.key === "Backspace" || ev.key === "Delete") { ev.preventDefault(); removeSkill(e, i, box, true); }
       else if (ev.key === "ArrowLeft" && ev.altKey) { ev.preventDefault(); moveSkill(e, i, i - 1, box); }
       else if (ev.key === "ArrowRight" && ev.altKey) { ev.preventDefault(); moveSkill(e, i, i + 1, box); }
     },
-    ondragstart: (ev) => { ev.dataTransfer.setData("text/x-skill", JSON.stringify([e.id, i])); ev.dataTransfer.effectAllowed = "move"; chip.classList.add("dragging"); },
-    ondragend: () => chip.classList.remove("dragging"),
-    ondragover: (ev) => { if ([...ev.dataTransfer.types].includes("text/x-skill")) { ev.preventDefault(); chip.classList.add("drop"); } },
-    ondragleave: () => chip.classList.remove("drop"),
-    ondrop: (ev) => {
-      chip.classList.remove("drop");
-      let from;
-      try { from = JSON.parse(ev.dataTransfer.getData("text/x-skill")); } catch { return; }
-      if (!from || from[0] !== e.id) return;
-      ev.preventDefault();
-      moveSkill(e, from[1], i, box);
-    } },
+    onpointerdown: (ev) => skillDrag(ev, chip, e, i, box) },
   h("span", { class: "skx-name" }, display(item)),
   lv ? h("span", { class: "skx-lv" }, skillLevelName(lv)) : null,
   r.suggest ? h("span", { class: "skx-dot", "aria-hidden": "true" }) : null,
   h("button", { type: "button", class: "skx-x", tabindex: "-1", "aria-label": t("Remove {name}", { name: display(item) }), onclick: () => removeSkill(e, i, box) }, icon("x")));
   return chip;
+}
+
+// press a chip and move it: it lifts under the pointer, a line shows where it lands among the others, and letting go
+// puts it there (Esc puts it back). A press without a move is a click: the chip's panel opens.
+function skillDrag(ev, chip, e, from, box) {
+  if (ev.button !== 0 || ev.target.closest(".skx-x")) return;
+  const x0 = ev.clientX, y0 = ev.clientY;
+  let ghost = null, to = null, mark = null;
+  const others = () => [...box.querySelectorAll(".skx-chip")].filter((c) => c !== chip);
+  const unmark = () => { if (mark) mark.classList.remove("drop-before", "drop-after"); mark = null; };
+  const where = (x, y) => {
+    const list = others();
+    if (!list.length) return null;
+    const rects = list.map((c) => [c, c.getBoundingClientRect()]);
+    let row = rects.filter(([, r]) => y >= r.top - 3 && y <= r.bottom + 3);
+    if (!row.length) {   // between or past the rows: the nearest row
+      const near = rects.reduce((a, b) => (Math.abs((b[1].top + b[1].bottom) / 2 - y) < Math.abs((a[1].top + a[1].bottom) / 2 - y) ? b : a));
+      row = rects.filter(([, r]) => r.top === near[1].top);
+    }
+    const before = row.find(([, r]) => x < r.left + r.width / 2);
+    const [c, side] = before ? [before[0], "before"] : [row[row.length - 1][0], "after"];
+    const at = +c.dataset.i + (side === "after" ? 1 : 0);
+    return { c, side, to: at > from ? at - 1 : at };
+  };
+  const move = (m) => {
+    if (!ghost) {
+      if (Math.hypot(m.clientX - x0, m.clientY - y0) < 5) return;
+      closeFloat();
+      const r = chip.getBoundingClientRect();
+      ghost = chip.cloneNode(true);
+      ghost.classList.add("skx-ghost");
+      ghost.style.width = r.width + "px";
+      ghost.dx = x0 - r.left; ghost.dy = y0 - r.top;
+      document.body.append(ghost);
+      chip.classList.add("dragging");
+      document.body.classList.add("skx-dragging");
+    }
+    ghost.style.transform = `translate(${m.clientX - ghost.dx}px, ${m.clientY - ghost.dy}px)`;
+    const w = where(m.clientX, m.clientY);
+    unmark();
+    to = w ? w.to : null;
+    if (w && w.to !== from) { mark = w.c; mark.classList.add(w.side === "before" ? "drop-before" : "drop-after"); }
+  };
+  const end = (commit) => {
+    removeEventListener("pointermove", move);
+    removeEventListener("pointerup", up);
+    removeEventListener("keydown", key, true);
+    unmark();
+    if (!ghost) return;
+    ghost.remove();
+    chip.classList.remove("dragging");
+    document.body.classList.remove("skx-dragging");
+    chip.skxDragged = true;   // the click that ends a drag opens nothing
+    setTimeout(() => { chip.skxDragged = false; }, 0);
+    if (commit && to != null && to !== from) moveSkill(e, from, to, box);
+  };
+  const up = () => end(true);
+  const key = (k) => { if (k.key === "Escape") { k.preventDefault(); k.stopPropagation(); end(false); } };
+  addEventListener("pointermove", move);
+  addEventListener("pointerup", up);
+  addEventListener("keydown", key, true);
 }
 
 function removeSkill(e, i, box, keyboard = false) {
@@ -266,66 +311,82 @@ function moveSkill(e, from, to, box) {
 }
 
 // ---- one skill's panel ----------------------------------------------------------
+// Its name as the resume writes it, how well the user has it (two levels), the AI's reading waiting to be accepted,
+// then the two things a skill is tied to, each a list to tick: the entries that use it, and (on a skills line) the
+// resumes that show it. Every tick saves at once and the panel stays open.
 function openSkillPanel(anchor, e, i, box) {
   if (Float.cur && Float.cur.anchor === anchor) { closeFloat(); return; }
   const own = ui.eds.get("entry:" + e.id);   // what the panel changes saves with this entry, however it was opened
   if (own && ui.ed !== own) activate(own);
   const item = e.tech[i];
-  const r = skillRec(item);
-  const shown = skillShown(e, item);
-  const v = subset();
   const L = ui.editLang;
-  const name = h("input", { class: "skx-p-name", value: getT(item, L) || display(item), spellcheck: "false", "aria-label": t("As the resume writes it"),
+  const typed = () => getT(e.tech[i], L) || display(e.tech[i]);
+  const panel = h("div", { class: "skx-pop", role: "dialog", "aria-label": skillRec(item).name });
+  const name = h("input", { class: "skx-p-name", value: typed(), spellcheck: "false", "aria-label": t("As the resume writes it"),
     onkeydown: (ev) => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); closeFloat(); anchor.focus(); } },
     oninput: () => { const val = name.value.trim(); if (!val) return; e.tech[i] = item && typeof item === "object" ? setT(item, L, val) : val; touch(); } });
-  const pick = async (lv) => {
-    closeFloat();
+  const call = async (method, url, data) => {
     try {
-      applyState(await api("PUT", "/api/skills/level", { name: r.name, level: lv === r.level ? "" : lv }));
+      applyState(await api(method, url, data));
       paintSkills();
+      // the chip the panel hangs from is kept (the panel would close with it): it takes the new look in place
+      if (anchor.isConnected && e.tech[i] !== undefined) {
+        const fresh = skillChip(e, i, box);
+        anchor.className = fresh.className;
+        anchor.replaceChildren(...fresh.childNodes);
+        setTip(anchor, fresh.dataset.tip || "");
+      }
+      paint();
     } catch (err) { toast(t("Save failed: {error}", { error: err.message })); }
   };
-  const settle = async (accept) => {
-    closeFloat();
-    try { applyState(await api("POST", "/api/skills/settle", { names: [r.name], accept })); paintSkills(); } catch (err) { toast(err.message); }
+  const option = (on, label, hint, onclick, extra = "") => h("button", { type: "button", role: "checkbox", "aria-checked": String(on), class: "skx-opt" + (on ? " on" : "") + extra, onclick },
+    h("span", { class: "check" + (on ? " on" : ""), "aria-hidden": "true" }),
+    h("span", { class: "skx-opt-t" }, label), hint ? h("span", { class: "skx-opt-h" }, hint) : null);
+  const paint = () => {
+    const r = skillRec(e.tech[i] ?? item);
+    const seg = h("div", { class: "skx-levels", role: "radiogroup", "aria-label": t("How well you have it") },
+      SKILL_LEVELS.map((lv) => h("button", { type: "button", role: "radio", "aria-checked": String(r.level === lv), class: "skx-lvl" + (r.level === lv ? " on lv-" + lv : ""),
+        onclick: () => { if (r.level !== lv) call("PUT", "/api/skills/level", { name: r.name, level: lv }); } }, skillLevelName(lv))));
+    // the entries that name it: ticking one adds it to that entry's tech, unticking takes it out (this one too)
+    const projects = entries().filter((x) => !isListEntry(x));
+    const used = new Set(r.used_in);
+    const uses = projects.map((x) => option(used.has(x.id), display(x.title) || t("(untitled)"), display((sectionById(x.section) || {}).title),
+      () => (x.id === e.id ? (closeFloat(), removeSkill(e, i, box)) : call("POST", "/api/skills/use", { name: r.name, entry: x.id, on: !used.has(x.id) }))));
+    // on a skills line: the resumes that show it (by the entries they pick, or by the user's own choice)
+    const resumes = isListEntry(e) ? subsets().filter((v) => v.id !== ALL).map((v) => {
+      const st = skillShownIn(v, r);
+      return option(st.on, subsetName(v), st.why, () => call("POST", "/api/skills/show", { name: r.name, subset: v.id, on: !st.on }));
+    }) : [];
+    panel.replaceChildren(...[
+      h("div", { class: "skx-p-head" }, name,
+        r.name !== typed() ? h("p", { class: "skx-p-sub" }, t("Counts as the skill {name} everywhere", { name: r.name })) : null),
+      h("section", { class: "skx-p-sec" }, h("h3", { class: "skx-p-label" }, t("How well you have it")), seg,
+        r.level && r.by === "ai" ? h("p", { class: "skx-p-sub" }, t("From the AI's reading of your fact layer"), r.why ? ": " + r.why : "") : null),
+      r.suggest ? h("div", { class: "skx-p-sug" },
+        h("span", { class: "skx-p-sug-t" }, icon("sparkle"), t("The AI suggests: {level}", { level: skillLevelName(r.suggest.level) })),
+        r.suggest.why ? h("span", { class: "skx-p-sug-why" }, r.suggest.why) : null,
+        h("span", { class: "skx-p-acts" },
+          h("button", { type: "button", class: "btn sm primary", onclick: () => call("POST", "/api/skills/settle", { names: [r.name], accept: true }) }, t("Accept")),
+          h("button", { type: "button", class: "btn sm ghost", onclick: () => call("POST", "/api/skills/settle", { names: [r.name], accept: false }) }, t("Dismiss")))) : null,
+      h("section", { class: "skx-p-sec" }, h("h3", { class: "skx-p-label" }, t("Used in")),
+        projects.length ? h("div", { class: "skx-opts" }, uses) : h("p", { class: "skx-p-sub" }, t("No entry uses it yet"))),
+      resumes.length ? h("section", { class: "skx-p-sec" }, h("h3", { class: "skx-p-label" }, t("Shown on")), h("div", { class: "skx-opts" }, resumes)) : null,
+      h("div", { class: "skx-p-foot" },
+        h("button", { type: "button", class: "btn sm ghost danger", onclick: () => { closeFloat(); removeSkill(e, i, box); } }, icon("trash"),
+          isListEntry(e) ? t("Remove from this line") : t("Remove from this entry")))].filter(Boolean));
   };
-  const titles = (ids) => ids.map((id) => display((entryById(id) || {}).title) || id).join("、");
-  const seg = h("div", { class: "seg skx-levels", role: "radiogroup", "aria-label": t("How well you have it") },
-    SKILL_LEVELS.map((lv) => h("button", { type: "button", role: "radio", "aria-checked": String(r.level === lv), class: r.level === lv ? "on" : "",
-      title: skillLevelHint(lv) + (r.level === lv ? "\n" + t("Click again to clear") : ""), onclick: () => pick(lv) }, skillLevelName(lv))));
-  const picks = (fn) => async () => { closeFloat(); await mutateSubset(fn); paintSkills(); };
-  const without = (list) => (list || []).filter((x) => skillRec(x).key !== r.key);
-  const here = v && v.id !== ALL && isListEntry(e) && h("div", { class: "skx-p-row skx-p-here" },
-    h("span", { class: "skx-p-k" }, t("On “{name}”", { name: subsetName(v) })),
-    shown === "unbacked" ? [h("span", { class: "skx-p-v muted" }, t("Not shown: no entry it picks uses it ({entries})", { entries: titles(r.used_in) })),
-      h("button", { type: "button", class: "btn sm", onclick: picks((x) => { x.show_skills = [...without(x.show_skills), r.name]; }) }, t("Show anyway"))]
-      : shown === "hidden" ? [h("span", { class: "skx-p-v muted" }, t("Hidden by you")),
-        h("button", { type: "button", class: "btn sm", onclick: picks((x) => { x.hide_skills = without(x.hide_skills); if (!x.hide_skills.length) delete x.hide_skills; }) }, t("Show it again"))]
-      : [h("span", { class: "skx-p-v" }, shown === "pinned" ? t("Shown by you, though no entry it picks uses it") : t("Shown")),
-        shown === "pinned" && h("button", { type: "button", class: "btn sm ghost", onclick: picks((x) => { x.show_skills = without(x.show_skills); if (!x.show_skills.length) delete x.show_skills; }) }, t("Follow the entries again")),
-        h("button", { type: "button", class: "btn sm ghost", onclick: picks((x) => { x.show_skills = without(x.show_skills); if (!x.show_skills.length) delete x.show_skills; x.hide_skills = [...without(x.hide_skills), r.name]; }) }, t("Hide on this resume"))]);
-  const panel = h("div", { class: "skx-pop", role: "dialog", "aria-label": r.name },
-    h("div", { class: "skx-p-row" }, h("span", { class: "skx-p-k" }, t("As the resume writes it")), name),
-    r.name !== (getT(item, L) || display(item)) && h("p", { class: "skx-p-note muted" }, t("Counts as the skill {name} everywhere", { name: r.name })),
-    h("div", { class: "skx-p-row" }, h("span", { class: "skx-p-k" }, t("How well you have it")), seg),
-    h("p", { class: "skx-p-note muted" }, r.level
-      ? [r.by === "ai" ? t("From the AI's reading of your fact layer, which you accepted") : t("Set by you"), r.why ? " · " + r.why : ""]
-      : t("Only you and the AI see this; it never appears on the resume. Matching roles use it to tell what you can really do.")),
-    r.suggest && h("div", { class: "skx-p-sug" },
-      h("span", { class: "skx-p-sug-t" }, icon("sparkle"), t("The AI suggests: {level}", { level: skillLevelName(r.suggest.level) })),
-      r.suggest.why && h("span", { class: "skx-p-sug-why" }, r.suggest.why),
-      h("span", { class: "skx-p-acts" },
-        h("button", { type: "button", class: "btn sm primary", onclick: () => settle(true) }, t("Accept")),
-        h("button", { type: "button", class: "btn sm ghost", onclick: () => settle(false) }, t("Dismiss")))),
-    h("div", { class: "skx-p-row" }, h("span", { class: "skx-p-k" }, t("Used in")),
-      h("span", { class: "skx-p-v" + (r.used_in.length ? "" : " muted") }, r.used_in.length ? titles(r.used_in) : t("No entry uses it yet"))),
-    here,
-    h("div", { class: "skx-p-foot" },
-      h("button", { type: "button", class: "btn sm ghost", disabled: i === 0 || null, onclick: () => { closeFloat(); moveSkill(e, i, i - 1, box); } }, t("Move left")),
-      h("button", { type: "button", class: "btn sm ghost", disabled: i === e.tech.length - 1 || null, onclick: () => { closeFloat(); moveSkill(e, i, i + 1, box); } }, t("Move right")),
-      h("span", { class: "spacer" }),
-      h("button", { type: "button", class: "btn sm ghost danger", onclick: () => { closeFloat(); removeSkill(e, i, box); } }, icon("trash"), isListEntry(e) ? t("Remove from this line") : t("Remove from this entry"))));
-  openFloat(anchor, panel, { minWidth: 320, onClose: () => box.skxPaint(), focus: seg.querySelector(".on") || seg.firstChild });
+  paint();
+  openFloat(anchor, panel, { minWidth: 340, onClose: () => box.skxPaint(), focus: panel.querySelector(".skx-lvl.on") || panel.querySelector(".skx-lvl") });
+}
+
+// whether a skill shows on a subset's skills lines, and why when it isn't simply the entries it picks
+function skillShownIn(v, r) {
+  const has = (list) => (list || []).some((x) => skillRec(x).key === r.key);
+  const picked = new Set(v.entries || []);
+  const rule = r.used_in.some((id) => picked.has(id)) || !r.used_in.length;
+  if (has(v.hide_skills)) return { on: false, why: t("Hidden by you") };
+  if (has(v.show_skills)) return { on: true, why: rule ? "" : t("Shown by you") };
+  return { on: rule, why: rule ? "" : t("No entry it picks uses it") };
 }
 
 // ---- above a list section: the levels, the AI's readings, the skills no line has ----

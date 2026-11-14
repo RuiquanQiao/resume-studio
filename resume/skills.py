@@ -9,10 +9,10 @@ fact layer knows:
     skills:                       # never rendered
       - name: Next.js
         aliases: [NextJS]
-        level: none               # strong | working | basic | none (proficient / can use / familiar / can't yet)
+        level: none               # strong | none (proficient / can't use yet)
         by: user                  # user: picked by the user; ai: an AI reading of the fact layer the user accepted
         why: ...                  # where the level comes from, one line
-        suggest: {level: basic, why: ...}   # an AI reading waiting for the user to accept or dismiss
+        suggest: {level: none, why: ...}    # an AI reading waiting for the user to accept or dismiss
 
 A list section (专业技能) shows, in each subset, the skills of a line that one of its chosen entries backs (names
 in its `tech`); a skill no entry of the library backs (coursework, self-taught) shows everywhere. A subset can
@@ -24,8 +24,12 @@ import re
 import unicodedata
 from typing import Any
 
-LEVELS = ("strong", "working", "basic", "none")
-WEIGHT = {"strong": 1.0, "working": 1.0, "basic": 0.5, "none": 0.0}   # how much of a job's ask a level meets
+# Two levels (2026-11-15): a skill the user could explain and build on alone, or one they can't use yet. "Can use
+# with the docs" and "familiar" were ladders between the two that a job never asks about; files that have them read
+# them as `none` (two_levels rewrites them).
+LEVELS = ("strong", "none")
+OLD_LEVELS = {"working": "none", "basic": "none"}
+WEIGHT = {"strong": 1.0, "none": 0.0}   # how much of a job's ask a level meets
 
 _VERSION = re.compile(r"\s+v?\d+(?:\.\d+)*[a-z]?$", re.IGNORECASE)
 
@@ -53,6 +57,22 @@ def is_list(doc: Any, entry: Any) -> bool:
     """An entry of a list section (专业技能): its `tech` are the section's items, not what a project used."""
     sid = str(entry.get("section"))
     return any(str(s.get("id")) == sid and str(s.get("kind") or "") == "list" for s in doc.get("sections") or [])
+
+
+def two_levels(doc: Any) -> bool:
+    """Levels and AI readings of the four-level days made one of the two. True when something was rewritten."""
+    changed = False
+    for r in doc.get("skills") or []:
+        if not isinstance(r, dict):
+            continue
+        if str(r.get("level") or "") in OLD_LEVELS:
+            r["level"] = OLD_LEVELS[str(r["level"])]
+            changed = True
+        s = r.get("suggest")
+        if isinstance(s, dict) and str(s.get("level") or "") in OLD_LEVELS:
+            s["level"] = OLD_LEVELS[str(s["level"])]
+            changed = True
+    return changed
 
 
 def records(doc: Any) -> list:
@@ -260,6 +280,53 @@ def pin(doc: Any, subset: Any, entry: Any, want: list, chosen: list) -> bool:
             if name not in subset["hide_skills"]:
                 subset["hide_skills"].append(name)
                 changed = True
+    return changed
+
+
+def set_use(doc: Any, name: str, entry: Any, on: bool) -> bool:
+    """Name the skill in this entry's `tech` (at the end, as `name` is written), or take every item that is an
+    instance of it out. True when the entry changed."""
+    of = resolver(doc)
+    k = of(name)
+    tech = entry.get("tech")
+    has = [i for i, item in enumerate(tech or []) if k in item_keys(doc, item, of)]
+    if on and not has:
+        if tech is None:
+            entry["tech"] = []
+        entry["tech"].append(str(name).strip())
+        return True
+    if not on and has:
+        for i in reversed(has):
+            del entry["tech"][i]
+        return True
+    return False
+
+
+def set_shown(doc: Any, subset: Any, name: str, on: bool) -> bool:
+    """Show or hide the skill on this subset's list lines. Only a choice the rule alone wouldn't make is kept in
+    show_skills / hide_skills; a choice back to the rule takes it out of both. True when the subset changed."""
+    of = resolver(doc)
+    k = of(name)
+    by_id = {str(e.get("id")): e for e in doc.get("entries") or []}
+    chosen = [by_id[str(i)] for i in subset.get("entries") or [] if str(i) in by_id]
+    rule = k in backed(doc, chosen) or k not in backed(doc, list(doc.get("entries") or []))
+    changed = False
+    for field in ("show_skills", "hide_skills"):
+        lst = subset.get(field)
+        if lst is None:
+            continue
+        for i in range(len(lst) - 1, -1, -1):
+            if of(lst[i]) == k:
+                del lst[i]
+                changed = True
+        if not lst:
+            del subset[field]
+    if on != rule:
+        field = "show_skills" if on else "hide_skills"
+        if subset.get(field) is None:
+            subset[field] = []
+        subset[field].append(base_name(str(name)))
+        changed = True
     return changed
 
 

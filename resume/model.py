@@ -32,6 +32,8 @@ def migrate(doc: Any) -> bool:
     if not isinstance(doc, dict):
         return False
     changed = _rename_versions(doc)
+    from . import skills
+    changed = skills.two_levels(doc) or changed
     if int(doc.get("schema_version") or 0) < 3:
         changed = _skills_v3(doc) or changed
         if "schema_version" in doc:

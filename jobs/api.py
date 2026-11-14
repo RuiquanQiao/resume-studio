@@ -137,6 +137,8 @@ def register(app: App, studio: Studio, chats: ChatRunner, tool: JobTool, *, pick
     # ---- sign-ups and what went out (Resume Studio's own records, next to the tool's tracker) ----
     signups = Signups(studio.store.state_dir)
     studio.on_subset_renamed.append(signups.rename_subset)
+    hunt_api.mark_sent_versions(studio, ((s.get("subset"), s.get("n"), s.get("at"))
+                                         for xs in (signups._read().get("sent") or {}).values() for s in xs))
 
     def with_sent(a: dict) -> dict:
         """An application plus what was sent to it: the subset and version, newest last."""
@@ -190,6 +192,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tool: JobTool, *, pick
             guard(lambda: tool.set_status(a["id"], "applied"))
         signups.mark_app_sent(tool.id, a["id"], sub, n)
         app.bus.publish("jobs", {})
+        app.bus.publish("hunt", {"versions": True})   # a version was kept: every window reloads its state
         out = with_sent(guard(lambda: tool.application(a["id"])))
         doc, _ = studio.store.load()
         out["subsets"] = linked(doc, a["id"])

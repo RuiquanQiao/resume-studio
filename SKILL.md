@@ -142,10 +142,10 @@ entries:                     # the library: every real experience, never limited
 skills:                      # fact layer, never rendered: how well the user really has each skill
   - name: Next.js            # one record per skill; every name in `tech` is an instance of one, matched without
     aliases: [NextJS]        #   case or a trailing version ("Next.js 16" is Next.js) or by an alias
-    level: none              # strong | working | basic | none (can't use it yet: AI or someone else wrote that part)
+    level: none              # strong (can explain and build on it alone) | none (anything less: AI or someone else wrote that part)
     by: user                 # user: picked by the user; ai: an AI reading the user accepted
     why: 前端全是 AI 写的      # one line: where the level comes from
-    suggest: {level: basic, why: ...}   # an AI reading of the notes waiting for the user; never write level/by/why yourself
+    suggest: {level: strong, why: ...}  # an AI reading of the notes waiting for the user; never write level/by/why yourself
 subsets:
   - id: ALL                  # reserved: the full-set preview, always first, can't be deleted or renamed
     label: All entries
@@ -172,17 +172,20 @@ subsets:
              font: '', cjk_font: ''}   # keys left out use the defaults
 ```
 
-- **A subset's versions** are like commits: the user keeps one in the window ("定稿" / Keep as v2)
-  whenever the subset goes out, so it is known later exactly what an employer got. A version freezes
+- **A subset's versions** are kept by themselves: whenever the subset goes out to a role (marked sent in
+  the window), what it says then is kept and numbered, so it is known later exactly what an employer got.
+  Nobody keeps or numbers one by hand. A version freezes
   what the subset renders: its own settings plus the visible layer of the entries it picks (the library
   is shared, so editing an entry changes every subset that uses it). The fact layer is never kept in a
   version. They live in `resume-studio-data/subsets/<subset id>.json` next to the data file; don't edit them. To
   see what was sent, read that file (each version's `content` is a small data file of its own); going
   back to one, previewing and exporting it are done in the window (Versions page).
-  Version numbers are worked out, never typed: a version that picks other entries, orders them differently,
-  or orders / hides its sections differently from the one before is a new major number (v2); one that only
-  changes wording, layout or skills is a minor one (v2.1). In the file each version keeps its running `n`
-  (1, 2, 3…), which is what an application's `sent` record points at; `names` in the status maps n to v2.1.
+  Only what went out is numbered (`sent: true`): the major number moves when the entries it picks, their
+  order or the sections' order / hiding differ from the last one sent; the minor number counts the different
+  wordings sent under that major (v2.3 is the third). A send that says what an earlier one said is that
+  version again. A copy kept before going back to a version is never sent and has no number. In the file each
+  version keeps its running `n` (1, 2, 3…), which is what an application's `sent` record points at; `names`
+  in the status maps n to "2.3".
 - **Resume languages** are codes from `resume/langs.py`: Latin-script languages (en, de, fr, es, it, pt,
   nl, the Nordic and Central European languages, tr, vi, id, ms…), Greek, Cyrillic (ru, uk, bg), and
   Chinese (zh, zh-TW), Japanese (ja) and Korean (ko). Right-to-left scripts are not supported by the

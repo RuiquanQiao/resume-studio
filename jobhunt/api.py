@@ -54,18 +54,30 @@ def subset_to_send(studio: Studio, subset_id: str | None) -> str:
 
 
 def keep_version(studio: Studio, subset_id: str, where: str) -> int:
-    """The version that goes out: what the subset says now, kept as one if it isn't already (after
-    going back to v1, it goes out as v1, not as a copy of it)."""
-    st = studio.subset_versions(subset_id)["status"] or {}
-    if st.get("same_as"):
-        return int(st["same_as"])
-    r = studio.commit_subset(subset_id, t("Sent: {where}", where=where))
+    """The version that goes out: what the subset says now, kept as one and marked sent, which numbers it (after
+    going back to v1.1, it goes out as v1.1, not as a copy of it). The user never keeps or numbers one by hand."""
+    r = studio.commit_subset(subset_id, t("Sent: {where}", where=where), sent=True)
     return int(r["made"]["n"])
+
+
+def mark_sent_versions(studio: Studio, sends) -> None:
+    """Versions that went out before a version knew it itself (2026-11-15): marked from the applications' records,
+    so they get their numbers. Runs at start; marks only, never makes or removes a version."""
+    by: dict[str, dict[int, str]] = {}
+    for sub, n, at in sends:
+        if sub and isinstance(n, int):
+            by.setdefault(str(sub), {}).setdefault(n, str(at or ""))
+    for sub, ns in by.items():
+        try:
+            studio.versions.mark_sent(sub, ns)
+        except OSError:
+            pass
 
 
 def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: Callable[[], list[dict]],
              browser: Any = None) -> Hunt:
     hunt = Hunt(studio.store.state_dir)
+    mark_sent_versions(studio, ((s.get("subset"), s.get("n"), s.get("at")) for a in hunt.applications() for s in a.get("sent") or []))
     # a city written as text (the list doesn't know it) is looked up on OpenStreetMap in the background, after
     # every change: one at a time, each name once (jobhunt/geo.py); a hit repaints the window by itself
     to_link = threading.Event()
@@ -581,6 +593,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         out = [hunt.mark_sent(a["id"], sub, n, source=source, name=name) for a in todo]
         doc = studio.store.peek()   # only read
         copied = guard(lambda: copy_to_tracker(out, c, subset_label(doc, sub), name))
+        app.bus.publish("hunt", {"versions": True})   # a version was kept: every window reloads its state
         return {"n": n, "name": name, "subset": sub, "sent": [a["id"] for a in out], "copied": copied}
 
     def send_app(ref: str, subset: str | None, source: str, version: int | None = None) -> dict:
@@ -601,6 +614,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         a = hunt.mark_sent(a["id"], sub, n, source=source, name=name)
         doc = studio.store.peek()   # only read
         copied = guard(lambda: copy_to_tracker([a], c, subset_label(doc, sub), name))
+        app.bus.publish("hunt", {"versions": True})
         return {"n": n, "name": name, "subset": sub, "sent": [a["id"]], "copied": copied}
 
     # ---- the window ------------------------------------------------------------

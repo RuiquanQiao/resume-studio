@@ -811,7 +811,7 @@ function openSentPop(td, a) {
   const paint = () => {
     const st = (pick.subset && versionStatus(pick.subset)) || {};
     const vs = pick.subset ? vers[pick.subset] : [];
-    const now = !pick.subset ? "" : st.same_as ? t("Same as v{n}", { n: vName(pick.subset, st.same_as) }) : t("kept as v{n}", { n: vNext(pick.subset) });
+    const now = !pick.subset ? "" : st.sent_same ? t("Same as v{n}", { n: vName(pick.subset, st.sent_same) }) : t("kept as v{n}", { n: vNext(pick.subset) });
     panel.replaceChildren(...[
       h("div", { class: "sentpop-head" }, h("b", null, t("Resume sent")), h("span", { class: "muted" }, [c.name, a.role].filter(Boolean).join(" / "))),
       h("div", { class: "lb-group" }, t("Resume")),
@@ -1337,8 +1337,7 @@ function masteryTip(f) {
   if (f.real == null) return [t("Rate your skills under Skills in the resume, and this also shows how much of it you really have."),
     (f.unrated || []).length ? t("Not rated yet: {words}", { words: f.unrated.join(", ") }) : ""].filter(Boolean);
   const list = (xs) => (xs || []).join(", ") || "—";
-  return [t("You have: {words}", { words: list(f.have) }), t("Familiar only: {words}", { words: list(f.partial) }),
-    t("Can't use yet: {words}", { words: list(f.cant) }), (f.unrated || []).length ? t("Not rated yet: {words}", { words: list(f.unrated) }) : ""].filter(Boolean);
+  return [t("You have: {words}", { words: list(f.have) }), t("Can't use yet: {words}", { words: list(f.cant) }), (f.unrated || []).length ? t("Not rated yet: {words}", { words: list(f.unrated) }) : ""].filter(Boolean);
 }
 
 // above the picked roles: whether they can be ranked, and the descriptions being read for it
@@ -1991,7 +1990,7 @@ function companyPage(v) {
   });
   const choices = subsets().filter((x) => x.id !== ALL);
   const pick = uiSelect({ id: "company-subset", label: t("Subset"), menuWidth: 300, value: c.subset || null, placeholder: t("Pick a subset"),
-    options: choices.map((x) => ({ value: x.id, label: subsetName(x), hint: (versionStatus(x.id) || {}).latest ? "v" + vName(x.id, versionStatus(x.id).latest) : "" })),
+    options: choices.map((x) => ({ value: x.id, label: subsetName(x), hint: (versionStatus(x.id) || {}).last_sent ? "v" + vName(x.id, versionStatus(x.id).last_sent) : "" })),
     onChange: (val) => editCompany(c.id, { subset: val }) });
   const st = c.subset ? versionStatus(c.subset) : null;
   const siteApps = apps.filter((a) => a.channel === "site");
@@ -2044,7 +2043,7 @@ function companyPage(v) {
       h("div", { class: "grid2" }, hfield(t("Where you sign up"), c.site, save("site"), { placeholder: "https://careers.example.com/campus", hint: keptHint(c, "site"), link: true }),
         hfield(t("Account"), c.account, save("account"), { placeholder: t("e.g. the phone or email you signed up with"), hint: t("never a password") })),
       h("div", { class: "field" }, h("label", null, t("Filled from"), h("span", { class: "hint" }, t("the subset this site gets"))), h("div", { class: "su-subset" }, pick.el,
-        st && h("span", { class: "chip" + (st.latest && !st.same_as ? " vd-changed" : "") }, !st.latest ? t("No versions yet") : st.same_as ? `v${vName(c.subset, st.same_as)}` : t("v{n} · changed", { n: vName(c.subset, st.latest) })),
+        st && h("span", { class: "chip" }, !st.last_sent ? t("Not sent yet") : st.sent_same ? `v${vName(c.subset, st.sent_same)}` : t("v{n} · not sent yet", { n: st.next })),
         c.subset && c.subset_exists && h("button", { class: "btn sm ghost", onclick: () => previewSubset(c.subset) }, icon("file"), t("Preview")))),
       c.subset && !c.subset_exists && h("p", { class: "muted card-p" }, t("This subset is gone; pick another.")),
       companyProfileField(c),
@@ -2323,7 +2322,7 @@ async function sendCompany(c, unsent) {
   const st = versionStatus(c.subset) || {};
   const label = subsetName(subsets().find((x) => x.id === c.subset)) || c.subset;
   const lines = [
-    st.same_as ? t("“{name}” goes out as v{n}, as it is now.", { name: label, n: vName(c.subset, st.same_as) })
+    st.sent_same ? t("“{name}” goes out as v{n}, as it is now.", { name: label, n: vName(c.subset, st.sent_same) })
       : t("“{name}” is kept as v{n} first, so you'll always know what this site got.", { name: label, n: vNext(c.subset) }),
     t("{n} role is marked Applied: {roles}.", { n: unsent.length, roles: unsent.map((a) => a.role).join(", ") }, "{n} roles are marked Applied: {roles}."),
     H.data && H.data.tracker === "career-ops" && t("They also go into {name}'s tracker.", { name: jobsTool().name }),
@@ -2452,7 +2451,7 @@ function fitCard(a, c) {
   const real = f && f.real != null && h("div", { class: "af-block", id: "app-fit-real" },
     h("p", { class: "af-head" }, h("span", { class: "af-score" + (f.real >= 60 ? " hi" : f.real < 30 ? " lo" : "") }, t("Mastery {n}%", { n: f.real })),
       h("span", { class: "af-src" }, t("from your skill levels, no AI"))),
-    words(t("You have"), f.have), words(t("Familiar only"), f.partial), words(t("Can't use yet"), f.cant), words(t("Not rated yet"), f.unrated));
+    words(t("You have"), f.have), words(t("Can't use yet"), f.cant), words(t("Not rated yet"), f.unrated));
   return card(t("Match score"), ai ? t("AI: {n} / 100", { n: ai.score }) : f ? fitLabel(f) : t("not assessed yet"), [
     !a.jd && h("p", { class: "card-p muted", id: "app-fit-none" }, t("Its description is needed first: it is read from the role's page, or pasted above.")),
     a.jd && !f && h("p", { class: "card-p muted", id: "app-fit-rules-none" }, (a.subset || (a.tracks || []).length)
@@ -2579,7 +2578,7 @@ async function addAppNote(a, text, on) {
 async function sendApp(a, subId) {
   const st = versionStatus(subId) || {};
   const label = subsetName(subsets().find((x) => x.id === subId)) || subId;
-  const msg = st.same_as ? t("“{name}” goes out as v{n}, as it is now.", { name: label, n: vName(subId, st.same_as) })
+  const msg = st.sent_same ? t("“{name}” goes out as v{n}, as it is now.", { name: label, n: vName(subId, st.sent_same) })
     : t("“{name}” is kept as v{n} first, so you'll always know what this posting got.", { name: label, n: vNext(subId) });
   if (!(await modal({ title: t("Mark this application as sent?"), message: msg, ok: t("Mark as sent") }))) return;
   try {

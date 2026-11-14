@@ -448,8 +448,6 @@ function openSubsetMenu() {
     { label: t("New subset"), hint: t("Blank, tick entries yourself"), icon: "plus", onClick: () => newSubset(null) },
     v && { label: job ? t("Duplicate this subset") : t("New subset (with every entry ticked)"), icon: "copy", onClick: () => newSubset(ui.subsetId) },
     job && "sep",
-    job && { label: t("Keep as v{n}…", { n: vNext() }), icon: "commit", disabled: !!(versionStatus() || {}).same_as,
-      hint: (versionStatus() || {}).same_as ? t("Same as v{n}", { n: vName(ui.subsetId, versionStatus().same_as) }) : "", onClick: () => commitVersion() },
     job && { label: t("Version history"), icon: "history", onClick: () => select("versions", ui.subsetId) },
     "sep",
     { header: job ? t("Ask AI about this subset") : t("Ask AI about all entries") },
@@ -527,6 +525,7 @@ function showChat() {
 
 // ================================================================ middle: the outline rail (the library)
 function renderLibrary() {
+  ScrollProbe.renders++;   // counted against a scroll being measured (ui.js): a redraw mid-gesture is a dropped frame
   const lib = $("#library");
   const scroll = lib.scrollTop;
   lib.replaceChildren(h("div", { class: "rail-head" },
@@ -557,8 +556,8 @@ function outlineRows({ pop = false } = {}) {
   if (job) {
     const st = versionStatus(v.id) || {};
     const row = nav("versions", t("Versions"), "history", v.id);
-    row.append(h("span", { class: "nav-count" + (st.latest && !st.same_as ? " changed" : "") },
-      !st.latest ? "" : st.same_as ? `v${vName(v.id, st.same_as)}` : t("v{n} · changed", { n: vName(v.id, st.latest) })));
+    row.append(h("span", { class: "nav-count" },
+      !st.last_sent ? "" : st.sent_same ? `v${vName(v.id, st.sent_same)}` : t("v{n} · not sent yet", { n: st.next })));
     out.push(nav("subset", t("Subset settings"), "settings", v.id), row);
   }
   out.push(h("div", { class: "lib-hint" + (job ? " job" : "") }, job
@@ -1102,7 +1101,7 @@ function entryForm(e = ui.draft, { out = false } = {}) {
   h("summary", null, icon("chevRight"), h("span", { class: "ff-t" }, t("Fact layer and project folders")),
     h("span", { class: "ff-sub" }, t("Only the AI sees this; it never appears on the resume")), h("span", { class: "ff-flag" }, factFlag(e.id))),
   h("div", { class: "card fact" }, h("div", { class: "card-b" },
-    h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, t("Write what really happened: what you did, what AI wrote, where the numbers come from, the details you wouldn't put on a resume. When the AI polishes, it stays within what this supports.")),
+    h("p", { class: "muted", style: "margin:0 0 10px;font-size:var(--fs-meta)" }, t("Write what really happened: what you did, what AI wrote, where the numbers come from, the details you wouldn't put on a resume. When the AI polishes, it stays within what this supports.")),
     tfield(t("What really happened / raw notes"), e, "notes", { multiline: true, rows: 6 }),
     evidenceEditor(e)))));
   return parts;
@@ -1305,7 +1304,7 @@ function bulletsEditor(e) {
   box.append(
     h("div", { class: "row wrap" },
       h("button", { class: "btn sm", onclick: () => { e.bullets.push(langs().length > 1 ? { [L]: "" } : ""); /* the other languages show as missing until written */ touch(); redraw(); setTimeout(() => { const ta = document.querySelectorAll("#bullets textarea"); if (ta.length) ta[ta.length - 1].focus(); }, 0); } }, icon("plus"), t("Add bullet")),
-      h("span", { class: "muted", style: "font-size:12px" }, t("Supports **bold**, *italic*, [text](link)"))),
+      h("span", { class: "muted", style: "font-size:var(--fs-meta)" }, t("Supports **bold**, *italic*, [text](link)"))),
     h("div", { class: "polish-box hidden", "data-aid": "polish-box" }, instr,
       h("button", { class: "btn primary sm", "data-ai": "entry:" + e.id, onclick: () => aiEntry("polish", e.id, { text: instr.value, lang: L }) }, icon("sparkle"), t("Polish"))));
   return box;
@@ -1847,14 +1846,14 @@ function sectionsForm() {
   return [
     h("div", { class: "ed-head" }, h("h1", null, t("Sections & resume settings")), h("span", { class: "spacer" }), langSwitch()),
     card(t("Sections"), t("Order and ticks belong to “{job}”; new subsets start from ALL's order", { job: isAll() ? "ALL" : subsetName(subset()) }), [
-      h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, t("Timeline = title + dates + bullets; List = “Category: items”, one per line, good for skills.")), rows]),
+      h("p", { class: "muted", style: "margin:0 0 10px;font-size:var(--fs-meta)" }, t("Timeline = title + dates + bullets; List = “Category: items”, one per line, good for skills.")), rows]),
     card(t("Resume settings"), t("Saved in resume.yaml"), [
       h("div", { class: "field" }, h("label", null, t("Resume languages"), h("span", { class: "hint" }, t("Each language keeps its own text; the first one is the default for new subsets"))), langEditor),
       h("div", { class: "field" }, h("label", null, t("Export folder"), h("span", { class: "hint" }, t("relative to resume.yaml"))),
         h("input", { value: st.export_dir || "exports", spellcheck: "false", onchange: (ev) => { st.export_dir = ev.target.value.trim() || "exports"; saveSettings(); } })),
     ]),
     card(t("My project folders"), t("Where your own projects live, e.g. E:/Forge"), [
-      h("p", { class: "muted", style: "margin:0 0 10px;font-size:12.5px" }, t("The AI will know your projects are here: ask it in the chat which ones are worth a place on your resume; picking a folder for an entry also starts here.")),
+      h("p", { class: "muted", style: "margin:0 0 10px;font-size:var(--fs-meta)" }, t("The AI will know your projects are here: ask it in the chat which ones are worth a place on your resume; picking a folder for an entry also starts here.")),
       rootRows,
       h("div", { class: "ev-actions" }, h("button", { class: "btn sm", onclick: addRoot }, icon("folder"), t("Choose folder")),
         roots.length && ui.chat.available ? h("button", { class: "btn sm ghost", "data-ai": "pick-projects", onclick: () => aiRun("pick-projects", () => sendChat(t("Look at my project folders ({folders}) and pick the projects most worth putting on my resume, with your reasons. Don't change resume.yaml yet; once I confirm, add them one at a time.", { folders: roots.join(", ") }), { fresh: true, title: t("Pick projects for my resume") })) }, icon("sparkle"), t("Let AI pick projects")) : null),
@@ -1887,9 +1886,11 @@ const VS = {
 };
 const versionStatus = (id = ui.subsetId) => (S && S.subset_versions && S.subset_versions[id]) || null;
 // a version's number as shown (v2, v2.1: resume/versions.py `names`); `n` is its running number, kept by applications
+// Versions are kept and numbered by themselves when the subset goes out (resume/versions.py `names`): the user
+// never keeps or numbers one. v2.3: the third wording sent while the entries and sections stayed as in v2.
 const vName = (id, n) => (n == null ? "" : ((versionStatus(id) || {}).names || {})[n]
-  || (VS.for === id && VS.list && ((VS.list.versions || []).find((x) => x.n === n) || {}).name) || String(n));
-const vNext = (id = ui.subsetId) => { const st = versionStatus(id) || {}; return st.next || String((st.latest || 0) + 1); };
+  || (VS.for === id && VS.list && ((VS.list.versions || []).find((x) => x.n === n) || {}).name) || "");
+const vNext = (id = ui.subsetId) => (versionStatus(id) || {}).next || "1.1";
 const versionsUrl = (id, rest = "") => `/api/subsets/${encodeURIComponent(id)}/versions${rest}`;
 const fmtWhen = (at) => { const d = new Date(at); return isNaN(d) ? at || "" : d.toLocaleString(LOCALE, { dateStyle: "medium", timeStyle: "short" }); };
 
@@ -1900,24 +1901,17 @@ function renderVersionChip() {
   if (!b) return;
   b.classList.toggle("hidden", !v || isAll() || !st);
   if (!v || isAll() || !st) return;
-  const changed = st.latest && !st.same_as;
-  b.className = "vchip" + (changed ? " changed" : "") + (st.latest ? "" : " none");
-  b.replaceChildren(icon("history"), h("span", null, !st.latest ? t("No versions yet") : changed ? t("v{n} · changed", { n: vName(ui.subsetId, st.latest) }) : `v${vName(ui.subsetId, st.same_as)}`));
-  setTip(b, !st.latest ? t("Keep this subset as a version when you send it, so you always know what went out")
-    : changed ? t("Changed since v{n}: keep it as a version when you send it", { n: vName(ui.subsetId, st.latest) }) : t("Same as v{n}", { n: vName(ui.subsetId, st.same_as) }));
-  b.onclick = () => openVersionMenu(b);
-}
-
-function openVersionMenu(anchor) {
-  const st = versionStatus() || {};
-  const next = vNext();
-  openMenu(anchor, [
-    { header: subsetName(subset()) },
-    { label: t("Keep as v{n}…", { n: next }), icon: "commit", disabled: !!st.same_as,
-      hint: st.same_as ? t("Same as v{n}", { n: vName(ui.subsetId, st.same_as) }) : "", onClick: () => commitVersion() },
-    { label: t("Version history"), icon: "history", hint: st.count ? t("{n} version", { n: st.count }, "{n} versions") : "",
-      onClick: () => select("versions", ui.subsetId) },
-  ], { align: "start", focusFirst: false });
+  const id = ui.subsetId;
+  b.className = "vchip" + (st.last_sent ? "" : " none");
+  b.replaceChildren(icon("history"), h("span", null, !st.last_sent ? t("Not sent yet")
+    : st.sent_same ? `v${vName(id, st.sent_same)}` : t("v{n} · not sent yet", { n: st.next })));
+  setTip(b, !st.last_sent ? t("Each time this resume is sent, what it says is kept and numbered by itself")
+    : st.sent_same ? t("What roles got when it went out as v{n}", { n: vName(id, st.sent_same) })
+    : t("Changed since v{n} went out; when it is next sent it is kept as v{m} by itself", { n: vName(id, st.last_sent), m: st.next }));
+  b.onclick = () => select("versions", id);
+  // the history is open and a send kept a version (the data file didn't change, so nothing else repaints it)
+  if (ui.sel.kind === "versions" && ui.sel.id === id && VS.for === id && VS.list && VS.list.status && !VS.loading
+      && JSON.stringify(st) !== JSON.stringify(VS.list.status)) loadVersions(id, { quiet: true });
 }
 
 async function loadVersions(id, { quiet = false } = {}) {
@@ -1931,28 +1925,10 @@ async function loadVersions(id, { quiet = false } = {}) {
   if (ui.sel.kind === "versions" && ui.sel.id === id) paintEditor({ keepScroll: true, flash: !quiet && false });
 }
 
-async function commitVersion(note = null) {
-  const id = ui.subsetId;
-  const n = vNext(id);
-  if (note === null) {
-    note = await modal({ title: t("Keep as v{n}", { n }), optional: true, input: "", ok: t("Keep"),
-      message: t("A version freezes what this subset says now, shared entries included. Send it, and you can always see, export or go back to exactly this."),
-      placeholder: t("A note, e.g. sent with the autumn applications") });
-    if (note === null) return;
-  }
-  await saveDraft();
-  if (ui.headPending) await ui.headPending();
-  try {
-    const r = await api("POST", versionsUrl(id), { note });
-    VS.for = id; VS.list = r;
-    applyState(await api("GET", "/api/state"));
-    toast(r.created ? t("Kept as v{n}", { n: r.made.name }) : t("Nothing changed since v{n}", { n: r.made.name }));
-    if (ui.sel.kind === "versions") paintEditor({ keepScroll: true });
-  } catch (e) { toast(t("Couldn't keep the version: {error}", { error: e.message })); }
-}
+const vLabel = (x) => (x.name ? "v" + x.name : t("Saved copy"));
 
 async function editVersionNote(v) {
-  const note = await modal({ title: t("Note for v{n}", { n: v.name || v.n }), optional: true, input: v.note || "", ok: t("Save"),
+  const note = await modal({ title: t("Note for {version}", { version: vLabel(v) }), optional: true, input: v.note || "", ok: t("Save"),
     placeholder: t("A note, e.g. sent with the autumn applications") });
   if (note === null) return;
   try { VS.list = await api("PUT", versionsUrl(VS.for, "/" + v.n), { note }); paintEditor({ keepScroll: true }); }
@@ -1995,16 +1971,16 @@ function versionsView() {
   const st = L.status;
   const out = [head];
   if (st) {
-    const next = st.next || String((st.latest || 0) + 1);
-    const note = h("input", { class: "vnote-input", placeholder: t("A note, e.g. sent with the autumn applications"), maxlength: 300, spellcheck: "false",
-      "aria-label": t("Note for v{n}", { n: next }), onkeydown: (e) => { if (e.key === "Enter" && !e.isComposing && !keep.disabled) keep.click(); } });
-    const keep = h("button", { class: "btn primary", disabled: !!st.same_as, onclick: () => commitVersion(note.value.trim()) }, icon("commit"), t("Keep as v{n}", { n: next }));
-    const nowKey = st.latest ? `${st.latest}>now` : null;
-    out.push(card(t("Now"), !st.latest ? t("No versions yet") : st.same_as ? t("Same as v{n}", { n: vName(id, st.same_as) }) : t("Changed since v{n}", { n: vName(id, st.latest) }), [
-      h("p", { class: "card-p muted" }, t("Keep a version whenever this subset goes out. The library is shared, so a version also freezes the wording of every entry it picks; notes and evidence stay private and aren't kept.")),
-      h("div", { class: "vkeep" }, note, keep),
-      nowKey && st.changed && h("button", { class: "btn sm ghost vshow" + (VS.open === nowKey ? " on" : ""), "aria-expanded": String(VS.open === nowKey), onclick: () => toggleChanges(st.latest, "now") },
-        icon(VS.open === nowKey ? "down" : "chevRight"), t("What changed since v{n}", { n: vName(id, st.latest) })),
+    // nothing to keep or number here: a send does both (resume/versions.py); this says where the resume stands
+    const last = st.last_sent;
+    const nowKey = last ? `${last}>now` : null;
+    out.push(card(t("Now"), !last ? t("Not sent yet") : st.sent_same ? t("Same as v{n}", { n: vName(id, st.sent_same) }) : t("Changed since v{n}", { n: vName(id, last) }), [
+      h("p", { class: "card-p vnow" }, !last ? t("When it is first sent, it is kept as v{n}.", { n: st.next })
+        : st.sent_same ? t("Sent as it is now: a role that gets it next gets v{n} again.", { n: vName(id, st.sent_same) })
+        : t("When it is next sent, it is kept as v{n}.", { n: st.next })),
+      h("p", { class: "card-p muted" }, t("Each time this resume is sent, what it says is kept and numbered by itself: the first number moves when its entries or the order of its sections change, the second counts the different wordings sent since.")),
+      nowKey && !st.sent_same && h("button", { class: "btn sm ghost vshow" + (VS.open === nowKey ? " on" : ""), "aria-expanded": String(VS.open === nowKey), onclick: () => toggleChanges(last, "now") },
+        icon(VS.open === nowKey ? "down" : "chevRight"), t("What changed since v{n}", { n: vName(id, last) })),
       nowKey && VS.open === nowKey && changesEl(nowKey),
     ]));
   } else {
@@ -2017,19 +1993,20 @@ function versionsView() {
     const went = sentWith(id, x.n) || [];
     return h("div", { class: "vrow" + (open ? " open" : "") + (viewing ? " viewing" : ""), "data-n": x.n },
       h("div", { class: "vline" },
-        h("button", { class: "vtoggle", "aria-expanded": String(open), title: x.n > 1 ? t("What v{n} changed from v{m}", { n: x.name, m: vName(id, x.n - 1) }) : t("What v1 holds"),
-          onclick: () => toggleChanges(x.n - 1, x.n) }, icon(open ? "down" : "chevRight"), h("span", { class: "vnum" }, "v" + (x.name || x.n))),
+        h("button", { class: "vtoggle", "aria-expanded": String(open), title: x.n > 1 ? t("What changed from the one kept before") : t("What it holds"),
+          onclick: () => toggleChanges(x.n - 1, x.n) }, icon(open ? "down" : "chevRight"), h("span", { class: "vnum" + (x.name ? "" : " copy") }, vLabel(x))),
         h("div", { class: "vmain" },
-          h("div", { class: "vtext" + (x.note ? "" : " muted") }, x.note || (x.auto ? t("Kept by itself before going back") : t("No note"))),
-          h("div", { class: "vmeta" }, fmtWhen(x.at), st && st.same_as === x.n ? " · " + t("same as now") : "")),
-        h("button", { class: "btn sm" + (viewing ? " on" : ""), onclick: () => (viewing ? stopViewing() : viewVersion(id, x.n)) }, icon("file"), viewing ? t("Back to now") : t("Preview")),
-        h("button", { class: "btn icon sm ghost", title: t("More"), "aria-label": t("More"), "aria-haspopup": "menu", onclick: (e) => versionRowMenu(e.currentTarget, x) }, icon("more"))),
+          h("div", { class: "vtext" + (x.note ? "" : " muted") }, x.note || (x.auto ? t("Kept by itself before going back; never sent") : t("No note"))),
+          h("div", { class: "vmeta" }, fmtWhen(x.sent_at || x.at), st && st.same_as === x.n ? " · " + t("same as now") : "")),
+        h("span", { class: "vacts" },   // the row's two buttons stay together when the line is too narrow for them
+          h("button", { class: "btn sm" + (viewing ? " on" : ""), onclick: () => (viewing ? stopViewing() : viewVersion(id, x.n)) }, icon("file"), viewing ? t("Back to now") : t("Preview")),
+          h("button", { class: "btn icon sm ghost", title: t("More"), "aria-label": t("More"), "aria-haspopup": "menu", onclick: (e) => versionRowMenu(e.currentTarget, x) }, icon("more")))),
       went.length > 0 && h("div", { class: "vsent" }, h("span", { class: "vsent-label" }, t("Went to {n} role", { n: went.length }, "Went to {n} roles")),
         went.map((w) => sentRoleChip(w.a))),
       open && changesEl(key));
   });
   out.push(card(t("History"), L.versions.length ? t("{n} version", { n: L.versions.length }, "{n} versions") : "",
-    rows.length ? rows : h("p", { class: "muted card-p" }, t("Nothing kept yet. Keep a version above when you send this subset."))));
+    rows.length ? rows : h("p", { class: "muted card-p" }, t("Nothing sent yet. Mark it sent on a role or a careers site, and the version it went out as appears here."))));
   return out;
 }
 
@@ -2037,10 +2014,10 @@ function versionRowMenu(anchor, x) {
   const st = (VS.list && VS.list.status) || null;
   openMenu(anchor, [
     st && { label: t("Compare with now"), icon: "git", onClick: () => toggleChanges(x.n, "now") },
-    { label: t("Export PDF"), hint: `${VS.for}-v${x.name || x.n}.pdf`, icon: "file", onClick: () => exportVersion(VS.for, x.n) },
+    { label: t("Export PDF"), hint: `${VS.for}-${x.name ? "v" + x.name : "copy-" + x.n}.pdf`, icon: "file", onClick: () => exportVersion(VS.for, x.n) },
     { label: t("Edit note"), icon: "pen", onClick: () => editVersionNote(x) },
     "sep",
-    { label: st ? t("Go back to v{n}…", { n: x.name || x.n }) : t("Bring the subset back as v{n}…", { n: x.name || x.n }), icon: "undo", onClick: () => restoreVersion(x.n) },
+    { label: st ? t("Go back to {version}…", { version: vLabel(x) }) : t("Bring the subset back as {version}…", { version: vLabel(x) }), icon: "undo", onClick: () => restoreVersion(x.n) },
   ], { minWidth: 240 });
 }
 
@@ -2073,7 +2050,8 @@ function paintViewing() {
   box.classList.toggle("hidden", !on);
   renderIssues();
   if (!on) { box.replaceChildren(); return; }
-  box.replaceChildren(icon("history"), h("span", { class: "vw-text" }, t("Previewing v{n}, as it was kept. Edits you make now don't show here.", { n: vName(VS.viewing.subset, VS.viewing.n) })),
+  const vx = vName(VS.viewing.subset, VS.viewing.n);
+  box.replaceChildren(icon("history"), h("span", { class: "vw-text" }, t("Previewing {version}, as it was kept. Edits you make now don't show here.", { version: vx ? "v" + vx : t("the copy") })),
     h("button", { class: "btn sm", onclick: stopViewing }, t("Back to now")));
 }
 
@@ -2092,17 +2070,18 @@ async function restoreVersion(n) {
   try { imp = await api("GET", versionsUrl(id, `/${n}/restore`)); } catch (e) { toast(e.message); return; }
   const st = VS.list && VS.list.status;
   const name = subsetName(subsets().find((x) => x.id === id)) || id;
-  const nn = vName(id, n);
+  const label = (k) => (vName(id, k) ? "v" + vName(id, k) : t("the copy"));
+  const nn = label(n);
   const list = (xs) => xs.map((x) => t("“{name}”", { name: x })).join(t(", "));
-  const lines = [!st ? t("“{name}” comes back as it was in v{n}.", { name, n: nn })
-    : st.same_as ? t("What “{name}” says now is v{m}, so you can come back to it.", { name, m: vName(id, st.same_as) })
-    : t("What “{name}” says now is kept as a version first, so you can come back to it.", { name })];
+  const lines = [!st ? t("“{name}” comes back as it was in {version}.", { name, version: nn })
+    : st.same_as ? t("What “{name}” says now is kept as {version}, so you can come back to it.", { name, version: label(st.same_as) })
+    : t("What “{name}” says now is kept as a copy first, so you can come back to it.", { name })];
   if (imp.entries.length) lines.push(t("These library entries go back to their wording then: {list}.", { list: list(imp.entries) }));
   if (imp.others.length) lines.push(t("Other subsets that use them change too: {list}.", { list: list(imp.others) }));
   if (imp.back.length) lines.push(t("Deleted since, and put back into the library: {list}.", { list: list(imp.back) }));
   if (imp.profile) lines.push(t("Your name and contacts go back too, and every subset shows them."));
   if (imp.sections) lines.push(t("Section titles go back too."));
-  const ok = await modal({ title: t("Go back to v{n}?", { n: nn }), message: h("div", { class: "modal-lines" }, lines.map((l) => h("p", null, l))),
+  const ok = await modal({ title: t("Go back to {version}?", { version: nn }), message: h("div", { class: "modal-lines" }, lines.map((l) => h("p", null, l))),
     ok: t("Go back to it"), danger: imp.others.length > 0 || imp.profile });
   if (!ok) return;
   await saveDraft();
@@ -2114,7 +2093,7 @@ async function restoreVersion(n) {
     paintViewing();
     await loadVersions(id, { quiet: true });
     const kept = VS.list && VS.list.versions[0];
-    toast(kept && kept.auto && kept.n !== n ? t("Back to v{n}; what it said before is v{m}", { n: vName(id, n), m: kept.name || kept.n }) : t("Back to v{n}", { n: vName(id, n) }));
+    toast(kept && kept.auto && kept.n !== n ? t("Back to {version}; what it said before is kept as a copy", { version: nn }) : t("Back to {version}", { version: nn }));
     clearPages();
     scheduleRender(0);
   } catch (e) { toast(t("Couldn't go back: {error}", { error: e.message })); }

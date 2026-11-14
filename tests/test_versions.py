@@ -20,15 +20,19 @@ def edit_subset(st: Studio, sid: str, fn) -> None:
     st.update_item("subset", sid, v, None)
 
 
+def pick(status: dict) -> dict:
+    return {k: status.get(k) for k in ("count", "latest", "changed", "same_as", "names", "next", "last_sent")}
+
+
 def test_a_version_freezes_what_the_subset_renders(data_file):
     st = Studio(data_file)
-    assert st.state()["subset_versions"]["RES-TECH-EN"] == {"count": 0, "latest": None, "changed": True, "same_as": None,
-                                                                "names": {}, "next": "1"}
-    r = st.commit_subset("RES-TECH-EN", "  sent to the first round  ")
-    assert r["created"] and r["made"]["n"] == 1 and r["made"]["note"] == "sent to the first round"
-    assert st.state()["subset_versions"]["RES-TECH-EN"] == {"count": 1, "latest": 1, "changed": False, "same_as": 1,
-                                                                "names": {"1": "1"}, "next": "1.1"}
-    assert not st.commit_subset("RES-TECH-EN")["created"]                # nothing changed: no new version
+    assert pick(st.state()["subset_versions"]["RES-TECH-EN"]) == {"count": 0, "latest": None, "changed": True, "same_as": None,
+                                                                  "names": {}, "next": "1.1", "last_sent": None}
+    r = st.commit_subset("RES-TECH-EN", "  sent to the first round  ", sent=True)
+    assert r["created"] and r["made"]["n"] == 1 and r["made"]["note"] == "sent to the first round" and r["made"]["name"] == "1.1"
+    assert pick(st.state()["subset_versions"]["RES-TECH-EN"]) == {"count": 1, "latest": 1, "changed": False, "same_as": 1,
+                                                                  "names": {"1": "1.1"}, "next": "1.1", "last_sent": 1}
+    assert not st.commit_subset("RES-TECH-EN", sent=True)["created"]     # nothing changed: no new version
 
     # the fact layer, the name and the linked postings are not what was sent
     edit_entry(st, "EXP-002", lambda e: e.update(notes="private story", evidence=["E:/x"],
@@ -66,18 +70,20 @@ def test_compare_shows_what_changed_per_entry(data_file):
 
 def test_a_version_renders_as_it_was_and_exports_beside_the_current_one(data_file):
     st = Studio(data_file)
-    st.commit_subset("RES-TECH-EN")
+    st.commit_subset("RES-TECH-EN", sent=True)
     edit_subset(st, "RES-TECH-EN", lambda v: v.update(headline={"en": "Something else entirely"}))
     r = st.render_version("RES-TECH-EN", 1)
     assert r["ok"] and r["pages"] == 1 and r["version"] == 1 and r["images"] >= 1
     assert st.page_image("RES-TECH-EN", 1, 1) is not None and st.pdf_path("RES-TECH-EN", 1).exists()
     ex = st.export("RES-TECH-EN", 1)
-    assert ex["exported"]["pdf"].endswith("RES-TECH-EN-v1.pdf")
+    assert ex["exported"]["pdf"].endswith("RES-TECH-EN-v1.1.pdf")             # named as the window shows it
+    st.restore_version("RES-TECH-EN", 1)                                          # now kept as an unsent copy (2)
+    assert st.export("RES-TECH-EN", 2)["exported"]["pdf"].endswith("RES-TECH-EN-copy-2.pdf")
 
 
 def test_going_back_keeps_now_as_a_version_and_says_who_else_is_affected(data_file):
     st = Studio(data_file)
-    st.commit_subset("RES-TECH-EN")
+    st.commit_subset("RES-TECH-EN", sent=True)
     before = json.dumps(to_plain(model.get_item(st.store.load()[0], "entry", "EXP-002")), ensure_ascii=False)
     edit_entry(st, "EXP-002", lambda e: (e["bullets"].append({"en": "Shipped v2"}), e.update(notes="newer notes", interview=[{"q": "Why?", "a": "kept"}])))
     edit_subset(st, "RES-TECH-EN", lambda v: v.update(template="modern", label="Kept name"))
@@ -96,8 +102,10 @@ def test_going_back_keeps_now_as_a_version_and_says_who_else_is_affected(data_fi
     assert "Shipped v2" not in json.dumps(e) and json.loads(before)["bullets"] == e["bullets"]
     vs = st.subset_versions("RES-TECH-EN")
     assert [v["n"] for v in vs["versions"]] == [2, 1] and vs["versions"][0]["auto"]   # what it said before is v2
-    assert vs["status"] == {"count": 2, "latest": 2, "changed": True, "same_as": 1,   # now = v1 again, not v2
-                          "names": {"1": "1", "2": "1.1"}, "next": "1.2"}   # v2 only changed wording: it is v1.1
+    # now = v1.1 again; what it said before going back was never sent, so it has no number
+    assert pick(vs["status"]) == {"count": 2, "latest": 2, "changed": True, "same_as": 1,
+                                  "names": {"1": "1.1"}, "next": "1.1", "last_sent": 1}
+    assert vs["versions"][0]["name"] == "" and vs["versions"][1]["name"] == "1.1"
     assert st.compare_versions("RES-TECH-EN", 1)["items"] == []
 
 

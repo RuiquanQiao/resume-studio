@@ -63,9 +63,8 @@ def digest(c: dict) -> str:
 
 
 def shape(c: dict) -> list:
-    """What a version's number is made of: which entries it picks, in what order, and how its sections are
-    ordered and hidden. A version whose shape differs from the one before is a new major number (v2);
-    one that only changes the wording, the layout or the skills is a minor one (v2.1)."""
+    """What a version's major number is made of: which entries it picks, in what order, and how its sections
+    are ordered and hidden."""
     s = c.get("subset") or {}
     used = {str(e.get("section")) for e in c.get("entries") or []}
     hidden = {str(x) for x in s.get("hide_sections") or []}
@@ -73,29 +72,39 @@ def shape(c: dict) -> list:
     return [[str(x) for x in s.get("entries") or []], order]
 
 
+# Numbers are given only to what went out, and nobody types them (2026-11-15). The major number moves when the
+# shape (entries, their order, the sections' order) differs from the last one sent; the minor one counts the
+# different wordings sent under that major: v2.3 is the third. A send that says what an earlier one said is
+# that earlier version again. A copy kept without being sent (before going back to a version) has no number.
+def sent_order(vs: list[dict]) -> list[dict]:
+    """The versions that went out, in the order they first went out (a copy sent later comes last)."""
+    return sorted((v for v in vs if v.get("sent")), key=lambda v: (str(v.get("sent_at") or v.get("at") or ""), v["n"]))
+
+
 def names(vs: list[dict]) -> dict[int, str]:
-    """Each version's number as the user sees it, from the versions in the order they were kept: "2", "2.1"…"""
     out, major, minor, prev = {}, 0, 0, None
-    for v in vs:
+    for v in sent_order(vs):
         sh = shape(v.get("content") or {})
         if prev is None or sh != prev:
             major, minor = major + 1, 0
-        else:
-            minor += 1
-        out[v["n"]] = f"{major}" if not minor else f"{major}.{minor}"
+        minor += 1
+        out[v["n"]] = f"{major}.{minor}"
         prev = sh
     return out
 
 
-def next_name(vs: list[dict], c: dict) -> str:
-    """The number `c` gets when it is kept next."""
-    if not vs:
-        return "1"
-    last = names(vs)[vs[-1]["n"]]
-    major, _, minor = last.partition(".")
-    if shape(vs[-1].get("content") or {}) != shape(c):
-        return str(int(major) + 1)
-    return f"{major}.{int(minor or 0) + 1}"
+def next_name(vs: list[dict], c: dict, same: int | None = None) -> str:
+    """The number `c` goes out as: the sent version it says exactly, or the next one."""
+    named = names(vs)
+    if same is not None and same in named:
+        return named[same]
+    sent = sent_order(vs)
+    if not sent:
+        return "1.1"
+    major, _, minor = named[sent[-1]["n"]].partition(".")
+    if shape(sent[-1].get("content") or {}) != shape(c):
+        return f"{int(major) + 1}.1"
+    return f"{major}.{int(minor) + 1}"
 
 
 def as_doc(c: dict) -> dict:
@@ -156,37 +165,60 @@ class Versions:
         last = vs[-1] if vs else None
         h = digest(current)
         same = next((v["n"] for v in reversed(vs) if v.get("hash") == h), None)
-        # `latest` / `same_as` are the versions' running numbers (what an application keeps); `names` are what
-        # the window shows for them (v2.1), and `next` is the name the subset gets when kept now
+        sent = sent_order(vs)
+        sent_same = next((v["n"] for v in reversed(sent) if v.get("hash") == h), None)
+        # `latest` / `same_as` are running numbers (what an application keeps); `names` are what the window shows
+        # for the sent ones (v2.1); `next` is what the subset goes out as now; `last_sent` the last one that went out
         return {"count": len(vs), "latest": last["n"] if last else None,
                 "changed": last is None or last.get("hash") != h, "same_as": same,
-                "names": {str(k): x for k, x in names(vs).items()}, "next": next_name(vs, current)}
+                "sent_same": sent_same, "last_sent": sent[-1]["n"] if sent else None,
+                "last_sent_at": (sent[-1].get("sent_at") or sent[-1].get("at")) if sent else None,
+                "names": {str(k): x for k, x in names(vs).items()}, "next": next_name(vs, current, sent_same)}
 
     def name(self, subset_id: str, n: int) -> str:
-        return names(self.all(subset_id)).get(int(n), str(n))
+        return names(self.all(subset_id)).get(int(n), "")
 
     @staticmethod
     def summary(v: dict, name: str | None = None) -> dict:
-        return {**{k: v.get(k) for k in ("n", "at", "note", "hash", "auto")}, "name": name or str(v.get("n"))}
+        return {**{k: v.get(k) for k in ("n", "at", "note", "hash", "auto", "sent")}, "name": name or ""}
 
     # ---- writing ---------------------------------------------------------
-    def commit(self, subset_id: str, c: dict, note: str = "", auto: bool = False) -> tuple[dict, bool]:
-        """Keep `c` as the next version, unless it is the same as the newest one. (version, created)"""
+    def commit(self, subset_id: str, c: dict, note: str = "", auto: bool = False, sent: bool = False) -> tuple[dict, bool]:
+        """Keep `c` as the next version, unless it is the same as the newest one (or, when it goes out, as any
+        one: going back to v1 and sending it sends v1). `sent` marks it as gone out. (version, created)"""
         with self.lock:
             data = self._read(subset_id)
             vs = data["versions"]
             h = digest(c)
             same = next((v for v in reversed(vs) if v.get("hash") == h), None)
-            if same is not None and (same is vs[-1] or auto):   # nothing new (going back needs no copy of a kept one)
+            if same is not None and (same is vs[-1] or auto or sent):   # nothing new
+                if sent and not same.get("sent"):
+                    same["sent"], same["sent_at"] = True, time.strftime("%Y-%m-%dT%H:%M:%S")
+                    self._write(subset_id, data)
                 return same, False
             v = {"n": (vs[-1]["n"] + 1) if vs else 1, "hash": h, "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                  "note": note.strip(), "content": c}
             if auto:
                 v["auto"] = True
+            if sent:
+                v["sent"], v["sent_at"] = True, v["at"]
             vs.append(v)
             data["id"] = subset_id
             self._write(subset_id, data)
             return v, True
+
+    def mark_sent(self, subset_id: str, sends: dict[int, str]) -> bool:
+        """Versions an application records as sent ({n: when}), from before versions knew it themselves."""
+        with self.lock:
+            data = self._read(subset_id)
+            changed = False
+            for v in data["versions"]:
+                if v.get("n") in sends and not v.get("sent"):
+                    v["sent"], v["sent_at"] = True, sends[v["n"]] or v.get("at")
+                    changed = True
+            if changed:
+                self._write(subset_id, data)
+            return changed
 
     def set_note(self, subset_id: str, n: int, note: str) -> dict:
         with self.lock:

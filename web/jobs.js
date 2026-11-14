@@ -234,7 +234,7 @@ function applicationsList() {
   if (!apps.length) return h("div", { class: "lib-section" }, head, h("div", { class: "empty" }, h("div", { class: "t" }, t("No applications yet"))));
   return h("div", { class: "lib-section", id: "jobs-list" }, head,
     shown.map(appRow),
-    !shown.length && h("div", { class: "muted", style: "padding:8px 10px;font-size:12.5px" }, t("Nothing active right now")));
+    !shown.length && h("div", { class: "muted", style: "padding:8px 10px;font-size:var(--fs-meta)" }, t("Nothing active right now")));
 }
 
 // what went out to an application: the subset and version pinned when it was sent
@@ -275,7 +275,7 @@ async function sendPosting(a) {
   const linked = (a.subsets || [])[0];
   if (!linked) return;
   const st = versionStatus(linked.id) || {};
-  const msg = st.same_as ? t("“{name}” goes out as v{n}, as it is now.", { name: linked.label, n: vName(linked.id, st.same_as) })
+  const msg = st.sent_same ? t("“{name}” goes out as v{n}, as it is now.", { name: linked.label, n: vName(linked.id, st.sent_same) })
     : t("“{name}” is kept as v{n} first, so you'll always know what this posting got.", { name: linked.label, n: vNext(linked.id) });
   if (!(await modal({ title: t("Mark this application as sent?"), message: msg, ok: t("Mark as sent") }))) return;
   try {
@@ -616,7 +616,7 @@ function paintJobsSettings(el = $("#jobs-settings")) {
       h("span", { class: "chk-ic" }, icon(c.ok ? "check" : "x")), h("span", null, t(CHECK_NAMES[c.id] || c.id)), h("span", { class: "chk-d" }, c.detail || "")))),
     h("p", { class: "settings-note" }, t("After every update these are checked again: they are what Resume Studio reads from {name}. If one fails, you can go back to the previous version.", { name })),
     webInfo().available && h("div", { class: "row wrap" },
-      h("span", { class: "muted", style: "font-size:12.5px" }, t("Its web interface")),
+      h("span", { class: "muted", style: "font-size:var(--fs-meta)" }, t("Its web interface")),
       { running: h("span", { class: "badge ok" }, t("Running")), preparing: h("span", { class: "badge busy" }, t("Starting…")),
         starting: h("span", { class: "badge busy" }, t("Starting…")), error: h("span", { class: "badge bad" }, t("Didn't start")) }[webInfo().state]
         || h("span", { class: "badge" }, t("Not started")),
@@ -630,7 +630,7 @@ function paintJobsSettings(el = $("#jobs-settings")) {
     h("div", { class: "sub-label" }, t("The CV {name} reads", { name })),
     checkRow("sync", t("Write cv.md from my library (never over changes made in {name})", { name })),
     checkRow("notes", t("Also share my fact layer (notes) as proof points")),
-    resumeLangs.length > 1 && h("div", { class: "row" }, h("span", { class: "muted", style: "font-size:12.5px" }, t("Language")),
+    resumeLangs.length > 1 && h("div", { class: "row" }, h("span", { class: "muted", style: "font-size:var(--fs-meta)" }, t("Language")),
       uiSeg(resumeLangs.map((l) => ({ value: l, label: langShort(l), tip: langName(l) })), cvLang, (v) => { jobsPending.cv_lang = v; paintJobsSettings(); }, { cls: "sm", label: t("Language") }))]
     .filter(Boolean));
 }

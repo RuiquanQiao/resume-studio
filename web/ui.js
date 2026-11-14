@@ -429,6 +429,65 @@ document.addEventListener("scroll", (e) => {
   const r = f.anchor.getBoundingClientRect();
   if (r.bottom < 0 || r.top > innerHeight) closeFloat(); else placeFloat(f);
 }, true);
+
+// ---- how smoothly a floating panel scrolls under the user's own wheel or touchpad -------------------------
+// 2026-11-15: the outline's panel felt half a beat late under a touchpad's two-finger scroll, which no headless
+// browser reproduces. Each gesture over a panel is measured here (timings only: no text of the page) and kept in
+// resume-studio-data/diag/scroll.jsonl, so it is judged from numbers of the real window.
+const ScrollProbe = { on: null, renders: 0 };
+function probeQuantiles(xs) {
+  const s = [...xs].sort((a, b) => a - b);
+  const q = (p) => (s.length ? Math.round(s[Math.min(s.length - 1, Math.floor(p * s.length))] * 10) / 10 : null);
+  return { n: s.length, p50: q(0.5), p95: q(0.95), max: s.length ? Math.round(s[s.length - 1] * 10) / 10 : null };
+}
+function finishProbe(g) {
+  if (ScrollProbe.on === g) ScrollProbe.on = null;
+  cancelAnimationFrame(g.raf);
+  if (g.obs) g.obs.disconnect();
+  if (g.mo) g.mo.disconnect();
+  if (g.wheels.length < 6) return;
+  const gaps = g.frames.slice(1).map((x, i) => x - g.frames[i]);
+  const dts = g.wheels.slice(1).map((w, i) => w[0] - g.wheels[i][0]);
+  const summary = { at: new Date().toISOString(), panel: g.kind, dpr: devicePixelRatio, size: [innerWidth, innerHeight],
+    wheels: g.wheels.length, wheel_dt: probeQuantiles(dts), delta: probeQuantiles(g.wheels.map((w) => Math.abs(w[1]))),
+    delta_modes: [...new Set(g.wheels.map((w) => w[2]))], first: g.wheels.slice(0, 12),
+    frames: probeQuantiles(gaps), slow_frames: gaps.filter((x) => x > 20).length, dropped: gaps.filter((x) => x > 34).length,
+    moved_frames: g.moves, still_frames: g.still, input_to_frame: probeQuantiles(g.lates),
+    long_frames: g.loaf.slice(0, 8), panel_rebuilt: g.mutations, outline_redrawn: ScrollProbe.renders - g.renders0 };
+  fetch("/api/diag/scroll", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(summary) }).catch(() => {});
+}
+document.addEventListener("wheel", (e) => {
+  const panel = e.target.closest && e.target.closest(".float");
+  if (!panel) return;
+  let g = ScrollProbe.on;
+  if (!g || g.panel !== panel) {
+    if (g) finishProbe(g);
+    g = ScrollProbe.on = { panel, kind: [...panel.classList].filter((c) => c !== "float" && c !== "in").join(" "), t0: e.timeStamp,
+      wheels: [], frames: [], lates: [], loaf: [], moves: 0, still: 0, last: panel.scrollTop, mutations: 0, renders0: ScrollProbe.renders };
+    const tick = (now) => {
+      if (ScrollProbe.on !== g) return;
+      g.frames.push(now);
+      const top = g.panel.scrollTop;
+      if (top !== g.last) g.moves++; else g.still++;
+      g.last = top;
+      g.raf = requestAnimationFrame(tick);
+    };
+    g.raf = requestAnimationFrame(tick);
+    try {
+      g.obs = new PerformanceObserver((l) => l.getEntries().forEach((x) => g.loaf.push({ ms: Math.round(x.duration),
+        scripts: (x.scripts || []).slice(0, 3).map((s) => `${s.invoker || "?"} ${Math.round(s.duration)}ms`) })));
+      g.obs.observe({ type: "long-animation-frame" });
+    } catch { /* not every engine reports long frames */ }
+    g.mo = new MutationObserver((m) => { g.mutations += m.length; });
+    g.mo.observe(panel, { childList: true, subtree: true });
+  }
+  const ts = e.timeStamp;
+  g.wheels.push([Math.round(ts - g.t0), Math.round(e.deltaY * 10) / 10, e.deltaMode]);
+  requestAnimationFrame((now) => g.lates.push(now - ts));
+  clearTimeout(g.timer);
+  g.timer = setTimeout(() => finishProbe(g), 600);
+}, { passive: true, capture: true });
+
 // A link to another site opens in the computer's own browser, never in this window: followed here, it
 // would replace Resume Studio with the site (a long blank, then the page, and no way back but restarting).
 // One handler for every link, so a link added anywhere later can't forget it.

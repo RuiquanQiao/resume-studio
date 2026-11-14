@@ -129,13 +129,43 @@ def test_a_level_is_kept_on_the_skill_and_cleared_without_a_trace():
 
 
 def test_an_ai_reading_waits_for_the_user():
-    d = doc(skills=[{"name": "Prisma", "level": "working", "by": "user", "suggest": {"level": "basic", "why": "notes: copied the schema"}},
+    d = doc(skills=[{"name": "Prisma", "level": "strong", "by": "user", "suggest": {"level": "none", "why": "notes: copied the schema"}},
                     {"name": "Kotlin", "suggest": {"level": "strong", "why": "notes: wrote it all"}}])
     cat = {r["key"]: r for r in skills.catalog(d)}
-    assert cat["prisma"]["level"] == "working" and cat["prisma"]["suggest"]["level"] == "basic"
+    assert cat["prisma"]["level"] == "strong" and cat["prisma"]["suggest"]["level"] == "none"
     skills.settle(d, "Prisma", accept=True)
     skills.settle(d, "Kotlin", accept=False)
-    assert d["skills"] == [{"name": "Prisma", "level": "basic", "by": "ai", "why": "notes: copied the schema"}]
+    assert d["skills"] == [{"name": "Prisma", "level": "none", "by": "ai", "why": "notes: copied the schema"}]
+
+
+def test_two_levels_and_the_four_level_files_read_as_them():
+    """2026-11-15: "只要不是熟练，不都可以算作尚不会": can use / familiar became can't use yet."""
+    assert skills.LEVELS == ("strong", "none")
+    d = doc(skills=[{"name": "Prisma", "level": "working", "by": "user"}, {"name": "Kotlin", "level": "basic", "suggest": {"level": "working"}},
+                    {"name": "Java", "level": "strong"}])
+    assert model.migrate(d) is True
+    assert [(r["name"], r["level"]) for r in d["skills"]] == [("Prisma", "none"), ("Kotlin", "none"), ("Java", "strong")]
+    assert d["skills"][1]["suggest"]["level"] == "none"
+    assert model.migrate(d) is False                          # once only
+    try:
+        skills.set_level(d, "Java", "working")
+        raise AssertionError("an old level is no longer set")
+    except ValueError:
+        pass
+
+
+def test_the_panel_ticks_a_skill_into_an_entry_and_onto_a_resume():
+    d = doc()
+    p2 = d["entries"][1]
+    assert skills.set_use(d, "Prisma", p2, True) and p2["tech"] == ["Kotlin", "Prisma"]
+    assert not skills.set_use(d, "prisma", p2, True)          # already there, by any spelling
+    d["entries"][0]["tech"].append("Next.js")                 # two instances of one skill go out together
+    assert skills.set_use(d, "next.js 15", d["entries"][0], False) and d["entries"][0]["tech"] == ["Prisma"]
+    web = d["subsets"][1]
+    assert skills.set_shown(d, web, "Kotlin", True) and web["show_skills"] == ["Kotlin"]   # no entry of WEB uses it
+    assert skills.set_shown(d, web, "Kotlin", False) and "show_skills" not in web and "hide_skills" not in web
+    assert skills.set_shown(d, web, "Prisma", False) and web["hide_skills"] == ["Prisma"]  # P1 uses it: hidden by hand
+    assert skills.set_shown(d, web, "prisma", True) and "hide_skills" not in web
 
 
 # ---- versions ---------------------------------------------------------------------------
@@ -177,11 +207,11 @@ def test_java_is_not_found_in_javascript():
 
 def test_mastery_counts_the_levels_whether_or_not_the_resume_names_the_skill():
     lv = {"python": {"name": "Python", "level": "strong"}, "docker": {"name": "Docker", "level": "none"},
-          "java": {"name": "Java", "level": "basic"}}
+          "java": {"name": "Java", "level": "none"}}
     f = fit(JD, "JavaScript React Python Docker", levels=lv)
     assert f["score"] == 33                                  # coverage: Python and Docker of six
-    assert f["real"] == 25                                   # (1 + 0.5 + 0) / 6
-    assert (f["have"], f["partial"], f["cant"]) == (["Python"], ["Java"], ["Docker"])
+    assert f["real"] == 17                                   # (1 + 0 + 0) / 6
+    assert (f["have"], f["cant"]) == (["Python"], ["Java", "Docker"]) and "partial" not in f
     assert fit(JD, "Python Docker")["real"] is None          # nothing rated yet: no second number
     # a skill the resume names without a level isn't known either way: left out until rated, and listed to rate
     f = fit(JD, "JavaScript Python Docker", levels={"python": {"name": "Python", "level": "strong"}, "docker": {"name": "Docker", "level": ""}})
@@ -207,8 +237,8 @@ def test_the_window_sets_levels_and_knows_which_notes_changed(data_file):
     st = s.state()
     assert {r["key"] for r in st["skills"]} >= {"next.js", "pytorch"}
     assert set(st["skills_review"]) == {"profile", "EXP-001", "EXP-002", "EXP-003"}   # every entry with notes
-    st = s.set_skill_level("Next.js", "working")
-    assert next(r for r in st["skills"] if r["key"] == "next.js")["level"] == "working"
+    st = s.set_skill_level("Next.js", "strong")
+    assert next(r for r in st["skills"] if r["key"] == "next.js")["level"] == "strong"
     assert "skills:" in data_file.read_text(encoding="utf-8")
     doc_, _ = s.store.load()
     s.mark_skills_reviewed(["profile", "EXP-002"], s._notes(doc_))
@@ -221,11 +251,11 @@ def test_the_window_sets_levels_and_knows_which_notes_changed(data_file):
 
 
 def test_the_api_level_and_settle_routes(server, data_file):
-    code, st = server.req("PUT", "/api/skills/level", {"name": "PyTorch", "level": "basic"})
-    assert code == 200 and next(r for r in st["skills"] if r["key"] == "pytorch")["level"] == "basic"
-    code, _ = server.req("PUT", "/api/skills/level", {"name": "PyTorch", "level": "expert"})
+    code, st = server.req("PUT", "/api/skills/level", {"name": "PyTorch", "level": "none"})
+    assert code == 200 and next(r for r in st["skills"] if r["key"] == "pytorch")["level"] == "none"
+    code, _ = server.req("PUT", "/api/skills/level", {"name": "PyTorch", "level": "working"})   # gone with the four levels
     assert code == 400
-    code, _ = server.req("PUT", "/api/skills/level", {"name": "", "level": "basic"})
+    code, _ = server.req("PUT", "/api/skills/level", {"name": "", "level": "none"})
     assert code == 400
     code, st = server.req("POST", "/api/skills/settle", {"names": [], "accept": True})
     assert code == 200
@@ -241,3 +271,25 @@ def test_the_ai_reading_button_sends_the_changed_notes(server, data_file, fake_c
     code, chat2 = server.req("POST", "/api/chats")
     code, r = server.req("POST", f"/api/chats/{chat2['id']}/send", {"text": "", "action": "skills"})
     assert code == 409
+
+
+def test_the_api_ticks_a_skill_into_an_entry_and_onto_a_resume(server):
+    code, st = server.req("POST", "/api/skills/use", {"name": "Zig", "entry": "EXP-002", "on": True})
+    assert code == 200 and "EXP-002" in next(r for r in st["skills"] if r["key"] == "zig")["used_in"]
+    code, st = server.req("POST", "/api/skills/show", {"name": "Zig", "subset": "RES-TECH-EN", "on": False})
+    assert code == 200
+    v = next(x for x in st["doc"]["subsets"] if x["id"] == "RES-TECH-EN")
+    assert v.get("hide_skills") == ["Zig"] or "EXP-002" not in v.get("entries", [])
+    assert server.req("POST", "/api/skills/use", {"name": "Zig", "entry": "NOPE", "on": True})[0] == 404
+    assert server.req("POST", "/api/skills/show", {"name": "Zig", "subset": "ALL", "on": True})[0] == 404
+
+
+def test_versions_sent_before_versions_knew_it_are_marked_at_start(data_file):
+    """The applications' records name the versions that went out; at start those are marked sent and numbered."""
+    from jobhunt.api import mark_sent_versions
+    s = Studio(data_file)
+    s.commit_subset("RES-TECH-EN")                            # kept by hand, the old way: no number
+    assert s.subset_versions("RES-TECH-EN")["versions"][0]["name"] == ""
+    mark_sent_versions(s, [("RES-TECH-EN", 1, "2026-10-20T21:08:00"), ("GONE", 3, ""), (None, 1, "")])
+    v = s.subset_versions("RES-TECH-EN")["versions"][0]
+    assert v["name"] == "1.1" and v["sent"]

@@ -114,6 +114,28 @@ class Studio:
             self.store.save(doc)
         return self.state()
 
+    def use_skill(self, name: str, entry_id: str, on: bool) -> dict:
+        """Name a skill in an entry's tech / take it out (the skill panel's "Used in" list)."""
+        with self.store.lock:
+            doc, _ = self.store.load()
+            e = model.get_item(doc, "entry", entry_id)
+            if e is None:
+                raise KeyError(t("Entry {id} doesn't exist", id=entry_id))
+            if skills.set_use(doc, name, e, on):
+                self.store.save(doc)
+        return self.state()
+
+    def show_skill(self, name: str, subset_id: str, on: bool) -> dict:
+        """Show a skill on a subset's skills lines, or hide it there (the skill panel's resume list)."""
+        with self.store.lock:
+            doc, _ = self.store.load()
+            v = model.get_item(doc, "subset", subset_id)
+            if v is None or model.is_all(v):
+                raise KeyError(t("Subset {id} doesn't exist", id=subset_id))
+            if skills.set_shown(doc, v, name, on):
+                self.store.save(doc)
+        return self.state()
+
     def settle_skills(self, names: list[str], accept: bool) -> dict:
         """Accept or dismiss the AI's pending readings of these skills (every pending one when `names` is empty)."""
         with self.store.lock:
@@ -369,7 +391,8 @@ class Studio:
         doc, _ = self.store.load()
         export_dir = self.data_dir / str((doc.get("settings") or {}).get("export_dir") or "exports")
         export_dir.mkdir(parents=True, exist_ok=True)
-        name = self._safe(subset_id) + (f"-v{self.versions.name(subset_id, n)}" if n else "")
+        vname = self.versions.name(subset_id, n) if n else ""
+        name = self._safe(subset_id) + ((f"-v{vname}" if vname else f"-copy-{int(n)}") if n else "")
         out_pdf = export_dir / f"{name}.pdf"
         shutil.copyfile(result["pdf"], out_pdf)
         exported = {"pdf": str(out_pdf)}
@@ -403,13 +426,14 @@ class Studio:
         return {"subset": subset_id, "exists": sub is not None, "status": status,
                 "versions": [versions.Versions.summary(v, named.get(v["n"])) for v in reversed(vs)]}
 
-    def commit_subset(self, subset_id: str, note: str = "") -> dict:
-        """Keep what the subset says now as its next version (nothing new when it hasn't changed)."""
+    def commit_subset(self, subset_id: str, note: str = "", sent: bool = False) -> dict:
+        """Keep what the subset says now as a version (nothing new when it hasn't changed); `sent`: it goes out
+        now, which is what gives it a number (resume/versions.py `names`)."""
         with self.store.lock:
             doc, sub = self._subset_now(subset_id)
             if sub is None:
                 raise KeyError(t("Subset {id} doesn't exist", id=subset_id))
-            v, created = self.versions.commit(subset_id, versions.content(doc, sub), note)
+            v, created = self.versions.commit(subset_id, versions.content(doc, sub), note, sent=sent)
         return {**self.subset_versions(subset_id), "made": versions.Versions.summary(v, self.versions.name(subset_id, v["n"])),
                 "created": created}
 
@@ -441,7 +465,9 @@ class Studio:
         with self.store.lock:
             doc, sub = self._subset_now(subset_id)
             if sub is not None:
-                self.versions.commit(subset_id, versions.content(doc, sub), t("Before going back to v{n}", n=self.versions.name(subset_id, n)), auto=True)
+                name = self.versions.name(subset_id, n)
+                self.versions.commit(subset_id, versions.content(doc, sub), t("Before going back to v{n}", n=name) if name
+                                     else t("Before going back to the copy of {date}", date=str(self._version(subset_id, n).get("at") or "")[:16].replace("T", " ")), auto=True)
             versions.restore(doc, c)
             self.store.save(doc)
         return self.state()

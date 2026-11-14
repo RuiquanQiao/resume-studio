@@ -420,30 +420,36 @@ def test_jobs_create_switch_delete(page, server):
 
 
 def test_subset_versions_keep_compare_preview_and_go_back(page, server):
+    """2026-11-15: nobody keeps or numbers a version. A send keeps what the subset says and numbers it: v1.1 for the
+    first; another wording sent under the same entries and section order is v1.2; leaving an entry out makes the
+    next one sent v2.1. The window only says where the resume stands, and offers no "keep" anywhere."""
     chip = page.locator("#subset-version")
-    assert chip.inner_text().strip() == "尚未定稿"
-    chip.click()
-    page.click(".float .menu-item:has-text('定稿为 v1')")
-    page.fill(".modal input", "秋招第一批")
-    page.click(".modal button:text-is('保留')")
-    wait_until(lambda: chip.inner_text().strip() == "v1", msg="kept as v1")
-    # a shared entry it uses changes elsewhere (Claude, by hand): the subset has changed since v1
+    assert chip.inner_text().strip() == "尚未投递"
+    chip.click()                                                           # opens the history, no menu to keep one
+    page.wait_for_selector(".ed-head h1:text('版本')")
+    assert page.locator(".vkeep, .vnote-input").count() == 0 and "定稿" not in page.inner_text("#editor")
+    assert "首次投递时会自动存为 v1.1" in page.inner_text("#editor")
+    co = server.req("POST", "/api/hunt/companies", {"name": "星河科技", "subset": "RES-TECH-EN"})[1]
+    cid = (co.get("company") or co)["id"]
+    a1 = server.req("POST", f"/api/hunt/companies/{cid}/roles", {"role": "服务端研发工程师"})[1]["application"]["id"]
+    a2 = server.req("POST", f"/api/hunt/companies/{cid}/roles", {"role": "算法工程师"})[1]["application"]["id"]
+    a3 = server.req("POST", f"/api/hunt/companies/{cid}/roles", {"role": "后台开发"})[1]["application"]["id"]
+    assert server.req("POST", f"/api/hunt/apps/{a1}/sent", {"subset": "RES-TECH-EN"})[0] == 200
+    wait_until(lambda: chip.inner_text().strip() == "v1.1", msg="sent as v1.1")
+    # a shared entry it uses changes elsewhere (Claude, by hand): changed since v1.1, goes out next as v1.2
     eid = subset(server)["entries"][0]
     e = next(x for x in state(server)["doc"]["entries"] if x["id"] == eid)
     e["bullets"] = [*e.get("bullets", []), {"en": "Shipped v2 to every user", "zh": "上线第二版"}]
     assert server.req("PUT", "/api/item", {"kind": "entry", "id": eid, "data": e, "base": None})[0] == 200
-    wait_until(lambda: chip.inner_text().strip() == "v1 · 有改动", msg="changed since v1")
-    page.click(".nav-row:has-text('版本')")
-    page.wait_for_selector(".ed-head h1:text('版本')")
-    page.click(".vshow")                                                   # what changed since v1, git-style
+    wait_until(lambda: chip.inner_text().strip() == "v1.2 · 未投递", msg="changed since v1.1")
+    page.wait_for_selector(".card-p.vnow:has-text('下次投递时会自动存为 v1.2')")
+    page.click(".vshow")                                                   # what changed since v1.1, git-style
     page.wait_for_selector(".vdiff .dl-add")
     assert "Shipped v2 to every user" in page.inner_text(".vdiff .dl-add")
-    page.fill(".vnote-input", "加了一条")
-    page.click(".vkeep .btn.primary")
-    # only the wording changed: a minor number (2026-11-15), shown in the list too; the file still counts 1, 2
-    wait_until(lambda: chip.inner_text().strip() == "v1.1", msg="kept as v1.1")
-    assert page.inner_text(".vrow[data-n='2'] .vtext") == "加了一条" and page.inner_text(".vrow[data-n='2'] .vnum") == "v1.1"
-    # look at v1 as it was, then back to now
+    assert server.req("POST", f"/api/hunt/apps/{a2}/sent", {"subset": "RES-TECH-EN"})[0] == 200
+    wait_until(lambda: chip.inner_text().strip() == "v1.2", msg="sent as v1.2")
+    page.wait_for_selector(".vrow[data-n='2'] .vnum:text-is('v1.2')")
+    # look at v1.1 as it was, then back to now
     page.click(".vrow[data-n='1'] .vline .btn.sm")
     page.wait_for_selector("#viewing:not(.hidden)")
     page.wait_for_selector("#pages img[src*='/versions/1/page/1']")
@@ -451,21 +457,21 @@ def test_subset_versions_keep_compare_preview_and_go_back(page, server):
     page.click("#viewing button")
     page.wait_for_selector("#viewing.hidden", state="attached")
     page.wait_for_selector("#pages img[src*='/subsets/RES-TECH-EN/page/1']")
-    # go back to v1: now is v2 already, so nothing extra is kept
+    # go back to v1.1: now is v1.2 already, so nothing extra is kept
     page.click(".vrow[data-n='1'] .btn.icon")
-    page.click(".float .menu-item:has-text('恢复到 v1')")
-    page.wait_for_selector(".modal:has-text('当前内容即为 v1.1')")
+    page.click(".float .menu-item:has-text('恢复到 v1.1')")
+    page.wait_for_selector(".modal:has-text('当前内容即为 v1.2')")
     page.click(".modal button:text('恢复到此版本')")
-    wait_until(lambda: chip.inner_text().strip() == "v1", msg="back to v1")
+    wait_until(lambda: chip.inner_text().strip() == "v1.1", msg="back to v1.1")
     e = next(x for x in state(server)["doc"]["entries"] if x["id"] == eid)
     assert "Shipped v2" not in json.dumps(e) and page.locator(".vrow").count() == 2
-    # leaving an entry out changes what the resume is made of: the next one kept is a major number
+    # leaving an entry out changes what the resume is made of: the next one sent is a new major number
     v = subset(server)
     v["entries"] = v["entries"][1:]
     assert server.req("PUT", "/api/item", {"kind": "subset", "id": "RES-TECH-EN", "data": v, "base": None})[0] == 200
-    wait_until(lambda: "定稿为 v2" in page.inner_text(".vkeep .btn.primary"), msg="offered as v2")
-    page.click(".vkeep .btn.primary")
-    wait_until(lambda: chip.inner_text().strip() == "v2", msg="kept as v2")
+    wait_until(lambda: chip.inner_text().strip() == "v2.1 · 未投递", msg="goes out next as v2.1")
+    assert server.req("POST", f"/api/hunt/apps/{a3}/sent", {"subset": "RES-TECH-EN"})[0] == 200
+    wait_until(lambda: chip.inner_text().strip() == "v2.1", msg="sent as v2.1")
 
 
 def test_job_from_all_starts_full_and_has_own_headline(page_all, server):
@@ -3555,16 +3561,65 @@ def test_skills_are_chips_with_how_well_you_have_them(page, server, data_file):
     tech = next(e for e in state(server)["doc"]["entries"] if e["id"] == "EXP-005")["tech"]
     assert tech[-2:] == ["Python (NumPy, SciPy)", "Docker"]
 
+    # two levels (2026-11-15), and no hidden "click again to clear": picking the other one is how it changes
     pg.click("#active .skx-chip:has(.skx-name:text-is('Docker'))")
-    pg.click(".skx-pop .skx-levels button:text-is('能用')")
-    pg.wait_for_selector("#active .skx-chip:has(.skx-name:text-is('Docker')) .skx-lv:text-is('能用')")
-    assert next(r for r in state(server)["skills"] if r["key"] == "docker")["level"] == "working"
-    assert "level: working" in data_file.read_text(encoding="utf-8")
+    assert pg.locator(".skx-pop .skx-lvl").all_inner_texts() == ["熟练", "尚不会"]
+    pg.click(".skx-pop .skx-lvl:text-is('熟练')")
+    pg.wait_for_selector("#active .skx-chip:has(.skx-name:text-is('Docker')) .skx-lv:text-is('熟练')")
+    assert next(r for r in state(server)["skills"] if r["key"] == "docker")["level"] == "strong"
+    assert "level: strong" in data_file.read_text(encoding="utf-8")
+    assert pg.locator(".skx-pop").count() == 1                       # the panel stays open on a pick
+    pg.click(".skx-pop .skx-lvl:text-is('熟练')")                    # picking it again changes nothing
+    pg.wait_for_timeout(300)
+    assert next(r for r in state(server)["skills"] if r["key"] == "docker")["level"] == "strong"
+    pg.keyboard.press("Escape")
 
-    pg.click(chip)                                                   # show it on this resume anyway
-    pg.click(".skx-pop button:text-is('仍然显示')")
+    # the resumes it shows on are a list to tick: Next.js on this one, though no entry it picks uses it
+    pg.click(chip)
+    name = pg.evaluate("() => subsetName(subset())")
+    row = pg.locator(".skx-pop .skx-opt", has_text=name)
+    assert row.get_attribute("aria-checked") == "false" and "其中没有经历用到" in row.inner_text()
+    row.click()
     wait_until(lambda: subset(server).get("show_skills") == ["Next.js"], msg="pinned on the subset")
-    pg.wait_for_selector(chip + ":not(.off)")
+    pg.wait_for_selector(".skx-pop .skx-opt[aria-checked=true]:has-text('已手动显示')")
+    row.click()                                                      # back to what its entries say: no choice kept
+    wait_until(lambda: not subset(server).get("show_skills"), msg="unpinned")
+    pg.keyboard.press("Escape")
+
+
+def test_a_skill_panel_ties_it_to_entries_and_chips_move_by_dragging(page, server):
+    """2026-11-15: the panel lists the entries a skill is used in as ticks (ticking another entry adds it to that
+    entry's tech), the panel has no move buttons, and a chip is moved by pressing it and dragging it."""
+    pg = page
+    open_entry(pg, "EXP-005")
+    names = lambda: pg.locator("#active .skx-chip .skx-name").all_inner_texts()   # noqa: E731
+    first = names()[0]
+    pg.click(f"#active .skx-chip:has(.skx-name:text-is('{first}'))")
+    assert pg.locator(".skx-pop button", has_text="左移").count() == 0 and pg.locator(".skx-pop button", has_text="右移").count() == 0
+    other = pg.evaluate("() => entries().find((x) => !isListEntry(x) && x.id !== 'EXP-005' && !(x.tech || []).some((y) => skillKey(display(y)) === skillKey(" + json.dumps(first) + ")))")
+    title = pg.evaluate(f"() => display(entryById({json.dumps(other['id'])}).title)")
+    pg.locator(".skx-pop .skx-opt", has_text=title).first.click()
+    wait_until(lambda: first in json.dumps(next(e for e in state(server)["doc"]["entries"] if e["id"] == other["id"]).get("tech") or []),
+               msg="added to the other entry")
+    pg.wait_for_selector(f".skx-pop .skx-opt[aria-checked=true]:has-text('{title}')")
+    pg.locator(".skx-pop .skx-opt", has_text=title).first.click()   # and out again
+    wait_until(lambda: first not in json.dumps(next(e for e in state(server)["doc"]["entries"] if e["id"] == other["id"]).get("tech") or []),
+               msg="taken out of the other entry")
+    pg.keyboard.press("Escape")
+
+    before = names()
+    a = pg.locator("#active .skx-chip").nth(0).bounding_box()
+    c = pg.locator("#active .skx-chip").nth(2).bounding_box()
+    pg.mouse.move(a["x"] + 10, a["y"] + a["height"] / 2)
+    pg.mouse.down()
+    pg.mouse.move(a["x"] + 30, a["y"] + a["height"] / 2, steps=3)
+    assert pg.locator(".skx-ghost").count() == 1                    # it lifts under the pointer
+    pg.mouse.move(c["x"] + c["width"] - 4, c["y"] + c["height"] / 2, steps=8)   # past the third one's middle
+    pg.mouse.up()
+    assert pg.locator(".skx-pop").count() == 0                      # letting go after a drag opens nothing
+    assert names() == [before[1], before[2], before[0], *before[3:]]
+    wait_until(lambda: [x if isinstance(x, str) else list(x.values())[0] for x in next(e for e in state(server)["doc"]["entries"] if e["id"] == "EXP-005")["tech"]][:3]
+               == [before[1], before[2], before[0]], msg="the new order saved")
 
 
 def test_typing_a_skill_searches_the_ones_you_have_and_enter_makes_a_new_one(page, server):
@@ -3608,3 +3663,23 @@ def test_typing_a_skill_searches_the_ones_you_have_and_enter_makes_a_new_one(pag
     assert pg.locator(".skx-suggest:not([hidden])").count() == 0
     pg.wait_for_timeout(600)
     assert "Kub" not in json.dumps(next(e for e in state(server)["doc"]["entries"] if e["id"] == "EXP-005")["tech"])
+
+
+def test_a_scroll_over_a_panel_is_measured_into_the_data_folder(page, server, data_file):
+    """2026-11-15: the outline's panel felt late under a touchpad, which only the user's window shows. Every scroll
+    gesture over a floating panel is measured by the page (timings only) and kept beside the data file."""
+    pg = page
+    pg.evaluate("() => setOutline(false)")
+    pg.click(".outline-strip")
+    pg.wait_for_selector(".outline-pop")
+    box = pg.locator(".outline-pop").bounding_box()
+    pg.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    for i in range(12):
+        pg.mouse.wheel(0, 40 if i < 6 else -40)
+        pg.wait_for_timeout(16)
+    log = data_file.parent / "resume-studio-data" / "diag" / "scroll.jsonl"
+    wait_until(lambda: log.exists() and log.read_text(encoding="utf-8").strip(), msg="the gesture written down")
+    rec = json.loads(log.read_text(encoding="utf-8").strip().splitlines()[-1])
+    assert "outline-pop" in rec["panel"] and rec["wheels"] >= 6 and rec["frames"]["n"] > 0
+    assert set(rec) >= {"input_to_frame", "dropped", "long_frames", "panel_rebuilt", "outline_redrawn", "dpr"}
+    assert "Paper2Exam" not in json.dumps(rec, ensure_ascii=False) and "EXP-" not in json.dumps(rec)   # timings only
