@@ -2288,5 +2288,18 @@
  "Kept in your data folder, with the rest of your data": "他のデータと同じくデータフォルダーに保存されます",
  "This plugin is no longer installed.": "このプラグインはアンインストールされています。",
  "Turn it on and press Done: its version, checks and the CV it reads then show here.": "有効にして「完了」を押すと、バージョン、チェック結果、読み込む履歴書がここに表示されます。",
- "{n} record": "{n} 件"
+ "{n} record": "{n} 件",
+ "Add a skill": "スキルを追加",
+ "By its title": "職種名どおり",
+ "By its title: {names}": "職種名どおり：{names}",
+ "In none of your tracks": "どのトラックにも入っていません",
+ "Its duties read more like {track}: {words}.": "職務内容は「{track}」に近い内容です：{words}。",
+ "Move to {track}": "「{track}」に変更",
+ "Not a skill it asks for": "この職種が求めるスキルではありません",
+ "Skills it asks for": "求められるスキル",
+ "Track": "トラック",
+ "from its description, no AI": "職務記述から抽出（AI 不使用）",
+ "{track}'s words aren't in them.": "「{track}」のキーワードは含まれていません。",
+ "{track}'s words: {words}.": "「{track}」のキーワード：{words}。",
+ "{word} in {n} line": "{word}（{n} 行）"
 }

@@ -2474,5 +2474,21 @@
  "{n} record": [
   "{n} fiche",
   "{n} fiches"
+ ],
+ "Add a skill": "Ajouter une compétence",
+ "By its title": "Selon l’intitulé",
+ "By its title: {names}": "Selon l’intitulé : {names}",
+ "In none of your tracks": "Dans aucune de vos pistes",
+ "Its duties read more like {track}: {words}.": "Les missions relèvent plutôt de « {track} » : {words}.",
+ "Move to {track}": "Passer à « {track} »",
+ "Not a skill it asks for": "Pas une compétence demandée",
+ "Skills it asks for": "Compétences demandées",
+ "Track": "Piste",
+ "from its description, no AI": "tirées de la description, sans IA",
+ "{track}'s words aren't in them.": "Les mots de « {track} » n’y figurent pas.",
+ "{track}'s words: {words}.": "Mots de « {track} » : {words}.",
+ "{word} in {n} line": [
+  "{word} dans {n} ligne",
+  "{word} dans {n} lignes"
  ]
 }

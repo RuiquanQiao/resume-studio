@@ -206,6 +206,13 @@ All three were built on 2026-10-18. Choices made on the way:
   commit) and js-yaml (MIT, the one package they need). The scan needs only Node.js, no career-ops install.
   `python scripts/update_career_ops.py` brings in career-ops' newest copy (it follows the providers' imports, and
   stops if they start needing a package not kept here); then run `scripts/check.py`.
+- *Fixed 2026-11-14:* **a list a provider read in part closes nothing.** Most providers (Tencent, Workday, Lever,
+  Moka…) keep the rows of the pages read when a later page fails, and say so only in a warning ("keeping the 192
+  jobs collected so far"); the scan took that for the whole list and closed 800 of Tencent's roles. `co_scan.mjs`
+  now keeps each provider's warnings while it reads and marks a list `partial` when one says so (a page failed, a
+  cap was hit), and the scan keeps what came and closes nothing. Each request waits as long as `patience.py` says
+  for that site (careers.tencent.com answers in 9 s from Australia; the providers' own limit was 10 s) and is asked
+  again once when it doesn't answer; the answers it took are kept for the next wait.
 - *Built:* **keywords** (career-ops' title filter): the roles the user looks for, on the Companies tab. Postings
   without one are kept but folded away, and don't count as news. Tencent alone lists thousands.
 - *Built:* the **daily scan** never opens the browser by itself: sites read by a route wait for a scan the user
@@ -669,6 +676,17 @@ exclusions and the resume subset it goes out with. No AI runs per posting: it is
 - A company's page tags each role with its tracks and folds away the rest; the table counts only those.
 - **Let AI set them up**: the agent builds tracks from the resume subsets (one subset is one kind of role) and the
   words real titles use, then checks them against a company's titles. The old `keywords` list became track 1.
+- **A picked role's description checks its track and names its skills** (2026-11-14, `jobhunt/skills.py`, no AI).
+  Screening stays on titles alone. Once a role is picked (Want to apply) and its description is read:
+  - *Skills*: the phrases a requirement names after 熟悉 / 掌握 / 精通 / 有…经验 / "experience with" / "proficient
+    in", the tool-like Latin words in it, and every skill learned from earlier descriptions (`hunt/skills.json`,
+    named in two at least). No word list made for one field: a 会计 role gets CPA, 税务筹划, 合并报表, SAP. A
+    requirement about a degree names subjects, never skills. The progress table has a Skills column; the role's
+    page lists them, a wrong one is taken off (and never named again, on any role), a missing one typed in (and
+    looked for in every description).
+  - *Track*: when the duties use another track's words in far more of their lines (3 at least, twice its own
+    track's), the role's page says which, with the counts, and offers "Move to …" or "Keep it"; the table shows a
+    dot. Nothing is moved for the user. A role put in a track is in that one only, in Matching roles too.
 
 ### What comes next (a flow review, as an agent engineer)
 

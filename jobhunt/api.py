@@ -30,6 +30,7 @@ from .history import History, describe
 from .logos import fetch_logo, fetch_logo_in_browser
 from .postings import held_back, tracks_of, Postings, same_link, stale
 from .rank import Descriptions, fit, skill_words
+from . import skills as role_skills
 from .scan import Scanner
 from .store import LOGO_TYPES, STATE_IDS, Hunt, SameCompany
 from .views import Views
@@ -112,6 +113,13 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     hunt.scanner = scanner   # the app (and tests) reach the scanner through the tracker
     descs = Descriptions(hunt, lambda: scanner.browser, lambda: app.bus.publish("hunt", {}))
     hunt.descriptions = descs
+    # the roles whose descriptions were read before their skills were worked out get them, once, off the start
+    def fill_skills() -> None:
+        try:
+            hunt.fill_skills([j.get("jd") or "" for j in descs.all().values()])
+        except Exception:  # noqa: BLE001  (a file being written meanwhile: the next start does it)
+            pass
+    threading.Thread(target=fill_skills, daemon=True, name="hunt-fill-skills").start()
     # a scan never opens role pages: a role's description is read when the user picks it (Want to apply), or when
     # they ask for the picked roles' descriptions (user, 2026-11-07: scanning one company read other companies' pages)
     history = History(hunt)
@@ -457,9 +465,15 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 # its nature not known yet: the tracks for some natures only can't say whether its roles are theirs
                 "held_back": [tr["id"] for tr in held_back(trs, c.get("nature") or "")]}
 
+    def with_track(a: dict, tracks: list[dict], nature: str) -> dict:
+        """A role's track (the one the user put it in, else its title's) and, once its description is read, the
+        track that description reads like when that is another one (jobhunt/skills.py, no AI)."""
+        return role_skills.view(a, tracks_of(a.get("role") or "", tracks, nature), tracks, nature)
+
     def app_view(ref: str) -> dict:
         a = hunt.application(ref)
         c = hunt.company(a["company"])
+        a = {**a, **with_track(a, posts.tracks(), c.get("nature") or "")}
         r = reading.get(a["id"]) or {}
         if r.get("error") and (a.get("jd") or "") != r.get("jd", ""):   # the JD came in since (the AI, the user): the failure is over
             reading.pop(a["id"], None)
@@ -584,6 +598,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             c["postings"]["tried"] = st["tried"]
         sc = scans
         places = every_place(tb)
+        nature_of = {c["id"]: c.get("nature") or "" for c in tb["companies"]}
+        tb["applications"] = [{**a, **with_track(a, sc["tracks"], nature_of.get(a["company"], ""))} for a in tb["applications"]]
         return {**tb, "platforms": platforms(), "tracker": tracker(), "career_ops": co_on(),
                 "scan": {"keywords": sc["keywords"], "tracks": sc["tracks"], "daily": sc["daily"], "last_all": sc["last_all"],
                          "running": dict(scanner.running), "providers": scanner.providers_ready(),

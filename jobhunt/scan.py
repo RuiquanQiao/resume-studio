@@ -52,6 +52,14 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # the job APIs the scan reads itself, whatever the site: a route calling one predates that scan
 BUILT_IN_APIS = {beisen.API.lower(), feishu.API.lower(), hotjob.API.lower().rstrip("/"),
                  alitalent.API.lower(), alitalent.BATCHES.lower(), iguopin.API.lower(), iguopin.INFO.lower()}
+# career-ops' providers (jobs/co_scan.mjs): a request's wait and tries as a near site gets them (patience.py adds
+# for a far one), and the pages a provider reads of one list at most
+BRIDGE_TIMEOUT = 20
+BRIDGE_TRIES = 2
+BRIDGE_WAITS = (3,)
+CO_MAX_PAGES = 40
+# the providers for systems that run in mainland China, whatever the company's own domain (careers.tencent.com)
+CN_PROVIDERS = {"tencent", "meituan", "alibaba", "mokahr", "feishu-jobs", "bytedance", "zhiye", "hotjob"}
 KNOWN = "providers.json"   # hunt/providers.json  {"<list address>": "beisen"}: the systems found reading each
 MAX_PAGES = 20   # of a recorded route, each with 2 minutes
 # a scan has no one waiting on it, and a user abroad reads sites on the far side of the world (user, 2026-11-02):
@@ -221,13 +229,23 @@ class Scanner:
     def _bridge(self, entries: list[dict], detect: bool = False) -> list[dict]:
         if not entries or not self.providers_ready():
             return []
+        # each site's wait (jobhunt/patience.py), never the providers' own 10 s: careers.tencent.com's pages take 9 s
+        # from Australia, and one that took 11 stopped the read at 192 of about 2,000 roles (2026-11-14)
+        waits = {}
+        for x in entries:
+            p = patience.of(x["url"], BRIDGE_TIMEOUT, BRIDGE_TRIES, BRIDGE_WAITS,
+                            cn=self._providers.get(x["url"]) in CN_PROVIDERS)
+            waits[x["url"]] = p
+            x.update({"timeout_ms": int(p.timeout * 1000), "tries": p.tries, "waits_ms": [int(w * 1000) for w in p.waits]})
+        # the whole run: every site read to the provider's page cap at its own wait, never a fixed 10 minutes
+        limit = 60 if detect else 120 + sum(p.timeout * (CO_MAX_PAGES + 1) for p in waits.values())
         tmp = self.hunt.dir / f".scan-{threading.get_ident()}.json"
         self.hunt.dir.mkdir(parents=True, exist_ok=True)
         tmp.write_text(json.dumps({"entries": entries}, ensure_ascii=False), encoding="utf-8")
         try:
             proc = subprocess.run([shutil.which("node") or "node", str(BRIDGE), str(self.providers_dir), str(tmp),
                                    *(["--detect"] if detect else [])], cwd=str(BRIDGE.parent), capture_output=True,
-                                  text=True, encoding="utf-8", errors="replace", timeout=600, creationflags=_NO_WINDOW)
+                                  text=True, encoding="utf-8", errors="replace", timeout=limit, creationflags=_NO_WINDOW)
         except Exception as e:  # noqa: BLE001  (node missing, too slow)
             return [{"key": x["key"], "url": x["url"], "provider": None, "error": str(e)} for x in entries]
         finally:
@@ -235,9 +253,15 @@ class Scanner:
         for line in reversed((proc.stdout or "").strip().splitlines()):
             if line.startswith("{"):
                 try:
-                    return json.loads(line).get("results") or []
+                    results = json.loads(line).get("results") or []
                 except ValueError:
                     break
+                for r in results:   # how each site answered, for its next wait
+                    if r.get("took"):
+                        patience.took(r["url"], float(r["took"]))
+                    if r.get("missed"):
+                        patience.missed(r["url"])
+                return results
         err = (proc.stderr or proc.stdout or "").strip().splitlines()[-1:] or ["no answer"]
         return [{"key": x["key"], "url": x["url"], "provider": None, "error": err[0][:300]} for x in entries]
 
@@ -622,6 +646,9 @@ class Scanner:
                 else:
                     found += r.get("jobs") or []
                     hows.append(str(r.get("provider")))
+                    if r.get("partial"):   # read in part (a page failed, a cap hit): what came is kept, nothing closed
+                        errors.append(f"{r['url']}: {r['partial']}")
+                        miss(r["url"], "part")
             counted: list[dict] = []   # rows read from a list that says its own count: checked against it
             if ours:
                 keep = self._known_links(c["id"])

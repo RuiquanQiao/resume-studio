@@ -1204,6 +1204,64 @@ export default { id: 'demo', detect: (e) => (e.careers_url.includes('jobs.exampl
     assert (p["title"], p["url"]) == ("123456", "https://x.jobs.feishu.cn/123456/position/7/detail")
 
 
+@needs_node
+def test_a_provider_that_read_part_of_a_list_closes_nothing(hunt, tmp_path):
+    """career-ops' Tencent provider (the real one) keeps what it read when a later page fails and says so only in a
+    warning: 腾讯's scan read 192 of about 2,000 roles and closed the other 769 (2026-11-14). A list read in part
+    closes nothing; the next full read closes what is really gone."""
+    from jobhunt.scan import PROVIDERS
+    co = tmp_path / "career-ops"
+    (co / "providers").mkdir(parents=True)
+    (co / "providers" / "_registry.mjs").write_text("""
+import { readdirSync } from 'fs'; import path from 'path'; import { pathToFileURL } from 'url';
+export async function loadProviders(dir) { const m = new Map();
+  for (const f of readdirSync(dir).filter((f) => f.endsWith('.mjs') && !f.startsWith('_')))
+    { const p = (await import(pathToFileURL(path.join(dir, f)).href)).default; m.set(p.id, p); } return m; }
+export function resolveProvider(entry, providers) { for (const p of providers.values()) if (p.detect?.(entry)) return { provider: p }; return null; }
+""", encoding="utf-8")
+    # the board: 250 roles on 3 pages; state.json says which page fails and how many roles the board has now
+    state = tmp_path / "state.json"
+    (co / "providers" / "_http.mjs").write_text(f"""
+import {{ readFileSync, writeFileSync }} from 'fs';
+export const sleep = async () => {{}};
+export function makeHttpCtx() {{ return {{ fetchJson: async (url) => {{
+  const s = JSON.parse(readFileSync({json.dumps(str(state))}, 'utf8'));
+  const page = Number(new URL(url).searchParams.get('pageIndex'));
+  if (page === s.fails) {{
+    if (!s.once) throw new Error('This operation was aborted');
+    s.once = false; s.fails = 0; writeFileSync({json.dumps(str(state))}, JSON.stringify(s));
+    throw new Error('This operation was aborted');
+  }}
+  const ids = Array.from({{ length: s.count }}, (_, i) => i + 1).slice((page - 1) * 100, page * 100);
+  return {{ Data: {{ Count: s.count, Posts: ids.map((i) => ({{ RecruitPostName: '岗位' + i, PostId: String(i) }})) }} }};
+}} }}; }}
+""", encoding="utf-8")
+    (co / "providers" / "tencent.mjs").write_text((PROVIDERS / "providers" / "tencent.mjs").read_text(encoding="utf-8"),
+                                                 encoding="utf-8")
+
+    class Tool:
+        def installed(self):
+            return False
+
+    ps = Postings(hunt)
+    hunt.add_company({"name": "腾讯", "sites": [{"url": "https://careers.tencent.com/search.html", "kind": "social"}]})
+    sc = Scanner(hunt, ps, Tool(), None, lambda: None)
+    sc.providers_dir = co
+    state.write_text('{"count": 250, "fails": 0}', encoding="utf-8")
+    assert sc.scan("C1")["found"] == 250
+    state.write_text('{"count": 250, "fails": 2, "once": true}', encoding="utf-8")   # a page slow once: asked again
+    res = sc.scan("C1")
+    assert (res["found"], res["closed"], res["errors"]) == (250, 0, [])
+    state.write_text('{"count": 250, "fails": 2}', encoding="utf-8")           # page 2 never answers: page 1 only
+    res = sc.scan("C1")
+    assert (res["found"], res["closed"]) == (100, 0)
+    assert "collected so far" in res["errors"][0]                              # said, not swallowed
+    assert sum(not p.get("closed") for p in ps.all()) == 250
+    state.write_text('{"count": 240, "fails": 0}', encoding="utf-8")           # read whole: 10 really gone
+    res = sc.scan("C1")
+    assert (res["found"], res["closed"], res["errors"]) == (240, 10, [])
+
+
 def test_a_waited_for_scan_that_read_nothing_says_it_needs_the_ai_never_zero_open(hunt):
     """A scan asked for while one runs waits for it and answers with its result: when that scan read nothing (the
     company's only site needs the AI), it says so, never "0 open", which reads as a company with no roles."""

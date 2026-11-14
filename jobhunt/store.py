@@ -391,6 +391,13 @@ class Hunt:
         self.want_logos: Callable[..., None] = lambda *cids: None
         self.logo_watcher: Any = None   # set by jobhunt/api.py: the logos folder, for pictures changed from outside
         geo.use(self.dir)   # the places found on OpenStreetMap for this data folder join the list
+        self._lexicon: Any = None   # the skills learned from the descriptions read (jobhunt/skills.py)
+
+    def lexicon(self) -> Any:
+        if self._lexicon is None:
+            from .skills import Lexicon   # skills reads postings, which reads this module
+            self._lexicon = Lexicon(self.dir)
+        return self._lexicon
 
     # ---- the files ----------------------------------------------------------------
     def _file(self, name: str) -> Path:
@@ -1015,7 +1022,20 @@ class Hunt:
         if "note" in fields:
             a["note"] = _long(fields["note"], 4000)
         if "jd" in fields:   # the posting's own text, as it was read: kept apart from the user's notes
-            a["jd"] = _long(fields["jd"], 20000)
+            jd = _long(fields["jd"], 20000)
+            if jd != a.get("jd") and "skills" not in fields:
+                # the skills it asks for, by rules (jobhunt/skills.py): worked out again for a new description
+                from .skills import VERSION, skills_of
+                a["skills"], a["skills_v"] = skills_of(jd, self.lexicon()), VERSION
+            a["jd"] = jd
+        if "skills" in fields:   # the user's own correction of them
+            xs = fields["skills"] if isinstance(fields["skills"], list) else re.split(r"[,，、;；\n]", str(fields["skills"] or ""))
+            a["skills"] = [k for k in dict.fromkeys(_text(x, 40) for x in xs) if k][:40]
+            a["skills_set"] = True   # kept as the user left them until a new description comes in
+        elif "jd" in fields:
+            a.pop("skills_set", None)
+        if "track" in fields:   # the track the user put it in ("": its title's)
+            a["track"] = _text(fields["track"], 8)
         if "jd_read" in fields:   # when it was read from the role's page (jobhunt/reader.py), "" when typed
             a["jd_read"] = _text(fields["jd_read"], 20)
         if "apply_by" in fields:
@@ -1070,6 +1090,47 @@ class Hunt:
         for i, x in enumerate(mine, 1):
             x["order"] = i
 
+    def _skills_corrected(self, data: dict, a: dict, had: list[str]) -> None:
+        """A skill the user took off one role is taken off every role, and one typed in is looked for in every
+        description: the other roles' skills are worked out again, except those the user set by hand, which only
+        lose the one taken off."""
+        from .skills import VERSION, _fold, skills_of
+        now = {_fold(x) for x in a["skills"]}
+        removed = [x for x in had if _fold(x) not in now]
+        added = [x for x in a["skills"] if _fold(x) not in {_fold(y) for y in had}]
+        if not removed and not added:
+            return
+        lex = self.lexicon()
+        lex.correct(removed, added)
+        gone = {_fold(x) for x in removed}
+        for x in data["applications"]:
+            if x is a or not x.get("jd"):
+                continue
+            if x.get("skills_set"):
+                x["skills"] = [s for s in x.get("skills") or [] if _fold(s) not in gone]
+            else:
+                x["skills"], x["skills_v"] = skills_of(x["jd"], lex, learn=False), VERSION
+
+    def fill_skills(self, more: list[str] = ()) -> int:
+        """The skills of every role whose description was read before skills were (2026-11-14), or by older rules,
+        worked out once; never the ones the user set by hand. `more`: other descriptions to learn skills from first
+        (the picked roles' pages read for ranking), when nothing was learned yet."""
+        from .skills import VERSION, skills_of
+        lex = self.lexicon()
+        if not lex.path.exists():
+            for jd in list(more) + [a.get("jd") or "" for a in self.applications()]:
+                skills_of(jd, lex)
+        with self.lock:
+            data = self._apps()
+            todo = [a for a in data["applications"] if a.get("jd") and not a.get("skills_set") and a.get("skills_v") != VERSION]
+            for a in todo:
+                a["skills"], a["skills_v"] = skills_of(a["jd"], lex, learn=False), VERSION
+            if todo:
+                self._write("applications.json", data)
+        if todo:
+            self._changed()
+        return len(todo)
+
     def update_application(self, ref: str, fields: dict) -> dict:
         with self.lock:
             aid = self.application(ref)["id"]
@@ -1079,7 +1140,10 @@ class Hunt:
                 role = _text(fields["role"], 120)
                 if any(x["company"] == a["company"] and x["id"] != aid and _key(x["role"]) == _key(role) for x in data["applications"]):
                     raise ValueError(t("{role} is already on this company's list", role=role))
+            had = list(a.get("skills") or [])
             self._app_fields(a, fields)
+            if "skills" in fields:
+                self._skills_corrected(data, a, had)
             if fields.get("order"):
                 self._reorder(data, a["company"], aid, int(fields["order"]))
             a["updated"] = _now()

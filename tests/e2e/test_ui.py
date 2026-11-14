@@ -2126,6 +2126,41 @@ def test_a_logo_is_looked_at_before_it_is_kept(page_all, server):
         httpd.shutdown()
 
 
+def test_a_roles_description_gives_its_skills_and_says_when_it_reads_like_another_track(page_all, server):
+    """User, 2026-11-14: roles are sorted into tracks by title alone, with no AI; once one is picked its description
+    is read, with no AI, for the skills it asks for (a column of their own) and for a track that fits it better."""
+    pg = page_all
+    server.req("PUT", "/api/hunt/scan-settings", {"tracks": [{"name": "AI 全栈", "keywords": ["AI+应用开发"]},
+                                                            {"name": "AI Agent", "keywords": ["Agent", "智能体"]}]})
+    cid = server.req("POST", "/api/hunt/companies", {"name": "星河科技"})[1]["company"]["id"]
+    aid = server.req("POST", f"/api/hunt/companies/{cid}/roles", {"role": "AI应用开发工程师"})[1]["application"]["id"]
+    server.req("PUT", f"/api/hunt/apps/{aid}", {"jd": "岗位职责\n1. 负责 AI Agent 的设计与开发；\n2. 负责 Agent 的工具调用与记忆；\n"
+                                                "3. 优化 Agent 评测，提升智能体任务成功率。\n任职要求\n1. 熟练掌握 Python；\n"
+                                                "2. 熟悉 LangChain、LangGraph 等框架；\n3. 有 RAG 项目经验者优先。"})
+    app = lambda: server.req("GET", f"/api/hunt/apps/{aid}")[1]["application"]  # noqa: E731
+    pg.keyboard.press("Control+3")
+    row = f".dbv-view tr[data-id='{aid}']"
+    pg.wait_for_selector(f"{row} td[data-key=track] .c-track-hint")             # by its title AI 全栈, its duties say Agent
+    assert pg.inner_text(f"{row} td[data-key=track]").strip() == "AI 全栈"
+    assert {"Python", "LangChain", "LangGraph", "RAG"} <= set(pg.locator(f"{row} td[data-key=skills] .trk-tag").all_inner_texts())
+    pg.click(f"{row} .dbv-title")
+    pg.wait_for_selector("#app-track-hint")
+    assert "AI Agent" in pg.inner_text("#app-track-hint") and "Agent" in pg.inner_text("#app-track-hint")
+    pg.click("#app-track-move")                                                 # the user moves it: nothing moves by itself
+    wait_until(lambda: app()["track"] == "T2", msg="moved")
+    pg.wait_for_selector("#app-track-hint", state="detached")
+    assert "AI Agent" in pg.inner_text("#app-track")
+    # a wrong skill taken off, a missing one typed in: the box stays where the user is typing
+    pg.click("#app-skills .sk-chip:has-text('RAG') .sk-x")
+    wait_until(lambda: "RAG" not in app()["skills"], msg="taken off")
+    pg.fill("#app-skill-add", "Docker")
+    pg.press("#app-skill-add", "Enter")
+    wait_until(lambda: "Docker" in app()["skills"], msg="typed in")
+    pg.wait_for_selector("#app-skills .sk-chip:has-text('Docker')")
+    assert pg.evaluate("document.activeElement && document.activeElement.id") == "app-skill-add"
+    assert "RAG" not in pg.locator("#app-skills .sk-name").all_inner_texts()
+
+
 def test_the_tables_work_like_a_notion_database(page_all, server):
     """docs/JOB_HUNT.md, 2026-10-19: edit cells in place, move / resize / hide columns, filter, sort, group,
     several views as tabs and a board by status; the views are saved with the data."""

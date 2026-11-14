@@ -2474,5 +2474,21 @@
  "{n} record": [
   "{n} registro",
   "{n} registros"
+ ],
+ "Add a skill": "Añadir una habilidad",
+ "By its title": "Según el título",
+ "By its title: {names}": "Según el título: {names}",
+ "In none of your tracks": "En ninguna de sus líneas",
+ "Its duties read more like {track}: {words}.": "Las funciones se parecen más a «{track}»: {words}.",
+ "Move to {track}": "Mover a «{track}»",
+ "Not a skill it asks for": "No es una habilidad que pida",
+ "Skills it asks for": "Habilidades que pide",
+ "Track": "Línea",
+ "from its description, no AI": "de la descripción, sin IA",
+ "{track}'s words aren't in them.": "Las palabras de «{track}» no aparecen.",
+ "{track}'s words: {words}.": "Palabras de «{track}»: {words}.",
+ "{word} in {n} line": [
+  "{word} en {n} línea",
+  "{word} en {n} líneas"
  ]
 }

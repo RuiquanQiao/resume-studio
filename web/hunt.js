@@ -379,6 +379,15 @@ function appProps() {
       render: (a) => h("button", { type: "button", class: "role-chip co-chip", onclick: () => openHunt("company", a.company) },
         companyLogo(co(a), "xs"), h("span", { class: "rc-name" }, co(a).name || "")) },
     { key: "status", label: t("Status"), type: "select", width: 140, get: (a) => a.status, options: states, set: (a, v) => cellStatus(a, v) },
+    // its track: the one the user put it in, else its title's; a dot when its description reads like another one
+    { key: "track", label: t("Track"), type: "select", width: 170, get: (a) => trackOf(a),
+      options: () => huntTracks().map((tr) => ({ value: tr.id, label: trackName(tr), cls: "s-plain" })),
+      render: (a) => h("span", { class: "c-track" }, h("span", { class: "c-track-name" }, trackLabel(trackOf(a))),
+        a.track_hint && h("span", { class: "c-track-hint", title: trackHintText(a), "aria-label": trackHintText(a) })),
+      set: (a, v) => cellApp(a, { track: v }) },
+    // the skills its description asks for (jobhunt/skills.py, no AI): one filter finds every role that asks for one
+    { key: "skills", label: t("Skills"), type: "relation", width: 260, get: (a) => a.skills || [],
+      render: (a) => h("span", { class: "trk-tags c-skills" }, (a.skills || []).map((x) => h("span", { class: "trk-tag" }, x))) },
     { key: "url", label: t("Link"), type: "text", width: 200, get: (a) => a.url || "", set: (a, v) => cellApp(a, { url: v }),
       render: (a) => !/^https?:\/\//.test(a.url || "") ? h("span", { class: "c-muted" }, a.url || "") : h("a", { href: a.url, class: "c-link", title: a.url },
         a.url.replace(/^https?:\/\//, "")) },
@@ -1072,6 +1081,21 @@ function askShort(c, sh) {
   }, [c.id]);
   aiRun(aiKey("short", [c]), () => sendChat(t("{name}'s scan read {n} of the {all} roles its careers site says it lists. Find where the rest go missing (pages it stops before, a filter, roles kept as one, a page that timed out), fix its scan route and send it again with scan-route, until the counts agree.",
     { name: c.name, n: sh[0], all: sh[1] }), { fresh: true, title: t("Fix the scan of {company}", { company: c.name }) }), check);
+}
+
+// a role's track: the one it was put in, else the first its title is in ("" none)
+const trackOf = (a) => (a.tracks || [])[0] || "";
+const trackLabel = (id) => { const tr = huntTracks().find((x) => x.id === id); return tr ? trackName(tr) : ""; };
+
+// why its description reads like another track: the words of each, in how many of its duties' lines
+function trackHintText(a) {
+  const hint = a.track_hint;
+  if (!hint) return "";
+  const list = (ws) => new Intl.ListFormat(document.documentElement.lang || undefined, { type: "conjunction" })
+    .format(ws.map(([w, n]) => t("{word} in {n} line", { word: w, n }, "{word} in {n} lines")));
+  const own = hint.from ? (hint.own.length ? t("{track}'s words: {words}.", { track: trackLabel(hint.from), words: list(hint.own) })
+    : t("{track}'s words aren't in them.", { track: trackLabel(hint.from) })) : "";
+  return [t("Its duties read more like {track}: {words}.", { track: trackLabel(hint.track), words: list(hint.words) }), own].filter(Boolean).join(" ");
 }
 
 // a posting's tracks, as small tags beside its title
@@ -2323,6 +2347,7 @@ function appPage(v) {
     ], { fold: "app-progress" }),
     card(t("The role"), "", [
       h("div", { class: "grid2" }, hfield(t("Role"), a.role, save("role")), hfield(t("Link"), a.url, save("url"), { placeholder: "https://…", link: true })),
+      huntTracks().length > 0 && h("div", { class: "field" }, h("label", null, t("Track")), appTrackPick(a).el),
       h("div", { class: "field", id: "app-places" }, h("label", null, t("Location")), placesEditor(a.places, (v) => { a.places = v; save("places")(v); })),
       hfield(t("Referral code"), a.referral, save("referral"), { placeholder: t("none: no referral") }),
       h("div", { class: "field" }, h("label", null, t("How it goes in")), h("div", { class: "row wrap" }, channel, plat && plat.el,
@@ -2330,13 +2355,19 @@ function appPage(v) {
       hfield(t("Notes"), a.note, save("note"), { multiline: true }),
     ], { fold: "app-role" }),
     card(t("Job description"), jdSub(a, v.reading), [
+      a.track_hint && h("div", { class: "note-bar", id: "app-track-hint" }, icon("layers"),
+        h("span", { class: "nb-text" }, trackHintText(a)),
+        h("button", { class: "btn sm", id: "app-track-move", onclick: () => editApp(a.id, { track: a.track_hint.track }) },
+          t("Move to {track}", { track: trackLabel(a.track_hint.track) })),
+        h("button", { class: "btn sm ghost", id: "app-track-keep", onclick: () => editApp(a.id, { track: KEEP_TRACK }) }, t("Keep it"))),
       (v.reading || {}).error && h("div", { class: "note-bar warn" }, icon("alert"),
         h("span", { class: "nb-text" }, t("Its page didn't read: {error}", { error: v.reading.error })),
         ui.chat.available && h("button", { class: "btn sm", "data-ai": "read:" + a.id, onclick: () => askRead(a, c) },
           icon("sparkle"), t("Ask AI to read it"))),
       h("div", { class: "field" }, h("textarea", { id: "app-jd", rows: 6, value: a.jd || "", spellcheck: "false", "aria-label": t("Job description"),
         placeholder: t("Paste the posting's text here: duties, requirements, pluses. Or send the AI its link or a screenshot."),
-        onchange: (e) => { const val = e.target.value.trim(); if (val !== (a.jd || "")) { a.jd = val; a.jd_read = ""; editApp(a.id, { jd: val, jd_read: "" }, { repaint: false }); } } }, a.jd || "")),
+        onchange: (e) => { const val = e.target.value.trim(); if (val !== (a.jd || "")) { a.jd = val; a.jd_read = ""; editApp(a.id, { jd: val, jd_read: "" }, { repaint: false }).then(swapSkills); } } }, a.jd || "")),
+      a.jd ? skillsField(a) : h("div", { id: "app-skills", hidden: true }),
     ], { actions: readButton(a, v.reading), fold: "app-jd" }),
     card(t("Resume sent"), (a.sent || []).length ? t("{n} time", { n: a.sent.length }, "{n} times") : t("not yet"), [
       h("div", { class: "field" }, h("label", null, t("Goes out with")), h("div", { class: "su-subset" }, pick.el)),
@@ -2351,6 +2382,52 @@ function appPage(v) {
         h("button", { class: "btn sm ghost", onclick: () => showSent(x.subset, x.n) }, icon("history"), t("See what went out"))))),
     ], { fold: "app-sent" }),
   ];
+}
+
+// "-": the user kept the track its title gives it; its description's hint is not shown again
+const KEEP_TRACK = "-";
+
+function appTrackPick(a) {
+  const own = huntTracks().some((tr) => tr.id === a.track);
+  const byTitle = own ? [] : (a.tracks || []).map(trackLabel).filter(Boolean);
+  return uiSelect({ id: "app-track", label: t("Track"), menuWidth: 280, value: own ? a.track : null,
+    placeholder: byTitle.length ? t("By its title: {names}", { names: byTitle.join(", ") }) : t("In none of your tracks"),
+    options: [...(own ? [{ value: "", label: t("By its title") }] : []), ...huntTracks().map((tr) => ({ value: tr.id, label: trackName(tr) }))],
+    onChange: (val) => editApp(a.id, { track: val }) });
+}
+
+// the skills its description asks for, worked out by rules when it was read; a wrong one is taken off, a missing
+// one typed in, and the role keeps what the user left until a new description comes in
+// the skills of the role now on the page, put in place of the ones shown: the rest of the page, and what is being
+// typed in it, stays as it is
+function swapSkills() {
+  const old = $("#app-skills");
+  const a = H.view && H.view.application;
+  if (!old || !a) return;
+  old.replaceWith(a.jd ? skillsField(a) : h("div", { id: "app-skills", hidden: true }));
+}
+
+function skillsField(a) {
+  const set = (xs) => editApp(a.id, { skills: xs }, { repaint: false }).then((ok) => {
+    if (!ok) return;
+    swapSkills();
+    const el = $("#app-skill-add");
+    if (el) el.focus();
+  });
+  const add = h("input", { type: "text", class: "sk-add", id: "app-skill-add", placeholder: t("Add a skill"), "aria-label": t("Add a skill"),
+    onkeydown: (e) => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      const x = e.target.value.trim();
+      if (x && !(a.skills || []).some((s) => s.toLowerCase() === x.toLowerCase())) set([...(a.skills || []), x]);
+      e.target.value = "";
+    } });
+  return h("div", { class: "field", id: "app-skills" },
+    h("label", { for: "app-skill-add" }, t("Skills it asks for"), h("span", { class: "hint" }, t("from its description, no AI"))),
+    h("div", { class: "sk-list" },
+      (a.skills || []).map((x) => h("span", { class: "sk-chip" }, h("span", { class: "sk-name" }, x),
+        h("button", { type: "button", class: "sk-x", title: t("Not a skill it asks for"), "aria-label": t("Remove {name}", { name: x }),
+          onclick: () => set((a.skills || []).filter((s) => s !== x)) }, icon("x")))),
+      add));
 }
 
 // the role's page, read for its description (jobhunt/reader.py): what the card says about it, and the button

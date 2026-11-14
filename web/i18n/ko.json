@@ -2288,5 +2288,18 @@
  "Kept in your data folder, with the rest of your data": "다른 데이터와 함께 데이터 폴더에 저장됩니다",
  "This plugin is no longer installed.": "이 플러그인은 제거되었습니다.",
  "Turn it on and press Done: its version, checks and the CV it reads then show here.": "사용하도록 설정하고 완료를 누르면 버전, 점검 결과, 읽는 이력서가 여기에 표시됩니다.",
- "{n} record": "{n}건"
+ "{n} record": "{n}건",
+ "Add a skill": "기술 추가",
+ "By its title": "직무명 기준",
+ "By its title: {names}": "직무명 기준: {names}",
+ "In none of your tracks": "어느 트랙에도 속하지 않음",
+ "Its duties read more like {track}: {words}.": "직무 내용이 「{track}」에 더 가깝습니다: {words}.",
+ "Move to {track}": "「{track}」(으)로 변경",
+ "Not a skill it asks for": "이 직무가 요구하는 기술이 아닙니다",
+ "Skills it asks for": "요구 기술",
+ "Track": "트랙",
+ "from its description, no AI": "직무 설명에서 추출, AI 미사용",
+ "{track}'s words aren't in them.": "「{track}」의 키워드는 나타나지 않습니다.",
+ "{track}'s words: {words}.": "「{track}」의 키워드: {words}.",
+ "{word} in {n} line": "{word}({n}줄)"
 }

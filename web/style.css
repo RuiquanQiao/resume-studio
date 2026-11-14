@@ -1984,6 +1984,20 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .trk-btn > span { min-width: 0; }
 .trk-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .trk-tag { padding: 0 6px; border-radius: 4px; background: var(--hover); color: var(--text-2); font-size: 12.5px; line-height: 18px; white-space: nowrap; max-width: 18em; overflow: hidden; text-overflow: ellipsis; }
+/* a role's track in the progress table, and a dot when its description reads like another track */
+.c-track, .dbv-td:not(.wrap) .dbv-in > span.c-track { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; vertical-align: middle; }
+.c-track-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-track-hint { display: inline-block; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+.trk-tags.c-skills, .dbv-td:not(.wrap) .dbv-in > span.c-skills { display: flex; flex-wrap: nowrap; overflow: hidden; max-width: 100%; }
+.trk-tags.c-skills > .trk-tag { flex: none; }
+/* the skills a role's description asks for, on its page: each one taken off with its ×, more typed after them */
+.sk-list { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sk-chip { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; height: 24px; padding: 0 2px 0 8px; border-radius: 6px; background: var(--hover); color: var(--text); font-size: 13px; }
+.sk-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sk-x { flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--text-3); cursor: pointer; }
+.sk-x:hover { background: var(--line); color: var(--text); }
+.sk-x svg.i { width: 12px; height: 12px; }
+.field .sk-list input.sk-add { width: 12em; min-height: 24px; height: 24px; padding: 0 8px; font-size: 13px; }
 .modal.trk-modal { width: min(640px, 94vw); max-height: 88vh; display: flex; flex-direction: column; }
 .trk-list { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; min-height: 0; margin: 0 -20px 12px; padding: 2px 20px; }
 .trk-row { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); }

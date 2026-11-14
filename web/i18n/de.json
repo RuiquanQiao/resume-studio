@@ -2474,5 +2474,21 @@
  "{n} record": [
   "{n} Eintrag",
   "{n} Einträge"
+ ],
+ "Add a skill": "Kenntnis hinzufügen",
+ "By its title": "Nach dem Titel",
+ "By its title: {names}": "Nach dem Titel: {names}",
+ "In none of your tracks": "In keinem Ihrer Bereiche",
+ "Its duties read more like {track}: {words}.": "Die Aufgaben passen eher zu „{track}“: {words}.",
+ "Move to {track}": "Zu „{track}“ verschieben",
+ "Not a skill it asks for": "Keine geforderte Kenntnis",
+ "Skills it asks for": "Geforderte Kenntnisse",
+ "Track": "Bereich",
+ "from its description, no AI": "aus der Stellenbeschreibung, ohne KI",
+ "{track}'s words aren't in them.": "Die Wörter von „{track}“ kommen darin nicht vor.",
+ "{track}'s words: {words}.": "Wörter von „{track}“: {words}.",
+ "{word} in {n} line": [
+  "{word} in {n} Zeile",
+  "{word} in {n} Zeilen"
  ]
 }

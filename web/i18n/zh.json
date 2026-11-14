@@ -2288,5 +2288,18 @@
  "Kept in your data folder, with the rest of your data": "与其他数据一同保存在数据文件夹中",
  "This plugin is no longer installed.": "此插件已卸载。",
  "Turn it on and press Done: its version, checks and the CV it reads then show here.": "启用并点击“完成”后，此处将显示其版本、检查结果及其读取的简历。",
- "{n} record": "{n} 条记录"
+ "{n} record": "{n} 条记录",
+ "Add a skill": "添加技能",
+ "By its title": "按岗位名称",
+ "By its title: {names}": "按岗位名称：{names}",
+ "In none of your tracks": "未归入任何赛道",
+ "Its duties read more like {track}: {words}.": "该岗位职责更接近「{track}」：{words}。",
+ "Move to {track}": "改为「{track}」",
+ "Not a skill it asks for": "此项并非该岗位要求的技能",
+ "Skills it asks for": "岗位要求的技能",
+ "Track": "赛道",
+ "from its description, no AI": "依据岗位描述提取，未使用 AI",
+ "{track}'s words aren't in them.": "「{track}」的关键词均未出现。",
+ "{track}'s words: {words}.": "「{track}」的关键词：{words}。",
+ "{word} in {n} line": "{word}（{n} 行）"
 }

@@ -765,10 +765,12 @@ class Postings:
         names = {c["id"]: c["name"] for c in cs}
         natures = {c["id"]: c.get("nature") or "" for c in cs}
         out, counts = [], {tr["id"]: 0 for tr in trs}
+        # a role the user put in a track (its description read like another one's, jobhunt/skills.py) is in that one
+        moved = {a["id"]: a["track"] for a in self.hunt.applications() if a.get("track") in counts}
         for p in self._view()["postings"]:
             if p.get("closed") or p["company"] not in names or stale(p, today):
                 continue
-            ts = tracks_of(p["title"], trs, natures[p["company"]])
+            ts = [moved[p["app"]]] if p.get("app") in moved else tracks_of(p["title"], trs, natures[p["company"]])
             if not ts:
                 continue
             for x in ts:

@@ -54,9 +54,58 @@ function providerUrl(url) {
   } catch { return url; }
 }
 
+// A provider whose page 7 fails mid-read returns the rows of pages 1 to 6 as if they were the whole list, and says
+// so only in a warning (tencent, workday, lever, mokahr and most others: "keeping the 192 jobs collected so far",
+// "truncated at max_pages=40"). A list read in part must never close the roles it didn't reach: 腾讯's
+// careers.tencent.com stopped after 192 of about 2,000 roles and the scan closed the other 769 (2026-11-14).
+// The warnings a provider prints while it reads are kept, and one that says the list is partial marks it so.
+const PARTIAL = /truncat|keeping|kept|stopped|partial|incomplete|so far|more results|has more|may have more|not read|missing|exceed|ceiling|offset-clamped|\bcap\b|page \d+ (?:failed|fetch failed)|failed (?:on|after)|returned \d+ of \d+|no progress/i;
+let heard = null;   // the warnings of the provider reading now, or null between reads
+for (const name of ['error', 'warn']) {
+  const write = console[name];
+  console[name] = (...a) => {
+    if (heard) heard.push(a.map(String).join(' '));
+    write(...a);
+  };
+}
+const partialOf = (lines) => lines.map((l) => l.trim()).find((l) => !l.startsWith('ℹ') && PARTIAL.test(l)) || '';
+
+// Each site's wait comes from Resume Studio (jobhunt/patience.py: how far the site is, how it answered before),
+// never the providers' own 10 s. A request the site didn't answer in time is asked again after a pause; one it
+// answered (an HTTP error) is the site's answer. `heardFrom` keeps the slowest answer and whether one was missed.
+function patient(ctx, e, heardFrom) {
+  const tries = Math.max(1, Number(e.tries) || 1);
+  const waits = Array.isArray(e.waits_ms) ? e.waits_ms : [];
+  for (const m of ['fetchJson', 'fetchText', 'fetchResponse']) {
+    const call = ctx[m];
+    if (typeof call !== 'function') continue;
+    ctx[m] = async (url, opts = {}) => {
+      for (let i = 0; ; i++) {
+        const start = Date.now();
+        try {
+          const got = await call(url, opts);
+          heardFrom.took = Math.max(heardFrom.took, (Date.now() - start) / 1000);
+          return got;
+        } catch (err) {
+          if (err && typeof err === 'object' && typeof err.status === 'number') {
+            heardFrom.took = Math.max(heardFrom.took, (Date.now() - start) / 1000);
+            throw err;
+          }
+          heardFrom.missed = true;
+          if (i >= tries - 1) throw err;
+          await new Promise((r) => setTimeout(r, waits[Math.min(i, waits.length - 1)] || 0));
+        }
+      }
+    };
+  }
+  return ctx;
+}
+
 const results = [];
 for (const e of entries) {
-  const entry = { name: e.name || '', careers_url: providerUrl(e.url) };
+  // max_pages on the entry, one under the context's cap: a provider then says when the cap, not the list, ended
+  // its read (tencent stays quiet when the cap is the context's alone)
+  const entry = { name: e.name || '', careers_url: providerUrl(e.url), max_pages: 40 };
   let r = null;
   try {
     r = resolveProvider(entry, providers, { skipIds: ['local-parser'] });
@@ -67,8 +116,12 @@ for (const e of entries) {
   if (r.error) { results.push({ key: e.key, url: e.url, provider: null, error: r.error }); continue; }
   const id = r.provider.id;
   if (detectOnly) { results.push({ key: e.key, url: e.url, provider: id }); continue; }
+  const heardFrom = { took: 0, missed: false };
   try {
-    const ctx = { ...makeHttpCtx(), maxPages: 40, includeUndated: true };
+    // the timeout for providers that call _http.mjs's fetchers themselves rather than through ctx
+    if (Number(e.timeout_ms) > 0) process.env.CAREER_OPS_HTTP_TIMEOUT_MS = String(e.timeout_ms);
+    else delete process.env.CAREER_OPS_HTTP_TIMEOUT_MS;
+    const ctx = patient({ ...makeHttpCtx(), maxPages: 41, includeUndated: true }, e, heardFrom);
     // A Feishu tenant has a portal per kind of hiring, named by the first part of its address
     // (<tenant>.jobs.feishu.cn/123456 is campus, /index is experienced). The search API answers for the portal
     // named in a "website-path" header and for none without it: career-ops' provider sends none, so a tenant's
@@ -78,11 +131,18 @@ for (const e of entries) {
       const fetchJson = ctx.fetchJson;
       ctx.fetchJson = (url, init = {}) => fetchJson(url, { ...init, headers: { ...(init.headers || {}), 'website-path': portal } });
     }
+    heard = [];
     let jobs = await r.provider.fetch(entry, ctx);
     if (portal) jobs = (jobs || []).map((j) => ({ ...j, url: String(j.url || '').replace('/index/position/', `/${portal}/position/`) }));
-    results.push({ key: e.key, url: e.url, provider: id, jobs: (jobs || []).filter((j) => j && j.title && j.url).map(pick) });
+    const partial = partialOf(heard);
+    results.push({ key: e.key, url: e.url, provider: id, jobs: (jobs || []).filter((j) => j && j.title && j.url).map(pick),
+                   ...(partial ? { partial: partial.replace(/^[^\w"[]+/u, '').slice(0, 300) } : {}),
+                   took: Math.round(heardFrom.took * 10) / 10, missed: heardFrom.missed });
   } catch (err) {
-    results.push({ key: e.key, url: e.url, provider: id, error: String(err && err.message || err).slice(0, 400) });
+    results.push({ key: e.key, url: e.url, provider: id, error: String(err && err.message || err).slice(0, 400),
+                   took: Math.round(heardFrom.took * 10) / 10, missed: heardFrom.missed });
+  } finally {
+    heard = null;
   }
 }
 quiet(JSON.stringify({ results }));
