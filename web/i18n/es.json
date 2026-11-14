@@ -2495,5 +2495,27 @@
  "{word} in {n} line": [
   "{word} en {n} línea",
   "{word} en {n} líneas"
- ]
+ ],
+ "Other kinds": "Otros tipos",
+ "AI: {n} / 100": "IA: {n} / 100",
+ "Ask AI again": "Volver a evaluar",
+ "Ask AI to assess it": "Pedir a la IA que lo evalúe",
+ "Assess how well {role} at {company} fits me: read its description and the resume it goes out with, and save the score with fit.": "Evalúa qué tan bien encaja {role} en {company} conmigo: lee su descripción y el currículum con el que me postulo, y guarda la puntuación con fit.",
+ "Fit of {role} at {company}": "Encaje de {role} en {company}",
+ "It has": "Tiene",
+ "It lacks": "Le falta",
+ "Its description is needed first: it is read from the role's page, or pasted above.": "Primero se necesita la descripción del puesto: se lee de la página del puesto o se pega arriba.",
+ "Its description names too few skills to count, or no resume is set for it.": "La descripción nombra muy pocas habilidades, o no hay un currículum asignado.",
+ "Not in your resume": "No está en tu currículum",
+ "Set the resume it goes out with, and its description is counted against it.": "Asigne el currículum con el que se postula y la descripción se comparará con él.",
+ "The score is a number from 0 to 100": "La puntuación es un número de 0 a 100",
+ "its skills found in “{name}”, no AI": "habilidades del puesto encontradas en «{name}», sin IA",
+ "not assessed yet": "aún sin evaluar",
+ "read by AI against “{name}”, {date}": "evaluado por la IA según «{name}», {date}",
+ "{n} / 100": "{n} / 100",
+ "{n}% of its skills": "{n} % de sus habilidades",
+ "{role} at {company} still has no fit saved. Read its description and the resume it goes out with, then save the score with fit.": "{role} en {company} aún no tiene encaje guardado. Lee su descripción y el currículum, y guarda la puntuación con fit.",
+ "{role} is assessed: {n} / 100": "{role} está evaluado: {n} / 100",
+ "{role} is not assessed yet": "{role} aún no está evaluado",
+ "Match score": "Encaje"
 }

@@ -363,16 +363,24 @@ function placeFloat(f) {
   const W = innerWidth, H = innerHeight, gap = 5, pad = 8;
   p.style.minWidth = (f.minWidth === "anchor" ? r.width : f.minWidth || 0) + "px";
   p.style.maxHeight = "";
-  const roomBelow = H - r.bottom - gap - pad, roomAbove = r.top - gap - pad;
+  // never over the window's title bar (the top bar, where the minimise / maximise / close buttons sit) unless the
+  // anchor is in it: a list that grew upward covered those buttons (2026-11-14)
+  const bar = document.querySelector(".topbar");
+  const barBottom = bar ? bar.getBoundingClientRect().bottom : 0;
+  const ceil = r.top >= barBottom ? Math.max(pad, barBottom + 4) : pad;
+  const roomBelow = H - r.bottom - gap - pad, roomAbove = r.top - gap - ceil;
   const natural = p.scrollHeight;
+  // like the platform's own lists: open on the side asked for while it has room for a usable list (it scrolls
+  // inside); flip only when that side can't hold one and the other side has more room
+  const usable = Math.min(natural, 240);
   let below = f.place !== "top";
-  if (below && natural > roomBelow && roomAbove > roomBelow) below = false;
-  if (!below && natural > roomAbove && roomBelow > roomAbove) below = true;
+  if (below && roomBelow < usable && roomAbove > roomBelow) below = false;
+  else if (!below && roomAbove < usable && roomBelow > roomAbove) below = true;
   p.style.maxHeight = Math.max(120, below ? roomBelow : roomAbove) + "px";
   const ph = p.offsetHeight, pw = p.offsetWidth;
   if (f.place === "over") {   // over the anchor itself (a table cell edited in place)
     p.style.maxHeight = "";
-    p.style.top = Math.max(pad, Math.min(r.top, H - ph - pad)) + "px";
+    p.style.top = Math.max(ceil, Math.min(r.top, H - ph - pad)) + "px";
     p.style.left = Math.max(pad, Math.min(r.left, W - pw - pad)) + "px";
     p.dataset.side = "over";
     return;
@@ -380,7 +388,7 @@ function placeFloat(f) {
   const top = below ? r.bottom + gap : r.top - gap - ph;
   let left = f.align === "end" ? r.right - pw : f.align === "center" ? r.left + r.width / 2 - pw / 2 : r.left;
   left = Math.max(pad, Math.min(left, W - pw - pad));
-  p.style.top = Math.max(pad, top) + "px";
+  p.style.top = Math.max(below ? pad : ceil, top) + "px";
   p.style.left = left + "px";
   p.dataset.side = below ? "bottom" : "top";
 }

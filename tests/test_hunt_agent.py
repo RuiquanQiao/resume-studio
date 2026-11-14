@@ -1546,8 +1546,8 @@ def test_picked_roles_get_their_descriptions_read_and_ranked_by_their_tracks_res
     by = {p["title"]: p for p in m["postings"]}
     ml, fe, ai = by["机器学习工程师"], by["前端工程师"], by["AI 研究员"]
     assert ml["jd"] == "read" and ml["deadline"] == "2026-12-01"
-    assert ml["fit"]["score"] > fe["fit"]["score"] and {"python", "pytorch", "scikit-learn"} <= set(ml["fit"]["hit"])
-    assert "flutter" in fe["fit"]["miss"] and ml["fit"]["subset"] == "RES-TECH-EN"
+    assert ml["fit"]["score"] > fe["fit"]["score"] and {"python", "pytorch", "scikit-learn"} <= {w.casefold() for w in ml["fit"]["hit"]}
+    assert "flutter" in {w.casefold() for w in fe["fit"]["miss"]} and ml["fit"]["subset"] == "RES-TECH-EN"
     assert ai["jd"] == "failed" and ai["fit"] is None and m["unread"] == 0
     # a failed page isn't read again the same day; a read one never again
     assert server.req("POST", "/api/hunt/matches/read")[1]["started"] == 0
@@ -1595,14 +1595,20 @@ def test_a_scan_never_opens_role_pages_and_want_to_apply_reads_one_and_ranks_it(
         _t.sleep(0.05)
     assert opened == [base + "1"]
     by = {p["title"]: p for p in server.req("GET", "/api/hunt/matches")[1]["postings"]}
-    assert by["机器学习工程师"]["jd"] == "read" and {"python", "pytorch"} <= set(by["机器学习工程师"]["fit"]["hit"])
+    assert by["机器学习工程师"]["jd"] == "read" and {"python", "pytorch"} <= {w.casefold() for w in by["机器学习工程师"]["fit"]["hit"]}
     assert by["AI 研究员"]["fit"] is None and by["AI 研究员"]["jd"] == ""
 
 
 def test_a_description_counts_only_the_skills_it_names():
-    from jobhunt.rank import fit, skill_words
-    assert {"python", "c++", "rag", "机器学习"} <= skill_words("Strong Python and C++ skills, RAG pipelines, 机器学习")
-    assert not skill_words("We are a great team with strong communication and the ability to work across teams")
-    assert fit("about our company", {"python"}) is None
-    f = fit("Python, PyTorch, Docker, Kubernetes", {"python", "pytorch"})
-    assert f["score"] == 50 and f["miss"] == ["docker", "kubernetes"]
+    """2026-11-14: the skills were Latin words and a fixed list of IT terms, so a product manager's description
+    had none and no score. Now they are the skills it asks for in any field (jobhunt/skills.py), and one written with
+    more around it counts by its core."""
+    from jobhunt.rank import fit
+    assert fit("about our company", "Python") is None
+    f = fit("Requirements: Python, PyTorch, Docker, Kubernetes", "I write Python and PyTorch")
+    assert f["score"] == 50 and f["miss"] == ["Docker", "Kubernetes"]
+    pm = "岗位职责：负责智能家电产品规划。任职要求：熟悉用户研究、竞品分析和需求分析；熟练使用Axure、Figma；有数据分析经验"
+    f = fit(pm, "做过用户研究与竞品分析，会用 Figma 画原型")
+    assert f is not None and {"用户研究", "竞品分析", "Figma"} <= set(f["hit"]) and "Axure" in f["miss"], f
+    f = fit("任职要求：熟练掌握Python编程开发，熟悉Linux操作系统", "Python, Linux, Git")
+    assert f is None or f["score"] == 100, f

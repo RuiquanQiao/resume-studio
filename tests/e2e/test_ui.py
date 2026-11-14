@@ -3458,6 +3458,35 @@ def test_tracks_are_set_in_a_dialog_and_pick_roles_from_every_company(page, serv
     posts.settings(tracks=[])
 
 
+def test_want_to_apply_asks_the_ai_to_assess_the_role(page, server, fake_claude):
+    """2026-11-14 (user): "先用不消耗 AI 的方式读 JD 给出初始匹配分，点击想投之后再 AI 读 JD 然后给出进一步的匹配分".
+    Want to apply adds the role and, with an agent there, starts a chat of its own that assesses it."""
+    pg = page
+    hunt = server.inst.hunt
+    posts = hunt.scanner.postings
+    hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
+    posts.merge("C1", [{"title": "AI 产品经理", "url": "https://careers.xinghe.example/job/1"}], how="route")
+    posts.settings(tracks=[{"name": "AI 产品", "keywords": "AI+产品", "subset": "RES-TECH-EN"}])
+
+    class Pages:
+        def read_page(self, url, script, timeout=60.0):
+            return {"jd": "岗位职责：负责 AI 产品规划。任职要求：熟悉用户研究、竞品分析、需求分析；熟练使用 Axure、Figma", "text": ""}
+
+        def status(self):
+            return {"state": "running"}
+    hunt.scanner.browser = Pages()
+    chats = lambda: server.req("GET", "/api/chats")[1]["chats"]  # noqa: E731
+    before = len(chats())
+    pg.keyboard.press("Control+3")
+    pg.click(".hunt-tab[data-tab=picked]")
+    pg.wait_for_selector(".picked-row")
+    pg.click(".picked-row > button.btn.sm:not(.pr-added)")                # 待投递 (Want to apply)
+    wait_until(lambda: len(chats()) == before + 1, msg="a chat of its own")
+    first = lambda: (server.req("GET", f"/api/chats/{chats()[0]['id']}")[1]["messages"] or [{}])[0]  # noqa: E731
+    wait_until(lambda: "匹配程度" in first().get("text", "") and "AI 产品经理" in first().get("text", ""), msg="asks for the fit")
+    posts.settings(tracks=[])
+
+
 def test_long_company_details_show_whole_and_push_no_neighbour_down(page, server):
     """2026-11-11: 总部 (a place picker, tall) sat beside 规模, which sank to the bottom of its row; 实力 and 规模, a
     sentence the AI wrote, were cut off in one-line boxes. Fields of varying height get a row each and wrap."""

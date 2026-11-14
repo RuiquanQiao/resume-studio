@@ -2,6 +2,14 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "realcopy",
+      "runtimeExecutable": ".venv/Scripts/python",
+      "runtimeArgs": ["scripts/studio.py", "--data", ".cache/realcopy/resume.yaml", "--no-browser", "--port", "8799"],
+      "port": 8799,
+      "autoPort": true,
+      "env": { "RESUME_STUDIO_PREFS": ".cache/realcopy/prefs", "STUDIO_NO_SHELL": "1" }
+    },
+    {
       "name": "trial",
       "runtimeExecutable": ".venv/Scripts/python",
       "runtimeArgs": ["scripts/studio.py", "--data", ".cache/trial/resume.yaml", "--no-browser", "--port", "8790"],

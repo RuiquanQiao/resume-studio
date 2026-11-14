@@ -75,6 +75,11 @@ it only through this command (Bash); every call prints what is there now, and th
   .ics file the user can open to import into Outlook or any calendar app.
 - `{j} jd <company>/<role> --stdin` — the posting's full text (the JD: duties, requirements, pluses), as the
   page or the user's screenshot says it, kept on the role. `show` prints it; read it before tailoring a resume.
+- `{j} fit <company>/<role> --stdin` — your reading of how well the role fits the resume it goes out with: a
+  score, why, what the resume has for it and what it lacks (`fit --help`). The window asks for it when the user
+  chooses Want to apply; `show` gives the rules' score beside it, a skill-word count to read past, not to copy.
+- `{j} list --missing nature` — the companies whose nature (or industry, hq…) isn't filled in, one a line: to fill
+  them all, `fill` each in turn with its source, as many as the chat allows, and say how many are left.
 - `{j} sent <company>` — the user submitted the sign-up on the company's own site: every role there not sent yet
   gets the subset the company is filled from, kept as a version and pinned. `sent <company>/<role>` for one posting.
 - **Open postings** (what the companies' sites list now; not applications until the user goes for one):

@@ -388,6 +388,12 @@ function appProps() {
     // the skills its description asks for (jobhunt/skills.py, no AI): one filter finds every role that asks for one
     { key: "skills", label: t("Skills"), type: "relation", width: 260, get: (a) => a.skills || [],
       render: (a) => h("span", { class: "trk-tags c-skills" }, (a.skills || []).map((x) => h("span", { class: "trk-tag" }, x))) },
+    // the AI's score once it has read the role, else the rules' (its skills found in the resume); sorts as a number
+    { key: "fit", label: t("Match score"), type: "text", width: 110, get: (a) => (a.fit_ai ? a.fit_ai.score : a.fit ? a.fit.score : -1),
+      render: (a) => (a.fit_ai ? h("span", { class: "c-fit" + (a.fit_ai.score >= 60 ? " hi" : a.fit_ai.score < 30 ? " lo" : ""), title: a.fit_ai.why || null },
+        h("span", { class: "c-fit-n" }, String(a.fit_ai.score)), h("span", { class: "c-fit-by" }, "AI"))
+        : a.fit ? h("span", { class: "c-fit rules" + (a.fit.score >= 60 ? " hi" : a.fit.score < 30 ? " lo" : ""), title: t("its skills found in “{name}”, no AI", { name: subsetName(subsets().find((x) => x.id === a.fit.subset)) || a.fit.subset }) },
+          h("span", { class: "c-fit-n" }, a.fit.score + "%")) : "") },
     { key: "url", label: t("Link"), type: "text", width: 200, get: (a) => a.url || "", set: (a, v) => cellApp(a, { url: v }),
       render: (a) => !/^https?:\/\//.test(a.url || "") ? h("span", { class: "c-muted" }, a.url || "") : h("a", { href: a.url, class: "c-link", title: a.url },
         a.url.replace(/^https?:\/\//, "")) },
@@ -1446,9 +1452,24 @@ function natureOptions(extra = "") {
     ...n.kinds.map((k) => ({ value: k.id, label: k.name, group: t("Every country"), cls: "s-plain", more: false })),
     ...[...by.keys()].filter((cc) => !first.includes(cc)).flatMap((cc) => own(cc, true))];
 }
-// a company's: its country's groups for the user's countries and every country's kinds, and what it has now
-function companyNatureOptions(cur = "") {
-  return natureOptions().filter((o) => !o.more || o.value === cur);
+// a company's: the kinds of its own country when that country has a list (a Chinese company is never offered the
+// APS), else those of each country in the user's profile; then the kinds every country has, less those each shown
+// country already names its own way (民企 is "Private company" in China: offered once, 2026-11-14). A country
+// whose list leaves kinds out (Australia names no private company) keeps them from the common group. What the
+// company has now is always offered.
+function companyNatureOptions(c = {}) {
+  const n = NAT(), by = new Map();
+  for (const s of n.subtypes) { if (!by.has(s.country)) by.set(s.country, []); by.get(s.country).push(s); }
+  const shown = c.country && by.has(c.country) ? [c.country] : natureCountries().filter((cc) => by.has(cc));
+  const covered = (k) => shown.length > 0 && shown.every((cc) => by.get(cc).some((s) => s.kind === k));
+  const out = [
+    ...shown.flatMap((cc) => by.get(cc).map((s) => ({ value: s.id, label: s.name, group: s.country_name, cls: "s-plain" }))),
+    ...n.kinds.filter((k) => !covered(k.id)).map((k) => ({ value: k.id, label: k.name, group: shown.length ? t("Other kinds") : t("Every country"), cls: "s-plain" }))];
+  if (c.nature && !out.some((o) => o.value === c.nature)) {
+    const o = natureOptions().find((x) => x.value === c.nature);
+    if (o) out.push({ ...o, more: false });
+  }
+  return out;
 }
 // what an employer asks that the user's profile says they don't have (jobhunt/natures.py short_of)
 function shortOfText(c) {
@@ -1476,6 +1497,12 @@ async function applyPosting(p) {
   try {
     const v = await api("POST", `/api/hunt/postings/${encodeURIComponent(p.id)}/apply`);
     await loadHunt({ quiet: true });
+    // chosen: the AI reads it against the resume now (the rules' score was the first look); without an agent the
+    // role page's Fit card still has the rules' score and the button for later
+    if (ui.chat.available) {
+      const c = (H.data.companies || []).find((x) => x.id === v.application.company);
+      if (c) askFit(v.application, c);
+    }
     toast((v.reading || {}).running ? t("Added to your applications: {role}. Its description is being read from its page.", { role: v.application.role })
       : t("Added to your applications: {role}", { role: v.application.role }),
     { ms: 6000, action: { label: t("Open"), fn: () => openHunt("app", v.application.id) } });
@@ -1497,7 +1524,7 @@ function companyProps() {
           (c.aliases || []).length > 0 && h("span", { class: "c-alias" }, c.aliases.join(" · ")))) },
     text("industry", t("Industry"), 150, { group: true }),
     // not filled in: an empty cell (no chip on most of the rows); "No Nature" when grouped, "is empty" when filtered
-    { key: "nature", label: t("Nature"), type: "select", width: 190, get: (c) => c.nature || "", options: (c) => (c ? companyNatureOptions(c.nature) : natureOptions()),   // without a row: every one (filters, sorting)
+    { key: "nature", label: t("Nature"), type: "select", width: 190, get: (c) => c.nature || "", options: (c) => (c ? companyNatureOptions(c) : natureOptions()),   // without a row: every one (filters, sorting)
       set: (c, v) => cellCompany(c, { nature: v }) },
     text("strength", t("Strength"), 200),
     { key: "roles", label: t("Roles"), type: "relation", width: 300, get: (c) => (c.apps || []).map((a) => a.role),
@@ -2021,7 +2048,7 @@ function companyPage(v) {
       h("div", { class: "field", id: "company-nature" }, h("label", null, t("Nature"),
         h("span", { class: "hint" }, keptHint(c, "nature") || t("tracks for some kinds of company only go by it"))),
         uiSelect({ id: "company-nature-pick", label: t("Nature"), value: c.nature || "", menuWidth: 320, cls: "co-nature-pick",
-          options: [{ value: "", label: t("Not filled in") }, ...companyNatureOptions(c.nature)],
+          options: [{ value: "", label: t("Not filled in") }, ...companyNatureOptions(c)],
           onChange: (v) => { c.nature = v; save("nature")(v); } }).el,
         c.short_of && h("p", { class: "co-short", id: "company-short-of" }, icon("alert"), h("span", null, shortOfText(c),
           " ", h("button", { class: "linkish", onclick: () => openProfileWork() }, t("Your status is in your profile"))))),
@@ -2374,6 +2401,7 @@ function appPage(v) {
         onchange: (e) => { const val = e.target.value.trim(); if (val !== (a.jd || "")) { a.jd = val; a.jd_read = ""; editApp(a.id, { jd: val, jd_read: "" }, { repaint: false }).then(swapSkills); } } }, a.jd || "")),
       a.jd ? skillsField(a) : h("div", { id: "app-skills", hidden: true }),
     ], { actions: readButton(a, v.reading), fold: "app-jd" }),
+    fitCard(a, c),
     card(t("Resume sent"), (a.sent || []).length ? t("{n} time", { n: a.sent.length }, "{n} times") : t("not yet"), [
       h("div", { class: "field" }, h("label", null, t("Goes out with")), h("div", { class: "su-subset" }, pick.el)),
       a.channel === "site" && h("p", { class: "card-p muted" }, t("To mark every role on {company}'s site at once, use the company's page.", { company: c.name })),
@@ -2387,6 +2415,47 @@ function appPage(v) {
         h("button", { class: "btn sm ghost", onclick: () => showSent(x.subset, x.n) }, icon("history"), t("See what went out"))))),
     ], { fold: "app-sent" }),
   ];
+}
+
+// How well the role fits (2026-11-14, "先用不消耗 AI 的方式给出初始匹配分，点想投之后再 AI 读 JD 给出进一步的匹配分"):
+// the rules' score (its description's skills found in the resume, jobhunt/rank.py) as soon as there is a description,
+// and the AI's reading, asked for when the user chose Want to apply (askFit) or with the button here
+function fitCard(a, c) {
+  const f = a.fit, ai = a.fit_ai;
+  const sub = (id) => subsetName(subsets().find((x) => x.id === id)) || id;
+  const words = (label, xs) => xs && xs.length > 0 && h("div", { class: "af-line" }, h("span", { class: "af-k" }, label),
+    h("span", { class: "af-chips" }, xs.map((x) => h("span", { class: "af-chip" }, x))));
+  const ask = ui.chat.available && a.jd && h("button", { class: "btn sm", id: "app-fit-ask", "data-ai": "fit:" + a.id, onclick: () => askFit(a, c) },
+    icon("sparkle"), ai ? t("Ask AI again") : t("Ask AI to assess it"));
+  return card(t("Match score"), ai ? t("AI: {n} / 100", { n: ai.score }) : f ? t("{n}% of its skills", { n: f.score }) : t("not assessed yet"), [
+    !a.jd && h("p", { class: "card-p muted", id: "app-fit-none" }, t("Its description is needed first: it is read from the role's page, or pasted above.")),
+    a.jd && !f && h("p", { class: "card-p muted", id: "app-fit-rules-none" }, (a.subset || (a.tracks || []).length)
+      ? t("Its description names too few skills to count, or no resume is set for it.") : t("Set the resume it goes out with, and its description is counted against it.")),
+    f && h("div", { class: "af-block", id: "app-fit-rules" },
+      h("p", { class: "af-head" }, h("span", { class: "af-score" + (f.score >= 60 ? " hi" : f.score < 30 ? " lo" : "") }, t("{n}% fit", { n: f.score })),
+        h("span", { class: "af-src" }, t("its skills found in “{name}”, no AI", { name: sub(f.subset) }))),
+      words(t("In your resume"), f.hit), words(t("Not in your resume"), f.miss)),
+    ai && h("div", { class: "af-block", id: "app-fit-ai" },
+      h("p", { class: "af-head" }, h("span", { class: "af-score" + (ai.score >= 60 ? " hi" : ai.score < 30 ? " lo" : "") }, t("{n} / 100", { n: ai.score })),
+        h("span", { class: "af-src" }, t("read by AI against “{name}”, {date}", { name: sub(ai.subset || f && f.subset || ""), date: ai.at || "" }))),
+      ai.why && h("p", { class: "card-p af-why" }, ai.why),
+      words(t("It has"), ai.have), words(t("It lacks"), ai.gaps)),
+  ], { actions: ask || null, fold: "app-fit" });
+}
+
+// the window's AI reads the description against the resume and keeps its score on the role (hunt.py fit)
+function askFit(a, c) {
+  const before = (a.fit_ai || {}).at + "|" + (a.fit_ai || {}).score;
+  const check = huntCheck((d) => {
+    const now = d.applications.find((x) => x.id === a.id);
+    if (!now) return null;
+    const f = now.fit_ai;
+    if (f && (f.at + "|" + f.score) !== before) return { ok: true, say: t("{role} is assessed: {n} / 100", { role: now.role, n: f.score }) };
+    return { ok: false, say: t("{role} is not assessed yet", { role: now.role }),
+      again: t("{role} at {company} still has no fit saved. Read its description and the resume it goes out with, then save the score with fit.", { role: now.role, company: c.name }) };
+  });
+  aiRun("fit:" + a.id, () => sendChat(t("Assess how well {role} at {company} fits me: read its description and the resume it goes out with, and save the score with fit.", { role: a.role, company: c.name }),
+    { fresh: true, title: t("Fit of {role} at {company}", { role: a.role, company: c.name }) }), check);
 }
 
 // "-": the user kept the track its title gives it; its description's hint is not shown again

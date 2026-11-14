@@ -2495,5 +2495,27 @@
  "{word} in {n} line": [
   "{word} dans {n} ligne",
   "{word} dans {n} lignes"
- ]
+ ],
+ "Other kinds": "Autres types",
+ "AI: {n} / 100": "IA : {n} / 100",
+ "Ask AI again": "Réévaluer",
+ "Ask AI to assess it": "Faire évaluer par l'IA",
+ "Assess how well {role} at {company} fits me: read its description and the resume it goes out with, and save the score with fit.": "Évalue à quel point le poste {role} chez {company} me correspond : lis sa description et le CV avec lequel je postule, puis enregistre la note avec fit.",
+ "Fit of {role} at {company}": "Adéquation de {role} chez {company}",
+ "It has": "Acquis",
+ "It lacks": "Manques",
+ "Its description is needed first: it is read from the role's page, or pasted above.": "La description du poste est d'abord nécessaire : elle est lue sur la page du poste ou collée ci-dessus.",
+ "Its description names too few skills to count, or no resume is set for it.": "La description cite trop peu de compétences, ou aucun CV n'est défini pour ce poste.",
+ "Not in your resume": "Absent du CV",
+ "Set the resume it goes out with, and its description is counted against it.": "Définissez le CV avec lequel vous postulez, et la description sera comparée à celui-ci.",
+ "The score is a number from 0 to 100": "La note est un nombre de 0 à 100",
+ "its skills found in “{name}”, no AI": "compétences du poste trouvées dans « {name} », sans IA",
+ "not assessed yet": "pas encore évalué",
+ "read by AI against “{name}”, {date}": "évalué par l'IA d'après « {name} », {date}",
+ "{n} / 100": "{n} / 100",
+ "{n}% of its skills": "{n} % de ses compétences",
+ "{role} at {company} still has no fit saved. Read its description and the resume it goes out with, then save the score with fit.": "Aucune adéquation n'est encore enregistrée pour {role} chez {company}. Lis sa description et le CV, puis enregistre la note avec fit.",
+ "{role} is assessed: {n} / 100": "{role} est évalué : {n} / 100",
+ "{role} is not assessed yet": "{role} n'est pas encore évalué",
+ "Match score": "Adéquation"
 }

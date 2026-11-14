@@ -283,6 +283,15 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
             fn()
         return {"ok": True}
 
+    @app.route("POST", "/api/yield")
+    def give_way(req):
+        """Resume Studio.exe always opens its own window (2026-11-14): one served to a browser on the same data
+        file (a dev server, a tab the user opened) stops and leaves the data file to it. A window never yields."""
+        if window:
+            return {"ok": False}
+        app.stop_soon()
+        return {"ok": True}
+
     @app.route("POST", "/api/drawn")
     def drawn(req):
         """The page has drawn its first screen. The window starts hidden and shows now, so it never opens as an

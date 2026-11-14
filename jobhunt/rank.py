@@ -5,8 +5,8 @@
 Matching roles filters by title (tracks). A title says "this kind of role", not "a good one for me", so every
 picked role's own page is read (jobhunt/reader.py, the browser off the screen, one page at a time) and its
 description is compared with the resume subset its track goes out with. The score is a word match, shown as one:
-the skills the description names (Python, PyTorch, RAG, 机器学习…) and how many of them the subset's resume
-names too. Only the description's skill words count, so a long paragraph about the company changes nothing.
+the skills the description asks for (jobhunt/skills.py, any field: Python, 用户研究, 财务报表分析…) and how many of
+them the subset's resume names too. Only the description's skill words count, so a long paragraph about the company changes nothing.
 """
 from __future__ import annotations
 
@@ -33,32 +33,33 @@ master phd university field fields equivalent across build building develop deve
 designing support supporting help helping new key based level role roles job position candidate candidates
 company business product products customer customers best high time least least communication written verbal
 english chinese japanese korean german french spanish fluent native speaker opportunity opportunities""".split())
-_LATIN = re.compile(r"[a-z][a-z0-9+#.\-]*[a-z0-9+#]|[a-z]")
-# Chinese has no spaces between words: these are the skill terms looked for in a description written in it
-_ZH_TERMS = """机器学习 深度学习 强化学习 自然语言处理 计算机视觉 大模型 大语言模型 多模态 推荐系统 搜索引擎 知识图谱 数据挖掘
-数据分析 数据仓库 数据库 分布式 微服务 高并发 云原生 容器 前端 后端 全栈 客户端 移动端 小程序 算法 数据结构 操作系统 计算机网络
-图像处理 语音识别 语音合成 模型训练 模型部署 模型压缩 量化 微调 提示词 智能体 检索增强 向量数据库 产品设计 需求分析 用户研究
-交互设计 原型设计 数据驱动 项目管理 敏捷开发 测试开发 自动化测试 性能优化 架构设计 系统设计 地理信息 遥感 嵌入式""".split()
 
 
-def skill_words(text: str) -> set[str]:
-    """The skills a text names: Latin words that aren't plain English ("python", "pytorch", "rag", "c++"), and the
-    Chinese skill terms in it."""
-    low = str(text or "").casefold()
-    out = {w.strip(".-") for w in _LATIN.findall(low)}
-    out = {w for w in out if len(w) > 1 and w not in _STOP and not w.isdigit()}
-    out |= {z for z in _ZH_TERMS if z in low}
-    return out
+def fit(jd: str, have: str, lexicon: Any = None) -> dict | None:
+    """{score 0–100, hit[], miss[]}: of the skills the description asks for (jobhunt/skills.py: by rules, in any
+    field, learning from every description read), the ones the resume's text `have` names too. A skill written
+    with more around it counts when its core is there: "Python编程开发" by Python, "深度学习框架" by 深度学习.
+    None when the description names fewer than 3 skills (nothing to compare).
 
-
-def fit(jd: str, have: set[str]) -> dict | None:
-    """{score 0–100, hit[], miss[]}: of the skills the description names, the ones the resume names too. None when
-    the description names fewer than 3 skills (nothing to compare)."""
-    want = skill_words(jd)
+    Until 2026-11-14 the skills were Latin words and a fixed list of IT terms, so a product manager's description
+    (用户研究, 竞品分析, Axure) had no skills and no score: the user couldn't tell one 产品经理 from another."""
+    from .skills import _fold, skills_of
+    want = skills_of(jd, lexicon, learn=False)
     if len(want) < 3:
         return None
-    hit = sorted(want & have)
-    miss = sorted(want - have)
+    text = _fold(have)
+
+    def named(term: str) -> bool:
+        k = _fold(term)
+        if k in text:
+            return True
+        cores = [w for w in re.findall(r"[a-z][a-z0-9+#.\-]*[a-z0-9+#]", k) if w not in _STOP]
+        if lexicon is not None:
+            cores += [_fold(name) for _, name in lexicon.find(term) if _fold(name) != k]
+        return any(c in text for c in cores)
+
+    hit = [w for w in want if named(w)]
+    miss = [w for w in want if w not in hit]
     return {"score": round(100 * len(hit) / len(want)), "hit": hit[:30], "miss": miss[:30]}
 
 

@@ -687,6 +687,18 @@ exclusions and the resume subset it goes out with. No AI runs per posting: it is
   - *Track*: when the duties use another track's words in far more of their lines (3 at least, twice its own
     track's), the role's page says which, with the counts, and offers "Move to …" or "Keep it"; the table shows a
     dot. Nothing is moved for the user. A role put in a track is in that one only, in Matching roles too.
+- **Two match scores: the rules' first, the AI's after Want to apply** (2026-11-14, `jobhunt/rank.py`, `hunt.py fit`).
+  The rules' score is the share of a description's skills (the extractor above, any field) that the resume it goes
+  out with names; a skill written with more around it counts by its core ("Python编程开发" by Python). It used to
+  count Latin words and a fixed list of IT terms, so a product manager's description had no score. Want to apply
+  then asks the window's AI, in a chat of its own, to read the description against the resume and keep a score,
+  why, what the resume has for it and what it lacks; a new description drops it. The role's page has a Match score
+  card with both; the progress table a Match score column (the AI's when there is one).
+- **Resume Studio.exe always opens its own window** (2026-11-14). An instance on the same data file served to a
+  browser (a dev server, a tab) is asked to stop (`/api/yield`) and the window opens; a window never yields.
+- **A company's nature list** offers the kinds of the company's own country when it has a list (else those of each
+  country in the profile), then only the common kinds those lists leave out (Australia names no private company).
+  Claude finds the companies still to fill with `hunt.py list --missing nature`.
 
 ### What comes next (a flow review, as an agent engineer)
 

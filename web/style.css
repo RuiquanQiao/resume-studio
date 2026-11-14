@@ -1996,6 +1996,9 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .c-track-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .c-track-hint { display: inline-block; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
 .trk-tags.c-skills, .dbv-td:not(.wrap) .dbv-in > span.c-skills { display: flex; flex-wrap: nowrap; overflow: hidden; max-width: 100%; }
+/* a cell that wraps its text (a relation column, or wrap turned on): its skills wrap too, none cut off */
+.dbv-td.wrap .trk-tags.c-skills { flex-wrap: wrap; overflow: visible; }
+.dbv-td.wrap .trk-tags.c-skills > .trk-tag { flex: 0 1 auto; min-width: 0; }   /* one longer than the cell is cut with an ellipsis, inside it */
 .trk-tags.c-skills > .trk-tag { flex: none; }
 /* the skills a role's description asks for, on its page: each one taken off with its ×, more typed after them */
 .sk-list { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -2004,6 +2007,25 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .sk-x { flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--text-3); cursor: pointer; }
 .sk-x:hover { background: var(--line); color: var(--text); }
 .sk-x svg.i { width: 12px; height: 12px; }
+/* a role's Fit card (web/hunt.js fitCard): the rules' score, then the AI's reading, each a score and what it rests on */
+.af-block { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.af-block + .af-block { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.af-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin: 0; }
+.af-score { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+.af-score.hi { color: var(--ok); }
+.af-score.lo { color: var(--text-3); }
+.af-src { font-size: 12.5px; color: var(--text-3); min-width: 0; overflow-wrap: anywhere; }
+.af-why { margin: 0; }
+.af-line { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: start; gap: 8px; }
+.af-k { font-size: 12.5px; line-height: 24px; color: var(--text-3); }
+.af-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.af-chip { max-width: 100%; padding: 2px 8px; border-radius: 6px; background: var(--hover); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+/* the applications table's Fit column: the AI's score with a small "AI", else the rules' percentage */
+.c-fit, .dbv-td:not(.wrap) .dbv-in > span.c-fit { display: inline-flex; align-items: baseline; gap: 4px; font-variant-numeric: tabular-nums; color: var(--text); }
+.c-fit.hi { color: var(--ok); }
+.c-fit.lo, .c-fit.rules { color: var(--text-3); }
+.c-fit.rules.hi { color: var(--ok); }
+.c-fit-by { font-size: 11px; color: var(--text-3); }
 .field .sk-list input.sk-add { width: 12em; min-height: 24px; height: 24px; padding: 0 8px; font-size: 13px; }
 .modal.trk-modal { width: min(640px, 94vw); max-height: 88vh; display: flex; flex-direction: column; }
 .trk-list { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; min-height: 0; margin: 0 -20px 12px; padding: 2px 20px; }

@@ -1,6 +1,7 @@
 """Work the job-hunt tracker from Claude Code (the window must be open): companies, their roles and progress.
 
     python scripts/hunt.py list [--status interview] [--company 星河科技]
+    python scripts/hunt.py list --missing nature              # the companies whose nature isn't filled in yet
     python scripts/hunt.py show 星河科技                      # a company: its details, about, roles, recent events
     python scripts/hunt.py show 星河科技/服务端              # one application (or its id: A3)
     python scripts/hunt.py add-company "星河科技" --site https://careers.xinghe.example/campus --alias Xinghe
@@ -312,6 +313,20 @@ def show_app(v: dict) -> None:
         print("  JD:\n    " + a["jd"].replace("\n", "\n    "))
     else:
         print("  JD: not kept yet (`jd` saves the posting's text)")
+    if a.get("skills"):
+        print("  skills it asks for (by rules): " + ", ".join(a["skills"]))
+    f = a.get("fit") or {}
+    if f:
+        print(f"  fit by the rules: {f['score']}/100 against {f['subset']}; in the resume: {', '.join(f.get('hit') or []) or '-'};"
+              f" not: {', '.join(f.get('miss') or []) or '-'}")
+    elif not a.get("subset"):
+        print("  resume it goes out with: none set (its track's is used; `edit-role --subset` sets one)")
+    ai = a.get("fit_ai") or {}
+    if ai:
+        print(f"  fit read by AI ({ai.get('at', '')}): {ai['score']}/100 against {ai.get('subset') or '-'}: {ai.get('why', '')}")
+        for k in ("have", "gaps"):
+            if ai.get(k):
+                print(f"    {k}: " + "; ".join(ai[k]))
     for s in a.get("sent") or []:
         print(f"  sent {s['at'][:16].replace('T', ' ')}: {s['subset']} v{s['n']}")
     print("  booked:" if a.get("schedule") else "  booked: nothing")
@@ -325,11 +340,27 @@ def show_app(v: dict) -> None:
         print(event_line(e))
 
 
+FIT_HELP = """How well a role fits the user, read by you after they chose Want to apply, as JSON on stdin:
+
+  {"score": 72,                                  # 0-100: how likely this resume gets them an interview for it
+   "subset": "JOB-001",                          # the resume it goes out with (the role's, else its track's)
+   "why": "Two or three sentences: what the role really is (the product, the team, the level) and how the
+           resume stands against what it asks for most.",
+   "have": ["RAG pipeline in Paper2Exam", ...],  # what in the resume answers its main asks (at most 8)
+   "gaps": ["No production Kubernetes", ...]}    # what it asks that the resume doesn't show (at most 8)
+
+Read the description (`show <role>`; if it has none, read the posting's page and keep it with `jd` first) and the
+resume itself, not a summary of it. Judge it as its hiring manager would: what the role must have weighs more
+than a nice-to-have, a skill shown in a real project more than one listed. Write in the language `show` names."""
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("list"); p.add_argument("--status"); p.add_argument("--company")
+    p.add_argument("--missing", metavar="FIELD", help="the companies with this field empty (nature, industry, hq, size, strength), "
+                   "one a line, to fill in turn: `list --missing nature`")
     p = sub.add_parser("show"); p.add_argument("ref")
     for name in ("add-company", "edit-company"):
         p = sub.add_parser(name); p.add_argument("ref" if name == "edit-company" else "name")
@@ -378,6 +409,8 @@ def main() -> int:
     p = sub.add_parser("logo", description="Look at a company's logo as the window shows it: a png drawing of it, and what is wrong with it.")
     p.add_argument("ref")
     p = sub.add_parser("about"); p.add_argument("ref"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
+    p = sub.add_parser("fit", description=FIT_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("ref"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("fill", description=FILL_HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("ref"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("sent"); p.add_argument("ref"); p.add_argument("--subset")
@@ -403,6 +436,13 @@ def main() -> int:
 
     if c == "list":
         r = call(url, "list", {})["list"]
+        if args.missing:   # the companies still to fill in: id, name, where it is and its first site
+            todo = [x for x in r["companies"] if not x.get(args.missing)]
+            for x in todo:
+                site = next((s.get("url") for s in x.get("sites") or [] if s.get("url")), "")
+                print("  ".join(v for v in (x["id"], x["name"], x.get("hq") or "", site) if v))
+            print(f"{len(todo)} of {len(r['companies'])} companies have no {args.missing}")
+            return 0
         names = {x["id"]: x["name"] for x in r["companies"]}
         rows = r["applications"]
         if args.status:
@@ -486,6 +526,15 @@ def main() -> int:
         if not raw.strip():
             sys.exit("error: give the JD's text with --stdin or --file")
         r = call(url, "edit-role", {"ref": args.ref, "jd": raw})
+    elif c == "fit":
+        try:
+            got = json.loads(read_input(args))
+        except ValueError as e:
+            sys.exit(f"error: that isn't valid JSON ({e})")
+        r = call(url, "edit-role", {"ref": args.ref, "fit_ai": got})
+        f = r["app"]["application"].get("fit_ai") or {}
+        print(f"saved: {r['app']['application']['role']} fits {f.get('subset') or 'its resume'}: {f.get('score')}/100")
+        return 0
     elif c in ("about", "fill"):
         raw = read_input(args)
         try:

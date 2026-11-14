@@ -29,7 +29,7 @@ from .geo import Geo
 from .history import History, describe
 from .logos import fetch_logo, fetch_logo_in_browser
 from .postings import held_back, tracks_of, Postings, same_link, stale
-from .rank import Descriptions, fit, skill_words
+from .rank import Descriptions, fit
 from . import skills as role_skills
 from .scan import Scanner
 from .store import LOGO_TYPES, STATE_IDS, Hunt, SameCompany
@@ -155,12 +155,13 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         m = posts.matched()
         jds = descs.all()
         doc, _ = studio.store.load()
-        have: dict[str, set[str]] = {}   # subset id -> the skills its resume names, in every resume language
+        have: dict[str, str] = {}   # subset id -> what its resume says, in every resume language
         for tr in m["tracks"]:
             sid = tr.get("subset") or ""
             if sid and sid not in have and model.get_item(doc, "subset", sid) is not None:
                 from jobs.fit import subset_text
-                have[sid] = skill_words(subset_text(doc, model.get_item(doc, "subset", sid)))
+                have[sid] = subset_text(doc, model.get_item(doc, "subset", sid))
+        lex = hunt.lexicon()
         subset_of = {tr["id"]: tr.get("subset") for tr in m["tracks"]}
         apps = {a["id"]: a for a in hunt.applications()}
         for p in m["postings"]:
@@ -174,7 +175,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             best = None
             for tid in p["tracks"]:
                 sid = subset_of.get(tid)
-                f = fit(j["jd"], have[sid]) if j.get("jd") and sid in have else None
+                f = fit(j["jd"], have[sid], lex) if j.get("jd") and sid in have else None
                 if f and (best is None or f["score"] > best["score"]):
                     best = {**f, "subset": sid}
             p["fit"] = best
@@ -470,7 +471,29 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     def with_track(a: dict, tracks: list[dict], nature: str) -> dict:
         """A role's track (the one the user put it in, else its title's) and, once its description is read, the
         track that description reads like when that is another one (jobhunt/skills.py, no AI)."""
-        return role_skills.view(a, tracks_of(a.get("role") or "", tracks, nature), tracks, nature)
+        v = role_skills.view(a, tracks_of(a.get("role") or "", tracks, nature), tracks, nature)
+        return {**v, **rule_fit(a, v["tracks"], tracks)}
+
+    # a role's fit by the rules (jobhunt/rank.py): its description's skills against the resume it goes out with (its
+    # own, else its track's). Worked out once per description, resume and data file change: the table paints it per row
+    fits: dict[tuple, dict] = {}
+
+    def rule_fit(a: dict, tids: list[str], tracks: list[dict]) -> dict:
+        sid = a.get("subset") or next((tr.get("subset") for tr in tracks if tr["id"] in tids and tr.get("subset")), "")
+        if not a.get("jd") or not sid:
+            return {}
+        key = (a["id"], hashlib.blake2b(a["jd"].encode(), digest_size=8).hexdigest(), sid, str(stat_key(studio.store.path)))
+        if key not in fits:
+            doc = studio.store.peek() or {}
+            sub = model.get_item(doc, "subset", sid)
+            f = None
+            if sub is not None:
+                from jobs.fit import subset_text
+                f = fit(a["jd"], subset_text(doc, sub), hunt.lexicon())
+            if len(fits) > 2000:
+                fits.clear()
+            fits[key] = {"fit": {**f, "subset": sid}} if f else {}
+        return fits[key]
 
     def app_view(ref: str) -> dict:
         a = hunt.application(ref)

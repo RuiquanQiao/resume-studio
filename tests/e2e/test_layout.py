@@ -429,6 +429,17 @@ def read_failed(c):
         time.sleep(0.05)
 
 
+def role_with_fit(c):
+    """A role with its description, scored by the rules against its resume and read by the AI: long words, many."""
+    filled_companies(c)
+    jd = ("岗位职责：负责推荐系统的召回与排序模型。任职要求：熟悉 Python、PyTorch、scikit-learn 和 TensorFlow；了解 Kubernetes、"
+          "Spark、Flink、Hadoop、Elasticsearch；熟悉 VeryLongDistributedTrainingFrameworkNameWithNoSpaces 与 Docker")
+    c.server.inst.hunt.update_application("A1", {"subset": "RES-TECH-EN", "jd": jd, "fit_ai": {
+        "score": 64, "subset": "RES-TECH-EN", "why": "推荐算法岗，偏召回与排序的工程落地。" * 6,
+        "have": ["PyTorch 迁移学习项目（EuroSAT 98.21%）", "多阶段 AI Agent（Paper2Exam）", "U-Net inpainting"],
+        "gaps": ["没有线上推荐系统经验", "没有 Spark / Flink 大数据处理经验", "VeryLongDistributedTrainingFrameworkNameWithNoSpaces", "没有 A/B 实验"]}})
+
+
 def applying(tab):
     # the tables arrive with the tracker's data: wait for them before a state reaches into DBV
     return then(key("Control+3"), click(f".hunt-tab[data-tab={tab}]"),
@@ -741,6 +752,11 @@ STATES = [
           prepare=filled_companies),
     State("applying, a company's open roles, one added", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
           [".post-row .pr-added"], prepare=read_failed),
+    # its fit: the rules' score with the skills found and missing, then the AI's reading (2026-11-14)
+    State("applying, a role's fit", then(applying("apps"), click(".dbv-view tr[data-id='A1'] .dbv-title"),
+          lambda pg, c: (pg.wait_for_selector("#app-fit-ai"), pg.evaluate("() => document.querySelector('#app-fit-ai').scrollIntoView({block: 'center'})"))),
+          ["#app-fit-rules .af-chip", "#app-fit-ai .af-why", "#app-fit-ai .af-chip"], prepare=role_with_fit),
+    State("applying, roles with their fit", applying("apps"), [".htable td[data-key='fit'] .c-fit"], prepare=role_with_fit),
     State("applying, a role whose page didn't read", then(applying("apps"), click(".dbv-view tr[data-id='A4'] .dbv-title"),
           lambda pg, c: (pg.wait_for_selector(".note-bar.warn #app-read, #app-read"), pg.evaluate("() => document.querySelector('#app-read').scrollIntoView({block: 'center'})"))), ["section.card .note-bar.warn", "#app-read"], prepare=read_failed),
     State("applying, a company whose scan failed", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
@@ -1055,24 +1071,48 @@ def test_a_visa_not_listed_is_typed_whole_and_a_listed_one_never_kept_misspelt(w
 
 def test_a_companys_nature_is_picked_from_the_profiles_countries_in_groups(win, server):
     """2026-11-14: the nature list showed every country's kinds in one indented run with no group names, and
-    the profile's countries weren't read (it still looked for the first shape's lists). Now: a group for each
-    country in the profile that has kinds of its own, then every country's kinds; other countries' aren't offered."""
+    the profile's countries weren't read (it still looked for the first shape's lists). Then (user, the same day):
+    the kinds every country has repeated what a country names its own way (民企 and "Private company"). Now: the
+    company's own country's kinds when it has a list, else those of each country in the profile; then only the
+    common kinds those lists leave out (Australia names no private company, so it keeps "Private company")."""
     st = next(s for s in STATES if s.name == "applying, a company's nature list open")
     work_status(Ctx(server))
     server.inst.hunt.update_company("C1", {"nature": ""})
     open_window(win, server, "en")
     st.show(win, Ctx(server))
-    groups = win.eval_on_selector_all(".dbv-options .lb-group", "els => els.map((e) => e.innerText.trim())")
-    assert groups == ["China", "Australia", "Every country"], groups
+    groups = lambda: win.eval_on_selector_all(".dbv-options .lb-group", "els => els.map((e) => e.innerText.trim())")  # noqa: E731
+    opts = lambda: win.eval_on_selector_all(".dbv-options .lb-opt", "els => els.map((e) => e.innerText.trim())")  # noqa: E731
+    assert groups() == ["China", "Other kinds"], groups()                 # a company in Shanghai
+    assert "Private company (民企)" in opts() and "Private company" not in opts() and "Australian Public Service (APS)" not in opts()
     win.keyboard.press("Escape")
-    # the profile is only Australia now: China's own kinds go from the list
-    prof = dict(server.inst.studio.state()["doc"]["profile"])
-    prof["work"] = {"rights": [{"country": "AU", "status": "citizen"}]}
-    server.inst.studio.update_item("profile", None, prof, None)
+    win.click(".dbv-view tr[data-id='C2'] td[data-key='nature']")        # a company in Sydney
+    win.wait_for_selector(".dbv-options .lb-group")
+    assert groups() == ["Australia", "Other kinds"], groups()
+    assert "Private company" in opts() and "Private company (民企)" not in opts()
+
+
+def test_a_list_opens_downward_while_it_has_room_and_never_over_the_title_bar(win, server):
+    """2026-11-14: a company's nature list, opened from a cell low in the table, grew upward over the window's
+    minimise / maximise / close buttons although 300px were free below. A list opens on its side while that side
+    holds a usable list (it scrolls inside), and one that must go up stops under the top bar."""
     open_window(win, server, "en")
-    st.show(win, Ctx(server))
-    groups = win.eval_on_selector_all(".dbv-options .lb-group", "els => els.map((e) => e.innerText.trim())")
-    assert groups == ["Australia", "Every country"], groups
+    got = win.evaluate("""() => {
+        const bar = document.querySelector(".topbar").getBoundingClientRect().bottom;
+        const at = (y) => {
+            const a = h("button", { style: `position:fixed;left:200px;top:${y}px;height:30px;width:200px` }, "x");
+            document.body.append(a);
+            const p = h("div", { class: "listbox" }, ...Array.from({ length: 40 }, (_, i) => h("div", { class: "lb-opt" }, "Option " + i)));
+            openFloat(a, p);
+            const r = p.getBoundingClientRect(), ar = a.getBoundingClientRect();
+            const out = { side: p.dataset.side, top: r.top, bottom: r.bottom, below: ar.bottom, above: ar.top };
+            closeFloat(); a.remove();
+            return out;
+        };
+        return { bar, H: innerHeight, room: at(innerHeight - 330), tight: at(innerHeight - 80) };
+    }""")
+    room, tight = got["room"], got["tight"]
+    assert room["side"] == "bottom" and room["top"] >= room["below"] and room["bottom"] <= got["H"], got
+    assert tight["side"] == "top" and tight["top"] >= got["bar"] and tight["bottom"] <= tight["above"], got
 
 
 def test_typing_in_a_field_lays_out_only_its_own_part_of_the_window(win, server):

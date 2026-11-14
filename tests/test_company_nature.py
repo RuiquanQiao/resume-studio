@@ -213,6 +213,16 @@ def test_claude_sets_and_reads_the_nature_from_its_command(live, data_file):
     assert "au.aps" in cli(data_file, "tracks", "--help")[1]
 
 
+def test_claude_lists_the_companies_whose_nature_is_still_empty(live, data_file):
+    """2026-11-14: the user asks the window's own Claude to fill every company's nature; it had no way to find the
+    ones still empty but `show` on each of thousands. `list --missing nature` gives them one a line."""
+    cli(data_file, "add-company", "沐瞳科技", "--site", "https://career.mt.example/")
+    cli(data_file, "add-company", "中国移动", "--nature", "cn.central_soe")
+    code, out = cli(data_file, "list", "--missing", "nature")
+    assert code == 0 and "沐瞳科技" in out and "https://career.mt.example/" in out and "中国移动" not in out
+    assert out.strip().splitlines()[-1].startswith("1 of ")
+
+
 def test_every_listed_visa_is_one_name_per_country_and_status():
     """2026-11-14: a visa is picked from a list (jobhunt/visas.py), so the list itself must be clean: a known
     country, a status a record has, no name twice in a country, and a Chinese name to find it by."""

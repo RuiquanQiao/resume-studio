@@ -308,7 +308,14 @@ class App:
 
         httpd = _Server((host, port), self._make_handler())
         httpd.daemon_threads = True
+        self.httpd = httpd
         return httpd, f"http://{host}:{port}/"
+
+    def stop_soon(self) -> None:
+        """End serve() from a request's own thread: the answer goes out first, then the loop stops."""
+        httpd = getattr(self, "httpd", None)
+        if httpd:
+            threading.Timer(0.2, httpd.shutdown).start()
 
     def start_background(self, host: str = "127.0.0.1", port: int = 8765) -> tuple[ThreadingHTTPServer, str]:
         """Serve from a daemon thread (for native-window mode); call httpd.shutdown() to stop."""

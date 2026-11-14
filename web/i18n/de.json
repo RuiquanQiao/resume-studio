@@ -2495,5 +2495,27 @@
  "{word} in {n} line": [
   "{word} in {n} Zeile",
   "{word} in {n} Zeilen"
- ]
+ ],
+ "Other kinds": "Weitere Arten",
+ "AI: {n} / 100": "KI: {n} / 100",
+ "Ask AI again": "Erneut bewerten",
+ "Ask AI to assess it": "Von der KI bewerten lassen",
+ "Assess how well {role} at {company} fits me: read its description and the resume it goes out with, and save the score with fit.": "Bewerte, wie gut {role} bei {company} zu mir passt: Lies die Stellenbeschreibung und den Lebenslauf, mit dem ich mich bewerbe, und speichere die Bewertung mit fit.",
+ "Fit of {role} at {company}": "Passung von {role} bei {company}",
+ "It has": "Vorhanden",
+ "It lacks": "Fehlt",
+ "Its description is needed first: it is read from the role's page, or pasted above.": "Zuerst wird die Stellenbeschreibung benötigt: Sie wird von der Seite der Stelle gelesen oder oben eingefügt.",
+ "Its description names too few skills to count, or no resume is set for it.": "Die Stellenbeschreibung nennt zu wenige Fähigkeiten, oder es ist kein Lebenslauf festgelegt.",
+ "Not in your resume": "Nicht im Lebenslauf",
+ "Set the resume it goes out with, and its description is counted against it.": "Legen Sie den Lebenslauf fest, mit dem Sie sich bewerben, dann wird die Stellenbeschreibung damit abgeglichen.",
+ "The score is a number from 0 to 100": "Die Bewertung ist eine Zahl von 0 bis 100",
+ "its skills found in “{name}”, no AI": "Fähigkeiten der Stelle in „{name}“ gefunden, ohne KI",
+ "not assessed yet": "noch nicht bewertet",
+ "read by AI against “{name}”, {date}": "von der KI anhand von „{name}“ bewertet, {date}",
+ "{n} / 100": "{n} / 100",
+ "{n}% of its skills": "{n} % der Fähigkeiten",
+ "{role} at {company} still has no fit saved. Read its description and the resume it goes out with, then save the score with fit.": "Für {role} bei {company} ist noch keine Passung gespeichert. Lies die Stellenbeschreibung und den Lebenslauf, dann speichere die Bewertung mit fit.",
+ "{role} is assessed: {n} / 100": "{role} ist bewertet: {n} / 100",
+ "{role} is not assessed yet": "{role} ist noch nicht bewertet",
+ "Match score": "Passung"
 }

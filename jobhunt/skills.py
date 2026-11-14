@@ -22,7 +22,7 @@ from typing import Any
 from .postings import _fold, _keyword, _takes
 
 MAX_SKILLS = 30
-VERSION = 1   # of the rules below: a role's skills worked out by older rules are worked out again (not hand-set ones)
+VERSION = 2   # of the rules below: a role's skills worked out by older rules are worked out again (not hand-set ones)
 LEXICON = "skills.json"   # hunt/skills.json  {"terms": {"<folded>": {"name": "<as written>", "n": <descriptions>}}}
 
 # the headings a description's parts start with (中文 and English), the requirements and the duties
@@ -154,7 +154,10 @@ def _named(jd: str) -> list[str]:
         # in Chinese text a Latin word is nearly always a tool or a term; in English only one that looks like one
         # (C++, Node.js, SQL, PyTorch, Excel in the middle of a sentence), never every word of the paragraph
         tool = (re.search(r"[+#.\d]", w) or (w.isupper() and len(w) <= 6) or re.search(r"[a-z][A-Z]", w)
-                or (w[0].isupper() and m.start() > 0 and not re.search(r"[.!?:]\s*$", req[:m.start()])))
+                or (w[0].isupper() and m.start() > 0 and not re.search(r"[.!?:]\s*$", req[:m.start()]))
+                # the first of a list right after a colon ("Skills: Python, Java"): the whole of its clause, so a
+                # name, not a sentence's start (the clauses were split at the commas above)
+                or (w[0].isupper() and re.match(r"[ \t]*(?:\n|$|/|、)", req[m.end():])))
         if zh or tool:
             out.append(w)
     return out

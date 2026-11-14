@@ -839,3 +839,29 @@ def test_a_title_in_no_track_is_ruled_out_by_one_search_and_the_tracks_stay_the_
         each = tuple(tr["id"] for tr in tracks if tr["keywords"] and P._matches(folded, tr["keywords"], tr["exclude"]))
         assert P._title_tracks(ti, tracks)[0] == each, ti
     assert P._title_tracks("Maintenance Engineer", tracks)[0] == () and P._title_tracks("AI产品经理", tracks)[0] == ("T1", "T2")
+
+
+
+def test_a_role_has_the_rules_fit_at_once_and_the_ais_once_it_has_read_it(live, data_file):
+    """2026-11-14: the user wants a first score with no AI, and the AI's reading after Want to apply. The rules'
+    score comes with the description (its skills found in the resume it goes out with); the AI's is kept with
+    `fit`, shown by `show`, and dropped when a new description comes in (it was of the old one)."""
+    cli(data_file, "add-company", "星河科技")
+    assert cli(data_file, "add-role", "星河科技", "机器学习工程师", "--subset", "RES-TECH-EN")[0] == 0
+    jd = "岗位职责：训练模型。任职要求：熟悉 Python、PyTorch 和 scikit-learn；了解 Kubernetes、Flutter"
+    assert cli(data_file, "jd", "星河科技/机器学习", "--stdin", stdin=jd)[0] == 0
+    a = live.req("GET", "/api/hunt")[1]["applications"][0]
+    assert a["fit"]["subset"] == "RES-TECH-EN" and 0 < a["fit"]["score"] < 100, a.get("fit")
+    assert {"python", "pytorch"} <= {w.casefold() for w in a["fit"]["hit"]} and "Flutter" in a["fit"]["miss"]
+    out = cli(data_file, "show", "星河科技/机器学习")[1]
+    assert "fit by the rules:" in out and "fit read by AI" not in out
+    got = {"score": 72.4, "subset": "RES-TECH-EN", "why": "ML role on recommendation; the resume has the models, not the serving.",
+           "have": ["PyTorch projects"], "gaps": ["No Kubernetes", "No Kubernetes"]}
+    code, out = cli(data_file, "fit", "星河科技/机器学习", "--stdin", stdin=json.dumps(got))
+    assert code == 0 and "72/100" in out, out
+    a = live.req("GET", "/api/hunt")[1]["applications"][0]
+    assert a["fit_ai"]["score"] == 72 and a["fit_ai"]["gaps"] == ["No Kubernetes"] and a["fit_ai"]["at"]
+    assert "fit read by AI" in cli(data_file, "show", "星河科技/机器学习")[1]
+    assert cli(data_file, "fit", "星河科技/机器学习", "--stdin", stdin='{"score": "high"}')[0] != 0
+    assert cli(data_file, "jd", "星河科技/机器学习", "--stdin", stdin=jd + "；熟悉 Docker")[0] == 0
+    assert "fit_ai" not in live.req("GET", "/api/hunt")[1]["applications"][0]

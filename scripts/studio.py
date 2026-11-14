@@ -62,6 +62,24 @@ def focus_existing(url: str) -> None:
         webbrowser.open(url)
 
 
+def give_way(url: str, still_there) -> bool:
+    """Ask the browser-served instance at `url` to stop; True once it has (it answers within a second or two)."""
+    import time
+    try:
+        req = urllib.request.Request(url + "api/yield", data=b"{}", method="POST",
+                                     headers={"Content-Type": "application/json"})
+        if not json.loads(urllib.request.urlopen(req, timeout=5).read() or b"{}").get("ok"):
+            return False
+    except (OSError, ValueError):
+        return not still_there()
+    end = time.monotonic() + 20   # local: its chats and watchers close, then the port is free
+    while time.monotonic() < end:
+        if not still_there():
+            return True
+        time.sleep(0.2)
+    return False
+
+
 def main() -> None:
     args = parse_args()
     reexec_in_venv(windowed=args.window, detach=args.window)
@@ -73,7 +91,11 @@ def main() -> None:
     data = resolve_data(args.data)
     probe = Studio(data)
     state_file = probe.store.cache_dir / "server.json"
-    url = running_instance(state_file, {"app": "resume-studio", "data": str(probe.store.path)})
+    expect = {"app": "resume-studio", "data": str(probe.store.path)}
+    url = running_instance(state_file, expect)
+    if url and args.window and not running_instance(state_file, {**expect, "window": True}):
+        # the exe always opens its own window: one served to a browser on this data file gives way to it
+        url = None if give_way(url, lambda: running_instance(state_file, expect)) else url
     if url:
         print(f"  already running: {url}")
         print(f"  UI running at {url}")

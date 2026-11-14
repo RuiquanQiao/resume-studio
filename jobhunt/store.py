@@ -247,6 +247,22 @@ def _same_place(a: dict, b: dict) -> bool:
     return a["kind"] == b["kind"] and (a["id"] == b["id"] if a.get("id") and b.get("id") else _key(a["area"]) == _key(b["area"]))
 
 
+def _fit_ai(v: Any) -> dict:
+    """{score 0–100, why, have[], gaps[], subset, at}: the window's AI on how well a role's description fits the
+    resume it goes out with (hunt.py fit). The rules' score (jobhunt/rank.py) counts skill words; this one reads.
+    {} or no score: none."""
+    if not isinstance(v, dict) or v.get("score") in (None, ""):
+        return {}
+    try:
+        score = max(0, min(100, round(float(v["score"]))))
+    except (TypeError, ValueError):
+        raise ValueError(t("The score is a number from 0 to 100")) from None
+    items = lambda x: [y for y in dict.fromkeys(_text(s, 120) for s in (x if isinstance(x, list) else [])) if y][:8]  # noqa: E731
+    out = {"score": score, "why": _long(v.get("why"), 1200), "have": items(v.get("have")), "gaps": items(v.get("gaps")),
+           "subset": _text(v.get("subset"), 80), "at": time.strftime("%Y-%m-%d")}
+    return {k: x for k, x in out.items() if x not in ("", [])}
+
+
 def _places(v: Any) -> list[dict]:
     out: list[dict] = []
     for x in v if isinstance(v, list) else [v] if v else []:
@@ -1027,7 +1043,13 @@ class Hunt:
                 # the skills it asks for, by rules (jobhunt/skills.py): worked out again for a new description
                 from .skills import VERSION, skills_of
                 a["skills"], a["skills_v"] = skills_of(jd, self.lexicon()), VERSION
+            if jd != a.get("jd") and "fit_ai" not in fields:
+                a.pop("fit_ai", None)   # the AI's judgement was of the old description
             a["jd"] = jd
+        if "fit_ai" in fields:   # the window's AI read the description against the resume (after Want to apply)
+            a["fit_ai"] = _fit_ai(fields["fit_ai"])
+            if not a["fit_ai"]:
+                a.pop("fit_ai")
         if "skills" in fields:   # the user's own correction of them
             xs = fields["skills"] if isinstance(fields["skills"], list) else re.split(r"[,，、;；\n]", str(fields["skills"] or ""))
             a["skills"] = [k for k in dict.fromkeys(_text(x, 40) for x in xs) if k][:40]
