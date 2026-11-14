@@ -716,9 +716,13 @@ fill the site → submit → track progress. What still costs the user attention
 
 1. **Rank inside a track, not just filter.** *Done 2026-11-04, first version; changed 2026-11-07:* a scan only reads
    the sites' job lists and picks roles by title (no browser pages, no AI). A role's own page is read when the user
-   clicks Want to apply (its description goes on the application), or for every picked role when they click "Read
-   them" (`jobhunt/rank.py`, one page a second, at most 80 a run, kept in `hunt/jds.json`); a scan no longer starts
-   that by itself, because scanning one company read other companies' pages. Then the skills its description names are compared with the skills the track's resume subset
+   clicks Want to apply (its description goes on the application). *Changed 2026-11-15:* after a scan, the matching
+   roles of the companies it scanned have their pages read in the background and are scored as each comes in (at
+   most 80 a scan, newest first; the daily scan only with the browser open), and a track change reads the roles it
+   takes in; scanning one company still never opens another's pages (2026-11-07). "Read and score" reads every
+   matching role left, newest first, and can be stopped (`jobhunt/rank.py`, one page a second, kept in
+   `hunt/jds.json`). A score is never stored: it is worked out from the description, the tracks and the resume as
+   they are now, so a resume or skill level change scores every role again without reading anything. Then the skills its description names are compared with the skills the track's resume subset
    names: "86% fit" on the row, the words matched and missing on hover, and a "Best fit first" order. Still to do:
    hard constraints (city, batch, graduation year) and the AI's written note for the top few.
    Original note:  A title match says "this kind of role", not "a good one for me". After
@@ -745,7 +749,7 @@ fill the site → submit → track progress. What still costs the user attention
 - `scans.json` `tracks: [{id, name, keywords, exclude, subset}]`; `keywords` stays as the union for older readers.
 - `scans.json` `companies.<id>.short: [read, total] | null`.
 - `GET /api/hunt/matches`: the picked roles; `hunt.py tracks [--stdin]` for the agent.
-- `hunt/jds.json` `{posting id: {jd, read, deadline?, error?}}`; `POST /api/hunt/matches/read` reads the unread ones.
+- `hunt/jds.json` `{posting id: {jd, read, deadline?, error?}}`; `POST /api/hunt/matches/read` reads the unread ones, `POST /api/hunt/matches/stop` stops that after the page being read.
 - A role's link is its key. `same_once` makes two links one role only when they differ in their first path segment
   alone with the same title (a Feishu board's sections); the earlier guess from long numbers in links dropped roles.
 

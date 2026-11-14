@@ -454,7 +454,9 @@ class Hunt:
         copy, never from this one."""
         try:
             st = self._file(name).stat()
-            sig = (st.st_mtime_ns, st.st_size)
+            # the file's own id too: every write puts a new file in place (os.replace), and one written by another
+            # process within the clock's tick with the same size (a date moved by a day) has another id
+            sig = (st.st_mtime_ns, st.st_size, st.st_ino)
         except OSError:
             sig = None
         with self._peek_lock:
@@ -524,6 +526,10 @@ class Hunt:
                 if attempt == 19:
                     raise
                 time.sleep(0.05)
+        # what this process wrote is read anew: the look kept by (time, size) missed an interview moved by a day,
+        # written within the same tick of the file clock (2026-11-15)
+        with self._peek_lock:
+            self._peeked.pop(name, None)
 
     def _companies(self) -> dict:
         return self._read("companies.json", "companies")

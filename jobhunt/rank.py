@@ -10,6 +10,7 @@ them the subset's resume names too. Only the description's skill words count, so
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import threading
@@ -18,7 +19,7 @@ from typing import Any, Callable
 
 from . import reader
 
-MAX_PER_RUN = 80        # pages read after one scan; the rest wait for the next (a run is minutes, never hours)
+MAX_PER_RUN = 80        # pages a scan or a track change reads by itself; the rest wait (such a run is minutes, never hours)
 PAUSE = 1.0             # seconds between two pages, so a careers site never sees a burst
 
 # Latin words that are never a skill, in a job description
@@ -117,7 +118,8 @@ class Descriptions:
         self.hunt, self.browser_of, self.publish = hunt, browser_of, publish
         self.lock = threading.Lock()
         self.queue: list[tuple[str, str]] = []      # (posting id, its link) still to read in this run
-        self.run: dict | None = None                # {total, done} while a run goes on
+        self.run: dict | None = None                # {total, done, read, failed} while a run goes on
+        self.last: dict = {}                        # the run that ended last: {at, read, failed, stopped}, for its toast
         self.pause = PAUSE
 
     # ---- the file ----
@@ -139,33 +141,57 @@ class Descriptions:
         with self.lock:
             return dict(self.run) if self.run else None
 
-    def start(self, postings: list[dict]) -> int:
-        """Read the description of every posting given that has a link and none read yet (a page that failed is
-        tried again a day later). Returns how many joined the run."""
+    def unread(self, postings: list[dict]) -> list[dict]:
+        """The postings given that have a link and no description read yet (a page that failed: again a day later)."""
         have = self.all()
         day_ago = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
-        todo = [(p["id"], p["url"]) for p in postings if re.match(r"https?://", p.get("url") or "")
+        return [p for p in postings if re.match(r"https?://", p.get("url") or "")
                 and not (have.get(p["id"]) or {}).get("jd")
                 and not ((have.get(p["id"]) or {}).get("error") and (have[p["id"]].get("read") or "") > day_ago)]
+
+    def stop(self) -> None:
+        """The run stops after the page it is reading: what was read keeps its score, the rest waits."""
+        with self.lock:
+            self.queue = []
+            if self.run is not None:
+                self.run["stopped"] = True
+
+    def start(self, postings: list[dict], limit: int | None = MAX_PER_RUN) -> int:
+        """Read the description of every posting given that has a link and none read yet (a page that failed is
+        tried again a day later). `limit`: at most this many in the run (the reading a scan or a track change starts
+        by itself); None, every one (the user's own click: they see it go and can stop it). Returns how many joined
+        the run."""
+        todo = [(p["id"], p["url"]) for p in self.unread(postings)]
         with self.lock:
             queued = {q[0] for q in self.queue}
-            new = [x for x in todo if x[0] not in queued][:MAX_PER_RUN - len(self.queue)]
+            new = [x for x in todo if x[0] not in queued]
+            if limit is not None:
+                new = new[:max(0, limit - len(self.queue))]
             if not new:
                 return 0
             self.queue += new
             if self.run is not None:
                 self.run["total"] += len(new)
                 return len(new)
-            self.run = {"total": len(new), "done": 0}
+            self.run = {"total": len(new), "done": 0, "read": 0, "failed": 0}
         threading.Thread(target=self._work, daemon=True, name="hunt-read-jds").start()
         self.publish()
         return len(new)
 
     def _work(self) -> None:
+        b = self.browser_of()
+        # the browser a scan opened stays open while descriptions are read after it (it closes itself when idle)
+        with (b.hold() if hasattr(b, "hold") else contextlib.nullcontext()):
+            self._read_all()
+
+    def _read_all(self) -> None:
         try:
             while True:
                 with self.lock:
                     if not self.queue:
+                        if self.run is not None:
+                            self.last = {"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "read": self.run["read"],
+                                         "failed": self.run["failed"], "stopped": bool(self.run.get("stopped"))}
                         self.run = None
                         break
                     pid, url = self.queue.pop(0)
@@ -185,6 +211,7 @@ class Descriptions:
                 with self.lock:
                     if self.run is not None:
                         self.run["done"] += 1
+                        self.run["failed" if row.get("error") else "read"] += 1
                 self.publish()
                 time.sleep(self.pause)
         finally:

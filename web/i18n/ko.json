@@ -2058,10 +2058,7 @@
  "Newest first": "최신순",
  "Not in your resume: {words}": "이력서에 없는 것: {words}",
  "Order": "정렬",
- "Read them": "읽기",
- "Reading the descriptions of picked roles to rank them: {n} of {all}": "골라낸 공고의 직무 설명을 읽어 정렬하는 중: {n}/{all}",
  "Skills its description names that your resume “{name}” names too: {words}": "직무 설명에 있고 이력서 “{name}”에도 있는 기술: {words}",
- "{n} picked roles have no description read yet, so they can't be ranked.": "골라낸 공고 {n}개는 아직 직무 설명을 읽지 않아 정렬할 수 없습니다.",
  "Tell it which kinds of role you go for": "지원하는 직무 종류를 알려 주세요",
  "Each kind is a track: a name and the words its titles use. Every scan then picks the matching roles out of all your companies, no AI needed.": "종류마다 트랙 하나: 이름과 그 직무 공고 제목에 자주 나오는 단어입니다. 이후 스캔할 때마다 팔로우하는 모든 회사에서 맞는 공고를 골라냅니다. AI는 쓰지 않습니다.",
  "For example": "예시",
@@ -2399,5 +2396,15 @@
  "Holds up under a normal examination: common tasks done alone without references, routine interview questions and live tasks handled; the level of a junior practitioner ready to work alone": "일반적인 검증에 대응 가능: 자료 없이 일반 작업을 혼자 완료하고, 일반 면접 질문과 즉석 수행에도 대응함. 혼자 업무가 가능한 초급 실무자 수준",
  "Does not hold up under examination: tasks done with references open; without them, or when questioned further, the gaps show; the level of a student who barely passed the course": "검증에 대응 불가: 자료를 보며 작업은 가능하나, 자료 없이 하거나 추가 질문을 받으면 부족함이 드러남. 과목 시험을 겨우 통과한 학생 수준",
  "Not started yet: knows only what it is for and can mention it, but cannot answer a follow-up question": "아직 입문 전: 용도만 알고 간단히 언급할 수 있으며, 조금만 더 질문받아도 답하지 못함",
- "Four levels, judged by one question: how would a written test or interview on the skill go? `expert` (holds up at any depth, a senior practitioner's level; almost never a student or recent graduate), `strong` (holds up under a normal one: I do common tasks alone without references, a junior practitioner's level), `working` (does not hold up: I get it done with references open, but without them or when questioned further it shows, the level of a student who barely passed the course) or `none` (not started: I know what it is for and can mention it, but can't answer a follow-up; AI or someone else wrote that part).": "네 단계이며 기준은 하나: 필기시험이나 면접에서 이 기술을 검증받으면 어떻게 되는가? `expert`(어떤 깊이에도 대응 가능, 숙련된 실무자 수준이며 학생이나 신입은 거의 해당하지 않음), `strong`(일반적인 검증에 대응 가능: 자료 없이 일반 작업을 혼자 함, 초급 실무자 수준), `working`(대응 불가: 자료를 보며 할 수 있으나 자료 없이 하거나 추가 질문을 받으면 드러남, 과목 시험을 겨우 통과한 학생 수준) 또는 `none`(입문 전: 용도를 알고 언급할 수 있으나 추가 질문에는 답하지 못함, 해당 부분은 AI나 다른 사람이 작성)."
+ "Four levels, judged by one question: how would a written test or interview on the skill go? `expert` (holds up at any depth, a senior practitioner's level; almost never a student or recent graduate), `strong` (holds up under a normal one: I do common tasks alone without references, a junior practitioner's level), `working` (does not hold up: I get it done with references open, but without them or when questioned further it shows, the level of a student who barely passed the course) or `none` (not started: I know what it is for and can mention it, but can't answer a follow-up; AI or someone else wrote that part).": "네 단계이며 기준은 하나: 필기시험이나 면접에서 이 기술을 검증받으면 어떻게 되는가? `expert`(어떤 깊이에도 대응 가능, 숙련된 실무자 수준이며 학생이나 신입은 거의 해당하지 않음), `strong`(일반적인 검증에 대응 가능: 자료 없이 일반 작업을 혼자 함, 초급 실무자 수준), `working`(대응 불가: 자료를 보며 할 수 있으나 자료 없이 하거나 추가 질문을 받으면 드러남, 과목 시험을 겨우 통과한 학생 수준) 또는 `none`(입문 전: 용도를 알고 언급할 수 있으나 추가 질문에는 답하지 못함, 해당 부분은 AI나 다른 사람이 작성).",
+ "Reading job descriptions and scoring the roles: {n} of {all}": "직무 설명을 읽고 점수를 매기는 중: {n}/{all}",
+ "The role being read is finished; the rest wait": "읽고 있는 채용 공고를 마친 뒤 멈추며, 나머지는 다음에 읽습니다",
+ "{n} matching roles have no job description read yet, so they have no score.": "해당 채용 공고 {n}건은 직무 설명을 아직 읽지 않아 점수가 없습니다.",
+ "Read and score": "읽고 점수 매기기",
+ "reading the job descriptions of {n} matching roles to score them": "해당 채용 공고 {n}건의 직무 설명을 읽고 점수를 매기는 중",
+ "{n} roles scored": "{n}건 점수 매김",
+ "{n} pages didn't read": "{n}개 페이지를 읽지 못함",
+ "Stopped reading job descriptions: {what}": "직무 설명 읽기를 멈췄습니다: {what}",
+ "Job descriptions read: {what}": "직무 설명 읽기 완료: {what}",
+ "After a scan, the matching roles of the companies it scanned that have no job description read yet are read and scored by themselves (up to 80 a scan, newest first); a score follows your resume and skill levels as they change.": "스캔이 끝나면 스캔한 회사의 해당 채용 공고 중 직무 설명을 아직 읽지 않은 것을 자동으로 읽고 점수를 매깁니다(한 번에 최대 80건, 최신순). 이력서나 기술 숙련도를 바꾸면 점수도 자동으로 갱신됩니다."
 }

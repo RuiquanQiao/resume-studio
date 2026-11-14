@@ -133,8 +133,21 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         except Exception:  # noqa: BLE001  (a file being written meanwhile: the next start does it)
             pass
     threading.Thread(target=fill_skills, daemon=True, name="hunt-fill-skills").start()
-    # a scan never opens role pages: a role's description is read when the user picks it (Want to apply), or when
-    # they ask for the picked roles' descriptions (user, 2026-11-07: scanning one company read other companies' pages)
+    # After a scan, the descriptions of the picked roles (in a track) of the companies it scanned are read in the
+    # background and each is scored as it comes in (user, 2026-11-15: "能不让我烦神的就不让我烦神"). Only those
+    # companies' roles: scanning one company never opens another's pages (user, 2026-11-07). The daily scan reads
+    # them only when the browser is open already, as it reads routes.
+    def read_after_scan(out: list[dict], auto: bool) -> int:
+        if scanner.browser is None or (auto and not scanner.browser_open()):
+            return 0
+        ids = {r["company"] for r in out if not r.get("error")}
+        return descs.start([p for p in to_read() if p["company"] in ids])
+
+    def to_read() -> list[dict]:
+        """Every matching role, newest first, but those whose application has its description already."""
+        done = {a["id"] for a in hunt.applications() if a.get("jd")}
+        return [p for p in posts.matched(limit=100000)["postings"] if p.get("app") not in done]
+    scanner.after_run = read_after_scan
     history = History(hunt)
     hunt.history = history
     studio.on_subset_renamed.append(hunt.rename_subset)
@@ -165,7 +178,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                           ensure_ascii=False, sort_keys=True)
 
     def work_out_matches() -> dict:
-        m = posts.matched()
+        every = posts.matched(limit=100000)
+        m = {**every, "postings": every["postings"][:600]}   # the newest 600 are listed; every one is counted
         jds = descs.all()
         doc, _ = studio.store.load()
         have: dict[str, str] = {}   # subset id -> what its resume says, in every resume language
@@ -194,7 +208,11 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                     best = {**f, "subset": sid}
             p["fit"] = best
         m["ranked"] = bool(have)
-        m["unread"] = sum(1 for p in m["postings"] if not p["jd"] and re.match(r"https?://", p.get("url") or ""))
+        # what the button reads: every matching role, listed or not, with no description from its page or its application
+        app_jd = {a["id"] for a in apps.values() if a.get("jd")}
+        m["unread"] = sum(1 for p in every["postings"] if p.get("app") not in app_jd
+                          and not (jds.get(p["id"]) or {}).get("jd") and not (jds.get(p["id"]) or {}).get("error")
+                          and re.match(r"https?://", p.get("url") or ""))
         return m
 
     def matches() -> dict:
@@ -646,7 +664,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         return {**tb, "platforms": platforms(), "tracker": tracker(), "career_ops": co_on(),
                 "scan": {"keywords": sc["keywords"], "tracks": sc["tracks"], "daily": sc["daily"], "last_all": sc["last_all"],
                          "running": dict(scanner.running), "providers": scanner.providers_ready(),
-                         "last_run": scanner.last_run, "queued": list(scanner.queue), "reading": descs.status(),
+                         "last_run": scanner.last_run, "queued": list(scanner.queue), "reading": descs.status(), "read_last": descs.last,
                          "batch": dict(scanner.batch) if scanner.batch else None},
                 "changes": posts.changes(), "geo": located(places), "places": place_names(places), "natures": nature_catalog()}
 
@@ -689,13 +707,31 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         """Read the description of every picked role that has none yet, in the background (jobhunt/rank.py)."""
         if scanner.browser is None:
             raise HttpError(409, t("Resume Studio's browser isn't available here"))
-        m = posts.matched()
-        return {"started": descs.start(m["postings"]), "reading": descs.status()}
+        # newest first: stopped early, the newest roles have their scores
+        return {"started": descs.start(to_read(), limit=None), "reading": descs.status()}
+
+    @app.route("POST", "/api/hunt/matches/stop")
+    def stop_reading(req: Request):
+        descs.stop()
+        app.bus.publish("hunt", {})
+        return {"reading": descs.status()}
 
     @app.route("PUT", "/api/hunt/scan-settings")
     def scan_settings(req: Request):
         b = body(req)
-        return guard(lambda: posts.settings(keywords=b.get("keywords"), daily=b.get("daily"), tracks=b.get("tracks")))
+        if b.get("tracks") is None and b.get("keywords") is None:
+            return guard(lambda: posts.settings(daily=b.get("daily")))
+        return set_tracks(lambda: posts.settings(keywords=b.get("keywords"), daily=b.get("daily"), tracks=b.get("tracks")))
+
+    def set_tracks(save: Callable[[], Any]) -> Any:
+        """Save a change of the tracks; the roles it takes in have their descriptions read and scored, as after a
+        scan. The ones it kept need nothing: a score is worked out from the description, the tracks and the resume
+        as they are now (matches), so changing a resume or a skill level scores every role again by itself."""
+        before = {p["id"] for p in posts.matched(limit=100000)["postings"]}
+        out = guard(save)
+        if scanner.browser is not None:
+            descs.start([p for p in to_read() if p["id"] not in before])
+        return out
 
     @app.route("POST", "/api/hunt/postings/{pid}/apply")
     def apply_posting(req: Request):
@@ -1105,7 +1141,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             if cmd == "show-tracks":
                 return {"settings": {"tracks": posts.tracks()}, "text": "tracks"}
             if cmd == "tracks":
-                return {"settings": posts.settings(tracks=a.get("tracks")), "text": "tracks"}
+                return {"settings": set_tracks(lambda: posts.settings(tracks=a.get("tracks"))), "text": "tracks"}
             if cmd == "sent":
                 ref = str(a.get("ref") or "")
                 if "/" in ref or (ref[:1] == "A" and ref[1:].isdigit()):

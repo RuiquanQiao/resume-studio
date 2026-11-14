@@ -1558,8 +1558,9 @@ def test_picked_roles_get_their_descriptions_read_and_ranked_by_their_tracks_res
 
 
 def test_a_scan_never_opens_role_pages_and_want_to_apply_reads_one_and_ranks_it(server):
-    """User, 2026-11-07: scanning one company opened other companies' role pages in the browser. A scan only reads
-    job lists; a role's page is read when the user clicks Want to apply, and its fit comes from that description."""
+    """User, 2026-11-07: scanning one company opened other companies' role pages in the browser. A scan reads only
+    its own companies' role pages (2026-11-15, the next test); Want to apply reads that role's page, and its fit
+    comes from that description."""
     import time as _t
     hunt = server.inst.hunt
     posts = hunt.scanner.postings
@@ -1597,6 +1598,78 @@ def test_a_scan_never_opens_role_pages_and_want_to_apply_reads_one_and_ranks_it(
     by = {p["title"]: p for p in server.req("GET", "/api/hunt/matches")[1]["postings"]}
     assert by["机器学习工程师"]["jd"] == "read" and {"python", "pytorch"} <= {w.casefold() for w in by["机器学习工程师"]["fit"]["hit"]}
     assert by["AI 研究员"]["fit"] is None and by["AI 研究员"]["jd"] == ""
+
+
+def test_a_scan_reads_and_scores_its_companys_matching_roles_and_a_score_follows_the_tracks_and_resume(server):
+    """User, 2026-11-15: after a scan, the job descriptions of the scanned companies' matching roles are read in the
+    background and scored, with no click ("能不让我烦神的就不让我烦神"); scanning one company still never opens
+    another's pages (2026-11-07). A track change reads only the roles it takes in; a resume or skill level change
+    reads nothing and every score follows it. The button reads every role left, and can be stopped."""
+    import time as _t
+    hunt = server.inst.hunt
+    posts = hunt.scanner.postings
+    hunt.add_company({"name": "星河科技"})
+    hunt.add_company({"name": "万象科技"})
+    base, other = "https://careers.example.com/job/", "https://jobs.wanxiang.example/job/"
+    posts.merge("C1", [{"title": "机器学习工程师", "url": base + "1"}, {"title": "AI 研究员", "url": base + "2"},
+                       {"title": "前端工程师", "url": base + "3"}], how="route")
+    posts.merge("C2", [{"title": "机器学习平台工程师", "url": other + "1"}, {"title": "AI 应用工程师", "url": other + "2"}], how="route")
+    posts.settings(tracks=[{"name": "ML", "keywords": "机器学习, AI", "subset": "RES-TECH-EN"}])
+    opened = []
+
+    class Pages:
+        def read_page(self, url, script, timeout=60.0):
+            opened.append(url)
+            return {"jd": "岗位职责 熟悉 Python 和 PyTorch，了解 scikit-learn 和 Docker 任职要求", "text": ""}
+
+        def status(self):
+            return {"state": "running"}
+    hunt.scanner.browser = Pages()
+    hunt.descriptions.pause = 0
+    hunt.scanner.plan = lambda c: []
+
+    def settle():
+        end = _t.time() + 10
+        while (hunt.scanner.batch or hunt.descriptions.status()) and _t.time() < end:
+            _t.sleep(0.05)
+    by = lambda: {p["title"]: p for p in server.req("GET", "/api/hunt/matches")[1]["postings"]}  # noqa: E731
+    hunt.scanner.start(["C1"])                 # the user scans 星河科技
+    settle()
+    assert sorted(opened) == [base + "1", base + "2"]          # its two matching roles; never 万象科技's, never 前端
+    assert hunt.scanner.last_run["reading"] == 2 and hunt.descriptions.last["read"] == 2
+    ov = server.req("GET", "/api/hunt")[1]["scan"]
+    assert ov["read_last"]["read"] == 2 and ov["last_run"]["reading"] == 2
+    ml = by()["机器学习工程师"]
+    assert ml["jd"] == "read" and ml["fit"]["score"] > 0
+    # a skill level changed: every score follows it, and no page is read again
+    opened.clear()
+    assert server.req("PUT", "/api/skills/level", {"name": "PyTorch", "level": "strong"})[0] == 200
+    high = by()["机器学习工程师"]["fit"]["real"]
+    assert server.req("PUT", "/api/skills/level", {"name": "PyTorch", "level": "none"})[0] == 200
+    low = by()["机器学习工程师"]["fit"]["real"]
+    assert high is not None and low is not None and low < high and opened == []
+    # a track that takes in 前端工程师 reads that one alone: the roles it kept are scored already
+    code, _ = server.req("PUT", "/api/hunt/scan-settings", {"tracks": [{"name": "ML", "keywords": "机器学习, AI, 前端", "subset": "RES-TECH-EN"}]})
+    assert code == 200
+    settle()
+    assert opened == [base + "3"] and by()["前端工程师"]["fit"] is not None
+    # the button reads every matching role left (万象科技's two), and Stop ends the run after the page being read
+    opened.clear()
+    slow = _t.time()
+
+    class Slow(Pages):
+        def read_page(self, url, script, timeout=60.0):
+            _t.sleep(0.3)
+            return super().read_page(url, script, timeout)
+    hunt.scanner.browser = Slow()
+    r = server.req("POST", "/api/hunt/matches/read")[1]
+    assert r["started"] == 2
+    _t.sleep(0.1)
+    assert server.req("POST", "/api/hunt/matches/stop")[0] == 200
+    settle()
+    assert len(opened) == 1 and hunt.descriptions.last["stopped"] and _t.time() - slow < 5
+    assert server.req("GET", "/api/hunt/matches")[1]["unread"] == 1
+    assert server.req("POST", "/api/hunt/matches/read")[1]["started"] == 1
 
 
 def test_a_description_counts_only_the_skills_it_names():

@@ -106,6 +106,7 @@ async function loadHunt({ quiet = false } = {}) {
         if (H.again && now) paint();
       } while (H.again);
       scanDone();
+      readDone();
       pickedAhead();
       if (!H.autoScan) { H.autoScan = true; api("POST", "/api/hunt/scan", { auto: true }).catch(() => {}); }
     } catch (e) { changed = true; if (!quiet) toast(e.message); }
@@ -921,7 +922,20 @@ function scanDone() {
   if (unrouted.length) parts.push(t("{n} site can't be scanned automatically yet: {sites}", { n: unrouted.length, sites: unrouted.map(siteName).join(", ") },
     "{n} sites can't be scanned automatically yet: {sites}"));
   if (run.no_site) parts.push(t("{n} company has no careers site", { n: run.no_site }, "{n} companies have no careers site"));
+  if (run.reading) parts.push(t("reading the job descriptions of {n} matching roles to score them", { n: run.reading }));
   toast(t("Scan finished: {what}", { what: parts.join(" · ") }), { ms: 6000 });
+}
+
+// the job descriptions being read have all been read (or the user stopped it): say how many got a score
+function readDone() {
+  const last = scanInfo().read_last || {};
+  const seen = H.readLast;
+  H.readLast = last.at || 0;
+  if (seen === undefined || !last.at || last.at === seen) return;
+  const parts = [t("{n} roles scored", { n: last.read })];
+  if (last.failed) parts.push(t("{n} pages didn't read", { n: last.failed }));
+  toast((last.stopped ? t("Stopped reading job descriptions: {what}", { what: parts.join(" · ") })
+    : t("Job descriptions read: {what}", { what: parts.join(" · ") })), { ms: 5000 });
 }
 
 async function scanCompanies(ids = null) {
@@ -1216,7 +1230,14 @@ function askTracks() {
 // ---- Matching roles: every company's open roles that fall in a track, in one list
 // fetched again once per change of the tracker: what a "hunt" event reloads into H.data, signed here
 const pickedSig = (d) => (d.scan.last_run || {}).at + "|" + JSON.stringify(huntTracks()) + "|" + d.companies.reduce((k, c) => k + ((c.postings || {}).matching || 0), 0)
-  + "|" + JSON.stringify(d.scan.reading || null) + "|" + d.applications.filter((x) => x.jd).length;   // a role added from here gets its fit once its description is read
+  + "|" + JSON.stringify(d.scan.reading || null) + "|" + d.applications.filter((x) => x.jd).length   // a role added from here gets its fit once its description is read
+  + "|" + (H.resumeDigest || "");   // a change of the resume or a skill level scores the roles again (the server works it out)
+
+// the resume file changed (the window's own save, Claude's, or an editor's): the matching roles' scores follow it
+function huntAfterResumeChange(digest) {
+  H.resumeDigest = digest || String(Date.now());
+  pickedAhead();
+}
 async function loadPicked() {
   if (H.pickedLoading) { H.pickedAgain = true; return; }   // a change meanwhile: fetched again after this one
   H.pickedLoading = true;
@@ -1343,16 +1364,20 @@ function masteryTip(f) {
 // above the picked roles: whether they can be ranked, and the descriptions being read for it
 function rankBar(m, trs) {
   if (m.reading) return h("div", { class: "note-bar", id: "picked-reading" }, h("span", { class: "spin" }),
-    h("span", { class: "nb-text" }, t("Reading the descriptions of picked roles to rank them: {n} of {all}", { n: m.reading.done, all: m.reading.total })));
+    h("span", { class: "nb-text" }, t("Reading job descriptions and scoring the roles: {n} of {all}", { n: m.reading.done, all: m.reading.total })),
+    !m.reading.stopped && h("button", { class: "btn sm", id: "picked-stop", title: t("The role being read is finished; the rest wait"), onclick: async () => {
+      try { await api("POST", "/api/hunt/matches/stop"); H.pickedSig = null; pickedAhead(); } catch (e) { toast(e.message); }
+    } }, t("Stop")));
   if (!trs.some((tr) => tr.subset)) return h("div", { class: "note-bar", id: "picked-no-subset" }, icon("sparkle"),
     h("span", { class: "nb-text" }, t("Give a track the resume it goes out with, and its roles are ranked by how well their descriptions fit it.")),
     h("button", { class: "btn sm", onclick: () => editTracks() }, t("Edit tracks")));
   if (!m.unread) return null;
   return h("div", { class: "note-bar", id: "picked-unread" }, icon("file"),
-    h("span", { class: "nb-text" }, t("{n} picked roles have no description read yet, so they can't be ranked.", { n: m.unread })),
+    h("span", { class: "nb-text", title: t("After a scan, the matching roles of the companies it scanned that have no job description read yet are read and scored by themselves (up to 80 a scan, newest first); a score follows your resume and skill levels as they change.") },
+      t("{n} matching roles have no job description read yet, so they have no score.", { n: m.unread })),
     h("button", { class: "btn sm", id: "picked-read", onclick: async () => {
-      try { await api("POST", "/api/hunt/matches/read"); H.pickedSig = null; paintHunt(); } catch (e) { toast(e.message); }
-    } }, t("Read them")));
+      try { await api("POST", "/api/hunt/matches/read"); H.pickedSig = null; pickedAhead(); } catch (e) { toast(e.message); }
+    } }, t("Read and score")));
 }
 
 // a company's open postings, on its page

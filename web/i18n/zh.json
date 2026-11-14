@@ -2058,10 +2058,7 @@
  "Newest first": "最新优先",
  "Not in your resume: {words}": "简历中缺少：{words}",
  "Order": "排序",
- "Read them": "读取",
- "Reading the descriptions of picked roles to rank them: {n} of {all}": "正在读取匹配岗位的 JD 以排序：{n}/{all}",
  "Skills its description names that your resume “{name}” names too: {words}": "JD 里提到、你的简历“{name}”里也有的技能：{words}",
- "{n} picked roles have no description read yet, so they can't be ranked.": "{n} 个匹配岗位尚未读取 JD，无法排序。",
  "Tell it which kinds of role you go for": "设置你要投递的岗位类别",
  "Each kind is a track: a name and the words its titles use. Every scan then picks the matching roles out of all your companies, no AI needed.": "每一类即一条赛道：一个名称，加上此类岗位标题中的常用词。此后每次扫描，都会从你关注的所有公司中筛选出匹配的岗位，不使用 AI。",
  "For example": "例如",
@@ -2399,5 +2396,15 @@
  "Holds up under a normal examination: common tasks done alone without references, routine interview questions and live tasks handled; the level of a junior practitioner ready to work alone": "经得起常规考核：无需查阅资料即可独立完成常见任务，常规面试题与现场操作均可应对；可独立上岗的初级从业者水平",
  "Does not hold up under examination: tasks done with references open; without them, or when questioned further, the gaps show; the level of a student who barely passed the course": "经不起考核：可借助资料完成任务，脱离资料或被追问时即暴露不足；勉强通过课程考试的学生水平",
  "Not started yet: knows only what it is for and can mention it, but cannot answer a follow-up question": "尚未入门：仅知其用途，能简单谈及，稍加追问即无法应对",
- "Four levels, judged by one question: how would a written test or interview on the skill go? `expert` (holds up at any depth, a senior practitioner's level; almost never a student or recent graduate), `strong` (holds up under a normal one: I do common tasks alone without references, a junior practitioner's level), `working` (does not hold up: I get it done with references open, but without them or when questioned further it shows, the level of a student who barely passed the course) or `none` (not started: I know what it is for and can mention it, but can't answer a follow-up; AI or someone else wrote that part).": "四档，只看一个问题：若笔试或面试考到这项技能，结果会如何？`expert`（精通：经得起任何深度的考核，资深从业者水平；在校生与应届生几乎不会达到）、`strong`（熟练：经得起常规考核，无需查阅资料即可独立完成常见任务，初级从业者水平）、`working`（熟悉：经不起考核，可借助资料完成，脱离资料或被追问时即暴露不足，勉强通过课程考试的学生水平）或 `none`（了解：尚未入门，仅知其用途、能简单谈及，稍加追问即无法应对；该部分由 AI 或他人完成）。"
+ "Four levels, judged by one question: how would a written test or interview on the skill go? `expert` (holds up at any depth, a senior practitioner's level; almost never a student or recent graduate), `strong` (holds up under a normal one: I do common tasks alone without references, a junior practitioner's level), `working` (does not hold up: I get it done with references open, but without them or when questioned further it shows, the level of a student who barely passed the course) or `none` (not started: I know what it is for and can mention it, but can't answer a follow-up; AI or someone else wrote that part).": "四档，只看一个问题：若笔试或面试考到这项技能，结果会如何？`expert`（精通：经得起任何深度的考核，资深从业者水平；在校生与应届生几乎不会达到）、`strong`（熟练：经得起常规考核，无需查阅资料即可独立完成常见任务，初级从业者水平）、`working`（熟悉：经不起考核，可借助资料完成，脱离资料或被追问时即暴露不足，勉强通过课程考试的学生水平）或 `none`（了解：尚未入门，仅知其用途、能简单谈及，稍加追问即无法应对；该部分由 AI 或他人完成）。",
+ "Reading job descriptions and scoring the roles: {n} of {all}": "正在读取 JD 并评分：{n}/{all}",
+ "The role being read is finished; the rest wait": "读完当前这一个岗位后停止，其余的留待下次读取",
+ "{n} matching roles have no job description read yet, so they have no score.": "{n} 个匹配岗位尚未读取 JD，暂无评分。",
+ "Read and score": "读取 JD 并评分",
+ "reading the job descriptions of {n} matching roles to score them": "正在后台读取 {n} 个匹配岗位的 JD 并评分",
+ "{n} roles scored": "{n} 个岗位已评分",
+ "{n} pages didn't read": "{n} 个页面读取失败",
+ "Stopped reading job descriptions: {what}": "已停止读取 JD：{what}",
+ "Job descriptions read: {what}": "JD 读取完成：{what}",
+ "After a scan, the matching roles of the companies it scanned that have no job description read yet are read and scored by themselves (up to 80 a scan, newest first); a score follows your resume and skill levels as they change.": "每次扫描后，会自动读取所扫公司中尚未读取 JD 的匹配岗位并评分（每次至多 80 个，由新到旧）；简历或技能掌握程度变更后，评分会自动随之更新。"
 }

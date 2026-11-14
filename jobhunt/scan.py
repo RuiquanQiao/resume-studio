@@ -157,7 +157,10 @@ class Scanner:
         self.lock = threading.Lock()
         self._providers: dict[str, str | None] = {}   # url -> career-ops provider id (or None), per run of the app
         self.providers_dir = PROVIDERS
-        self.last_run: dict = {}               # the last scan_many: {at, auto, companies, new, closed, failed}
+        self.last_run: dict = {}               # the last scan_many: {at, auto, companies, new, closed, failed, reading}
+        # what follows a run (jobhunt/api.py: the descriptions of the scanned companies' picked roles are read and
+        # scored): given its results and whether it was the daily one, it says how many roles it started reading
+        self.after_run: Callable[[list[dict], bool], int] | None = None
         # the run started from the window (start): the companies still waiting, and how far it got, so the window
         # can say "3 of 12" from the click to the end, between one company and the next too
         self.queue: list[str] = []
@@ -763,9 +766,17 @@ class Scanner:
                     out.append({"company": cid, "error": str(e)})
             if not auto or out:
                 self.postings.mark_all_scanned()
-            self.last_run = run_summary(out, auto)
+            self.last_run = {**run_summary(out, auto), "reading": self._after(out, auto)}
         self.publish()
         return out
+
+    def _after(self, out: list[dict], auto: bool) -> int:
+        if self.after_run is None or not out:
+            return 0
+        try:
+            return self.after_run(out, auto)
+        except Exception:  # noqa: BLE001  the scan itself is done; reading its roles can wait for the button
+            return 0
 
     def start(self, ids: list[str], *, auto: bool = False) -> None:
         """Scan in the background. While a run goes on, more companies join its queue instead of a second run;
@@ -807,7 +818,7 @@ class Scanner:
                             self.batch["done"] += 1
                 if not auto or out:
                     self.postings.mark_all_scanned()
-                self.last_run = run_summary(out, auto)
+                self.last_run = {**run_summary(out, auto), "reading": self._after(out, auto)}
         except BaseException:
             with self.lock:   # never left looking busy
                 if not ended:

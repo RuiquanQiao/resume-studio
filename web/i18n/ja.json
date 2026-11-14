@@ -2058,10 +2058,7 @@
  "Newest first": "新しい順",
  "Not in your resume: {words}": "履歴書にないもの：{words}",
  "Order": "並び順",
- "Read them": "読み込む",
- "Reading the descriptions of picked roles to rank them: {n} of {all}": "選ばれた求人の職務内容を読んで並べています：{n}/{all}",
  "Skills its description names that your resume “{name}” names too: {words}": "職務内容にあり、履歴書「{name}」にもあるスキル：{words}",
- "{n} picked roles have no description read yet, so they can't be ranked.": "選ばれた求人のうち {n} 件は職務内容がまだ読まれておらず、並べられません。",
  "Tell it which kinds of role you go for": "応募する職種の種類を教えてください",
  "Each kind is a track: a name and the words its titles use. Every scan then picks the matching roles out of all your companies, no AI needed.": "種類ごとに 1 つのトラック：名前と、その職種の求人タイトルによく出る言葉です。以後のスキャンごとに、フォロー中の全企業から合う求人を選び出します。AI は使いません。",
  "For example": "例",
@@ -2399,5 +2396,15 @@
  "Holds up under a normal examination: common tasks done alone without references, routine interview questions and live tasks handled; the level of a junior practitioner ready to work alone": "通常の考査に耐えられる：資料を見ずに一般的な作業を一人でこなし、通常の面接質問やその場の実演にも対応できる。独り立ちした初級実務者の水準",
  "Does not hold up under examination: tasks done with references open; without them, or when questioned further, the gaps show; the level of a student who barely passed the course": "考査には耐えられない：資料を見ながらなら作業できるが、資料なしや追加の質問では不足が露呈する。科目試験にかろうじて合格した学生の水準",
  "Not started yet: knows only what it is for and can mention it, but cannot answer a follow-up question": "未入門：用途を知っていて簡単に触れられる程度で、少し掘り下げられると答えられない",
- "Four levels, judged by one question: how would a written test or interview on the skill go? `expert` (holds up at any depth, a senior practitioner's level; almost never a student or recent graduate), `strong` (holds up under a normal one: I do common tasks alone without references, a junior practitioner's level), `working` (does not hold up: I get it done with references open, but without them or when questioned further it shows, the level of a student who barely passed the course) or `none` (not started: I know what it is for and can mention it, but can't answer a follow-up; AI or someone else wrote that part).": "4 段階。問うのは一点のみ：筆記試験や面接でこのスキルを問われたらどうなるか。`expert`（どれほど深くても耐えられる、熟練した実務者の水準。学生や新卒ではほぼない）、`strong`（通常の考査に耐えられる：資料なしで一般的な作業を一人でこなす、初級実務者の水準）、`working`（耐えられない：資料を見ながらならできるが、資料なしや追加の質問では露呈する、科目試験にかろうじて合格した学生の水準）、`none`（未入門：用途を知っていて触れられる程度で、追加の質問には答えられない。その部分は AI や他者が書いた）。"
+ "Four levels, judged by one question: how would a written test or interview on the skill go? `expert` (holds up at any depth, a senior practitioner's level; almost never a student or recent graduate), `strong` (holds up under a normal one: I do common tasks alone without references, a junior practitioner's level), `working` (does not hold up: I get it done with references open, but without them or when questioned further it shows, the level of a student who barely passed the course) or `none` (not started: I know what it is for and can mention it, but can't answer a follow-up; AI or someone else wrote that part).": "4 段階。問うのは一点のみ：筆記試験や面接でこのスキルを問われたらどうなるか。`expert`（どれほど深くても耐えられる、熟練した実務者の水準。学生や新卒ではほぼない）、`strong`（通常の考査に耐えられる：資料なしで一般的な作業を一人でこなす、初級実務者の水準）、`working`（耐えられない：資料を見ながらならできるが、資料なしや追加の質問では露呈する、科目試験にかろうじて合格した学生の水準）、`none`（未入門：用途を知っていて触れられる程度で、追加の質問には答えられない。その部分は AI や他者が書いた）。",
+ "Reading job descriptions and scoring the roles: {n} of {all}": "職務内容を読み込んで採点しています：{n}/{all}",
+ "The role being read is finished; the rest wait": "読み込み中の求人を終えてから停止し、残りは次回に読み込みます",
+ "{n} matching roles have no job description read yet, so they have no score.": "該当求人のうち {n} 件は職務内容が未読のため、点数がありません。",
+ "Read and score": "読み込んで採点",
+ "reading the job descriptions of {n} matching roles to score them": "該当求人 {n} 件の職務内容を読み込んで採点しています",
+ "{n} roles scored": "{n} 件を採点",
+ "{n} pages didn't read": "{n} 件のページを読み込めませんでした",
+ "Stopped reading job descriptions: {what}": "職務内容の読み込みを停止しました：{what}",
+ "Job descriptions read: {what}": "職務内容の読み込み完了：{what}",
+ "After a scan, the matching roles of the companies it scanned that have no job description read yet are read and scored by themselves (up to 80 a scan, newest first); a score follows your resume and skill levels as they change.": "スキャン後、スキャンした企業の該当求人のうち職務内容が未読のものを自動で読み込んで採点します（1 回につき最大 80 件、新しい順）。履歴書やスキルの習熟度を変更すると、点数も自動で更新されます。"
 }

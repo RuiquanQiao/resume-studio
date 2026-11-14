@@ -2700,6 +2700,7 @@ function connect() {
     jobsAfterResumeChange();   // the window's own saves too: the tool's CV, subset ranking, profile freshness
     fillAfterResumeChange();   // what each online profile should say
     const d = JSON.parse(m.data);
+    huntAfterResumeChange(d.digest);   // the matching roles' scores, worked out from the resume as it is now
     if (S && d.digest === S.digest) return;
     refresh();
   });

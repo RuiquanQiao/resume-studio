@@ -309,6 +309,12 @@ def picked_ranked(c):
                              "P6": {"error": "the page didn't open", "read": "2026-11-04 10:00"}})
 
 
+def picked_reading(c):
+    """A run reading the matching roles' descriptions is on (after a scan, or the button): its progress and Stop."""
+    picked_ranked(c)
+    c.server.inst.hunt.descriptions.run = {"total": 583, "done": 127, "read": 120, "failed": 7}
+
+
 def tracks_by_nature(c):
     """A track for state employers only, one for any company; one company's nature filled in, one's not (2026-11-13)."""
     filled_companies(c)
@@ -736,8 +742,10 @@ STATES = [
     State("applying, picked for you, two tracks, one company read in part", picked,
           [".picked-row .trk-tag", ".trk-segs .trk-seg.on", ".picked-tools ~ .note-bar.warn", "#picked-no-subset"], prepare=picked_roles),
     State("applying, picked for you, ranked by fit, some descriptions not read", picked,
-          [".picked-row .pk-fit.hi", ".picked-row .pk-fit.lo", "#picked-sort", "#picked-unread"], prepare=picked_ranked),
-    State("applying, editing tracks", then(picked, click("#picked-edit-tracks"), wait(".trk-modal .trk-row")),
+          [".picked-row .pk-fit.hi", ".picked-row .pk-fit.lo", "#picked-sort", "#picked-unread", "#picked-read"], prepare=picked_ranked),
+    State("applying, picked for you, job descriptions being read and scored", picked,
+          ["#picked-reading .spin", "#picked-reading .nb-text", "#picked-stop"], prepare=picked_reading),
+    State("applying, editing tracks",then(picked, click("#picked-edit-tracks"), wait(".trk-modal .trk-row")),
           [".trk-modal .trk-row .trk-kw", ".trk-modal .trk-subset", ".trk-modal .trk-more"], prepare=picked_roles),
     State("applying, editing tracks for some kinds of company only", then(picked, click("#picked-edit-tracks"), wait(".trk-modal .trk-row")),
           [".trk-modal .trk-nats .trk-nat.on", ".trk-modal .trk-nat-any:not([hidden])"], prepare=tracks_by_nature),
