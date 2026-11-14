@@ -1423,8 +1423,9 @@ function postingsCard(v) {
 
 const BATCH_NAMES = { campus: "Campus", intern: "Internship", social: "Experienced", other: "Other" };
 // ---- what kind of employer a company is (jobhunt/natures.py): the kinds every country has, and each country's
-// own (央企, the APS…). The countries in the user's profile (where they may work, where they look) come first;
-// the others stay a click away, never gone
+// own (央企, the APS…), grouped by country. The countries in the user's profile come first; a company's nature is
+// picked from those countries' groups and the kinds every country has (2026-11-14), the tracks' editor keeps the
+// others a click away
 const NAT = () => (H.data && H.data.natures) || { kinds: [], subtypes: [], work: {} };
 function natureName(id) {
   const n = NAT();
@@ -1433,7 +1434,7 @@ function natureName(id) {
 }
 function natureCountries(extra = "") {
   const w = NAT().work || {};
-  return [...new Set([...(w.targets || []), ...(w.citizen || []), ...(w.resident || []), ...(w.visa || []), extra].filter(Boolean))];
+  return [...new Set([...(w.rights || []).map((r) => r.country), extra].filter(Boolean))];
 }
 // [{value, label, group, more}]: the user's countries' own kinds, the kinds of every country, then other countries'
 // (`more`)
@@ -1444,6 +1445,10 @@ function natureOptions(extra = "") {
   return [...first.flatMap((cc) => own(cc, false)),
     ...n.kinds.map((k) => ({ value: k.id, label: k.name, group: t("Every country"), cls: "s-plain", more: false })),
     ...[...by.keys()].filter((cc) => !first.includes(cc)).flatMap((cc) => own(cc, true))];
+}
+// a company's: its country's groups for the user's countries and every country's kinds, and what it has now
+function companyNatureOptions(cur = "") {
+  return natureOptions().filter((o) => !o.more || o.value === cur);
 }
 // what an employer asks that the user's profile says they don't have (jobhunt/natures.py short_of)
 function shortOfText(c) {
@@ -1492,7 +1497,7 @@ function companyProps() {
           (c.aliases || []).length > 0 && h("span", { class: "c-alias" }, c.aliases.join(" · ")))) },
     text("industry", t("Industry"), 150, { group: true }),
     // not filled in: an empty cell (no chip on most of the rows); "No Nature" when grouped, "is empty" when filtered
-    { key: "nature", label: t("Nature"), type: "select", width: 190, get: (c) => c.nature || "", options: () => natureOptions(),
+    { key: "nature", label: t("Nature"), type: "select", width: 190, get: (c) => c.nature || "", options: (c) => (c ? companyNatureOptions(c.nature) : natureOptions()),   // without a row: every one (filters, sorting)
       set: (c, v) => cellCompany(c, { nature: v }) },
     text("strength", t("Strength"), 200),
     { key: "roles", label: t("Roles"), type: "relation", width: 300, get: (c) => (c.apps || []).map((a) => a.role),
@@ -2016,7 +2021,7 @@ function companyPage(v) {
       h("div", { class: "field", id: "company-nature" }, h("label", null, t("Nature"),
         h("span", { class: "hint" }, keptHint(c, "nature") || t("tracks for some kinds of company only go by it"))),
         uiSelect({ id: "company-nature-pick", label: t("Nature"), value: c.nature || "", menuWidth: 320, cls: "co-nature-pick",
-          options: [{ value: "", label: t("Not filled in") }, ...natureOptions(c.country)],
+          options: [{ value: "", label: t("Not filled in") }, ...companyNatureOptions(c.nature)],
           onChange: (v) => { c.nature = v; save("nature")(v); } }).el,
         c.short_of && h("p", { class: "co-short", id: "company-short-of" }, icon("alert"), h("span", null, shortOfText(c),
           " ", h("button", { class: "linkish", onclick: () => openProfileWork() }, t("Your status is in your profile"))))),

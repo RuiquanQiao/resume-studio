@@ -18,6 +18,14 @@
       "env": { "RESUME_STUDIO_PREFS": ".cache/perf-test/prefs", "STUDIO_NO_SHELL": "1" }
     },
     {
+      "name": "inputlag",
+      "runtimeExecutable": ".venv/Scripts/python",
+      "runtimeArgs": ["scripts/studio.py", "--data", ".cache/inputlag/resume.yaml", "--no-browser", "--port", "8797"],
+      "port": 8797,
+      "autoPort": true,
+      "env": { "RESUME_STUDIO_PREFS": ".cache/inputlag/prefs", "STUDIO_NO_SHELL": "1" }
+    },
+    {
       "name": "review",
       "runtimeExecutable": ".venv/Scripts/python",
       "runtimeArgs": ["scripts/studio.py", "--data", ".cache/review/resume.yaml", "--no-browser", "--port", "8791"],

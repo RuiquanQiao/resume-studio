@@ -355,7 +355,7 @@ function touch() {
 
 function setSaveStatus(msg, bad = false) {
   const el = $("#save-status");
-  el.textContent = msg;
+  if (el.textContent !== msg) el.textContent = msg;   // every keystroke says "Unsaved": only a change costs a layout
   el.classList.toggle("bad", bad);
 }
 
@@ -1534,14 +1534,16 @@ function profileForm(p = ui.draft) {
   ];
 }
 
-// Where the user may work (resume.yaml profile.work, jobhunt/natures.py): never on a resume. The job search puts these
-// countries' kinds of employer first and says when an employer takes only citizens or residents the user isn't
-// One record per country (China: citizen; Australia: a 485 work visa from about 2027-07 to about 2029-07), then where
-// the user looks for work. A month only roughly known keeps a trailing "~" (EDTF), shown as "约".
+// Where the user may work (resume.yaml profile.work, jobhunt/natures.py): never on a resume. One record per country
+// they look for work in (China: citizen; Australia: a 485 work visa from about 2027-07 to about 2029-07): adding a
+// country is saying they look there, so no second list asks where (2026-11-14). The country and the visa are picked
+// from lists, searchable as one types, never typed free where a list has them. A month only roughly known keeps a
+// trailing "~" (EDTF), shown as "约".
 const WORK_STATUSES = () => [
   { value: "citizen", label: t("Citizen") }, { value: "resident", label: t("Permanent resident") },
   { value: "work", label: t("Work visa") }, { value: "study", label: t("Student visa") }];
 function workRights(w) {
+  delete w.targets;   // where they looked for work, before a record per country said it (2026-11-14)
   if (Array.isArray(w.rights)) return w.rights;
   // the first shape (2026-11-13): a list of countries per status and one note, read as records
   const rights = [];
@@ -1559,30 +1561,42 @@ function workCard(p) {
   const w = p.work = p.work && typeof p.work === "object" ? p.work : {};
   const rights = workRights(w);
   const list = h("div", { class: "wr-list" });
+  let geo = { countries: [], visas: [] };
+  const visaOptions = (r) => geo.visas.filter((v) => v.country === r.country && v.status === r.status)
+    .map((v) => ({ value: v.name, label: v.name, desc: v.desc, find: v.find }));
   const paint = () => {
     list.replaceChildren(...rights.map((r, i) => {
       const visa = r.status === "work" || r.status === "study";
+      // a visa picked from the list goes with its country and status; one typed by hand stays
+      const dropListed = () => { if (r.visa && geo.visas.some((v) => v.name === r.visa) && !visaOptions(r).some((o) => o.value === r.visa)) delete r.visa; };
       const status = uiSelect({ cls: "wr-status", label: t("Status"), options: WORK_STATUSES(), value: r.status || "citizen",
-        onChange: (v) => { r.status = v; if (v !== "work" && v !== "study") { delete r.visa; delete r.from; delete r.until; } touch(); paint(); } });
+        onChange: (v) => { r.status = v; if (v !== "work" && v !== "study") { delete r.visa; delete r.from; delete r.until; } else dropListed(); touch(); paint(); } });
+      const used = new Set(rights.filter((x, j) => j !== i).map((x) => x.country));
+      const country = uiSelect({ cls: "wr-country", label: t("Country"), value: r.country || "", search: true, placeholder: t("Pick a country"),
+        searchPlaceholder: t("Search countries"),
+        options: geo.countries.filter((c) => !used.has(c.code)).map((c) => ({ value: c.code, label: c.name, find: c.en + " " + c.code })),
+        onChange: (v) => { r.country = v; dropListed(); touch(); paint(); } });
+      const listed = visaOptions(r);
+      const visaPick = visa && uiSelect({ cls: "wr-visa", label: t("Visa"), value: r.visa || "", search: true, create: true,
+        placeholder: r.country ? t("Pick a visa") : t("Pick the country first"), searchPlaceholder: t("Search by name or subclass"),
+        emptyText: listed.length ? t("Nothing matches; type its full name to use it") : t("No visa of this country is listed yet; type its full name"),
+        options: listed, onChange: (v) => { if (String(v || "").trim()) r.visa = String(v).trim(); else delete r.visa; touch(); paint(); } });
+      if (visaPick && !r.country) visaPick.disabled = true;
       // country and status on one line with its delete; a visa's name and its two dates below, each a line of its own
       return h("div", { class: "wr-row", "data-i": i, "data-status": r.status },
-        h("div", { class: "wr-head" },
-          countryPicker(r.country ? [r.country] : [], (v) => { r.country = v[0] || ""; touch(); }, t("Country"), { single: true }),
-          status.el,
+        h("div", { class: "wr-head" }, country.el, status.el,
           h("button", { type: "button", class: "btn icon sm ghost danger wr-del", title: t("Remove"), "aria-label": t("Remove"),
             onclick: () => { rights.splice(i, 1); touch(); paint(); } }, icon("x"))),
-        visa && h("input", { class: "wr-visa", value: r.visa || "", spellcheck: "false", "aria-label": t("Visa name"),
-          placeholder: t("Visa name, e.g. 485 Temporary Graduate"), oninput: (e) => { if (e.target.value.trim()) r.visa = e.target.value; else delete r.visa; touch(); } }),
+        visaPick && visaPick.el,
         visa && h("div", { class: "wr-dates" }, roughMonth(t("Valid from"), r, "from"), roughMonth(t("Valid until"), r, "until")));
     }));
   };
   paint();
+  loadCountries().then((g) => { geo = g; paint(); });
   const add = h("button", { class: "btn sm wr-add", onclick: () => { rights.push({ country: "", status: rights.length ? "work" : "citizen" }); touch(); paint();
-    const last = list.lastElementChild; if (last) last.querySelector("input").focus(); } }, icon("plus"), t("Add a country"));
-  return card(t("Where you can work"), t("Never on a resume: the job search goes by it"), [
+    const last = list.lastElementChild; if (last) last.querySelector(".wr-country").click(); } }, icon("plus"), t("Add a country"));
+  return card(t("Where you can work"), t("The countries you look for work in. Never on a resume: the job search goes by it"), [
     h("div", { class: "field", "data-key": "work-rights" }, list, add),
-    h("div", { class: "field", "data-key": "work-targets" }, h("label", null, t("Looking for work in")),
-      countryPicker(w.targets || [], (v) => { if (v.length) w.targets = v; else delete w.targets; touch(); }, t("Looking for work in"))),
   ]);
 }
 // a month that may be only roughly known: "2027-07", or "2027-07~" with 约 ticked
@@ -1609,66 +1623,18 @@ async function openProfileWork() {
   if (W.ws !== "resume") setWorkspace("resume");
   await select("profile");
   const el = document.querySelector('#editor [data-key="work-rights"]');
-  if (el) { el.scrollIntoView({ block: "center" }); const i = el.querySelector("input, .wr-add"); if (i) i.focus({ preventScroll: true }); }
+  if (el) { el.scrollIntoView({ block: "center" }); const i = el.querySelector(".wr-country, .wr-add"); if (i) i.focus({ preventScroll: true }); }
 }
 
-// countries by ISO code, picked by any part of their name (in the interface's language or English) or code
+// every country by ISO code (named in the interface's language, sorted as that language sorts) and the visas
+// listed for them (jobhunt/visas.py), loaded once
 let COUNTRIES = null;
 async function loadCountries() {
-  if (!COUNTRIES) COUNTRIES = api("GET", "/api/hunt/countries").then((r) => r.countries).catch(() => { COUNTRIES = null; return []; });
+  if (!COUNTRIES) COUNTRIES = api("GET", "/api/hunt/countries").then((r) => {
+    const by = new Intl.Collator(document.documentElement.lang || undefined);
+    return { countries: [...r.countries].sort((a, b) => by.compare(a.name, b.name)), visas: r.visas || [] };
+  }).catch(() => { COUNTRIES = null; return { countries: [], visas: [] }; });
   return COUNTRIES;
-}
-// `single`: one country; once picked it shows alone, and removing it brings the box back
-function countryPicker(list, change, label, { single = false } = {}) {
-  let cur = [...list];
-  let all = [];
-  const wrap = h("div", { class: "cp-ed" });
-  const nameOf = (cc) => (all.find((x) => x.code === cc) || {}).name || cc;
-  const starts = (x, q) => (x.name.toLowerCase().startsWith(q) || x.en.toLowerCase().startsWith(q) ? 1 : 0);
-  const paint = () => {
-    const input = h("input", { type: "text", class: "pl-input cp-input", spellcheck: "false", autocomplete: "off", role: "combobox",
-      "aria-expanded": "false", "aria-autocomplete": "list", "aria-label": label, placeholder: t("Type a country") });
-    const sugg = h("div", { class: "pl-sugg", role: "listbox", hidden: true });
-    let found = [], active = 0;
-    const pick = (cc) => {
-      cur = single ? [cc] : [...cur.filter((x) => x !== cc), cc];
-      change(cur); paint();
-      const next = wrap.querySelector(".cp-input") || wrap.querySelector(".pl-x");
-      if (next) next.focus();
-    };
-    const show = () => {
-      const q = input.value.trim().toLowerCase();
-      found = !q ? [] : all.filter((x) => !cur.includes(x.code) && (x.name.toLowerCase().includes(q) || x.en.toLowerCase().includes(q) || x.code.toLowerCase() === q))
-        // its code typed whole first, then names that start with what was typed (日 is 日本 before 尼日利亚)
-        .sort((a, b) => (b.code.toLowerCase() === q) - (a.code.toLowerCase() === q) || starts(b, q) - starts(a, q))
-        .slice(0, 8);
-      active = Math.min(active, Math.max(0, found.length - 1));
-      sugg.replaceChildren(...found.map((x, i) => h("button", { type: "button", role: "option", tabindex: "-1", class: "lb-opt pl-opt" + (i === active ? " on" : ""),
-        "aria-selected": String(i === active), onmousedown: (e) => e.preventDefault(), onclick: () => pick(x.code) },
-        h("span", { class: "pl-oname" }, x.name), x.en !== x.name && h("span", { class: "pl-odetail" }, x.en))));
-      sugg.hidden = !found.length;
-      input.setAttribute("aria-expanded", String(!sugg.hidden));
-    };
-    input.addEventListener("input", () => { active = 0; show(); });
-    input.addEventListener("keydown", (e) => {
-      const n = sugg.hidden ? 0 : found.length;
-      if (e.key === "ArrowDown" && n) { e.preventDefault(); active = (active + 1) % n; show(); }
-      else if (e.key === "ArrowUp" && n) { e.preventDefault(); active = (active - 1 + n) % n; show(); }
-      else if (e.key === "Escape" && n) { e.preventDefault(); e.stopPropagation(); sugg.hidden = true; }
-      else if (e.key === "Enter" && !e.isComposing && n) { e.preventDefault(); pick(found[active].code); }
-      else if (e.key === "Backspace" && !input.value && cur.length) { cur = cur.slice(0, -1); change(cur); paint(); wrap.querySelector(".cp-input").focus(); }
-    });
-    input.addEventListener("blur", () => setTimeout(() => { if (!wrap.contains(document.activeElement)) sugg.hidden = true; }, 120));
-    wrap.classList.toggle("single", single);
-    wrap.replaceChildren(...[
-      cur.length > 0 && h("div", { class: "pl-list" }, cur.map((cc) => h("span", { class: "pl-chip cp-chip", "data-code": cc, title: nameOf(cc) }, h("span", { class: "cp-name" }, nameOf(cc)),
-        h("button", { type: "button", class: "pl-x", title: t("Remove"), "aria-label": t("Remove {name}", { name: nameOf(cc) }),
-          onclick: () => { cur = cur.filter((x) => x !== cc); change(cur); paint(); const i = wrap.querySelector(".cp-input"); if (single && i) i.focus(); } }, icon("x"))))),
-      !(single && cur.length) && h("div", { class: "pl-combo" }, input, sugg)].filter(Boolean));   // replaceChildren would write "false" as text
-  };
-  paint();
-  loadCountries().then((xs) => { all = xs; if (cur.length) paint(); });
-  return wrap;
 }
 
 // The headline under the name belongs to the resume picked at the top (ALL or a job), so it is

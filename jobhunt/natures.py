@@ -8,8 +8,9 @@ them, or subtypes. "" is not known yet: never a guess.
 
 Some employers take only their own citizens, or residents (`needs`). The user says in their profile
 (resume.yaml `profile.work`) which countries they are a citizen or permanent resident of, which they hold a
-work visa for, and where they look for work: the window puts those countries' kinds first and says when a
-company's roles need more than the user has. Never shown on a resume.
+work visa for: the window offers those countries' own kinds and says when a company's roles need more than the
+user has. A country is added there only to look for work in it, so no other list says where they look (2026-11-14).
+Never shown on a resume.
 
 Country catalogs are data, so one can move into a country's plugin later as it is.
 """
@@ -148,9 +149,9 @@ def _when(v: Any) -> str:
 
 
 def clean_work(v: Any) -> dict:
-    """{rights: [{country, status, visa, from, until}], targets: [country codes]}: what the user is in each country,
-    and where they look for work. Codes are ISO 3166 (CN, AU); anything unreadable is left out. The first shape
-    ({citizen, resident, visa: [codes], note}, 2026-11-13) is read as records."""
+    """{rights: [{country, status, visa, from, until}]}: what the user is in each country they look for work in.
+    Codes are ISO 3166 (CN, AU); anything unreadable is left out. The first shape ({citizen, resident, visa: [codes],
+    note}, 2026-11-13) is read as records; its `targets` (where they look) went with the field (2026-11-14)."""
     v = v if isinstance(v, dict) else {}
     raw = v.get("rights") if isinstance(v.get("rights"), list) else []
     if not raw:   # the first shape
@@ -174,7 +175,7 @@ def clean_work(v: Any) -> dict:
             visa = " ".join(str(r.get("visa") or "").split())[:200]
             out.update({k: x for k, x in (("visa", visa), ("from", _when(r.get("from"))), ("until", _when(r.get("until")))) if x})
         rights.append(out)
-    return {"rights": rights, "targets": _codes(v.get("targets"))}
+    return {"rights": rights}
 
 
 def _over(until: str, today: str) -> bool:
@@ -203,8 +204,8 @@ def short_of(nid: str, cc: str, work: dict, today: str = "") -> str:
 
 
 def countries_first(work: dict, extra: str = "") -> list[str]:
-    """The countries whose own kinds the user is shown first: where they look for work, then where they may work."""
-    xs = [*work.get("targets", []), *(r["country"] for r in work.get("rights", [])), extra]
+    """The countries whose own kinds the user is shown: those in their profile, in its order."""
+    xs = [*(r["country"] for r in work.get("rights", [])), extra]
     return [c for c in dict.fromkeys(xs) if c]
 
 

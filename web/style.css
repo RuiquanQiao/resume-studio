@@ -122,7 +122,9 @@ kbd { font: 11px var(--mono); padding: 1px 5px; border: 1px solid var(--line-str
 
 /* ---------- workspace ---------- */
 /* the preview gives way first when the window is narrow: the middle (outline and document) keeps 600px */
-.workspace { flex: 1; min-height: 0; display: grid; padding: 0 8px 8px; grid-template-columns: var(--w-left, 320px) 5px minmax(600px, 1fr) 5px minmax(280px, var(--w-right, 40%)); }
+/* rows are minmax(0, 1fr), never the default auto: an auto row is sized by its content, so every keystroke in any
+   field would lay out the whole pane again (17 ms a key with a 15,000px document; test_typing_in_a_field_lays_out_only_its_own_part_of_the_window) */
+.workspace { flex: 1; min-height: 0; display: grid; grid-auto-rows: minmax(0, 1fr); padding: 0 8px 8px; grid-template-columns: var(--w-left, 320px) 5px minmax(600px, 1fr) 5px minmax(280px, var(--w-right, 40%)); }
 /* each pane is a rounded panel floating on the window; the gaps between them are the gutters */
 .pane { min-width: 0; min-height: 0; border-radius: var(--r-lg); overflow: hidden; }
 .gutter { cursor: col-resize; position: relative; background: transparent; }
@@ -297,7 +299,7 @@ body[data-chat="off"] .workspace { grid-template-columns: minmax(600px, 1fr) 5px
 #chat.drop .composer-box { border-color: var(--accent); border-style: dashed; background: var(--accent-soft); }
 
 /* ---------- middle: the outline rail and the document (docs/LAYOUT.md) ---------- */
-.middle { display: grid; grid-template-columns: var(--w-rail, 212px) minmax(0, 1fr); min-height: 0; overflow: hidden; background: var(--panel); }
+.middle { display: grid; grid-template-columns: var(--w-rail, 212px) minmax(0, 1fr); grid-auto-rows: minmax(0, 1fr); min-height: 0; overflow: hidden; background: var(--panel); }
 body[data-outline="strip"] .middle { grid-template-columns: minmax(0, 1fr); }
 body[data-outline="strip"] #library { display: none; }
 #library.outline { min-height: 0; overflow: auto; padding: 6px 8px 24px; background: var(--panel-2); }
@@ -687,6 +689,17 @@ textarea::-webkit-resizer {
 .lb-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lb-desc { font-size: 12.5px; line-height: 1.4; color: var(--text-3); white-space: normal; }
 .lb-hint, .mi-hint { flex: none; font-size: 12.5px; color: var(--text-3); white-space: nowrap; }
+/* a list with a search box over it (uiSelect search): the box stays put while the list scrolls under it */
+.float.sel-search { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+.sel-search-box { flex: none; display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px; border-bottom: 1px solid var(--line); }
+.sel-search-box > svg.i { flex: none; width: 14px; height: 14px; color: var(--text-3); }
+.sel-search-in { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; background: none; color: var(--text); font: inherit; outline: none; }
+.sel-search-list { flex: 1 1 auto; min-height: 0; max-height: 320px; overflow: auto; overscroll-behavior: contain; padding: 4px; }
+.sel-search-list .lb-opt.sel-hl { background: var(--hover); }
+.sel-search-list .lb-opt.on.sel-hl { background: var(--accent-soft); }
+.sel-search-list .lb-label { white-space: normal; overflow-wrap: anywhere; }
+.sel-search-list .sel-create { color: var(--text-2); }
+.sel-search-none { padding: 10px; font-size: 12.5px; color: var(--text-3); }
 .lb-hint.chat-time-hint { width: 106px; overflow: hidden; text-overflow: ellipsis; text-align: right; }
 .mi-hint { margin-left: 14px; }
 .menu-item svg.i { color: var(--text-3); }
@@ -1882,14 +1895,6 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .pl-asis svg.i { width: 12px; height: 12px; flex: none; }
 .pl-asis-text { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .pl-input { flex: 1 1 auto; width: 100%; min-width: 160px; height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--panel); color: var(--text); font: inherit; }
-.cp-ed { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.cp-ed .pl-combo { flex: none; }
-/* one country: once picked it fills the box like a value, not a tag (filled like the form's other typed fields) */
-.cp-ed.single .pl-list { height: 32px; padding: 0 4px 0 10px; border: 1px solid transparent; border-radius: var(--r-sm); background: var(--fill); flex-wrap: nowrap; }
-.cp-ed.single .pl-chip { flex: 1; min-width: 0; height: auto; padding: 0; background: none; color: var(--text); justify-content: space-between; }
-.cp-chip > .cp-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.cp-ed.single .pl-chip > .pl-x { flex: none; width: 22px; height: 22px; margin-right: 0; }
-.cp-ed.single .pl-combo, .cp-ed.single .pl-input { min-width: 0; }
 /* the profile's "Where you can work": one record per country. Country, status and delete on the first line; a
    visa's name, then its two dates (each a label over a month and its "roughly" tick), side by side when they fit */
 .wr-list { display: flex; flex-direction: column; gap: 8px; }
@@ -1898,7 +1903,9 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 /* the country and its status side by side while both have room ("United Kingdom", "Vereinigtes Königreich"); in a
    narrow pane the status and the remove button go under the country, not over it (2026-11-13, at 1280) */
 .wr-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.wr-head > .cp-ed { flex: 1 1 210px; min-width: 0; }
+.wr-head > .wr-country { flex: 1 1 210px; min-width: 0; height: 32px; }
+.wr-row > .wr-visa { width: 100%; min-height: 32px; height: auto; }
+.wr-row > .wr-visa > .sel-label { white-space: normal; overflow-wrap: anywhere; text-align: left; }
 .wr-head > .wr-status { flex: 1 0 140px; max-width: 170px; height: 32px; min-width: 0; }
 .wr-head > .wr-del { flex: none; margin-left: auto; }
 .wr-dates { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 14px; }

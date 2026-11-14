@@ -127,8 +127,8 @@ def test_the_tracks_named_for_state_employers_are_for_chinas_after_the_update(hu
 
 
 def test_an_employer_that_takes_only_citizens_says_so_to_who_isnt_one():
-    au_citizen = N.clean_work({"rights": [{"country": "au", "status": "citizen"}], "targets": "CN, AU, nonsense, 1"})
-    assert au_citizen == {"rights": [{"country": "AU", "status": "citizen"}], "targets": ["CN", "AU"]}
+    au_citizen = N.clean_work({"rights": [{"country": "au", "status": "citizen"}], "targets": "CN, AU"})
+    assert au_citizen == {"rights": [{"country": "AU", "status": "citizen"}]}      # where they look: the records say it
     cn = N.clean_work({"rights": [{"country": "CN", "status": "citizen"},
                                   {"country": "AU", "status": "work", "visa": "485", "from": "2027-07~", "until": "2029-07~"}]})
     assert N.short_of("cn.civil", "", au_citizen) == "citizen"          # a subtype's own country, not the company's hq
@@ -140,7 +140,7 @@ def test_an_employer_that_takes_only_citizens_says_so_to_who_isnt_one():
     assert N.short_of("private", "NZ", cn) == "work"
     # nothing to tell by: no nature, no country, or nothing in the profile
     assert N.short_of("", "AU", cn) == "" and N.short_of("private", "", cn) == "" and N.short_of("au.aps", "", N.clean_work({})) == ""
-    assert N.countries_first(N.clean_work({"targets": ["AU"], "rights": [{"country": "CN", "status": "citizen"}]}), "SG") == ["AU", "CN", "SG"]
+    assert N.countries_first(N.clean_work({"targets": ["AU"], "rights": [{"country": "CN", "status": "citizen"}]}), "SG") == ["CN", "SG"]
 
 
 def test_work_rights_are_one_record_per_country_with_rough_dates():
@@ -164,8 +164,7 @@ def test_work_rights_are_one_record_per_country_with_rough_dates():
     assert N.short_of("private", "AU", rough, today="2027-03-01") == ""
     # the first shape (lists per status, one note) reads as records
     old = N.clean_work({"citizen": ["CN"], "visa": ["AU"], "targets": ["AU"], "note": "485 until 2028-03"})
-    assert old == {"rights": [{"country": "CN", "status": "citizen"}, {"country": "AU", "status": "work", "visa": "485 until 2028-03"}],
-                   "targets": ["AU"]}
+    assert old == {"rights": [{"country": "CN", "status": "citizen"}, {"country": "AU", "status": "work", "visa": "485 until 2028-03"}]}
 
 
 def test_the_window_says_what_an_employer_asks_from_the_profile(live, data_file):
@@ -180,16 +179,17 @@ def test_the_window_says_what_an_employer_asks_from_the_profile(live, data_file)
     assert {"kinds", "subtypes", "work"} <= set(d["natures"]) and any(s["id"] == "au.aps" for s in d["natures"]["subtypes"])
     code, st = live.req("GET", "/api/state")
     prof = dict(st["doc"]["profile"])
-    prof["work"] = {"rights": [{"country": "CN", "status": "citizen"}, {"country": "AU", "status": "work", "visa": "485"}],
-                    "targets": ["CN", "AU"]}
+    prof["work"] = {"rights": [{"country": "CN", "status": "citizen"}, {"country": "AU", "status": "work", "visa": "485"}]}
     assert live.req("PUT", "/api/item", {"kind": "profile", "data": prof, "base": st["hashes"]["profile"]})[0] == 200
     d = live.req("GET", "/api/hunt")[1]
     by = {c["name"]: c for c in d["companies"]}
     assert by["Department of Finance"]["short_of"] == "citizen" and by["Atlassian"]["short_of"] == ""
-    assert d["natures"]["work"]["targets"] == ["CN", "AU"]
+    assert [r["country"] for r in d["natures"]["work"]["rights"]] == ["CN", "AU"] and "targets" not in d["natures"]["work"]
     out = cli(data_file, "show", "Department of Finance")[1]
     assert "au.aps (Australian Public Service (APS))" in out and "takes citizens of AU only" in out.replace("its roles take", "takes")
-    assert len(live.req("GET", "/api/hunt/countries")[1]["countries"]) > 200
+    geo = live.req("GET", "/api/hunt/countries")[1]
+    assert len(geo["countries"]) > 200
+    assert any(v["country"] == "AU" and v["status"] == "work" and "485" in v["name"] for v in geo["visas"])
 
 
 def test_claude_sets_and_reads_the_nature_from_its_command(live, data_file):
@@ -211,3 +211,17 @@ def test_claude_sets_and_reads_the_nature_from_its_command(live, data_file):
     helped = cli(data_file, "fill", "--help")[1]
     assert '"nature"' in helped and "Companies House" in helped and "ASIC" in helped and "企查查" in helped
     assert "au.aps" in cli(data_file, "tracks", "--help")[1]
+
+
+def test_every_listed_visa_is_one_name_per_country_and_status():
+    """2026-11-14: a visa is picked from a list (jobhunt/visas.py), so the list itself must be clean: a known
+    country, a status a record has, no name twice in a country, and a Chinese name to find it by."""
+    import jobhunt.visas as V
+    seen = set()
+    for cc, st, name, zh, words in V.VISAS:
+        assert len(cc) == 2 and cc.isupper() and st in ("work", "study") and name.strip() == name and zh
+        assert (cc, name) not in seen, name
+        seen.add((cc, name))
+    zh = V.catalog("zh")
+    assert any(v["name"] == "Temporary Graduate visa (subclass 485)" and v["desc"] == "485 毕业生工作签证" and "485" in v["find"] for v in zh)
+    assert all(v["desc"] == "" for v in V.catalog("en"))

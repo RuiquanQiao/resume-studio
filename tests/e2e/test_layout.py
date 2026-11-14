@@ -329,10 +329,15 @@ def work_status(c):
         {"country": "CN", "status": "citizen"},
         {"country": "AU", "status": "work", "visa": "Temporary Graduate visa (subclass 485), Post-Higher Education Work stream, full work rights",
          "from": "2027-07~", "until": "2029-07~"},
-        {"country": "GB", "status": "study", "from": "2026-09", "until": "2027-12"}],
-        "targets": ["CN", "AU", "SG"]}
+        {"country": "GB", "status": "study", "from": "2026-09", "until": "2027-12"}]}
     st.update_item("profile", None, prof, None)
     c.server.inst.hunt.update_company("C1", {"nature": "au.aps"})
+
+
+def show_work(pg, c):
+    pg.evaluate("() => select('profile')")
+    pg.wait_for_selector("[data-key='work-rights'] .wr-row .wr-country:not(:has(.ph))", timeout=WAIT_MS)
+    pg.evaluate("() => document.querySelector('[data-key=work-rights]').scrollIntoView({block: 'center'})")
 
 
 def work_in_australia(c):
@@ -589,10 +594,12 @@ STATES = [
     State("resume, line chips and issues", then(lambda pg, c: open_entry(pg, "EXP-002"), wait("#bullets .line-chip.long")),
           ["#issues .issue.warn"], prepare=lambda c: add_long_bullet(c.server)),
     # one record per country: a citizen's, a work visa with a long name and rough dates, a student visa
-    State("resume, the profile's where you can work", then(js("() => select('profile')"), wait("[data-key='work-rights'] .wr-row .cp-chip"),
-          js("() => document.querySelector('[data-key=work-rights]').scrollIntoView({block: 'center'})")),
-          ["[data-key='work-rights'] .wr-row[data-status=work] .wr-dates .wr-rough", "[data-key='work-rights'] .wr-row[data-status=citizen] .cp-ed.single .cp-chip",
-           "[data-key='work-targets'] .cp-input"], prepare=work_status),
+    State("resume, the profile's where you can work", show_work,
+          ["[data-key='work-rights'] .wr-row[data-status=work] .wr-dates .wr-rough", "[data-key='work-rights'] .wr-row[data-status=citizen] .wr-country",
+           "[data-key='work-rights'] .wr-row[data-status=work] .wr-visa"], prepare=work_status),
+    # the visas of the record's country and status: the government's name, in Chinese over the name Chinese speakers use
+    State("resume, the profile's visa list open", then(show_work, click("[data-key='work-rights'] .wr-row[data-status=work] .wr-visa"),
+          wait(".sel-search .sel-search-list .lb-opt")), [".sel-search .sel-search-in", ".sel-search .lb-opt .lb-label"], prepare=work_status),
     State("resume, the data file's warnings", nothing, ["#library .warnings"], prepare=broken_subset),
     State("resume, an empty library", nothing, ["#library .empty", "#editor .doc-empty-lib"], prepare=empty_library),
     State("resume, sections & settings", js("() => select('sections')"), ["#editor .is-page"]),
@@ -722,6 +729,9 @@ STATES = [
           [".trk-modal .trk-nat-group .trk-nat-country", ".trk-modal .trk-nat-more[aria-expanded=true]"], prepare=work_in_australia),
     State("applying, companies, one with its nature", applying("companies"), [".htable td[data-key='nature'] .state-chip"],
           prepare=tracks_by_nature),
+    # a company's nature picked from its list: a group for each country in the profile, then every country's kinds
+    State("applying, a company's nature list open", then(applying("companies"), click(".dbv-view tr[data-id='C1'] td[data-key='nature']"),
+          wait(".dbv-options .lb-group")), [".dbv-options .lb-group", ".dbv-options .lb-opt"], prepare=work_status),
     State("applying, a company whose nature isn't filled in", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
           ["#company-nature-unknown", "#company-nature-pick"], prepare=tracks_by_nature),
     State("applying, a company's open roles", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
@@ -939,13 +949,24 @@ def test_an_empty_country_list_in_the_profile_shows_nothing(win, server):
     open_window(win, server, "en")
     st.show(win, Ctx(server))
     win.click("[data-key='work-rights'] .wr-add")
+    win.wait_for_selector(".sel-search .sel-search-in")                 # a new record opens its country list
+    win.keyboard.press("Escape")
     text = win.inner_text("[data-key='work-rights'] .wr-row >> nth=-1")
     assert "false" not in text and "true" not in text, text
 
 
+def pick(win, typed):
+    """Type into the open searchable list and take its first match."""
+    win.wait_for_selector(".sel-search .sel-search-in")
+    win.keyboard.type(typed)
+    win.wait_for_selector(".sel-search .sel-search-list .lb-opt")
+    win.keyboard.press("Enter")
+
+
 def test_where_you_can_work_is_one_record_per_country_with_rough_dates(win, server):
     """2026-11-13: one record per country (China: citizen; Australia: a 485 visa from about 2027-07), each date
-    marked when only roughly known; the first shape (a list per status) is read as records and saved as them."""
+    marked when only roughly known; the first shape (a list per status) is read as records and saved as them.
+    2026-11-14: the country and the visa are picked from lists, and "where you look for work" went: a record is it."""
     st = next(s for s in STATES if s.name == "resume, the profile's where you can work")
     studio = server.inst.studio
     prof = dict(studio.state()["doc"]["profile"])
@@ -953,14 +974,14 @@ def test_where_you_can_work_is_one_record_per_country_with_rough_dates(win, serv
     studio.update_item("profile", None, prof, None)
     open_window(win, server, "en")
     st.show(win, Ctx(server))
-    assert win.inner_text("[data-key='work-rights'] .wr-row >> nth=0 >> .cp-chip").startswith("China")
+    assert win.inner_text("[data-key='work-rights'] .wr-row >> nth=0 >> .wr-country").startswith("China")
+    assert not win.query_selector("[data-key='work-targets']")
     win.click("[data-key='work-rights'] .wr-add")
     row = "[data-key='work-rights'] .wr-row >> nth=1"
-    win.locator(f"{row} >> .cp-input").type("Austral")
-    win.wait_for_selector("[data-key='work-rights'] .pl-sugg .pl-opt")
-    win.keyboard.press("Enter")
+    pick(win, "Austral")
     assert win.locator(f"{row} >> .wr-status").get_attribute("data-value") == "work"   # a second record starts as a work visa
-    win.locator(f"{row} >> .wr-visa").fill("485")
+    win.click(f"{row} >> .wr-visa")
+    pick(win, "485")                                                      # by its subclass
     win.click(f"{row} >> .wr-month[data-key=from]")
     win.click(".month-pop .mp-next")
     win.click(".month-pop .mp-m >> nth=6")
@@ -968,29 +989,116 @@ def test_where_you_can_work_is_one_record_per_country_with_rough_dates(win, serv
     year = win.evaluate("() => new Date().getFullYear()") + 1
     work = lambda: studio.state()["doc"]["profile"].get("work") or {}
     wait_until(lambda: work().get("rights") == [{"country": "CN", "status": "citizen"},
-                                                {"country": "AU", "status": "work", "visa": "485", "from": f"{year}-07~"}],
+                                                {"country": "AU", "status": "work", "visa": "Temporary Graduate visa (subclass 485)", "from": f"{year}-07~"}],
                msg="saved as records")
-    assert "citizen" not in work() and work()["targets"] == ["AU"]
+    assert "citizen" not in work() and "targets" not in work()
     assert win.get_attribute(f"{row} >> .wr-rough >> nth=0", "aria-checked") == "true"
+    # a student visa is a different list: the 485 isn't one, so it goes; the dates stay
+    win.click(f"{row} >> .wr-status")
+    win.click(".listbox .lb-opt[data-value=study]")
+    wait_until(lambda: work()["rights"][1] == {"country": "AU", "status": "study", "from": f"{year}-07~"}, msg="485 dropped for study")
+    win.click(f"{row} >> .wr-visa")
+    win.wait_for_selector(".sel-search .lb-opt")
+    assert win.inner_text(".sel-search .sel-search-list").startswith("Student visa (subclass 500)")
 
 
-def test_a_country_is_found_by_the_start_of_its_name_and_kept_in_the_profile(win, server):
-    """2026-11-13: typing 日 offered 尼日利亚 before 日本 (names that start with what was typed came last)."""
+def test_a_country_is_found_by_the_start_of_its_name_and_picked_from_the_whole_list(win, server):
+    """2026-11-13: typing 日 offered 尼日利亚 before 日本. 2026-11-14: a country is picked from a list that is all
+    there before typing (in the language's own order), typing only narrows it; a country already in another
+    record isn't offered twice."""
     st = next(s for s in STATES if s.name == "resume, the profile's where you can work")
     work_status(Ctx(server))
     open_window(win, server, "zh")
     st.show(win, Ctx(server))
-    inp = win.locator("[data-key='work-targets'] .cp-input")
-    inp.click()
-    inp.type("日")
-    win.wait_for_selector("[data-key='work-targets'] .pl-sugg .pl-opt")
-    assert win.inner_text("[data-key='work-targets'] .pl-sugg .pl-opt >> nth=0").startswith("日本")
-    inp.press("Enter")
-    wait_until(lambda: "JP" in (server.inst.studio.state()["doc"]["profile"].get("work") or {}).get("targets", []))
-    inp = win.locator("[data-key='work-targets'] .cp-input")
-    inp.type("new zea")                                                  # by its English name too
-    win.wait_for_selector("[data-key='work-targets'] .pl-sugg .pl-opt")
-    assert "新西兰" in win.inner_text("[data-key='work-targets'] .pl-sugg")
+    win.click("[data-key='work-rights'] .wr-add")
+    win.wait_for_selector(".sel-search .sel-search-list .lb-opt")
+    names = win.eval_on_selector_all(".sel-search .sel-search-list .lb-opt", "els => els.map((e) => e.innerText.trim())")
+    assert len(names) > 200 and names[0].startswith("阿")               # by pinyin, as Chinese lists sort
+    assert "中国" not in names and "澳大利亚" not in names and "英国" not in names
+    pick(win, "日")
+    rights = lambda: (server.inst.studio.state()["doc"]["profile"].get("work") or {}).get("rights", [])
+    wait_until(lambda: rights()[-1]["country"] == "JP", msg="日本 first")
+    win.click("[data-key='work-rights'] .wr-add")
+    win.wait_for_selector(".sel-search .sel-search-in")
+    win.keyboard.type("new zea")                                          # by its English name too
+    win.wait_for_selector(".sel-search .sel-search-list .lb-opt")
+    assert "新西兰" in win.inner_text(".sel-search .sel-search-list")
+
+
+def test_a_visa_not_listed_is_typed_whole_and_a_listed_one_never_kept_misspelt(win, server):
+    """2026-11-14: a visa is picked from its country's list; a country with none listed (France) still takes the
+    visa's name as typed, while a typed word that matches a listed visa only offers the listed one."""
+    st = next(s for s in STATES if s.name == "resume, the profile's where you can work")
+    work_status(Ctx(server))
+    open_window(win, server, "en")
+    st.show(win, Ctx(server))
+    row = "[data-key='work-rights'] .wr-row[data-status=work]"
+    win.click(f"{row} >> .wr-visa")
+    win.wait_for_selector(".sel-search .sel-search-in")
+    win.keyboard.type("graduate")
+    win.wait_for_selector(".sel-search .lb-opt")
+    assert not win.query_selector(".sel-search .sel-create")              # "Use “graduate”" would save a misspelt one
+    win.keyboard.press("Escape")
+    win.click("[data-key='work-rights'] .wr-add")
+    pick(win, "France")
+    last = "[data-key='work-rights'] .wr-row >> nth=-1"
+    win.click(f"{last} >> .wr-visa")
+    win.wait_for_selector(".sel-search .sel-search-none")
+    assert "listed" in win.inner_text(".sel-search .sel-search-none")
+    win.keyboard.type("Talent Passport")
+    win.wait_for_selector(".sel-search .sel-create")
+    win.keyboard.press("Enter")
+    rights = lambda: (server.inst.studio.state()["doc"]["profile"].get("work") or {}).get("rights", [])
+    wait_until(lambda: rights()[-1] == {"country": "FR", "status": "work", "visa": "Talent Passport"}, msg="typed visa kept")
+    assert win.inner_text(f"{last} >> .wr-visa").strip() == "Talent Passport"
+
+
+def test_a_companys_nature_is_picked_from_the_profiles_countries_in_groups(win, server):
+    """2026-11-14: the nature list showed every country's kinds in one indented run with no group names, and
+    the profile's countries weren't read (it still looked for the first shape's lists). Now: a group for each
+    country in the profile that has kinds of its own, then every country's kinds; other countries' aren't offered."""
+    st = next(s for s in STATES if s.name == "applying, a company's nature list open")
+    work_status(Ctx(server))
+    server.inst.hunt.update_company("C1", {"nature": ""})
+    open_window(win, server, "en")
+    st.show(win, Ctx(server))
+    groups = win.eval_on_selector_all(".dbv-options .lb-group", "els => els.map((e) => e.innerText.trim())")
+    assert groups == ["China", "Australia", "Every country"], groups
+    win.keyboard.press("Escape")
+    # the profile is only Australia now: China's own kinds go from the list
+    prof = dict(server.inst.studio.state()["doc"]["profile"])
+    prof["work"] = {"rights": [{"country": "AU", "status": "citizen"}]}
+    server.inst.studio.update_item("profile", None, prof, None)
+    open_window(win, server, "en")
+    st.show(win, Ctx(server))
+    groups = win.eval_on_selector_all(".dbv-options .lb-group", "els => els.map((e) => e.innerText.trim())")
+    assert groups == ["Australia", "Every country"], groups
+
+
+def test_typing_in_a_field_lays_out_only_its_own_part_of_the_window(win, server):
+    """2026-11-14: "输入框输入字符的时候很卡". The panes sat in grid rows sized by their content (the default "auto"
+    row), so each keystroke laid out the whole pane again: 55 ms a key against 5 with the user's own 15,000px
+    document. No pane that scrolls may sit in a grid row sized by its content, in any workspace."""
+    open_window(win, server, "en")
+    bad = []
+    for ws in ("resume", "jobs", "fill", "plan"):
+        win.evaluate(f"() => setWorkspace('{ws}')")
+        win.wait_for_selector(f"body[data-ws={ws}]")
+        settle(win)
+        bad += win.evaluate("""(ws) => {
+            const out = new Set();
+            for (const el of document.querySelectorAll('body *')) {
+                const cs = getComputedStyle(el);
+                if (!/(auto|scroll)/.test(cs.overflowY) || el.clientHeight < 100) continue;
+                for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+                    const ps = getComputedStyle(p);
+                    if (ps.display.includes('grid') && ps.gridAutoRows === 'auto' && ps.gridTemplateRows.split(' ').length === 1)
+                        out.add(ws + ': ' + (p.id ? '#' + p.id : p.className) + ' holds ' + (el.id ? '#' + el.id : el.className) + ' in a row sized by its content');
+                }
+            }
+            return [...out];
+        }""", ws)
+    assert not bad, "\n".join(bad)
 
 
 def test_a_long_tracks_button_is_cut_at_its_end_not_its_start(win, server):

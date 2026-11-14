@@ -139,6 +139,7 @@ const ICONS = {
   sparkle: '<path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9z"/><path d="M19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
   zoomIn: '<circle cx="11" cy="11" r="7"/><path d="M11 8v6M8 11h6M20 20l-4-4"/>',
   zoomOut: '<circle cx="11" cy="11" r="7"/><path d="M8 11h6M20 20l-4-4"/>',
   check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
@@ -492,8 +493,10 @@ function uiSelect(o) {
   const same = (a, b) => (a ?? null) === (b ?? null);
   const paint = () => {
     const cur = opts.find((x) => same(x.value, val));
-    lab.textContent = cur ? (cur.short || cur.label) : (o.placeholder || t("Choose…"));
-    lab.classList.toggle("ph", !cur);
+    // a value of the user's own (o.create) shows as it is
+    const own = !cur && o.create && val != null && val !== "";
+    lab.textContent = cur ? (cur.short || cur.label) : own ? String(val) : (o.placeholder || t("Choose…"));
+    lab.classList.toggle("ph", !cur && !own);
     if (slot) slot.replaceChildren(cur && cur.mark ? cur.mark() : "");
     btn.dataset.value = val ?? "";
   };
@@ -524,7 +527,62 @@ function uiSelect(o) {
     }
     return active;
   };
-  const show = () => {
+  const show = () => (o.search ? showSearch() : showList());
+  // `search`: a box over the list narrows it by what is typed (label, desc, `find`); the list is still all there
+  // to click. `create`: what was typed can be kept as it is when the list doesn't have it (`createLabel`).
+  const showSearch = () => {
+    const input = h("input", { type: "text", class: "sel-search-in", spellcheck: "false", autocomplete: "off", role: "combobox",
+      "aria-expanded": "true", "aria-autocomplete": "list", "aria-label": o.label || "", placeholder: o.searchPlaceholder || t("Search") });
+    const list = h("div", { class: "listbox sel-search-list", role: "listbox", "aria-label": o.label || "" });
+    const panel = h("div", { class: "sel-search" + (o.menuCls ? " " + o.menuCls : "") }, h("div", { class: "sel-search-box" }, icon("search"), input), list);
+    shown = null;
+    let found = [], active = 0;
+    const text = (x) => [x.label, x.desc, x.find].filter(Boolean).join(" ").toLowerCase();
+    const paintList = () => {
+      const q = input.value.trim().toLowerCase();
+      found = !q ? opts.filter((x) => !x.disabled) : opts.filter((x) => !x.disabled && text(x).includes(q))
+        // a name that starts with what was typed first (日 is 日本 before 尼日利亚), the list's order otherwise
+        .map((x, i) => [x, String(x.label).toLowerCase().startsWith(q) ? 0 : 1, i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map((a) => a[0]);
+      // kept as typed only when the list has nothing like it: a listed one is never saved misspelt
+      const free = o.create && input.value.trim() && !found.length;
+      if (free) found.push({ value: input.value.trim(), label: (o.createLabel || ((s) => t("Use “{name}”", { name: s })))(input.value.trim()), created: true });
+      if (q && !found.length) active = -1; else active = Math.max(0, Math.min(active, found.length - 1));
+      let group;
+      const nodes = [];
+      found.forEach((x, i) => {
+        const g = q ? undefined : x.group;   // narrowed, the matches are one list in the order they matter
+        if (g !== group) { group = g; if (g) nodes.push(h("div", { class: "lb-group" }, g)); }
+        const sel = !x.created && same(x.value, val);
+        nodes.push(h("button", { type: "button", role: "option", tabindex: "-1", "data-value": x.value ?? "",
+          class: "lb-opt" + (sel ? " on" : "") + (i === active ? " sel-hl" : "") + (x.created ? " sel-create" : ""), "aria-selected": String(i === active),
+          onmousedown: (e) => e.preventDefault(), onclick: () => choose(x.value) },
+        h("span", { class: "lb-check" }, x.created ? icon("plus") : sel ? icon("check") : null),
+        h("span", { class: "lb-main" }, h("span", { class: "lb-label" }, x.label), x.desc && h("span", { class: "lb-desc" }, x.desc)),
+        x.hint && h("span", { class: "lb-hint" }, x.hint)));
+      });
+      if (!found.some((x) => !x.created)) nodes.unshift(h("div", { class: "sel-search-none" }, o.emptyText || t("Nothing matches")));
+      list.replaceChildren(...nodes);
+      const act = list.querySelector(".lb-opt.sel-hl");
+      if (act) act.scrollIntoView({ block: "nearest" });
+    };
+    input.addEventListener("input", () => { active = 0; paintList(); });
+    input.addEventListener("keydown", (e) => {
+      const n = found.length;
+      if (e.key === "ArrowDown" && n) { e.preventDefault(); active = (active + 1) % n; paintList(); }
+      else if (e.key === "ArrowUp" && n) { e.preventDefault(); active = (active - 1 + n) % n; paintList(); }
+      else if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); if (found[active]) choose(found[active].value); }
+      else if (e.key === "Tab") closeFloat();
+    });
+    // open on the chosen one
+    const at = opts.filter((x) => !x.disabled).findIndex((x) => same(x.value, val));
+    active = at < 0 ? 0 : at;
+    paintList();
+    open = true;
+    openFloat(btn, panel, { place: o.place, align: o.align, minWidth: o.menuWidth || "anchor", onClose: () => { open = false; }, focus: input });
+    const act = list.querySelector(".lb-opt.sel-hl");
+    if (act) act.scrollIntoView({ block: "center" });
+  };
+  const showList = () => {
     const list = h("div", { class: "listbox", role: "listbox", "aria-label": o.label || "" });
     const active = fill(list);
     shown = list;

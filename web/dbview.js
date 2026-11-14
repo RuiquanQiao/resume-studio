@@ -100,7 +100,7 @@ function dbvSetColumns(view, cols) { view.columns = cols.map(({ key, width, hidd
 // ---------------------------------------------------------------- values: text, filters, sorts, groups
 function dbvText(p, row) {
   const v = p.get(row);
-  if (p.type === "select") { const o = (p.options() || []).find((x) => x.value === v); return o ? o.label : ""; }
+  if (p.type === "select") { const o = (p.options(row) || []).find((x) => x.value === v); return o ? o.label : ""; }
   return Array.isArray(v) ? v.join(" ") : String(v ?? "");
 }
 
@@ -176,7 +176,7 @@ function dbvChip(o) {
 function dbvShow(p, row) {
   if (p.render) return p.render(row);
   const v = p.get(row);
-  if (p.type === "select") { const o = (p.options() || []).find((x) => x.value === v); return o ? dbvChip(o) : null; }
+  if (p.type === "select") { const o = (p.options(row) || []).find((x) => x.value === v); return o ? dbvChip(o) : null; }
   return v == null ? "" : String(v);
 }
 
@@ -214,8 +214,10 @@ function dbvEdit(td, p, row) {
       h("span", { class: "lb-check" }, on ? icon("check") : null), dbvChip(o));
     };
     list.addEventListener("keydown", (e) => menuKeys(e, list, ".lb-opt"));
+    // options in groups (a company's nature: each of the user's countries, then every country's) under their names
+    const grouped = (xs) => { let g; return xs.flatMap((o) => { const head = o.group && o.group !== g ? [h("div", { class: "lb-group" }, o.group)] : []; g = o.group; return [...head, opt(o)]; }); };
     if (!p.free) {
-      list.append(...(p.options() || []).map(opt));
+      list.append(...grouped(p.options(row) || []));
       openFloat(td, list, { minWidth: Math.max(180, td.offsetWidth), onClose: dbvAfterClose, focus: list.querySelector(".lb-opt.on") || list.querySelector(".lb-opt") });
       return;
     }

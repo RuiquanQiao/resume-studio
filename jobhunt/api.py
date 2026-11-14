@@ -24,7 +24,7 @@ from resume.langs import LANGS as RESUME_LANGS
 from resume.service import Studio
 
 from . import geo as place_list
-from . import ics, logos, natures, reader, writing
+from . import ics, logos, natures, reader, visas, writing
 from .geo import Geo
 from .history import History, describe
 from .logos import fetch_logo, fetch_logo_in_browser
@@ -427,7 +427,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
 
     # ---- what kind of employer, and whether the user's status lets them apply (jobhunt/natures.py) ----
     def work() -> dict:
-        """The user's citizenships, residences, work visas and where they look for work: resume.yaml profile.work."""
+        """The user's status in each country they look for work in: resume.yaml profile.work."""
         return natures.clean_work(((studio.store.peek() or {}).get("profile") or {}).get("work"))
 
     def employer(c: dict, w: dict) -> dict:
@@ -442,7 +442,9 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
 
     @app.route("GET", "/api/hunt/countries")
     def countries(req: Request):
-        return {"countries": place_list.countries()}
+        """Every country, and the visas the profile's work records are picked from (jobhunt/visas.py)."""
+        from core.i18n import current
+        return {"countries": place_list.countries(), "visas": visas.catalog(current())}
 
     def company_view(ref: str) -> dict:
         c = hunt.company(ref)
