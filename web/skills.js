@@ -6,9 +6,16 @@
 // only the skills its chosen entries back (user, 2026-11-14: "专业技能应该写有经历支撑的"); the rest stay as chips,
 // dimmed, one click from showing anyway. What the resume prints is unchanged: the names, as text.
 
-// Two levels (user, 2026-11-15: "只要不是熟练，不都可以算作尚不会"): what a job can count on, or not yet.
-const SKILL_LEVELS = ["strong", "none"];
-const skillLevelName = (lv) => ({ strong: t("Proficient"), none: t("Can't use yet") })[lv] || "";
+// Four levels named as job descriptions name them (精通 / 熟练 / 熟悉 / 了解); what each really means, how an
+// interview or test on the skill would go, comes up on hover and is what the job match counts (user, 2026-11-15).
+// Written for anyone: nothing of one user's own case. resume/skills.py LEVELS.
+const SKILL_LEVELS = ["expert", "strong", "working", "none"];
+const skillLevelName = (lv) => ({ expert: t("Expert"), strong: t("Proficient"), working: t("Familiar"), none: t("Basic") })[lv] || "";
+const skillLevelMeans = (lv) => ({
+  expert: t("Holds up however deep the examination goes: principles, mechanisms and details known thoroughly; the level of a senior practitioner"),
+  strong: t("Holds up under a normal examination: common tasks done alone without references, routine interview questions and live tasks handled; the level of a junior practitioner ready to work alone"),
+  working: t("Does not hold up under examination: tasks done with references open; without them, or when questioned further, the gaps show; the level of a student who barely passed the course"),
+  none: t("Not started yet: knows only what it is for and can mention it, but cannot answer a follow-up question") })[lv] || "";
 
 function skillKey(name) {
   const s = String(name ?? "").normalize("NFKC").split(/\s+/).filter(Boolean).join(" ");
@@ -214,7 +221,7 @@ function skillChip(e, i, box) {
   const off = shown === "hidden" || shown === "unbacked";
   const lv = r.level;
   const tip = [r.name !== display(item) ? t("Counts as {name}", { name: r.name }) : "",
-    lv ? t("How well you have it: {level}", { level: skillLevelName(lv) }) : t("How well you have it is not set yet"),
+    lv ? t("How well you have it: {level}", { level: skillLevelName(lv) }) + "\n" + skillLevelMeans(lv) : t("How well you have it is not set yet"),
     r.suggest ? t("The AI suggests: {level}", { level: skillLevelName(r.suggest.level) }) : "",
     shown === "unbacked" ? t("Not on this resume: no entry it picks uses it") : shown === "hidden" ? t("Hidden on this resume") : ""].filter(Boolean).join("\n");
   const chip = h("span", { class: "skx-chip" + (lv ? " lv-" + lv : "") + (r.suggest ? " sug" : "") + (off ? " off" : ""), tabindex: "0", role: "button",
@@ -311,7 +318,7 @@ function moveSkill(e, from, to, box) {
 }
 
 // ---- one skill's panel ----------------------------------------------------------
-// Its name as the resume writes it, how well the user has it (two levels), the AI's reading waiting to be accepted,
+// Its name as the resume writes it, how well the user has it (four levels), the AI's reading waiting to be accepted,
 // then the two things a skill is tied to, each a list to tick: the entries that use it, and (on a skills line) the
 // resumes that show it. Every tick saves at once and the panel stays open.
 function openSkillPanel(anchor, e, i, box) {
@@ -344,8 +351,13 @@ function openSkillPanel(anchor, e, i, box) {
     h("span", { class: "skx-opt-t" }, label), hint ? h("span", { class: "skx-opt-h" }, hint) : null);
   const paint = () => {
     const r = skillRec(e.tech[i] ?? item);
-    const seg = h("div", { class: "skx-levels", role: "radiogroup", "aria-label": t("How well you have it") },
+    // the names show; what a level really means comes up under the row for the one under the pointer / keyboard focus
+    const means = h("p", { class: "skx-lv-means" });
+    const say = (lv) => { means.textContent = lv ? skillLevelMeans(lv) : t("Hover over a level to see what it means"); means.classList.toggle("on", !!lv); };
+    say("");
+    const seg = h("div", { class: "skx-levels", role: "radiogroup", "aria-label": t("How well you have it"), onmouseleave: () => say("") },
       SKILL_LEVELS.map((lv) => h("button", { type: "button", role: "radio", "aria-checked": String(r.level === lv), class: "skx-lvl" + (r.level === lv ? " on lv-" + lv : ""),
+        onmouseenter: () => say(lv), onfocus: (ev) => { if (ev.target.matches(":focus-visible")) say(lv); }, onblur: () => say(""),
         onclick: () => { if (r.level !== lv) call("PUT", "/api/skills/level", { name: r.name, level: lv }); } }, skillLevelName(lv))));
     // the entries that name it: ticking one adds it to that entry's tech, unticking takes it out (this one too)
     const projects = entries().filter((x) => !isListEntry(x));
@@ -360,7 +372,7 @@ function openSkillPanel(anchor, e, i, box) {
     panel.replaceChildren(...[
       h("div", { class: "skx-p-head" }, name,
         r.name !== typed() ? h("p", { class: "skx-p-sub" }, t("Counts as the skill {name} everywhere", { name: r.name })) : null),
-      h("section", { class: "skx-p-sec" }, h("h3", { class: "skx-p-label" }, t("How well you have it")), seg,
+      h("section", { class: "skx-p-sec" }, h("h3", { class: "skx-p-label" }, t("How well you have it")), seg, means,
         r.level && r.by === "ai" ? h("p", { class: "skx-p-sub" }, t("From the AI's reading of your fact layer"), r.why ? ": " + r.why : "") : null),
       r.suggest ? h("div", { class: "skx-p-sug" },
         h("span", { class: "skx-p-sug-t" }, icon("sparkle"), t("The AI suggests: {level}", { level: skillLevelName(r.suggest.level) })),

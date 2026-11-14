@@ -54,9 +54,9 @@ def fit(jd: str, have: str, lexicon: Any = None, levels: dict | None = None) -> 
       wrote (user, 2026-11-14).
     - `real` (0–100, None while none of the description's skills is rated): how much of the same ask the user really
       has, from the skill catalog's levels (resume/skills.py, `levels`: key -> {name, level ''}) whether or not this
-      resume names the skill: strong counts in full, none nothing (two levels since 2026-11-15), and a skill the
-      resume doesn't name at all nothing. A skill the resume names without a level is left out of it until rated. `have[]`,
-      `cant[]` are the skills by level; `unrated[]` the catalog's skills it names that have no level yet.
+      resume names the skill: expert and strong (hold up under a normal test or interview) count in full, working (does not hold up) 0.3, none nothing, and a skill the
+      resume doesn't name at all nothing. A skill the resume names without a level is left out of it until rated.
+      `have[]` (expert, strong), `working[]`, `cant[]` are the skills by level; `unrated[]` the catalog's skills it names that have no level yet.
 
     A skill written with more around it counts when its core is there: "Python编程开发" by Python, "深度学习框架" by
     深度学习. None when the description names fewer than 3 skills (nothing to compare).
@@ -104,7 +104,8 @@ def fit(jd: str, have: str, lexicon: Any = None, levels: dict | None = None) -> 
     counted = [w for w in want if by[w] or w not in hit]
     real = sum(WEIGHT[by[w]] for w in counted if by[w])
     return {**out, "real": round(100 * real / len(counted)) if counted else None,
-            "have": [w for w, lv in by.items() if lv == "strong"][:30],
+            "have": [w for w, lv in by.items() if lv in ("expert", "strong")][:30],
+            "working": [w for w, lv in by.items() if lv == "working"][:30],
             "cant": [w for w, lv in by.items() if lv == "none"][:30],
             "unrated": unrated[:30]}
 

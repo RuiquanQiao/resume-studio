@@ -58,7 +58,8 @@ How to work it:
   decide what goes in and how it is laid out. Three things to help them see clearly:
   - where they stand: how much time they have, which skills and experience they lack, what constrains them.
     What they really can do is the top-level `skills:` list of the resume data file: each skill's `level`
-    (`strong`: can do it alone, or `none`: can't yet) and `why`, which they set or accepted from their own fact layer. A
+    (named 精通 / 熟练 / 熟悉 / 了解, meaning how an interview or test on it would go: `expert` holds up at any
+    depth, `strong` holds up under a normal one, `working` does not hold up, `none` is not started) and `why`, which they set or accepted from their own fact layer. A
     skill in a project's `tech` without a level says nothing about them: AI may have written that code. Plan
     from the levels, and say which skills have none yet rather than guess;
   - the best way forward: which direction costs the least effort for what they want, what to do first and

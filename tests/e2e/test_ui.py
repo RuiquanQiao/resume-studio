@@ -3561,9 +3561,17 @@ def test_skills_are_chips_with_how_well_you_have_them(page, server, data_file):
     tech = next(e for e in state(server)["doc"]["entries"] if e["id"] == "EXP-005")["tech"]
     assert tech[-2:] == ["Python (NumPy, SciPy)", "Docker"]
 
-    # two levels (2026-11-15), and no hidden "click again to clear": picking the other one is how it changes
+    # four levels named as job descriptions name them; what each means (how an interview would go) shows only in
+    # the line under them while the pointer is on one: no second tooltip on the buttons (2026-11-15, "双重悬浮显示")
     pg.click("#active .skx-chip:has(.skx-name:text-is('Docker'))")
-    assert pg.locator(".skx-pop .skx-lvl").all_inner_texts() == ["熟练", "尚不会"]
+    assert pg.locator(".skx-pop .skx-lvl").all_inner_texts() == ["精通", "熟练", "熟悉", "了解"]
+    assert pg.inner_text(".skx-pop .skx-lv-means") == "将鼠标悬停于档位上可查看其实际含义"
+    pg.hover(".skx-pop .skx-lvl:text-is('熟悉')")
+    assert "脱离资料或被追问时即暴露不足" in pg.inner_text(".skx-pop .skx-lv-means")
+    assert pg.evaluate("() => [...document.querySelectorAll('.skx-pop .skx-lvl')].filter((b) => b.title || b.dataset.tip).length") == 0
+    # one scrollbar: the panel scrolls as a whole, no list inside it scrolls on its own ("两个滚动条，真的好么？")
+    assert pg.evaluate("""() => [document.querySelector('.skx-pop'), ...document.querySelectorAll('.skx-pop *')]
+        .filter((n) => /auto|scroll/.test(getComputedStyle(n).overflowY)).map((n) => n.classList.contains('skx-pop'))""") == [True]
     pg.click(".skx-pop .skx-lvl:text-is('熟练')")
     pg.wait_for_selector("#active .skx-chip:has(.skx-name:text-is('Docker')) .skx-lv:text-is('熟练')")
     assert next(r for r in state(server)["skills"] if r["key"] == "docker")["level"] == "strong"

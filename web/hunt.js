@@ -1337,7 +1337,7 @@ function masteryTip(f) {
   if (f.real == null) return [t("Rate your skills under Skills in the resume, and this also shows how much of it you really have."),
     (f.unrated || []).length ? t("Not rated yet: {words}", { words: f.unrated.join(", ") }) : ""].filter(Boolean);
   const list = (xs) => (xs || []).join(", ") || "—";
-  return [t("You have: {words}", { words: list(f.have) }), t("Can't use yet: {words}", { words: list(f.cant) }), (f.unrated || []).length ? t("Not rated yet: {words}", { words: list(f.unrated) }) : ""].filter(Boolean);
+  return [t("Proficient or above: {words}", { words: list(f.have) }), t("Familiar: {words}", { words: list(f.working) }), t("Basic: {words}", { words: list(f.cant) }), (f.unrated || []).length ? t("Not rated yet: {words}", { words: list(f.unrated) }) : ""].filter(Boolean);
 }
 
 // above the picked roles: whether they can be ranked, and the descriptions being read for it
@@ -2444,14 +2444,14 @@ function appPage(v) {
 function fitCard(a, c) {
   const f = a.fit, ai = a.fit_ai;
   const sub = (id) => subsetName(subsets().find((x) => x.id === id)) || id;
-  const words = (label, xs) => xs && xs.length > 0 && h("div", { class: "af-line" }, h("span", { class: "af-k" }, label),
+  const words = (label, xs, means) => xs && xs.length > 0 && h("div", { class: "af-line" }, h("span", { class: "af-k", title: means || null }, label),
     h("span", { class: "af-chips" }, xs.map((x) => h("span", { class: "af-chip" }, x))));
   const ask = ui.chat.available && a.jd && h("button", { class: "btn sm", id: "app-fit-ask", "data-ai": "fit:" + a.id, onclick: () => askFit(a, c) },
     icon("sparkle"), ai ? t("Ask AI again") : t("Ask AI to assess it"));
   const real = f && f.real != null && h("div", { class: "af-block", id: "app-fit-real" },
     h("p", { class: "af-head" }, h("span", { class: "af-score" + (f.real >= 60 ? " hi" : f.real < 30 ? " lo" : "") }, t("Mastery {n}%", { n: f.real })),
       h("span", { class: "af-src" }, t("from your skill levels, no AI"))),
-    words(t("You have"), f.have), words(t("Can't use yet"), f.cant), words(t("Not rated yet"), f.unrated));
+    words(t("Proficient or above"), f.have, skillLevelMeans("strong")), words(t("Familiar"), f.working, skillLevelMeans("working")), words(t("Basic"), f.cant, skillLevelMeans("none")), words(t("Not rated yet"), f.unrated));
   return card(t("Match score"), ai ? t("AI: {n} / 100", { n: ai.score }) : f ? fitLabel(f) : t("not assessed yet"), [
     !a.jd && h("p", { class: "card-p muted", id: "app-fit-none" }, t("Its description is needed first: it is read from the role's page, or pasted above.")),
     a.jd && !f && h("p", { class: "card-p muted", id: "app-fit-rules-none" }, (a.subset || (a.tracks || []).length)

@@ -2187,7 +2187,8 @@ body[data-ws="plugin"][data-chat="off"] .workspace { grid-template-columns: minm
 .skx-chip:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring); border-color: var(--accent); }
 .skx-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .skx-lv { flex: none; font-size: var(--fs-meta); color: var(--text-3); }
-.skx-chip.lv-strong .skx-lv { color: var(--accent); }
+.skx-chip:is(.lv-expert, .lv-strong) .skx-lv { color: var(--accent); }
+.skx-chip.lv-working .skx-lv { color: var(--text-2); }
 .skx-chip.lv-none .skx-lv { color: var(--text-3); }
 .skx-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .skx-x { flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; opacity: 0; }
@@ -2209,6 +2210,8 @@ body[data-ws="plugin"][data-chat="off"] .workspace { grid-template-columns: minm
    group label (meta, 600) over rows of body text; meta in text-3 only for a row's own hint. No other sizes. */
 .float.skx-pop { width: 360px; max-width: calc(100vw - 24px); max-height: min(78vh, 640px); padding: 0; display: flex; flex-direction: column;
   font-size: var(--fs-body); line-height: 1.5; }
+/* the panel is the one thing that scrolls: its sections keep their height (no list scrolling inside it) */
+.float.skx-pop > * { flex: none; }
 .skx-p-head { padding: 12px 14px 10px; }
 .skx-pop input.skx-p-name { display: block; height: 34px; margin: 0 -8px; width: calc(100% + 16px); padding: 0 8px; border: 1px solid transparent; border-radius: var(--r-sm);
   background: transparent; font-size: var(--fs-head); font-weight: 600; color: var(--text); }
@@ -2217,14 +2220,16 @@ body[data-ws="plugin"][data-chat="off"] .workspace { grid-template-columns: minm
 .skx-p-sub { margin: 4px 0 0; font-size: var(--fs-meta); color: var(--text-2); overflow-wrap: anywhere; }
 .skx-p-sec { padding: 10px 14px 12px; border-top: 1px solid var(--line); }
 .skx-p-label { margin: 0 0 8px; font-size: var(--fs-meta); font-weight: 600; color: var(--text-2); }
-.skx-levels { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 2px; border-radius: var(--r-sm); background: var(--track); }
-.skx-lvl { height: 30px; border: 0; border-radius: 5px; background: transparent; color: var(--text-2); font-size: var(--fs-body); cursor: pointer; }
+.skx-levels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; padding: 2px; border-radius: var(--r-sm); background: var(--track); }
+.skx-lvl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 4px; height: 30px; border: 0; border-radius: 5px; background: transparent; color: var(--text-2); font-size: var(--fs-body); cursor: pointer; }
 .skx-lvl:hover { color: var(--text); }
 .skx-lvl:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
 .skx-lvl.on { background: var(--panel); box-shadow: var(--shadow-sm); font-weight: 600; }
-.skx-lvl.on.lv-strong { color: var(--accent); }
+.skx-lvl.on:is(.lv-expert, .lv-strong) { color: var(--accent); }
 .skx-lvl.on.lv-none { color: var(--text); }
-.skx-opts { display: flex; flex-direction: column; gap: 1px; max-height: 210px; overflow: auto; overscroll-behavior: contain; margin: 0 -6px; }
+.skx-lv-means { margin: 8px 0 0; min-height: 3em; color: var(--text-3); overflow-wrap: anywhere; }
+.skx-lv-means.on { color: var(--text-2); }
+.skx-opts { display: flex; flex-direction: column; gap: 1px; margin: 0 -6px; }
 .skx-opt { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 6px; border: 0; border-radius: 6px; background: none;
   color: var(--text); font-size: var(--fs-body); text-align: left; cursor: pointer; }
 .skx-opt:hover { background: var(--hover); }

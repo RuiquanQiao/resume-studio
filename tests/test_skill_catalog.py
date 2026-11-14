@@ -138,17 +138,21 @@ def test_an_ai_reading_waits_for_the_user():
     assert d["skills"] == [{"name": "Prisma", "level": "none", "by": "ai", "why": "notes: copied the schema"}]
 
 
-def test_two_levels_and_the_four_level_files_read_as_them():
-    """2026-11-15: "只要不是熟练，不都可以算作尚不会": can use / familiar became can't use yet."""
-    assert skills.LEVELS == ("strong", "none")
-    d = doc(skills=[{"name": "Prisma", "level": "working", "by": "user"}, {"name": "Kotlin", "level": "basic", "suggest": {"level": "working"}},
+def test_four_levels_by_how_an_interview_would_go_and_older_files_read_as_them():
+    """2026-11-15: shown as 精通 / 熟练 / 熟悉 / 了解, meaning how an interview on the skill would go. Only what holds
+    up counts in full; 熟悉 already does not. The four-level days' familiar (couldn't build with it alone) is 了解."""
+    assert skills.LEVELS == ("expert", "strong", "working", "none")
+    assert skills.WEIGHT == {"expert": 1.0, "strong": 1.0, "working": 0.3, "none": 0.0}
+    d = doc(skills=[{"name": "Prisma", "level": "working", "by": "user"}, {"name": "Kotlin", "level": "basic", "suggest": {"level": "basic"}},
                     {"name": "Java", "level": "strong"}])
     assert model.migrate(d) is True
-    assert [(r["name"], r["level"]) for r in d["skills"]] == [("Prisma", "none"), ("Kotlin", "none"), ("Java", "strong")]
+    assert [(r["name"], r["level"]) for r in d["skills"]] == [("Prisma", "working"), ("Kotlin", "none"), ("Java", "strong")]
     assert d["skills"][1]["suggest"]["level"] == "none"
     assert model.migrate(d) is False                          # once only
+    skills.set_level(d, "Java", "expert")
+    assert d["skills"][2]["level"] == "expert"
     try:
-        skills.set_level(d, "Java", "working")
+        skills.set_level(d, "Java", "basic")
         raise AssertionError("an old level is no longer set")
     except ValueError:
         pass
@@ -211,7 +215,12 @@ def test_mastery_counts_the_levels_whether_or_not_the_resume_names_the_skill():
     f = fit(JD, "JavaScript React Python Docker", levels=lv)
     assert f["score"] == 33                                  # coverage: Python and Docker of six
     assert f["real"] == 17                                   # (1 + 0 + 0) / 6
-    assert (f["have"], f["cant"]) == (["Python"], ["Java", "Docker"]) and "partial" not in f
+    assert (f["have"], f["working"], f["cant"]) == (["Python"], [], ["Java", "Docker"]) and "partial" not in f
+    # 熟悉 does not hold up under examination: 0.3; 精通 counts like 熟练 and is listed with it
+    f = fit(JD, "JavaScript React Python Docker", levels={**lv, "docker": {"name": "Docker", "level": "working"},
+                                                          "java": {"name": "Java", "level": "expert"}})
+    assert f["real"] == 38 and f["working"] == ["Docker"]    # (1 + 1 + 0.3) / 6
+    assert f["have"] == ["Java", "Python"] and f["cant"] == []
     assert fit(JD, "Python Docker")["real"] is None          # nothing rated yet: no second number
     # a skill the resume names without a level isn't known either way: left out until rated, and listed to rate
     f = fit(JD, "JavaScript Python Docker", levels={"python": {"name": "Python", "level": "strong"}, "docker": {"name": "Docker", "level": ""}})
@@ -253,7 +262,7 @@ def test_the_window_sets_levels_and_knows_which_notes_changed(data_file):
 def test_the_api_level_and_settle_routes(server, data_file):
     code, st = server.req("PUT", "/api/skills/level", {"name": "PyTorch", "level": "none"})
     assert code == 200 and next(r for r in st["skills"] if r["key"] == "pytorch")["level"] == "none"
-    code, _ = server.req("PUT", "/api/skills/level", {"name": "PyTorch", "level": "working"})   # gone with the four levels
+    code, _ = server.req("PUT", "/api/skills/level", {"name": "PyTorch", "level": "basic"})   # gone with the four levels
     assert code == 400
     code, _ = server.req("PUT", "/api/skills/level", {"name": "", "level": "none"})
     assert code == 400

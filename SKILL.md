@@ -142,7 +142,7 @@ entries:                     # the library: every real experience, never limited
 skills:                      # fact layer, never rendered: how well the user really has each skill
   - name: Next.js            # one record per skill; every name in `tech` is an instance of one, matched without
     aliases: [NextJS]        #   case or a trailing version ("Next.js 16" is Next.js) or by an alias
-    level: none              # strong (can explain and build on it alone) | none (anything less: AI or someone else wrote that part)
+    level: none              # shown as 精通/熟练/熟悉/了解, meaning how an interview on it would go: expert (any depth) | strong (holds up normally) | working (does not hold up) | none (not started)
     by: user                 # user: picked by the user; ai: an AI reading the user accepted
     why: 前端全是 AI 写的      # one line: where the level comes from
     suggest: {level: strong, why: ...}  # an AI reading of the notes waiting for the user; never write level/by/why yourself

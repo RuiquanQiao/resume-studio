@@ -697,8 +697,8 @@ exclusions and the resume subset it goes out with. No AI runs per posting: it is
 - **The rules' score is two numbers: coverage and mastery** (2026-11-14, `jobhunt/rank.py`, `resume/skills.py`).
   Many projects were written with AI, so a skill in a resume says nothing about whether the user can use it.
   *Coverage* is the score above (does the resume pass a keyword screen); a skill is matched as a word of its own,
-  so Java is no longer found in JavaScript. *Mastery* reads the skill catalog's levels (strong, working count in
-  full; basic half; none nothing): of the description's skills, the ones rated, and the ones the resume doesn't
+  so Java is no longer found in JavaScript. *Mastery* reads the skill catalog's levels (named 精通 / 熟练 / 熟悉 /
+  了解, judged by how an interview on the skill would go: expert and strong count in full, working 0.3, none nothing): of the description's skills, the ones rated, and the ones the resume doesn't
   name at all (nothing says the user has them). A skill the resume names without a level is left out of it and
   listed as not rated; none rated yet, no mastery (a 0 would read as "can't do any of it"). Picked roles sort by
   mastery when there is one. The levels are set on the skill chips of the resume, or accepted from the AI's

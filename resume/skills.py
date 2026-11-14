@@ -9,7 +9,7 @@ fact layer knows:
     skills:                       # never rendered
       - name: Next.js
         aliases: [NextJS]
-        level: none               # strong | none (proficient / can't use yet)
+        level: working            # expert 精通 | strong 熟练 | working 熟悉 | none 了解 (see LEVELS)
         by: user                  # user: picked by the user; ai: an AI reading of the fact layer the user accepted
         why: ...                  # where the level comes from, one line
         suggest: {level: none, why: ...}    # an AI reading waiting for the user to accept or dismiss
@@ -24,12 +24,18 @@ import re
 import unicodedata
 from typing import Any
 
-# Two levels (2026-11-15): a skill the user could explain and build on alone, or one they can't use yet. "Can use
-# with the docs" and "familiar" were ladders between the two that a job never asks about; files that have them read
-# them as `none` (two_levels rewrites them).
-LEVELS = ("strong", "none")
-OLD_LEVELS = {"working": "none", "basic": "none"}
-WEIGHT = {"strong": 1.0, "none": 0.0}   # how much of a job's ask a level meets
+# Four levels named as job descriptions and resumes name them (精通 / 熟练 / 熟悉 / 了解), each meaning what an
+# interview or test on the skill would find (user, 2026-11-15: the names are what shows, the meaning comes up on
+# hover and is what the job match counts; "以'怕不怕考核'为标准"):
+#   expert   精通: holds up at any depth (principles, mechanisms, details); a senior practitioner; almost never a graduate
+#   strong   熟练: holds up under a normal test: common tasks alone without references; a junior practitioner
+#   working  熟悉: does not hold up: gets it done with references open, the gaps show without them or when questioned
+#            further; a student who barely passed the course
+#   none     了解: not started: knows what it is for and can mention it, can't answer a follow-up
+LEVELS = ("expert", "strong", "working", "none")
+OLD_LEVELS = {"basic": "none"}   # the four-level days' "followed it, can't build with it alone"
+# how much of a job's ask a level meets: only what holds up under examination counts in full
+WEIGHT = {"expert": 1.0, "strong": 1.0, "working": 0.3, "none": 0.0}
 
 _VERSION = re.compile(r"\s+v?\d+(?:\.\d+)*[a-z]?$", re.IGNORECASE)
 
@@ -59,8 +65,8 @@ def is_list(doc: Any, entry: Any) -> bool:
     return any(str(s.get("id")) == sid and str(s.get("kind") or "") == "list" for s in doc.get("sections") or [])
 
 
-def two_levels(doc: Any) -> bool:
-    """Levels and AI readings of the four-level days made one of the two. True when something was rewritten."""
+def old_levels(doc: Any) -> bool:
+    """Levels and AI readings of the four-level days made one of the three. True when something was rewritten."""
     changed = False
     for r in doc.get("skills") or []:
         if not isinstance(r, dict):
