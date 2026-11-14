@@ -694,6 +694,15 @@ exclusions and the resume subset it goes out with. No AI runs per posting: it is
   then asks the window's AI, in a chat of its own, to read the description against the resume and keep a score,
   why, what the resume has for it and what it lacks; a new description drops it. The role's page has a Match score
   card with both; the progress table a Match score column (the AI's when there is one).
+- **The rules' score is two numbers: coverage and mastery** (2026-11-14, `jobhunt/rank.py`, `resume/skills.py`).
+  Many projects were written with AI, so a skill in a resume says nothing about whether the user can use it.
+  *Coverage* is the score above (does the resume pass a keyword screen); a skill is matched as a word of its own,
+  so Java is no longer found in JavaScript. *Mastery* reads the skill catalog's levels (strong, working count in
+  full; basic half; none nothing): of the description's skills, the ones rated, and the ones the resume doesn't
+  name at all (nothing says the user has them). A skill the resume names without a level is left out of it and
+  listed as not rated; none rated yet, no mastery (a 0 would read as "can't do any of it"). Picked roles sort by
+  mastery when there is one. The levels are set on the skill chips of the resume, or accepted from the AI's
+  reading of the fact layer (the Skills section's strip).
 - **Resume Studio.exe always opens its own window** (2026-11-14). An instance on the same data file served to a
   browser (a dev server, a tab) is asked to stop (`/api/yield`) and the window opens; a window never yields.
 - **A company's nature list** offers the kinds of the company's own country when it has a list (else those of each

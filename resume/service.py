@@ -1,6 +1,8 @@
 """Operations shared by the HTTP API and the command-line tools."""
 from __future__ import annotations
 
+import json
+import os
 import re
 import shutil
 import time
@@ -10,7 +12,7 @@ from typing import Any
 from core.i18n import system_locale, t
 from core.store import YamlStore, fingerprint, merge_into, to_plain
 
-from . import langs, model, versions
+from . import langs, model, skills, versions
 from .render import all_templates, get_renderer
 from .render.fonts import catalog as font_catalog
 from .render.raster import rasterize
@@ -62,8 +64,66 @@ class Studio:
             "data_path": str(self.store.path),
             "subset_versions": {str(v.get("id")): self.versions.status(str(v.get("id")), versions.content(doc, v))
                                 for v in doc.get("subsets") or [] if not model.is_all(v)},
+            "skills": skills.catalog(doc),
+            "skills_review": self.skills_review(doc),
             **self.extra_state(),
         }
+
+    # ---- the skill catalog (resume/skills.py) -------------------------------
+    def _review_path(self) -> Path:
+        return self.store.state_dir / "skill-review.json"
+
+    def _reviewed(self) -> dict:
+        try:
+            d = json.loads(self._review_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return d if isinstance(d, dict) else {}
+
+    @staticmethod
+    def _notes(doc: Any) -> dict[str, str]:
+        """The fact layer the levels are read from: each entry's notes and the profile's, by id."""
+        out = {"profile": str((doc.get("profile") or {}).get("notes") or "").strip()}
+        for e in doc.get("entries") or []:
+            out[str(e.get("id"))] = str(e.get("notes") or "").strip()
+        return {k: v for k, v in out.items() if v}
+
+    def skills_review(self, doc: Any = None) -> list[str]:
+        """Ids ('profile' or an entry's) whose notes changed since the AI last read them for the skill levels."""
+        if doc is None:
+            doc, _ = self.store.load()
+        seen = self._reviewed()
+        return [k for k, v in self._notes(doc).items() if seen.get(k) != fingerprint(v)]
+
+    def mark_skills_reviewed(self, ids: list[str], notes: dict[str, str]) -> None:
+        """The AI read these notes (as they were when it was asked) for the skill levels."""
+        seen = self._reviewed()
+        for k in ids:
+            if k in notes:
+                seen[k] = fingerprint(notes[k])
+        p = self._review_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(json.dumps(seen, ensure_ascii=False, indent=1), encoding="utf-8", newline="\n")
+        os.replace(tmp, p)
+
+    def set_skill_level(self, name: str, level: str, why: str | None = None) -> dict:
+        with self.store.lock:
+            doc, _ = self.store.load()
+            skills.set_level(doc, name, level, by="user", why=why)
+            self.store.save(doc)
+        return self.state()
+
+    def settle_skills(self, names: list[str], accept: bool) -> dict:
+        """Accept or dismiss the AI's pending readings of these skills (every pending one when `names` is empty)."""
+        with self.store.lock:
+            doc, _ = self.store.load()
+            if not names:
+                names = [s["name"] for s in skills.catalog(doc) if s["suggest"]]
+            for n in names:
+                skills.settle(doc, n, accept)
+            self.store.save(doc)
+        return self.state()
 
     # ---- writing (per item, so concurrent edits elsewhere survive) -----
     def update_item(self, kind: str, item_id: str | None, data: Any, base: str | None) -> dict:
@@ -255,7 +315,8 @@ class Studio:
     def render_version(self, subset_id: str, n: int, images: bool = True) -> dict:
         """Render version `n` of a subset as it was, whatever the file says now."""
         c = self._version(subset_id, n)["content"]
-        view = model.build_view(versions.as_doc(c), c["subset"])
+        d = versions.as_doc(c)
+        view = model.build_view(d, d["subsets"][0])
         return {**self._render_view(view, str(c["subset"].get("engine") or "latex"), self._version_build(subset_id, n), images),
                 "subset": subset_id, "version": n}
 

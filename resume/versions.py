@@ -22,9 +22,10 @@ from typing import Any
 from core.i18n import t
 from core.store import fingerprint, merge_into, to_plain
 
-from . import model
+from . import model, skills
 
 FACT_KEYS = ("notes", "evidence", "interview")
+SKILL_PICKS = ("show_skills", "hide_skills")   # live in the subset, kept in a version as what they made it show
 UNCOUNTED = ("id", "label", "postings", "posting")   # kept with a version, but not what makes it different
 
 
@@ -36,12 +37,25 @@ def content(doc: Any, subset: Any) -> dict:
     """What `subset` renders right now, independent of the rest of the file."""
     sub = to_plain(subset)
     by_id = {str(e.get("id")): e for e in doc.get("entries") or []}
-    chosen = [_visible(by_id[str(i)]) for i in sub.get("entries") or [] if str(i) in by_id]
+    picked = [by_id[str(i)] for i in sub.get("entries") or [] if str(i) in by_id]
+    chosen = [_visible(e) for e in picked]
     used = {str(e.get("section")) for e in chosen}
-    return {"subset": {k: v for k, v in sub.items() if k not in ("postings", "posting")},
-            "profile": _visible(doc.get("profile")),
-            "sections": [to_plain(s) for s in doc.get("sections") or [] if str(s.get("id")) in used],
-            "entries": chosen}
+    c = {"subset": {k: v for k, v in sub.items() if k not in ("postings", "posting", *SKILL_PICKS)},
+         "profile": _visible(doc.get("profile")),
+         "sections": [to_plain(s) for s in doc.get("sections") or [] if str(s.get("id")) in used],
+         "entries": chosen}
+    # a list section shows only the skills the chosen entries back (resume/skills.py): what each of its lines
+    # shows is kept, when it isn't every item, since the version holds the chosen entries and not the library
+    everywhere = skills.backed(doc, list(doc.get("entries") or []))
+    shown = {}
+    for e in picked:
+        if skills.is_list(doc, e):
+            items = to_plain(skills.visible(doc, sub, e, picked, everywhere))
+            if items != to_plain(e.get("tech") or []):
+                shown[str(e.get("id"))] = items
+    if shown:
+        c["skills_shown"] = shown
+    return c
 
 
 def digest(c: dict) -> str:
@@ -50,7 +64,8 @@ def digest(c: dict) -> str:
 
 def as_doc(c: dict) -> dict:
     """A version as a data file of its own, so the normal view and renderer can show it."""
-    return {"profile": c["profile"], "sections": c["sections"], "entries": c["entries"], "subsets": [c["subset"]]}
+    sub = {**c["subset"], "_shown": c.get("skills_shown") or {}}
+    return {"profile": c["profile"], "sections": c["sections"], "entries": c["entries"], "subsets": [sub]}
 
 
 class Versions:
@@ -221,8 +236,12 @@ def compare(old: dict | None, new: dict) -> list[dict]:
     if a != b:
         items.append({"kind": "profile", "id": "profile", "name": t("Profile"),
                       "status": "changed" if old else "added", "before": a, "after": b})
-    before = {str(e.get("id")): e for e in (old or {}).get("entries") or []}
-    after = {str(e.get("id")): e for e in new.get("entries") or []}
+    def shown(c: dict | None) -> dict:   # a list line as the version showed it
+        s = (c or {}).get("skills_shown") or {}
+        return {str(e.get("id")): ({**e, "tech": s[str(e.get("id"))]} if str(e.get("id")) in s else e)
+                for e in (c or {}).get("entries") or []}
+
+    before, after = shown(old), shown(new)
     for eid, e in after.items():
         prev = before.get(eid)
         a, b = (entry_text(prev) if prev else ""), entry_text(e)
@@ -278,6 +297,16 @@ def restore(doc: Any, c: dict) -> None:
             doc["entries"].append({**e, "notes": "", "evidence": []})
         else:
             merge_into(cur, {**e, **{k: to_plain(cur[k]) for k in FACT_KEYS if k in cur}})
+    # its list lines show again what they showed then, whatever the subset's entries back now
+    sub = model.get_item(doc, "subset", sid)
+    by_id = {str(e.get("id")): e for e in doc.get("entries") or []}
+    picked = [by_id[str(i)] for i in sub.get("entries") or [] if str(i) in by_id]
+    for k in SKILL_PICKS:
+        sub.pop(k, None)
+    for e in c["entries"]:
+        cur = by_id.get(str(e.get("id")))
+        if cur is not None and skills.is_list(doc, cur):
+            skills.pin(doc, sub, cur, (c.get("skills_shown") or {}).get(str(e.get("id")), list(e.get("tech") or [])), picked)
     prof = doc.get("profile")
     if prof is None:
         doc["profile"] = dict(c["profile"])

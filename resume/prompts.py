@@ -213,6 +213,23 @@ def batch_sync_message(parts: list[str], codes: list[str], subset_id: str, data_
             + "\n\n".join(parts) + "\n\n" + sync_rules(codes, subset_id, data_path))
 
 
+def skills_message(names: list[str], data_path: str) -> str:
+    """Read the fact layer for how well the user really has each skill; the user accepts each reading in the window."""
+    lst = ", ".join(f"“{n}”" for n in names)
+    return (t("The fact layer of these changed since you last read it for my skill levels: {list}. Read their `notes` "
+              "(and `profile.notes`; the evidence folders when the notes leave it open) and work out how well I really have "
+              "each skill they name in `tech` or talk about.", list=lst) + "\n"
+            "- " + t("Levels: `strong` (I could explain and extend it without help), `working` (I use it with documentation), "
+                     "`basic` (I have used it or followed it, but couldn't build with it alone), `none` (it is in a project "
+                     "but AI or someone else wrote that part; I can't use it yet).") + "\n"
+            "- " + t("Write each reading as `{example}` on the skill's record in the top-level `skills:` "
+                     "list of `{path}` (format in the skill; add a record `- name: …` when the skill has none). `why` is one "
+                     "short line quoting where the notes say so. Never write `level`, `by` or `why` themselves: I accept or "
+                     "dismiss each reading in the window.", example="suggest: {level: …, why: …}", path=data_path) + "\n"
+            "- " + t("Only where the notes say something about the skill: no reading for a skill the notes are silent on, "
+                     "and none that repeats the level a skill already has. Leave every other part of the file alone."))
+
+
 def _where(app: dict, report: str) -> str:
     return (t("The evaluation of this posting is at `{report}`: read it first, especially the requirement-by-requirement "
               "match, the customization plan and the extracted keywords (the posting itself is archived in it).", report=report)

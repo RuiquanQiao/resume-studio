@@ -389,11 +389,13 @@ function appProps() {
     { key: "skills", label: t("Skills"), type: "relation", width: 260, get: (a) => a.skills || [],
       render: (a) => h("span", { class: "trk-tags c-skills" }, (a.skills || []).map((x) => h("span", { class: "trk-tag" }, x))) },
     // the AI's score once it has read the role, else the rules' (its skills found in the resume); sorts as a number
-    { key: "fit", label: t("Match score"), type: "text", width: 110, get: (a) => (a.fit_ai ? a.fit_ai.score : a.fit ? a.fit.score : -1),
+    { key: "fit", label: t("Match score"), type: "text", width: 110, get: (a) => (a.fit_ai ? a.fit_ai.score : a.fit ? (a.fit.real ?? a.fit.score) : -1),
       render: (a) => (a.fit_ai ? h("span", { class: "c-fit" + (a.fit_ai.score >= 60 ? " hi" : a.fit_ai.score < 30 ? " lo" : ""), title: a.fit_ai.why || null },
         h("span", { class: "c-fit-n" }, String(a.fit_ai.score)), h("span", { class: "c-fit-by" }, "AI"))
-        : a.fit ? h("span", { class: "c-fit rules" + (a.fit.score >= 60 ? " hi" : a.fit.score < 30 ? " lo" : ""), title: t("its skills found in “{name}”, no AI", { name: subsetName(subsets().find((x) => x.id === a.fit.subset)) || a.fit.subset }) },
-          h("span", { class: "c-fit-n" }, a.fit.score + "%")) : "") },
+        : a.fit ? h("span", { class: "c-fit rules" + ((a.fit.real ?? a.fit.score) >= 60 ? " hi" : (a.fit.real ?? a.fit.score) < 30 ? " lo" : ""),
+          title: [fitLabel(a.fit),
+            t("its skills found in “{name}”, no AI", { name: subsetName(subsets().find((x) => x.id === a.fit.subset)) || a.fit.subset }), ...masteryTip(a.fit)].join("\n") },
+          h("span", { class: "c-fit-n" }, a.fit.real == null ? t("Coverage {n}%", { n: a.fit.score }) : t("Mastery {n}%", { n: a.fit.real }))) : "") },
     { key: "url", label: t("Link"), type: "text", width: 200, get: (a) => a.url || "", set: (a, v) => cellApp(a, { url: v }),
       render: (a) => !/^https?:\/\//.test(a.url || "") ? h("span", { class: "c-muted" }, a.url || "") : h("a", { href: a.url, class: "c-link", title: a.url },
         a.url.replace(/^https?:\/\//, "")) },
@@ -1270,7 +1272,9 @@ function pickedPage() {
   // best fit first: a role whose description was compared with its track's resume, by its score; the rest after,
   // newest first as before
   const byFit = H.psort === "fit" && m.ranked;
-  if (byFit) shown.sort((a, b) => (b.fit ? b.fit.score : -1) - (a.fit ? a.fit.score : -1));
+  // what the user really has comes first once any skill has a level; the resume's coverage breaks ties
+  const fitKey = (p) => (p.fit ? (p.fit.real ?? p.fit.score) * 1000 + p.fit.score : -1);
+  if (byFit) shown.sort((a, b) => fitKey(b) - fitKey(a));
   const seg = (id, label, n) => h("button", { type: "button", class: "trk-seg" + (cur === id ? " on" : ""), "aria-pressed": String(cur === id),
     onclick: () => { H.ptrack = id; H.plimit2 = 0; paintHunt(); } }, label, h("span", { class: "n" }, String(n)));
   const limit = H.plimit2 || 150;
@@ -1315,8 +1319,26 @@ function fitBadge(p) {
   const f = p.fit;
   if (!f) return null;
   const tip = [t("Skills its description names that your resume “{name}” names too: {words}", { name: subsetName(subsets().find((x) => x.id === f.subset)) || f.subset, words: f.hit.join(", ") || "—" }),
-    t("Not in your resume: {words}", { words: f.miss.join(", ") || "—" })].join("\n");
-  return h("span", { class: "pk-fit" + (f.score >= 60 ? " hi" : f.score < 30 ? " lo" : ""), title: tip }, t("{n}% fit", { n: f.score }));
+    t("Not in your resume: {words}", { words: f.miss.join(", ") || "—" }), ...masteryTip(f)].join("\n");
+  const n = f.real ?? f.score;
+  return h("span", { class: "pk-fit" + (n >= 60 ? " hi" : n < 30 ? " lo" : ""), title: tip }, fitLabel(f));
+}
+
+// "Mastery 40% · coverage 60% (2 not rated)": the second number only once one of its skills has a level
+function fitLabel(f) {
+  if (f.real == null) return t("Coverage {n}%", { n: f.score });
+  const left = (f.unrated || []).length;
+  return left ? t("Mastery {n}% · coverage {m}% ({k} not rated)", { n: f.real, m: f.score, k: left })
+    : t("Mastery {n}% · coverage {m}%", { n: f.real, m: f.score });
+}
+
+// the rules' second number: how much of the description's ask the user really has (the skill levels, resume/skills.py)
+function masteryTip(f) {
+  if (f.real == null) return [t("Rate your skills under Skills in the resume, and this also shows how much of it you really have."),
+    (f.unrated || []).length ? t("Not rated yet: {words}", { words: f.unrated.join(", ") }) : ""].filter(Boolean);
+  const list = (xs) => (xs || []).join(", ") || "—";
+  return [t("You have: {words}", { words: list(f.have) }), t("Familiar only: {words}", { words: list(f.partial) }),
+    t("Can't use yet: {words}", { words: list(f.cant) }), (f.unrated || []).length ? t("Not rated yet: {words}", { words: list(f.unrated) }) : ""].filter(Boolean);
 }
 
 // above the picked roles: whether they can be ranked, and the descriptions being read for it
@@ -2427,14 +2449,20 @@ function fitCard(a, c) {
     h("span", { class: "af-chips" }, xs.map((x) => h("span", { class: "af-chip" }, x))));
   const ask = ui.chat.available && a.jd && h("button", { class: "btn sm", id: "app-fit-ask", "data-ai": "fit:" + a.id, onclick: () => askFit(a, c) },
     icon("sparkle"), ai ? t("Ask AI again") : t("Ask AI to assess it"));
-  return card(t("Match score"), ai ? t("AI: {n} / 100", { n: ai.score }) : f ? t("{n}% of its skills", { n: f.score }) : t("not assessed yet"), [
+  const real = f && f.real != null && h("div", { class: "af-block", id: "app-fit-real" },
+    h("p", { class: "af-head" }, h("span", { class: "af-score" + (f.real >= 60 ? " hi" : f.real < 30 ? " lo" : "") }, t("Mastery {n}%", { n: f.real })),
+      h("span", { class: "af-src" }, t("from your skill levels, no AI"))),
+    words(t("You have"), f.have), words(t("Familiar only"), f.partial), words(t("Can't use yet"), f.cant), words(t("Not rated yet"), f.unrated));
+  return card(t("Match score"), ai ? t("AI: {n} / 100", { n: ai.score }) : f ? fitLabel(f) : t("not assessed yet"), [
     !a.jd && h("p", { class: "card-p muted", id: "app-fit-none" }, t("Its description is needed first: it is read from the role's page, or pasted above.")),
     a.jd && !f && h("p", { class: "card-p muted", id: "app-fit-rules-none" }, (a.subset || (a.tracks || []).length)
       ? t("Its description names too few skills to count, or no resume is set for it.") : t("Set the resume it goes out with, and its description is counted against it.")),
     f && h("div", { class: "af-block", id: "app-fit-rules" },
-      h("p", { class: "af-head" }, h("span", { class: "af-score" + (f.score >= 60 ? " hi" : f.score < 30 ? " lo" : "") }, t("{n}% fit", { n: f.score })),
+      h("p", { class: "af-head" }, h("span", { class: "af-score" + (f.score >= 60 ? " hi" : f.score < 30 ? " lo" : "") }, t("Coverage {n}%", { n: f.score })),
         h("span", { class: "af-src" }, t("its skills found in “{name}”, no AI", { name: sub(f.subset) }))),
-      words(t("In your resume"), f.hit), words(t("Not in your resume"), f.miss)),
+      words(t("In your resume"), f.hit), words(t("Not in your resume"), f.miss),
+      f.real == null && h("p", { class: "card-p muted", id: "app-fit-rate" }, t("Coverage says whether the resume passes a keyword screen, not whether you can do the work. Rate your skills under Skills in the resume, and how much of it you really have is shown here too."))),
+    real,
     ai && h("div", { class: "af-block", id: "app-fit-ai" },
       h("p", { class: "af-head" }, h("span", { class: "af-score" + (ai.score >= 60 ? " hi" : ai.score < 30 ? " lo" : "") }, t("{n} / 100", { n: ai.score })),
         h("span", { class: "af-src" }, t("read by AI against “{name}”, {date}", { name: sub(ai.subset || f && f.subset || ""), date: ai.at || "" }))),

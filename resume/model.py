@@ -20,13 +20,50 @@ from core.store import fingerprint, to_plain
 
 from . import langs as L
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def migrate(doc: Any) -> bool:
-    """Bring an older file up to date in place (keys keep their place and comments).
-    Schema 2: `versions` became `subsets`. True when something changed."""
-    if not isinstance(doc, dict) or "versions" not in doc:
+    """Bring an older file up to date in place (keys keep their place and comments). True when what the file says
+    changed; a new schema number alone is set in memory and goes to disk with the next save, so opening a file
+    never rewrites it for that (and every read upgrades it the same way until then).
+    Schema 2: `versions` became `subsets`. Schema 3: a list section (专业技能) shows, in a subset, only the skills
+    its chosen entries back (resume/skills.py); every subset of an older file keeps showing what it showed."""
+    if not isinstance(doc, dict):
+        return False
+    changed = _rename_versions(doc)
+    if int(doc.get("schema_version") or 0) < 3:
+        changed = _skills_v3(doc) or changed
+        if "schema_version" in doc:
+            doc["schema_version"] = SCHEMA_VERSION
+        elif hasattr(doc, "insert"):
+            doc.insert(0, "schema_version", SCHEMA_VERSION)
+        else:
+            doc["schema_version"] = SCHEMA_VERSION
+    return changed
+
+
+def _skills_v3(doc: Any) -> bool:
+    from . import skills
+    changed = False
+    for e in doc.get("entries") or []:
+        fixed = skills.rejoin(list(e.get("tech") or []))
+        if fixed is not None:
+            e["tech"] = fixed
+            changed = True
+    by_id = {str(e.get("id")): e for e in doc.get("entries") or []}
+    for v in doc.get("subsets") or []:
+        if is_all(v):
+            continue
+        chosen = [by_id[str(i)] for i in v.get("entries") or [] if str(i) in by_id]
+        for e in chosen:
+            if skills.is_list(doc, e):
+                changed = skills.pin(doc, v, e, list(e.get("tech") or []), chosen) or changed
+    return changed
+
+
+def _rename_versions(doc: Any) -> bool:
+    if "versions" not in doc:
         return False
     old = doc["versions"]
     if doc.get("subsets"):  # both (an older tool wrote the old key again): keep every subset once
@@ -44,8 +81,8 @@ def migrate(doc: Any) -> bool:
     else:
         doc.pop("subsets", None)
         doc["subsets"] = doc.pop("versions")
-    if "schema_version" in doc and (doc.get("schema_version") or 0) < SCHEMA_VERSION:
-        doc["schema_version"] = SCHEMA_VERSION
+    if "schema_version" in doc and (doc.get("schema_version") or 0) < 2:
+        doc["schema_version"] = 2
     return True
 
 DEFAULT_SECTIONS = [
@@ -367,6 +404,9 @@ def build_view(doc: Any, subset: dict) -> dict:
                      if str(c.get("label") or "") not in hidden_contacts],
     }
 
+    from . import skills
+    frozen = subset.get("_shown") or {}   # a kept version: what each list entry showed then
+    everywhere = None if everything else skills.backed(doc, list(doc.get("entries") or []))
     out_sections = []
     ref = 0
     for s in sections:
@@ -377,6 +417,11 @@ def build_view(doc: Any, subset: dict) -> dict:
         for e in chosen:
             if str(e.get("section")) != sid:
                 continue
+            tech = e.get("tech") or []
+            if str(s.get("kind") or "") == "list":
+                tech = frozen[str(e.get("id"))] if str(e.get("id")) in frozen else skills.visible(doc, subset, e, chosen, everywhere)
+                if not tech and e.get("tech") and not any(bullet_text(b, lang).strip() for b in e.get("bullets") or []):
+                    continue   # every skill of the line is hidden here: the line goes
             kept = [(i, bullet_text(b, lang)) for i, b in enumerate(e.get("bullets") or [])]
             kept = [(i, t) for i, t in kept if t.strip()]
             items.append({
@@ -387,7 +432,7 @@ def build_view(doc: Any, subset: dict) -> dict:
                 "location": tr(e.get("location"), lang),
                 "dates": date_range(e, lang),
                 "link": tr(e.get("link"), lang),
-                "tech": [tr(t, lang) for t in e.get("tech") or [] if tr(t, lang)],
+                "tech": [tr(t, lang) for t in tech if tr(t, lang)],
                 "bullets": [t for _, t in kept],
                 "bidx": [i for i, _ in kept],     # each shown bullet's index in the entry's list
             })

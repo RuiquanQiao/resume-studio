@@ -461,6 +461,24 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
             files.append({"name": name, "path": str(path).replace("\\", "/"), "image": is_image})
         return images, files
 
+    # ---- the skill catalog: how well the user really has each skill (resume/skills.py) ----
+    @app.route("PUT", "/api/skills/level")
+    def skill_level(req: Request):
+        b = body(req)
+        name, level = str(b.get("name") or "").strip(), str(b.get("level") or "")
+        if not name:
+            raise HttpError(400, t("Missing skill name"))
+        try:
+            return studio.set_skill_level(name, level, b.get("why") if isinstance(b.get("why"), str) else None)
+        except ValueError as e:
+            raise HttpError(400, str(e))
+
+    @app.route("POST", "/api/skills/settle")
+    def skill_settle(req: Request):
+        """Accept or dismiss the AI's readings: `names` (all pending when empty), `accept`."""
+        b = body(req)
+        return studio.settle_skills([str(n) for n in b.get("names") or []], bool(b.get("accept")))
+
     # ---- evidence: has a project changed since Claude last read it? ---------
     @app.route("GET", "/api/evidence")
     def evidence_status(req: Request):
@@ -492,7 +510,8 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
             raise HttpError(409, t("Rendering failed; see the error above the preview first"))
         return studio.bullet_report(r)
 
-    ACTIONS = ("polish", "translate", "fit", "sync", "mock", "probe", "answer", "batch_translate", "batch_fit", "batch_sync")
+    ACTIONS = ("polish", "translate", "fit", "sync", "mock", "probe", "answer", "batch_translate", "batch_fit", "batch_sync",
+               "skills")
     ONE_ENTRY = ("polish", "translate", "fit", "sync", "mock", "probe", "answer")
 
     def chat_title(action: str, entry: str, subset: Any, target: str, lang: str) -> str:
@@ -510,6 +529,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
             "batch_translate": lambda: t("{subset}: all into {lang}", subset=sub, lang=to),
             "batch_fit": lambda: t("{subset}: fit every line", subset=sub),
             "batch_sync": lambda: t("Every changed project: update"),
+            "skills": lambda: t("Skill levels: read the fact layer"),
         }
         return names[action]() if action in names else ""
 
@@ -535,6 +555,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         instruction = str(b.get("text") or "")
         involved = [entry] if entry is not None else []
         synced: list = []   # entries whose evidence baseline moves forward when the turn succeeds
+        review = None       # (ids, notes) the AI read for the skill levels, marked read when the turn succeeds
 
         if action == "polish":
             text = prompts.polish_message(name(entry), instruction, lang, vid, data_path)
@@ -597,6 +618,15 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
                 parts.append(f"## {name(e)}\n" + "\n".join(evidence.describe(r) for r in rows))
             text = prompts.batch_sync_message(parts, langs, vid, data_path)
             synced = involved
+        elif action == "skills":
+            ids = studio.skills_review(doc) if not b.get("all") else list(studio._notes(doc))
+            if not ids:
+                raise HttpError(409, t("No fact layer has changed since the AI last read it for the skill levels"))
+            notes_now = studio._notes(doc)
+            names = [t("Profile") if i == "profile" else name(model.get_item(doc, "entry", i)) for i in ids]
+            text = prompts.skills_message(names, data_path)
+            involved = [e for e in (model.get_item(doc, "entry", i) for i in ids) if e is not None]
+            review = (ids, notes_now)
         else:
             text = instruction.strip()
             if not text and not b.get("attachments"):
@@ -624,7 +654,11 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
             if ok:
                 for eid, paths in targets:
                     tracker.mark_synced(eid, paths)
-                app.bus.publish("evidence", {"entries": [eid for eid, _ in targets]})
+                if targets:
+                    app.bus.publish("evidence", {"entries": [eid for eid, _ in targets]})
+                if review:
+                    studio.mark_skills_reviewed(*review)
+                    app.bus.publish("skills", {})
 
         images, files = attachments(cid, b.get("attachments") or [])
         prompt = text
@@ -632,7 +666,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         if others:   # Claude reads these itself (Read handles PDFs, docs, code…)
             prompt += prompts.attachments_note([f["path"] for f in others])
         try:
-            r = chats.send(cid, prompt, context=context, add_dirs=add_dirs, on_done=done if targets else None,
+            r = chats.send(cid, prompt, context=context, add_dirs=add_dirs, on_done=done if targets or review else None,
                            meta={"action": action, "polish": action == "polish", "entry_id": b.get("entry_id"),
                                  "entries": [str(e.get("id")) for e in involved]},
                            images=images, files=files, shown=text if action is None else None, title=title)

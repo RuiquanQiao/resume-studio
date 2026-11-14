@@ -22,6 +22,8 @@ Before asking anything, read what Resume Studio already holds:
 - the experience library in the data file (`resume.yaml`): every entry, its bullets, `tech`, and its **private
   notes** (the fact layer: what really happened, what the user did and didn't do, what they enjoyed). Notes
   are for your judgement only; never quote them into anything others see;
+- the skill catalog (the top-level `skills:` list): how well the user really has each skill (`level`: strong,
+  working, basic, none, with `why`). A name in `tech` alone is what the resume claims, not what they can do;
 - the profile's notes (education, 届, visa, goals the user stated before);
 - the plan (`plan.py show`): a direction may already be written there, with its reasons;
 - the tracker (`hunt.py list`): what they applied to and how it went. Outcomes are evidence too: ten

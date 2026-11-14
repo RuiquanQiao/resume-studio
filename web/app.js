@@ -296,6 +296,7 @@ function applyState(s) {
   renderLibrary();
   renderPreviewToolbar();
   renderComposerState();
+  paintSkills(false);   // the catalog's levels or the subset's picks changed: the chips say so
   // the versions page is open and the subset's text changed (here, by Claude, by hand): where it stands may have too
   if (ui.sel.kind === "versions" && VS.for === ui.sel.id && VS.list && !VS.loading && VS.digest !== s.digest &&
       JSON.stringify(versionStatus(ui.sel.id)) !== JSON.stringify(VS.list.status)) {
@@ -754,6 +755,7 @@ function paintDocument({ keepScroll = true, flash = false } = {}) {
       hidden && h("span", { class: "chip", title: t("This section is hidden in “{name}”; Sections & resume settings shows it again", { name: subsetName(L.v) }) }, t("Hidden in this subset")),
       h("span", { class: "spacer" }),
       sid && h("button", { class: "btn icon sm ghost", title: t("Add an entry to “{section}”", { section: title }), onclick: () => newEntry(sid) }, icon("plus"))));
+    if (sid && (sectionById(sid) || {}).kind === "list" && entries().some((e) => (e.tech || []).length)) wrap.append(skillStrip(sid));
     if (!list.length && !outV.length) wrap.append(h("p", { class: "doc-empty muted" }, t("No entries in this section yet.")));
     for (const e of list) wrap.append(docCard(edFor("entry", e.id)));
     for (const e of outV) wrap.append(ui.docOpen.has(e.id) ? docCard(edFor("entry", e.id), { out: true }) : foldedRow(e, L));
@@ -1088,9 +1090,7 @@ function entryForm(e = ui.draft, { out = false } = {}) {
       h("div", { class: "grid2 month-dates" }, monthField(t("Start"), e, "start"), monthField(t("End"), e, "end")),
       tfield(t("Link"), e, "link", { placeholder: "https://…", link: true }));
   }
-  basics.push(h("div", { class: "field" }, h("label", null, isList ? t("Items") : t("Tech / keywords"), h("span", { class: "hint" }, t("comma-separated"))),
-    h("input", { value: e.tech.map((t) => display(t)).join(", "), spellcheck: "false", "data-key": "tech",
-      oninput: (ev) => { e.tech = ev.target.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean); touch(); } })));
+  basics.push(techField(e));   // skills as chips, each with how well the user has it (skills.js)
   parts.push(card(t("Basics"), null, basics));
 
   if (!isList) parts.push(bulletsCard(e));
@@ -2721,6 +2721,7 @@ function connect() {
     refresh();
   });
   es.addEventListener("evidence", () => checkEvidence(true));
+  es.addEventListener("skills", () => refresh());   // the AI's reading of the fact layer is done: the notes count as read
   listenChat(es);
   listenJobs(es);
   listenFill(es);

@@ -601,7 +601,11 @@ STATES = [
           lambda pg, c: (open_entry(pg, "EXP-002"), open_mock(pg), pg.click("#active .mock-hide"), pg.wait_for_selector("#active .mq-show")),
           ["#active .mq.is-follow .mq-show"], prepare=lambda c: add_mock(c.server)),
     State("resume, a card's conflict", conflict, ["#active .banner.warn"]),
-    State("resume, long titles", lambda pg, c: open_entry(pg, "EXP-002"), ["#active"], prepare=long_entry),
+    # a skills line: its chips (one struck through, no entry in this subset uses it) and the levels bar above the section
+    State("resume, a skills line with its levels bar",
+          then(lambda pg, c: choose(pg, "#subset-select", "RES-TECH-EN"), lambda pg, c: open_entry(pg, "EXP-005"), wait(".skx-strip[data-sec=skills]")),
+          ["#editor .skx-strip", "#active .skx-chip"]),
+    State("resume, long titles",lambda pg, c: open_entry(pg, "EXP-002"), ["#active"], prepare=long_entry),
     State("resume, line chips and issues", then(lambda pg, c: open_entry(pg, "EXP-002"), wait("#bullets .line-chip.long")),
           ["#issues .issue.warn"], prepare=lambda c: add_long_bullet(c.server)),
     # one record per country: a citizen's, a work visa with a long name and rough dates, a student visa

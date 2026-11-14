@@ -99,7 +99,7 @@ user really did); every item in `subsets` except `ALL` is a **subset**: the resu
 schema 2 called them `versions`; the window renames the key by itself when it opens such a file.
 
 ```yaml
-schema_version: 2
+schema_version: 3
 settings:
   languages: [en, de]        # resume languages, any number; the first is the default for new subsets
   export_dir: exports        # export folder, relative to resume.yaml
@@ -127,7 +127,7 @@ entries:                     # the library: every real experience, never limited
     end: present
     expected: true           # optional: the end month isn't reached yet ("2027.06（预计）", "Jun 2027 (expected)")
     link: https://...
-    tech: [Next.js, Prisma]  # in a list section, the items
+    tech: [Next.js 16, Prisma]   # skills by name (in a list section, the items); see `skills:` below
     bullets:
       - {en: 'Built a **multi-stage** pipeline ...', de: 'Mehrstufige Pipeline **aufgebaut** ...'}
       - {en: 'Wrote the onboarding docs', de: ''}    # '' = left off the German resume
@@ -139,6 +139,13 @@ entries:                     # the library: every real experience, never limited
         a: ...               # what the user would say, first person; 【to fill in: …】 where the facts run out
         follow_ups:          # what the interviewer asks after hearing that answer; may nest further
           - {q: How did you know each stage worked?, a: ...}
+skills:                      # fact layer, never rendered: how well the user really has each skill
+  - name: Next.js            # one record per skill; every name in `tech` is an instance of one, matched without
+    aliases: [NextJS]        #   case or a trailing version ("Next.js 16" is Next.js) or by an alias
+    level: none              # strong | working | basic | none (can't use it yet: AI or someone else wrote that part)
+    by: user                 # user: picked by the user; ai: an AI reading the user accepted
+    why: 前端全是 AI 写的      # one line: where the level comes from
+    suggest: {level: basic, why: ...}   # an AI reading of the notes waiting for the user; never write level/by/why yourself
 subsets:
   - id: ALL                  # reserved: the full-set preview, always first, can't be deleted or renamed
     label: All entries
@@ -156,6 +163,8 @@ subsets:
     sections: [education, projects]   # this subset's own section order; unlisted sections go last
     hide_sections: [awards]  # optional
     hide_contacts: [phone]   # optional: hide contacts by label
+    show_skills: [Kotlin]    # optional: a list section (专业技能) shows a skill only when an entry this subset picks
+    hide_skills: [Docker]    #   names it in `tech` (or no entry of the library does); these show / hide one anyway
     postings: [{tool: career-ops, id: '12'}]   # optional: the evaluated postings this resume is sent to
                                                # (older files may have one `posting: {…}`; same meaning)
     layout: {font_size: 10, margin_x: 1.4, margin_y: 1.2, line_spread: 1.0,
@@ -196,7 +205,8 @@ subsets:
    bullets…) must be backed by `notes` or `evidence`. When unsure, leave it out or phrase it
    conservatively, and tell the user what information is missing. The notes are what the user would tell
    their lawyer: present them well, never invent.
-3. **Don't edit the fact layer**: leave `notes` and `evidence` alone unless the user asks, and never copy
+3. **Don't edit the fact layer**: leave `notes`, `evidence` and the skills' `level` / `by` / `why` alone unless
+   the user asks (what you read about a skill goes into its `suggest`), and never copy
    notes verbatim into bullets. When the user does ask you to write into `notes`, write them as the user's
    own notebook: first person, in the user's words and language ("后端是我一个人写的",
    "I led the backend"), never as a third-party record ("用户指定：…", "用户自述：…", "本人…", "The user

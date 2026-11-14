@@ -60,9 +60,11 @@ def page_all(browser_ctx, server):
         t0 = time.time()
         pg.on("request", lambda r: print(f"  {time.time() - t0:6.2f} -> {r.method} {r.url}") if "/api/" in r.url else None)
         pg.on("console", lambda m: print(f"  {time.time() - t0:6.2f} console.{m.type}: {m.text}"))
+    # what the last test left (a company page it had open, say) is cleared before the app's first script reads it:
+    # cleared after the first load, the app had already asked for that company, gone with the last test's data (a 404).
+    # Once per tab (sessionStorage), so a test that reloads keeps what it stored.
+    pg.add_init_script("if (!sessionStorage.getItem('e2e-fresh')) { localStorage.clear(); sessionStorage.setItem('e2e-fresh', '1'); }")
     pg.goto(server.url)
-    pg.evaluate("localStorage.clear()")
-    pg.reload()
     pg.wait_for_selector(".entry")
     wait_rendered(pg)
     yield pg
@@ -3521,3 +3523,37 @@ def test_long_company_details_show_whole_and_push_no_neighbour_down(page, server
     pg.keyboard.press("End")
     pg.keyboard.press("Enter")
     assert "\n" not in pg.evaluate("() => document.querySelector('#company-hq').previousElementSibling.querySelector('textarea').value")
+
+
+# ---------------------------------------------------------------- skills as chips (web/skills.js)
+def test_skills_are_chips_with_how_well_you_have_them(page, server, data_file):
+    """Tech / keywords are chips: a comma inside brackets stays in one, a click sets how well the user has the skill
+    (kept in the file's private `skills:` list), and a skills line in a subset dims a skill no entry it picks uses."""
+    pg = page
+    v = subset(server)
+    v["entries"] = [e for e in v["entries"] if e != "EXP-002"]       # QuizLoom out: nothing else in it uses Next.js
+    server.req("PUT", "/api/item", {"kind": "subset", "id": "RES-TECH-EN", "data": v, "base": None})
+    open_entry(pg, "EXP-005")
+    chip = "#active .skx-chip:has(.skx-name:text-is('Next.js'))"
+    pg.wait_for_selector(chip + ".off")                              # left out of this resume, still there to show
+    assert pg.locator(chip + " .skx-name").evaluate("n => getComputedStyle(n).textDecorationLine") == "line-through"
+    assert pg.locator(".skx-strip[data-sec=skills]").count() == 1      # the levels and the AI's readings, above the section
+
+    pg.click("#active .skx-input")
+    pg.keyboard.type("Python (NumPy, SciPy), Docker")
+    pg.keyboard.press("Enter")
+    wait_until(lambda: "Python (NumPy, SciPy)" in json.dumps(next(e for e in state(server)["doc"]["entries"] if e["id"] == "EXP-005")["tech"]),
+               msg="the bracketed item saved as one")
+    tech = next(e for e in state(server)["doc"]["entries"] if e["id"] == "EXP-005")["tech"]
+    assert tech[-2:] == ["Python (NumPy, SciPy)", "Docker"]
+
+    pg.click("#active .skx-chip:has(.skx-name:text-is('Docker'))")
+    pg.click(".skx-pop .skx-levels button:text-is('能用')")
+    pg.wait_for_selector("#active .skx-chip:has(.skx-name:text-is('Docker')) .skx-lv:text-is('能用')")
+    assert next(r for r in state(server)["skills"] if r["key"] == "docker")["level"] == "working"
+    assert "level: working" in data_file.read_text(encoding="utf-8")
+
+    pg.click(chip)                                                   # show it on this resume anyway
+    pg.click(".skx-pop button:text-is('仍然显示')")
+    wait_until(lambda: subset(server).get("show_skills") == ["Next.js"], msg="pinned on the subset")
+    pg.wait_for_selector(chip + ":not(.off)")

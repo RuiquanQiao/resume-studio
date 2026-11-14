@@ -19,7 +19,9 @@ def test_partial_update_keeps_comments_and_style(data_file):
     assert after.startswith("# Resume Studio sample data.")          # header comment survives
     assert "subtitle: {en: Founder, zh: 独立开发}" in after            # flow style survives
     changed = [(a, b) for a, b in zip(before.splitlines(), after.splitlines()) if a != b]
-    assert len(changed) == 1                                        # nothing else rewritten
+    # nothing else rewritten (an older file's schema number goes up with its first save)
+    assert [c for c in changed if not c[0].startswith("schema_version:")] == [
+        ("    subtitle: {en: Solo developer, zh: 独立开发}", "    subtitle: {en: Founder, zh: 独立开发}")]
 
 
 def test_stale_base_is_rejected(data_file):
@@ -217,7 +219,7 @@ def test_older_files_call_subsets_versions(tmp_path):
     assert "versions:" in f.read_text(encoding="utf-8")
     st.ensure_file()                                      # at startup the file itself is brought up to date
     text = f.read_text(encoding="utf-8")
-    assert "versions" not in text and "schema_version: 2" in text
+    assert "versions" not in text and f"schema_version: {model.SCHEMA_VERSION}" in text
     assert text.index("# the resumes I send\nsubsets:") < text.index("settings:")   # same place, comments kept
     assert "# mine" in text
     vid, _ = st.create_subset(None, None, "Data")

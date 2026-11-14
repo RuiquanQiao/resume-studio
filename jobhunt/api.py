@@ -21,6 +21,7 @@ from jobs.base import JobTool, ToolError
 from jobs.signups import Signups
 from resume import model
 from resume.langs import LANGS as RESUME_LANGS
+from resume.skills import levels as skill_levels
 from resume.service import Studio
 
 from . import geo as place_list
@@ -146,7 +147,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         cs = hunt.companies()
         names = hashlib.blake2b(json.dumps([[c["id"], c["name"], c.get("nature") or ""] for c in cs], ensure_ascii=False)
                                 .encode(), digest_size=12).hexdigest()
-        return json.dumps([code_key(__name__, "jobhunt.postings", "jobhunt.rank", "jobhunt.natures"), list(posts._sig()),
+        return json.dumps([code_key(__name__, "jobhunt.postings", "jobhunt.rank", "jobhunt.natures", "resume.skills"), list(posts._sig()),
                            stat_key(hunt._file("jds.json")), stat_key(hunt._file("applications.json")),
                            stat_key(studio.store.path), posts.tracks(), names, time.strftime("%Y-%m-%d")],
                           ensure_ascii=False, sort_keys=True)
@@ -162,6 +163,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 from jobs.fit import subset_text
                 have[sid] = subset_text(doc, model.get_item(doc, "subset", sid))
         lex = hunt.lexicon()
+        lv = skill_levels(doc)
         subset_of = {tr["id"]: tr.get("subset") for tr in m["tracks"]}
         apps = {a["id"]: a for a in hunt.applications()}
         for p in m["postings"]:
@@ -175,7 +177,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             best = None
             for tid in p["tracks"]:
                 sid = subset_of.get(tid)
-                f = fit(j["jd"], have[sid], lex) if j.get("jd") and sid in have else None
+                f = fit(j["jd"], have[sid], lex, lv) if j.get("jd") and sid in have else None
                 if f and (best is None or f["score"] > best["score"]):
                     best = {**f, "subset": sid}
             p["fit"] = best
@@ -489,7 +491,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             f = None
             if sub is not None:
                 from jobs.fit import subset_text
-                f = fit(a["jd"], subset_text(doc, sub), hunt.lexicon())
+                f = fit(a["jd"], subset_text(doc, sub), hunt.lexicon(), skill_levels(doc))
             if len(fits) > 2000:
                 fits.clear()
             fits[key] = {"fit": {**f, "subset": sid}} if f else {}

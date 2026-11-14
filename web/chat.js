@@ -1502,7 +1502,7 @@ async function startChatWith(text, { fresh = false, title = "" } = {}) {
 // fresh: sent by a button (not typed in the chat), so it goes to a new chat when Settings says so (aiNewChat)
 // title: the chat's name if this is its first message, for a button's chat (user, 2026-11-08: "星河科技 添加", not the
 // first 28 characters of its prompt); the server names an editor action's chat itself (resume/api.py chat_title)
-async function sendChat(text, { action = null, entryId = null, target = null, lang = null, path = null, files = [], fresh = false, title = "" } = {}) {
+async function sendChat(text, { action = null, entryId = null, target = null, lang = null, path = null, files = [], fresh = false, title = "", all = false } = {}) {
   if (!ui.chat.available) { toast(t("The {cmd} command was not found", { cmd: agentOf().exe })); return false; }
   if (!action && !text.trim() && !files.length) return false;
   if (fresh) await freshChatForButton();
@@ -1522,7 +1522,7 @@ async function sendChat(text, { action = null, entryId = null, target = null, la
   const next = ui.chat.nextTitle;
   const named = title || (next && (next.chat === ui.chat.id || next.chat === null) ? next.title : "");   // null: no chat then
   ui.chat.nextTitle = null;
-  const body = { text, subset_id: ui.subsetId, entry_id: batch ? null : entryId || editing, action, target, lang, path, attachments, screen: screenLine(), title: named };
+  const body = { text, subset_id: ui.subsetId, entry_id: batch ? null : entryId || editing, action, target, lang, path, attachments, screen: screenLine(), title: named, all };
   const queued = ui.chat.running;
   if (named && !queued && !ui.chat.messages.length) nameChatHere(named);   // shown at once; the server keeps the same
   if (!queued) {

@@ -35,32 +35,79 @@ company business product products customer customers best high time least least 
 english chinese japanese korean german french spanish fluent native speaker opportunity opportunities""".split())
 
 
-def fit(jd: str, have: str, lexicon: Any = None) -> dict | None:
-    """{score 0–100, hit[], miss[]}: of the skills the description asks for (jobhunt/skills.py: by rules, in any
-    field, learning from every description read), the ones the resume's text `have` names too. A skill written
-    with more around it counts when its core is there: "Python编程开发" by Python, "深度学习框架" by 深度学习.
-    None when the description names fewer than 3 skills (nothing to compare).
+def _has(text: str, k: str) -> bool:
+    """`k` is in `text` as a word of its own: "java" is not in "javascript", "c" not in "c++"; Han text has no
+    spaces, so a Han term is found anywhere."""
+    if not k:
+        return False
+    if re.search(r"[a-z0-9+#]", k[0] + k[-1]):
+        return re.search(r"(?<![a-z0-9+#])" + re.escape(k) + r"(?![a-z0-9+#])", text) is not None
+    return k in text
+
+
+def fit(jd: str, have: str, lexicon: Any = None, levels: dict | None = None) -> dict | None:
+    """Two numbers for one description, by rules (no AI), and the skills behind each:
+
+    - `score` (resume coverage, 0–100), `hit[]`, `miss[]`: of the skills the description asks for (jobhunt/skills.py:
+      in any field, learning from every description read), the ones the resume's text `have` names. It says whether
+      the resume passes a keyword screen, not whether the user can do the work: a project's `tech` may be code an AI
+      wrote (user, 2026-11-14).
+    - `real` (0–100, None while none of the description's skills is rated): how much of the same ask the user really
+      has, from the skill catalog's levels (resume/skills.py, `levels`: key -> {name, level ''}) whether or not this
+      resume names the skill: strong / working count in full, basic half, none nothing, and a skill the resume doesn't
+      name at all nothing. A skill the resume names without a level is left out of it until rated. `have[]`,
+      `partial[]`, `cant[]` are the skills by level; `unrated[]` the catalog's skills it names that have no level yet.
+
+    A skill written with more around it counts when its core is there: "Python编程开发" by Python, "深度学习框架" by
+    深度学习. None when the description names fewer than 3 skills (nothing to compare).
 
     Until 2026-11-14 the skills were Latin words and a fixed list of IT terms, so a product manager's description
     (用户研究, 竞品分析, Axure) had no skills and no score: the user couldn't tell one 产品经理 from another."""
+    from resume.skills import WEIGHT, key as skill_key
+
     from .skills import _fold, skills_of
     want = skills_of(jd, lexicon, learn=False)
     if len(want) < 3:
         return None
     text = _fold(have)
 
-    def named(term: str) -> bool:
+    def cores(term: str) -> list[str]:
         k = _fold(term)
-        if k in text:
-            return True
-        cores = [w for w in re.findall(r"[a-z][a-z0-9+#.\-]*[a-z0-9+#]", k) if w not in _STOP]
+        out = [k] + [w for w in re.findall(r"[a-z][a-z0-9+#.\-]*[a-z0-9+#]", k) if w not in _STOP and w != k]
         if lexicon is not None:
-            cores += [_fold(name) for _, name in lexicon.find(term) if _fold(name) != k]
-        return any(c in text for c in cores)
+            out += [_fold(name) for _, name in lexicon.find(term) if _fold(name) not in out]
+        return out
 
-    hit = [w for w in want if named(w)]
+    hit = [w for w in want if any(_has(text, c) for c in cores(w))]
     miss = [w for w in want if w not in hit]
-    return {"score": round(100 * len(hit) / len(want)), "hit": hit[:30], "miss": miss[:30]}
+    out = {"score": round(100 * len(hit) / len(want)), "hit": hit[:30], "miss": miss[:30]}
+    if not levels:
+        return {**out, "real": None}
+
+    def level(term: str) -> str | None:
+        """Its level; '' for a skill of the catalog with none yet; None for a word no entry's `tech` names."""
+        found = None
+        for c in cores(term):
+            got = levels.get(skill_key(c))
+            if got and got["level"]:
+                return got["level"]
+            if got:
+                found = ""
+        return found
+
+    by = {w: level(w) for w in want}
+    unrated = [w for w in hit if by[w] == ""]   # skills the user can rate (chips), and hasn't
+    if not any(by.values()):   # none of its skills rated yet: a 0 would say "can't do any of it"
+        return {**out, "real": None, "unrated": unrated[:30]}
+    # out of: the skills rated, and the ones the resume doesn't name at all (nothing says the user has them);
+    # one the resume names without a level isn't known either way, so it is left out until it is rated
+    counted = [w for w in want if by[w] or w not in hit]
+    real = sum(WEIGHT[by[w]] for w in counted if by[w])
+    return {**out, "real": round(100 * real / len(counted)) if counted else None,
+            "have": [w for w, lv in by.items() if lv in ("strong", "working")][:30],
+            "partial": [w for w, lv in by.items() if lv == "basic"][:30],
+            "cant": [w for w, lv in by.items() if lv == "none"][:30],
+            "unrated": unrated[:30]}
 
 
 class Descriptions:
