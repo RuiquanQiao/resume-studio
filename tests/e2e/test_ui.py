@@ -2595,6 +2595,46 @@ def test_settings_show_the_checks_and_apply_on_done(connected, page_all, server,
     wait_until(lambda: "海港城市大学" in (connected / "cv.md").read_text(encoding="utf-8"), msg="cv in Chinese")
 
 
+def test_career_ops_is_an_optional_plugin(connected, page_all, server, data_file):
+    """Its tab is called career-ops (it is career-ops' own interface), and Settings → Plugins turns it off and
+    on like any plugin (2026-11-14): off, its tab, Ctrl+2, its settings and the tracker choice go; on, they're back."""
+    pg = page_all
+    tab = ".ws-btn[data-ws=jobs]"
+    on = lambda: Prefs(data_file.parent / "local").load().get("career_ops", {}).get("on", True)   # noqa: E731
+    try:
+        assert pg.inner_text(f"{tab} .lbl").strip() == "career-ops"
+        open_job_search(pg)
+        pg.click("#settings-btn")
+        row = "#plugins-settings .plugin-row[data-plugin=career-ops] .check-row"
+        assert pg.get_attribute(row, "aria-checked") == "true"
+        assert pg.locator("#plugins-settings .plugin-row").first.get_attribute("data-plugin") == "career-ops"
+        pg.wait_for_selector("#jobs-settings .chk")
+        assert pg.locator("#tracker-settings .seg").count() == 1
+        pg.click(row)
+        assert pg.get_attribute(row, "aria-checked") == "false"
+        assert not pg.is_visible("#jobs-settings") and pg.locator("#tracker-settings .seg").count() == 0
+        assert "false" not in pg.inner_text("#tracker-settings") and "null" not in pg.inner_text("#tracker-settings")
+        assert on() is True                                                    # nothing saved before Done
+        pg.click(".modal .acts .btn.primary")
+        wait_until(lambda: on() is False, msg="turned off")
+        pg.wait_for_selector(tab, state="hidden")
+        pg.wait_for_selector("body[data-ws=resume]")                            # it was on screen: back to Resume
+        pg.keyboard.press("Control+2")
+        assert pg.get_attribute("body", "data-ws") == "resume"
+        pg.reload()
+        pg.wait_for_selector("body[data-ws=resume]")
+        assert not pg.is_visible(tab)                                           # a new window opens without it
+        pg.click("#settings-btn")
+        pg.click(row)
+        assert pg.is_visible("#jobs-settings") is False                         # its details come after Done
+        pg.click(".modal .acts .btn.primary")
+        wait_until(lambda: on() is True, msg="turned on")
+        pg.wait_for_selector(tab, state="visible")
+        open_job_search(pg)
+    finally:
+        server.req("PUT", "/api/jobs/settings", {"on": True})
+
+
 # ---------------------------------------------------------------- the Job search workspace
 def open_job_search(pg):
     pg.click(".ws-btn[data-ws=jobs]")

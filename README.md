@@ -24,8 +24,8 @@ of it as one zip to take elsewhere; the window remembers the file in `.local/pre
 not part of your data and is never exported.
 
 Needs Python 3.10+, `xelatex` (TeX Live / MiKTeX) and a logged-in coding agent for the chat (Claude Code,
-or Codex, Qwen Code, Pi, DeepSeek Harness; see below); Job search
-(career-ops) also needs git and Node.js 22+.
+or Codex, Qwen Code, Pi, DeepSeek Harness; see below); the optional
+career-ops plugin also needs git and Node.js 22+.
 Everything is installed into this folder (`.venv`, `.cache`, `.local/providers`); nothing global.
 The exe is a 16 KB launcher built from `launcher/Launcher.cs` by `scripts/build_launcher.py`
 with the C# compiler that ships with Windows.
@@ -65,7 +65,7 @@ with the C# compiler that ships with Windows.
 - **Safe co-editing**: Claude's edits refresh the form and preview; editing the same item from
   two places raises a conflict instead of overwriting; every save keeps a copy in `resume-studio-data/history`.
 - **Export** PDF + `.tex` to `settings.export_dir`.
-- **Job search (Ctrl+2)**, with [career-ops](https://github.com/santifer/career-ops) (MIT, by santifer):
+- **career-ops (Ctrl+2)**, an optional plugin (on by default; Settings → Plugins turns it off and keeps its data), with [career-ops](https://github.com/santifer/career-ops) (MIT, by santifer):
   - "Evaluate a posting" in its top bar: career-ops evaluates it against your resume (a fit score, what to
     stress, what's missing). A posting's page in Resume (from "Pick a resume" → "Open its page in Resume")
     shows the verdict next to the preview, and "Resume to send" ranks your subsets by how much of the

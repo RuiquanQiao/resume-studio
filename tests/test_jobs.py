@@ -342,6 +342,25 @@ def test_settings_are_this_computers(jobs, data_file, checkout):
     assert "陈亚历" in (checkout / "cv.md").read_text(encoding="utf-8")
 
 
+def test_career_ops_turned_off_is_neither_read_nor_run(jobs, data_file, checkout):
+    """career-ops is an optional plugin (2026-11-14): off, the window gets nothing of it and can't start its
+    interface; its folder and the user's other settings stay; on again, everything is back."""
+    assert jobs.req("GET", "/api/jobs")[1]["status"]["settings"]["on"] is True          # on unless turned off
+    jobs.req("PUT", "/api/jobs/settings", {"cv_lang": "zh"})
+    code, r = jobs.req("PUT", "/api/jobs/settings", {"on": False})
+    assert code == 200 and r["status"]["settings"]["on"] is False
+    code, r = jobs.req("GET", "/api/jobs")
+    assert r["status"]["settings"]["on"] is False and r["applications"] == [] and r["modes"] == []
+    assert r["web"] == {"available": False, "state": "off"}
+    assert jobs.req("POST", "/api/jobs/web/start", {})[0] == 409
+    saved = json.loads((data_file.parent / "local" / "prefs.json").read_text(encoding="utf-8"))["career_ops"]
+    assert saved["on"] is False and saved["cv_lang"] == "zh" and saved["path"] == str(checkout)
+    assert (checkout / "AGENTS.md").is_file()                                          # its folder is untouched
+    code, r = jobs.req("PUT", "/api/jobs/settings", {"on": True})
+    assert r["status"]["settings"]["on"] is True and r["status"]["installed"] is True
+    assert jobs.req("GET", "/api/jobs")[1]["applications"]                             # its evaluations again
+
+
 @needs_node
 def test_update_check_uses_career_ops_own_updater(jobs):
     code, r = jobs.req("GET", "/api/jobs/update")

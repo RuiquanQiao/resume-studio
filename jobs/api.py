@@ -153,6 +153,11 @@ def register(app: App, studio: Studio, chats: ChatRunner, tool: JobTool, *, pick
     # ---- what the tab shows --------------------------------------------------
     @app.route("GET", "/api/jobs")
     def overview(req: Request):
+        s = tool.settings()   # type: ignore[attr-defined]
+        if not s.get("on", True):
+            # turned off in Settings → Plugins: nothing of it is read or run, its folder stays as it is
+            return {"status": {"tool": {"id": tool.id, "name": tool.name}, "installed": tool.installed(), "settings": s},
+                    "applications": [], "states": [], "actions": [], "modes": [], "web": {"available": False, "state": "off"}}
         if tool.installed() and not tool.busy:
             try:
                 sync()   # the tool's copy of the CV follows the library (never over edits made there)
@@ -201,6 +206,8 @@ def register(app: App, studio: Studio, chats: ChatRunner, tool: JobTool, *, pick
         after an update only; the window shows the steps."""
         b = body(req)
         need_installed()
+        if not tool.settings().get("on", True):   # type: ignore[attr-defined]
+            raise HttpError(409, t("{name} is turned off in Settings → Plugins.", name=tool.name))
         if web is None or not tool.has_web():
             raise HttpError(409, t("This version of {name} has no web interface.", name=tool.name))
         start_web(restart=bool(b.get("restart") or b.get("rebuild")), rebuild=bool(b.get("rebuild")))
@@ -383,10 +390,17 @@ def register(app: App, studio: Studio, chats: ChatRunner, tool: JobTool, *, pick
         fields = {}
         if "cv_lang" in b:
             fields["cv_lang"] = str(b["cv_lang"]) if b["cv_lang"] else None
-        for k in ("notes", "sync"):
+        for k in ("notes", "sync", "on"):
             if k in b:
                 fields[k] = bool(b[k])
         tool.save_settings(**fields)   # type: ignore[attr-defined]
+        if fields.get("on") is False:
+            if web is not None:
+                web.stop()   # its interface stops with it; the folder, tracker and reports stay
+            app.bus.publish("jobs", {})
+            return {"status": overview(req)["status"]}
+        if "on" in fields:
+            app.bus.publish("jobs", {})
         if tool.installed():
             sync()
         return {"status": tool.status()}

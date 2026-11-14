@@ -2792,7 +2792,7 @@ function wire() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveDraft(); }
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "j") { e.preventDefault(); setChatPane(!chatShown()); }
     if ((e.ctrlKey || e.metaKey) && e.key === ",") { e.preventDefault(); openSettings(); }
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && ["1", "2", "3", "4"].includes(e.key)) { e.preventDefault(); setWorkspace({ 1: "resume", 2: "jobs", 3: "fill", 4: "plan" }[e.key]); }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && ["1", "2", "3", "4"].includes(e.key) && (e.key !== "2" || jobsOn())) { e.preventDefault(); setWorkspace({ 1: "resume", 2: "jobs", 3: "fill", 4: "plan" }[e.key]); }
     // Ctrl+5…9: the plugins' workspaces, in the top bar's order (web/plugins.js)
     else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && /^[5-9]$/.test(e.key) && pluginsOn()[e.key - 5]) { e.preventDefault(); setWorkspace("p." + pluginsOn()[e.key - 5].id); }
     if (e.key === "Escape" && !Float.cur && ui.layoutOpen) { ui.layoutOpen = false; renderPreviewToolbar(); }

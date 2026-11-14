@@ -555,6 +555,7 @@ function placesEditor(list, change, { single = false } = {}) {
         h("button", { type: "button", class: "bk-chip", onclick: () => set([...cur, { kind, area: p.area, ...(p.id ? { id: p.id } : {}) }]) }, placeName(p))))] : []));
   };
   paint();
+  box.repaint = paint;   // Settings → Plugins turning career-ops on or off changes what it offers
   return wrap;
 }
 
@@ -2312,7 +2313,7 @@ function appPage(v) {
       h("span", { class: "ed-acts" }, status.el,
       h("button", { class: "btn icon ghost", title: t("More"), "aria-label": t("More"), onclick: (e) => openMenu(e.currentTarget, [
         a.url && { label: t("Open the role's page"), icon: "external", onClick: () => openInBrowser(a.url) },
-        a.co_app && { label: t("Its evaluation in {name}", { name: jobsTool().name }), icon: "bolt", onClick: () => openPosting(String(a.co_app)) },
+        a.co_app && jobsReady() && { label: t("Its evaluation in {name}", { name: jobsTool().name }), icon: "bolt", onClick: () => openPosting(String(a.co_app)) },
         { label: t("What the AI changed"), icon: "history", onClick: () => historyModal({ target: a.id, name: `${c.name} / ${a.role}` }) },
         { label: t("Delete this application"), icon: "trash", danger: true, onClick: () => deleteApp(a) }], { align: "end" }) }, icon("more")))),
     bookedCard(a),
@@ -2449,17 +2450,20 @@ function trackerField() {
   const paint = () => {
     const d = H.data || {};
     const v = pendingTracker || d.tracker || "studio";
-    box.replaceChildren(
+    // with career-ops off (Settings → Plugins) there is one tracker, so no choice to show
+    const co = jobsOn() && jobsPending.on !== false;
+    box.replaceChildren(...[   // replaceChildren writes false and null as text: they are dropped first
       h("label", null, t("Applications tracker"), h("span", { class: "hint" }, t("Where the roles you send go; the Applying workspace shows Resume Studio's either way"))),
-      uiSeg([{ value: "studio", label: t("Resume Studio") }, { value: "career-ops", label: name }], v, (x) => { pendingTracker = x; paint(); }, { cls: "sm", label: t("Applications tracker") }),
-      h("p", { class: "settings-note" }, v === "career-ops"
+      !co && h("p", { class: "settings-note" }, t("Resume Studio's own tracker, next to your data file. Turn on {name} under Plugins to send rows to its tracker too.", { name })),
+      co && uiSeg([{ value: "studio", label: t("Resume Studio") }, { value: "career-ops", label: name }], v, (x) => { pendingTracker = x; paint(); }, { cls: "sm", label: t("Applications tracker") }),
+      co && h("p", { class: "settings-note" }, v === "career-ops"
         ? (d.career_ops ? t("Roles you mark as sent also get a row in {name}'s tracker (its pipeline, follow-ups and stats see them).", { name })
           : t("{name} isn't connected yet: roles go into Resume Studio's tracker until it is.", { name }))
         : t("Everything stays in Resume Studio's own tracker, next to your data file. {name} keeps its own rows.", { name })),
       (() => { const on = pendingDaily ?? ((d.scan || {}).daily !== false);
         return h("button", { type: "button", class: "check-row", id: "daily-scan", role: "checkbox", "aria-checked": String(on),
           onclick: () => { pendingDaily = !on; paint(); } }, h("span", { class: "check" + (on ? " on" : "") }),
-        h("span", null, t("Scan the companies' sites once a day, when the window opens"), h("span", { class: "hint" }, t("by their providers and recorded routes; never AI, so a site with no scan route is left out")))); })());
+        h("span", null, t("Scan the companies' sites once a day, when the window opens"), h("span", { class: "hint" }, t("by their providers and recorded routes; never AI, so a site with no scan route is left out")))); })()].filter(Boolean));
   };
   paint();
   if (!H.data) loadHunt({ quiet: true }).then(paint);

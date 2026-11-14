@@ -664,7 +664,7 @@ const chatPlace = (c) => (jobsReady() && c.workspace === (J.data.status.tool || 
 // message so "this company" means the one open (the subset and entry go as they always did)
 function screenLine() {
   if (W.ws === "jobs") {
-    if (!jobsReady()) return t("Job search");
+    if (!jobsReady()) return jobsTool().name;
     const a = webUp() ? webApp() : null;
     return a ? t("{name}'s page for {job}", { name: jobsTool().name, job: [a.company, a.role].filter(Boolean).join(" — ") })
       : t("{name}'s interface", { name: jobsTool().name });

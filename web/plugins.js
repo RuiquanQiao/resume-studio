@@ -437,7 +437,20 @@ function pluginsSettingsField() {
   pendingPlugins = {};
   const box = h("div", { class: "field", id: "plugins-settings" });
   const paint = () => {
-    const rows = PL.list.map((p) => {
+    // career-ops comes first: a plugin with code of its own (jobs.js), its switch saved with its other settings
+    const coOn = jobsPending.on ?? jobsOn();
+    const co = h("div", { class: "plugin-row", "data-plugin": "career-ops" },
+      h("button", { type: "button", class: "check-row", role: "checkbox", "aria-checked": String(coOn),
+        onclick: () => {
+          if (coOn === jobsOn()) jobsPending.on = !coOn; else delete jobsPending.on;
+          paint(); paintJobsSettings();
+          const tb = $("#tracker-settings"); if (tb && tb.repaint) tb.repaint();
+        } },
+        h("span", { class: "check" + (coOn ? " on" : "") }),
+        h("span", null, jobsTool().name,
+          h("span", { class: "hint" }, t("Evaluates job postings, scores how well they fit your resume and keeps a tracker of your applications, in its own interface (a workspace in the top bar). Turning it off keeps its folder, evaluations and tracker.")),
+          h("span", { class: "plugin-meta" }, [t("Comes with Resume Studio"), t("Open source (MIT) by santifer")].join(" · ")))));
+    const rows = [co, ...PL.list.map((p) => {
       if (!p.manifest) return h("div", { class: "plugin-row bad" }, h("span", { class: "fs-status bad" }, icon("alert"), t("{name} doesn't load: {why}", { name: p.id, why: p.error })));
       const m = p.manifest;
       const on = pendingPlugins[p.id] ?? p.on;
@@ -448,9 +461,9 @@ function pluginsSettingsField() {
             h("span", { class: "hint" }, L(m.description)),
             h("span", { class: "plugin-meta" }, [`v${m.version}`, p.source === "bundled" ? t("Comes with Resume Studio") : m.author, p.source === "market" && t("From the plugin market")].filter(Boolean).join(" · ")))),
         p.source === "market" && h("button", { class: "btn sm ghost", onclick: () => uninstallPlugin(p, paint) }, t("Uninstall")));
-    });
+    })];
     box.replaceChildren(
-      h("label", null, t("Plugins"), h("span", { class: "hint" }, t("Other kinds of applying, each a workspace of its own in the top bar: talent programmes, civil service exams, PhDs… Turning one off keeps its records."))),
+      h("label", null, t("Plugins"), h("span", { class: "hint" }, t("Optional workspaces, each with its own place in the top bar: career-ops, talent programmes, civil service exams, PhDs… Turning one off keeps its records."))),
       h("div", { class: "plugin-list" }, rows),
       h("div", { class: "row wrap" }, h("button", { class: "btn sm", id: "plugin-market-open", onclick: () => openMarket(paint) }, icon("download"), t("Browse the plugin market"))));
   };

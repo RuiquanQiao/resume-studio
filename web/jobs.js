@@ -42,7 +42,19 @@ const STEP_NAMES = { download: "Download career-ops", deps: "Install its depende
 const stateName = (id, label) => (STATE_NAMES[id] ? t(STATE_NAMES[id]) : label || id || "—");
 const decisionName = (d) => (DECISIONS[String(d || "").toLowerCase()] ? t(DECISIONS[String(d).toLowerCase()]) : d);
 const jobsTool = () => (J.data && J.data.status && J.data.status.tool) || { name: "career-ops" };
-const jobsReady = () => !!(J.data && J.data.status && J.data.status.installed);
+// career-ops is an optional plugin (Settings → Plugins). Until the server has answered, the last answer this
+// computer saw decides, so a window opened with it off never flashes its tab
+const jobsOn = () => J.data && J.data.status ? ((J.data.status.settings || {}).on !== false) : store("jobs-on") !== "0";
+const jobsReady = () => jobsOn() && !!(J.data && J.data.status && J.data.status.installed);
+
+// its tab in the top bar shows only while it is on; a window on it when it goes off goes back to Resume
+function paintJobsSwitch() {
+  const on = jobsOn();
+  const b = document.querySelector('.ws-btn[data-ws="jobs"]');
+  if (b) b.classList.toggle("hidden", !on);
+  if (!on && W.ws === "jobs") setWorkspace("resume");
+  if (typeof fitWsSwitch === "function") fitWsSwitch();
+}
 
 function scoreTone(score, max = 5) {
   if (score == null) return "none";
@@ -76,6 +88,8 @@ async function loadJobs({ quiet = false } = {}) {
     } finally {
       J.loading = null;
     }
+    if (J.data && J.data.status) store("jobs-on", jobsOn() ? "1" : "0");
+    paintJobsSwitch();
     renderJobs();
     if (ui.sel.kind === "posting") refreshPosting();
     if (ui.sel.kind === "subset") buildEditorKeepDraft();   // the posting link in Job settings
@@ -83,7 +97,7 @@ async function loadJobs({ quiet = false } = {}) {
     renderWsTools();
     if (W.ws === "jobs" && !visibleChats().some((c) => c.id === ui.chat.id)) chatForWorkspace();
     // the tool's interface starts once it is wanted: in Job search, or ahead of time once it was used
-    if (!W.autoStarted && J.data && (W.ws === "jobs" || store("jobs-web-used") === "1")) { W.autoStarted = true; startWeb(); }
+    if (!W.autoStarted && jobsReady() && (W.ws === "jobs" || store("jobs-web-used") === "1")) { W.autoStarted = true; startWeb(); }
   })();
   return J.loading;
 }
@@ -102,7 +116,7 @@ async function refreshPosting() {
 }
 
 async function openPosting(id) {
-  if (!S || (ui.sel.kind === "posting" && ui.sel.id === id)) return;   // S: the resume is still loading
+  if (!S || (ui.sel.kind === "posting" && ui.sel.id === id) || !jobsReady()) return;   // S: the resume is still loading
   J.detail = (J.data && J.data.applications.find((a) => a.id === id)) || { id };
   J.detail = { ...J.detail, loading: true };
   if (W.ws !== "resume") setWorkspace("resume");   // its page sits next to the resume preview
@@ -279,7 +293,7 @@ function jobsMenu(anchor) {
   openMenu(anchor, [
     { label: t("Find new postings"), hint: t("{name} scan", { name: st.tool.name }), icon: "zoomIn", disabled: !ui.chat.available, onClick: () => jobChat("/api/jobs/scan") },
     { label: t("Chat in {name}", { name: st.tool.name }), icon: "chat", disabled: !ui.chat.available, onClick: () => toolChat("") },
-    { label: t("Open Job search"), hint: "Ctrl+2", icon: "briefcase", onClick: () => setWorkspace("jobs") },
+    { label: t("Open {name}", { name: st.tool.name }), hint: "Ctrl+2", icon: "briefcase", onClick: () => setWorkspace("jobs") },
     "sep",
     { label: t("Open the {name} folder", { name: st.tool.name }), icon: "folderOpen", onClick: () => api("POST", "/api/jobs/reveal", {}) },
     { label: t("{name} settings", { name: st.tool.name }), icon: "settings", onClick: () => openSettings("jobs") },
@@ -513,7 +527,7 @@ function actionsCard(a) {
 function postingMenu(anchor, a) {
   openMenu(anchor, [
     a.url && { label: t("Open the posting"), icon: "external", onClick: () => api("POST", "/api/open", { url: a.url }) },
-    webInfo().available && webRoute("application", a.id) && { label: t("Open in Job search"), icon: "briefcase", onClick: () => setWorkspace("jobs", { path: webRoute("application", a.id) }) },
+    webInfo().available && webRoute("application", a.id) && { label: t("Open in {name}", { name: jobsTool().name }), icon: "briefcase", onClick: () => setWorkspace("jobs", { path: webRoute("application", a.id) }) },
     a.report && { label: t("Open the report file"), icon: "file", onClick: () => api("POST", "/api/jobs/reveal", { app: a.id }) },
     { label: t("Refresh"), icon: "refresh", onClick: () => refreshPosting() },
   ], { align: "end" });
@@ -540,7 +554,7 @@ async function tailor(a, subsetId, label = null) {
 // the postings a job is sent to, in Job settings
 function postingLink(v) {
   const ps = [...(v && v.posting ? [v.posting] : []), ...((v && v.postings) || [])];
-  if (!ps.length) return null;
+  if (!ps.length || !jobsOn()) return null;
   const apps = (J.data && J.data.applications) || [];
   return h("div", { class: "posting-link" }, icon("bolt"),
     h("span", { class: "nb-text" }, t("Sent for {n} posting", { n: ps.length }, "Sent for {n} postings"), ": ",
@@ -562,12 +576,16 @@ function jobsSettingsSection() {
 
 function paintJobsSettings(el = $("#jobs-settings")) {
   if (!el || !J.data) return;
+  // its own section only while it is on (and not switched off in this same dialog): Settings → Plugins turns it on
+  const shown = jobsOn() && jobsPending.on !== false;
+  el.classList.toggle("hidden", !shown);
+  if (!shown) { el.replaceChildren(); return; }
   const st = J.data.status;
   const name = st.tool.name;
   const label = h("label", null, t("Job postings: {name}", { name }), h("span", { class: "hint" }, t("Evaluates postings and tracks applications; open source, runs in its own folder")));
   if (!st.installed) {
     el.replaceChildren(label, h("div", { class: "row wrap" }, h("span", { class: "muted" }, t("Not connected")),
-      h("button", { class: "btn sm", onclick: () => { closeSettings(); setWorkspace("jobs"); } }, t("Set it up in Job search"))));
+      h("button", { class: "btn sm", onclick: () => { closeSettings(); setWorkspace("jobs"); } }, t("Set it up in {name}", { name }))));
     return;
   }
   const up = J.update;
@@ -598,7 +616,7 @@ function paintJobsSettings(el = $("#jobs-settings")) {
       h("span", { class: "chk-ic" }, icon(c.ok ? "check" : "x")), h("span", null, t(CHECK_NAMES[c.id] || c.id)), h("span", { class: "chk-d" }, c.detail || "")))),
     h("p", { class: "settings-note" }, t("After every update these are checked again: they are what Resume Studio reads from {name}. If one fails, you can go back to the previous version.", { name })),
     webInfo().available && h("div", { class: "row wrap" },
-      h("span", { class: "muted", style: "font-size:12.5px" }, t("Its web interface (Job search)")),
+      h("span", { class: "muted", style: "font-size:12.5px" }, t("Its web interface")),
       { running: h("span", { class: "badge ok" }, t("Running")), preparing: h("span", { class: "badge busy" }, t("Starting…")),
         starting: h("span", { class: "badge busy" }, t("Starting…")), error: h("span", { class: "badge bad" }, t("Didn't start")) }[webInfo().state]
         || h("span", { class: "badge" }, t("Not started")),
@@ -623,6 +641,13 @@ async function applyJobsSettings() {
   for (const k of Object.keys(jobsPending)) delete jobsPending[k];
   const r = await api("PUT", "/api/jobs/settings", body);
   if (J.data) J.data.status = r.status;
+  if ("on" in body) {   // turned on or off: everything that shows it follows (its tab, the tracker choice, the chat)
+    W.autoStarted = false;
+    await loadJobs({ quiet: true });
+    if (typeof H !== "undefined" && typeof loadHunt === "function") loadHunt({ quiet: true });
+    if (body.on) toast(t("{name} is on: it is in the top bar", { name: jobsTool().name }));
+    return;
+  }
   renderJobs();
 }
 
@@ -729,6 +754,7 @@ function webBase() {
 }
 
 function setWorkspace(ws, { path = null } = {}) {
+  if (ws === "jobs" && !jobsOn()) ws = "resume";   // turned off in Settings → Plugins
   if (ws === "jobs" && path) W.pendingPath = path;
   W.ws = ws;
   document.body.dataset.ws = isPluginWs(ws) ? "plugin" : ws;   // a plugin's workspace: "p.<id>" (web/plugins.js)
@@ -1034,6 +1060,7 @@ function initWorkspaces() {
   F.tab = store("fill-tab") === "push" ? "push" : "copy";
   restoreHunt();
   restorePw();
+  paintJobsSwitch();
   paintPluginButtons();   // the plugins are loaded by now (app.js main)
   const last = store("ws");
   setWorkspace(["jobs", "fill", "plan"].includes(last) || wsPlugin(last) ? last : "resume");

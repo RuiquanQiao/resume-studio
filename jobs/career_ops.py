@@ -266,8 +266,11 @@ class CareerOps(JobTool):
     def settings(self) -> dict:
         s = self.prefs.load().get("career_ops")
         s = s if isinstance(s, dict) else {}
+        # on: career-ops is an optional plugin of the window (Settings → Plugins); off hides its workspace and
+        # leaves its folder and tracker as they are
         return {"path": s.get("path") or None, "cv_lang": s.get("cv_lang") or None,
-                "notes": s.get("notes", True) is not False, "sync": s.get("sync", True) is not False}
+                "notes": s.get("notes", True) is not False, "sync": s.get("sync", True) is not False,
+                "on": s.get("on", True) is not False}
 
     def save_settings(self, **fields: Any) -> dict:
         cur = {k: v for k, v in self.settings().items() if v is not None}
@@ -946,8 +949,8 @@ class CareerOps(JobTool):
             "# Resume Studio · career-ops",
             "",
             "The user is talking to you from the Resume Studio window (a resume editor built on Claude Code),",
-            "not from a terminal. The window shows career-ops' own web interface (its web/ app) in its Job search",
-            "workspace, with this chat beside it, and its evaluations in an Applications tab next to the resume.",
+            "not from a terminal. The window shows career-ops' own web interface (its web/ app) in its career-ops",
+            "workspace (an optional plugin of the window), with this chat beside it; a posting's page opens next to the resume.",
             "",
             "- This folder is career-ops: follow its AGENTS.md and modes as usual.",
             f"- `cv.md` and `article-digest.md` are written by Resume Studio from the user's resume library",

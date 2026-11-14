@@ -205,6 +205,10 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         """Every picked place: {id: {name, detail, lat, lon}}, in the interface's language."""
         return geo.places(every_place() if places is None else places)
 
+    def co_on() -> bool:
+        """career-ops is installed and turned on (Settings → Plugins): only then does it get rows."""
+        return tool.installed() and (getattr(tool, "settings", dict)() or {}).get("on", True) is not False
+
     def tracker() -> str:
         v = (prefs.load() or {}).get("tracker")
         return v if v in TRACKERS else "studio"
@@ -512,7 +516,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
 
     # ---- sending: the subset is kept as a version and pinned; career-ops gets the rows if it is the tracker ----
     def copy_to_tracker(apps: list[dict], c: dict, label: str, n: int) -> int:
-        if tracker() != "career-ops" or not tool.installed():
+        if tracker() != "career-ops" or not co_on():
             return 0
         new = [a for a in apps if not a.get("co_app")]
         if not new:
@@ -580,7 +584,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             c["postings"]["tried"] = st["tried"]
         sc = scans
         places = every_place(tb)
-        return {**tb, "platforms": platforms(), "tracker": tracker(), "career_ops": tool.installed(),
+        return {**tb, "platforms": platforms(), "tracker": tracker(), "career_ops": co_on(),
                 "scan": {"keywords": sc["keywords"], "tracks": sc["tracks"], "daily": sc["daily"], "last_all": sc["last_all"],
                          "running": dict(scanner.running), "providers": scanner.providers_ready(),
                          "last_run": scanner.last_run, "queued": list(scanner.queue), "reading": descs.status(),

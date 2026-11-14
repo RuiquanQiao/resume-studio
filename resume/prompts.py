@@ -34,7 +34,7 @@ def ui_context(data_path: str, subset: dict | None, entry: dict | None, project_
         "",
         "The user is talking to you from the Resume Studio window (a resume editor built on Claude Code),",
         "not from a terminal. The same chat sits beside all three of its workspaces: Resume (the experience",
-        "library as a document, and a live PDF preview), Job search (career-ops' own interface) and Applying",
+        "library as a document, and a live PDF preview), career-ops (its own interface; an optional plugin, on by default) and Applying",
         "(the applications, companies and platforms tables, and the browser Resume Studio drives).",
         "",
         f"- Resume data file: `{data_path}`. The window watches it: after you edit it, the form and preview",
