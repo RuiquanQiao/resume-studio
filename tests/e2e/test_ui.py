@@ -2887,6 +2887,46 @@ def open_platform(pg, sid="linkedin"):
     pg.wait_for_selector(f".fs-site.on[data-site='{sid}']")
 
 
+def test_the_platforms_table_shows_each_platforms_logo(page_all, server):
+    """Like the Companies table (user, 2026-11-15): the logo found on the platform's site sits before its name,
+    the row with none keeps the empty slot so the names line up, and a logo found later shows without a reload."""
+    pg = page_all
+    import struct
+    import zlib
+
+    def png(side):
+        def chunk(kind, body):
+            return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+        rows = b"".join(b"\x00" + b"\x0a\x66\xc2" * side for _ in range(side))
+        return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", side, side, 8, 2, 0, 0, 0))
+                + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+    hunt = server.inst.hunt
+    hunt.find_platform_logo = lambda sites, app, check: (png(64), "image/png", sites[0]) if "linkedin" in sites[0] else None
+    pg.keyboard.press("Control+3")
+    pg.click(".hunt-tab[data-tab=platforms]")
+    pg.wait_for_selector(".dbv-view[data-table=platforms] tr[data-id='boss']")
+    hunt.want_platform_logos()
+    pg.wait_for_selector(".dbv-view[data-table=platforms] tr[data-id='linkedin'] .co-logo img")
+    m = pg.evaluate("""() => {
+      const row = (id) => document.querySelector(`.dbv-view[data-table=platforms] tr[data-id='${id}']`);
+      const box = (el) => el.getBoundingClientRect();
+      const li = row('linkedin'), bo = row('boss');
+      const img = li.querySelector('.co-logo img');
+      return { liLogo: box(li.querySelector('.co-logo')), boLogo: bo.querySelector('.co-logo') && box(bo.querySelector('.co-logo')),
+               boImg: !!bo.querySelector('.co-logo img'), loaded: img.complete && img.naturalWidth > 0,
+               liName: box(li.querySelector('.c-main-name')).left, boName: box(bo.querySelector('.c-main-name')).left,
+               cell: box(li.querySelector('.co-name').closest('td')), name: box(li.querySelector('.co-name')) };
+    }""")
+    assert m["loaded"] and m["liLogo"]["width"] >= 20 and m["liLogo"]["height"] >= 20
+    assert m["boLogo"] and not m["boImg"]                       # nothing found: an empty slot, never a stand-in
+    assert abs(m["liName"] - m["boName"]) < 1                    # the names line up
+    assert m["name"]["right"] <= m["cell"]["right"] + 0.5 and m["liLogo"]["top"] >= m["cell"]["top"]
+    for scheme in ("light", "dark"):
+        pg.emulate_media(color_scheme=scheme)
+        pg.screenshot(path=str(ART / f"platforms-logos-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+
+
 def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, monkeypatch):
     pg = page_all
     server.inst.browser.headless, server.inst.browser.pace = True, 0
@@ -3014,6 +3054,17 @@ def test_autofill_sites_are_the_users_to_pick(page_all, server):
     pg.fill("#site-name", "SEEK")
     pg.fill("#site-home", "www.seek.com.au/profile/me")
     pg.fill("#site-notes", "Career history is under Profile.")
+    # the resume language toggle shows the pick at once (it used to keep showing the first language)
+    seg = ".site-dialog .seg"
+    assert pg.locator(f"{seg} button").count() >= 2, "the file has more than one resume language"
+    first, second = (b.get_attribute("data-value") for b in pg.locator(f"{seg} button").all()[:2])
+    pg.click(f"{seg} button[data-value='{second}']")
+    assert pg.get_attribute(f"{seg} button[data-value='{second}']", "aria-checked") == "true"
+    assert "on" in pg.get_attribute(f"{seg} button[data-value='{second}']", "class")
+    assert pg.get_attribute(f"{seg} button[data-value='{first}']", "aria-checked") == "false"
+    pg.click(f"{seg} button[data-value='{first}']")                # and back again
+    assert pg.get_attribute(f"{seg} button[data-value='{first}']", "aria-checked") == "true"
+    pg.click(f"{seg} button[data-value='{second}']")
     for scheme in ("light", "dark"):
         pg.emulate_media(color_scheme=scheme)
         pg.screenshot(path=str(ART / f"autofill-add-site-{scheme}.png"))
@@ -3025,6 +3076,7 @@ def test_autofill_sites_are_the_users_to_pick(page_all, server):
     sites = server.req("GET", "/api/autofill")[1]["sites"]
     assert [s["id"] for s in sites] == ["linkedin", "boss", "seek"] and sites[2]["home"] == "https://www.seek.com.au/profile/me"
     assert sites[2]["notes"] == "Career history is under Profile."
+    assert sites[2]["lang"] == second
 
     # its settings: rename, move it first
     pg.click("#fill-site-settings")

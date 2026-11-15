@@ -762,6 +762,84 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         app.bus.publish("hunt", {"views": True})
         return tb
 
+    # ---- a job platform's logo: its own site's icon, found by itself like a company's (user, 2026-11-15) ----
+    # Kept in the cache folder (it can always be found again), as <site>.<ext> with <site>.src naming the
+    # address it came from: a site whose address changes gets the new site's logo.
+    plat_dir = studio.store.cache_dir / "platform-logos"
+    plat_tried: set[tuple[str, str]] = set()   # (site, address) already looked at this run
+    plat_lock = threading.Lock()
+
+    def platform_logo(sid: str, home: str | None = None) -> Path | None:
+        if not re.fullmatch(r"[\w.-]+", sid or ""):
+            return None
+        for p in plat_dir.glob(f"{sid}.*"):
+            if p.suffix[1:] in LOGO_TYPES.values():
+                if home is not None:
+                    try:
+                        if (plat_dir / f"{sid}.src").read_text(encoding="utf-8") != home:
+                            return None
+                    except OSError:
+                        return None
+                return p
+        return None
+
+    def platform_logo_url(sid: str, home: str) -> str:
+        p = platform_logo(sid, home)
+        if p is None:
+            return ""
+        try:
+            st = p.stat()
+        except OSError:
+            return ""
+        return f"/api/hunt/platform-logos/{sid}?v={st.st_mtime_ns}-{st.st_size}"
+
+    def want_platform_logos(wait: bool = False) -> None:
+        if hunt.find_platform_logo is None:
+            return
+
+        def run() -> None:
+            if wait:   # at startup: the window looks at a logo before it is kept (inspect)
+                until = time.monotonic() + hunt.logo_wait
+                while time.monotonic() < until and not app.bus.listeners():
+                    time.sleep(0.1)
+            for s in platforms():
+                sid, home = str(s.get("id") or ""), str(s.get("home") or "")
+                if not sid or not home or platform_logo(sid, home) is not None:
+                    continue
+                with plat_lock:
+                    if (sid, home) in plat_tried:
+                        continue
+                    plat_tried.add((sid, home))
+                got = hunt.find_platform_logo([home], str(s.get("app_store") or ""),
+                                              lambda data, ctype: logos.verdict(inspect(data, ctype), data, ctype))
+                if not got:
+                    continue
+                data, ctype, _src = got
+                plat_dir.mkdir(parents=True, exist_ok=True)
+                for old in plat_dir.glob(f"{sid}.*"):
+                    try:
+                        old.unlink()
+                    except OSError:
+                        pass
+                (plat_dir / f"{sid}.{LOGO_TYPES[ctype]}").write_bytes(data)
+                (plat_dir / f"{sid}.src").write_text(home, encoding="utf-8")
+                app.bus.publish("autofill", {"site": None})   # the window fetches the sites again
+        threading.Thread(target=run, name="platform-logos", daemon=True).start()
+
+    # its own site first; a site that shows a script a sign-in check, or only a 16 px icon, has its app's icon
+    hunt.find_platform_logo = (lambda sites, app, check: logos.from_sites(sites, types=LOGO_TYPES, check=check, vendors_too=True)
+                               or logos.from_app_store(app, types=LOGO_TYPES, check=check)) \
+        if os.environ.get("STUDIO_LOGOS") != "off" else None
+    hunt.platform_logo_url = platform_logo_url
+    hunt.want_platform_logos = want_platform_logos
+
+    @app.route("GET", "/api/hunt/platform-logos/{sid}")
+    def platform_logo_file(req: Request):
+        path = platform_logo(req.params["sid"])
+        if path is None:
+            raise HttpError(404, "no logo")
+        return FileResponse(path)
+
     @app.route("GET", "/api/hunt/logos/{cid}")
     def logo(req: Request):
         path = guard(lambda: hunt.logo_path(req.params["cid"]))

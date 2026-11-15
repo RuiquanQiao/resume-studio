@@ -176,6 +176,76 @@ def test_a_company_with_a_site_gets_its_logo_by_itself(live, data_file):
     assert looked == [["https://careers.xinghe.example/campus"], ["https://nothing.example.com"]]
 
 
+def test_a_platform_gets_its_own_sites_logo(live):
+    """The Platforms table shows each platform's logo like the Companies table (user, 2026-11-15). A platform's
+    icon is its own even on a hiring-platform host (LinkedIn, BOSS直聘), which companies skip."""
+    hunt = live.inst.hunt
+    looked = []
+
+    apps = []
+
+    def finder(sites, app, check):
+        looked.append(sites[0])
+        apps.append(app)
+        return None if "nothing" in sites[0] else (PNG, "image/png", sites[0] + "/favicon.ico")
+
+    hunt.find_platform_logo = finder
+
+    def urls():
+        return {s["id"]: s["logo_url"] for s in live.req("GET", "/api/autofill")[1]["sites"]}
+
+    def wait(cond):
+        for _ in range(100):
+            u = urls()
+            if cond(u):
+                return u
+            time.sleep(0.05)
+        return urls()
+
+    assert not any(urls().values())
+    hunt.want_platform_logos()
+    u = wait(lambda u: u.get("linkedin") and u.get("boss"))
+    assert u["linkedin"].startswith("/api/hunt/platform-logos/linkedin?v=")
+    code, raw = live.req("GET", u["linkedin"].lstrip("/"))
+    assert code == 200 and raw == PNG
+    assert sorted(apps) == ["", "cn:887314963"]     # BOSS直聘 says where its app is: its site only shows a 16 px icon
+    # a site added by its address gets one too; a second pass doesn't look again
+    live.req("POST", "/api/autofill/sites", {"name": "SEEK", "home": "https://www.seek.com.au/profile/me"})
+    u = wait(lambda u: u.get("seek"))
+    assert u["seek"] and looked.count("https://www.seek.com.au/profile/me") == 1
+    hunt.want_platform_logos()
+    time.sleep(0.3)
+    assert len(looked) == 3
+    # a new address: the old site's logo goes, the new site's is looked for
+    live.req("PUT", "/api/autofill/seek/settings", {"home": "https://nothing.example.com"})
+    u = wait(lambda u: "https://nothing.example.com" in looked and not u.get("seek"))
+    assert u["seek"] == "" and u["linkedin"]
+    assert live.req("GET", "api/hunt/platform-logos/..%2Fx")[0] == 404
+
+
+def test_platform_logos_skip_vendor_check_only_when_asked():
+    pages = {"https://www.linkedin.com/in/me": ("https://www.linkedin.com/in/me", "<html>")}
+    download = lambda u: (PNG, "image/png")   # noqa: E731
+    assert logos.from_sites(["https://www.linkedin.com/in/me"], page=lambda u: pages[u], download=download, types=LOGO_TYPES) is None
+    got = logos.from_sites(["https://www.linkedin.com/in/me"], page=lambda u: pages[u], download=download, types=LOGO_TYPES, vendors_too=True)
+    assert got[2] == "https://www.linkedin.com/favicon.ico"
+
+
+def test_a_platforms_logo_can_come_from_its_app():
+    art = "https://is1-ssl.mzstatic.com/image/thumb/x/AppIcon.png/512x512bb.jpg"
+    asked = []
+
+    def lookup(u):
+        asked.append(u)
+        return {"results": [{"artworkUrl512": art}]}
+
+    got = logos.from_app_store("cn:887314963", lookup=lookup, download=lambda u: (PNG, "image/png"), types=LOGO_TYPES)
+    assert got == (PNG, "image/png", art) and asked == ["https://itunes.apple.com/lookup?id=887314963&country=cn"]
+    assert logos.from_app_store("", lookup=lookup) is None and logos.from_app_store("cn:1&x=2", lookup=lookup) is None
+    assert logos.from_app_store("cn:1", lookup=lambda u: {"results": []}) is None          # no such app
+    assert logos.from_app_store("cn:1", lookup=lookup, download=lambda u: (TINY, "image/png"), types=LOGO_TYPES) is None
+
+
 def test_the_startup_logo_pass_reads_the_companies_once(live):
     """It read the whole companies file once per company: with 226 companies that was 4 s of Python holding the
     window's start (2026-11-11). Now one read picks the companies without a logo, and only those are read again."""

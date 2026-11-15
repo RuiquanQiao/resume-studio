@@ -230,6 +230,12 @@ All three were built on 2026-10-18. Choices made on the way:
   their icon is the vendor's. The logo's source is recorded, and Claude's `logo_url` or the user's own logo
   still replaces it. **A company without a logo shows no logo**, never an invented letter: the table keeps an
   empty slot so the names line up.
+- *Built (2026-11-15):* **the Platforms table shows each platform's logo** the same way. The same finder reads the
+  platform's own address (hiring-platform hosts are not skipped here: LinkedIn's icon is LinkedIn's), and the
+  window looks at it before it is kept. A site that shows a script only a sign-in check or a 16 px icon (BOSS直聘)
+  has its App Store app named in its preset (`app_store: "cn:<id>"`, the id stays when the picture's address
+  changes), and the app's icon is used. Kept in the cache folder (`platform-logos/`, it can always be found
+  again) with the address it came from: changing a platform's address drops the old logo and looks for the new one.
 - *Fixed (2026-10-22):* **a logo changed from outside shows without a restart.** The panel's Claude drew an SVG
   "logo" and then wrote an official PNG next to it with its own script, around `hunt.py`: the record still named
   the SVG, and the picture's address was versioned by the record's `updated`, so the window kept its cached copy

@@ -161,18 +161,47 @@ def verdict(stats: dict | None, data: bytes = b"", ctype: str = "") -> str:
     return ""
 
 
+def _lookup(url: str) -> dict:
+    import json
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read(400_000).decode("utf-8", "ignore"))
+
+
+def from_app_store(app: str, *, lookup=_lookup, download=fetch_logo, types: dict | None = None,
+                   check=None) -> tuple[bytes, str, str] | None:
+    """A platform's own app icon on the App Store, by its "<country>:<id>" (autofill/sites.py `app_store`):
+    (data, content type, where it came from), or None."""
+    country, _, app_id = (app or "").partition(":")
+    if not (country.isalpha() and app_id.isdigit()):
+        return None
+    try:
+        res = (lookup(f"https://itunes.apple.com/lookup?id={app_id}&country={country}").get("results") or [{}])[0]
+        u = str(res.get("artworkUrl512") or res.get("artworkUrl100") or "")
+        if not u:
+            return None
+        data, ctype = download(u)
+    except (urllib.error.URLError, OSError, ValueError, IndexError, AttributeError):
+        return None
+    ctype = ctype.split(";")[0].strip().lower()
+    if data and (types is None or ctype in types) and not (check or (lambda d, c: verdict(None, d, c)))(data, ctype):
+        return data, ctype, u
+    return None
+
+
 def from_sites(sites: list[str], *, page=_page, download=fetch_logo, types: dict | None = None,
-               check=None) -> tuple[bytes, str, str] | None:
+               check=None, vendors_too: bool = False) -> tuple[bytes, str, str] | None:
     """The first logo found on a company's own sites: (data, content type, where it came from), or None.
-    `check(data, ctype)` says why a picture won't do ("" = fine): blank and tiny icons are passed over."""
+    `check(data, ctype)` says why a picture won't do ("" = fine): blank and tiny icons are passed over.
+    `vendors_too`: a job platform's own logo (LinkedIn's icon is LinkedIn's), so its hosts aren't skipped."""
     for site in sites:
-        if not site or is_vendor(site):
+        if not site or (not vendors_too and is_vendor(site)):
             continue
         try:
             final, html = page(site)
         except (urllib.error.URLError, OSError, ValueError):
             final, html = site, ""
-        if is_vendor(final):
+        if not vendors_too and is_vendor(final):
             continue
         for u in candidates(final, html):
             try:

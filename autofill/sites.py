@@ -46,6 +46,9 @@ class Site:
     company: str = ""                # kind "company": the company (jobhunt) whose careers site it is
     system: str = ""                 # kind "company": the recruiting system its site runs on (北森, Moka…), when known
     learned_from: str = ""           # its sections and limits came from this site, on the same system
+    # its app on the App Store, "<country>:<id>": where its logo comes from when the site shows a script only a
+    # sign-in check or a 16 px icon (BOSS直聘, 2026-11-15). The id stays; the picture's address changes with each version.
+    app_store: str = ""
 
     def fields(self, section: str) -> list[str]:
         return [f for f in FIELDS[section] if f not in self.lacks.get(section, [])]
@@ -54,7 +57,7 @@ class Site:
         return {"id": self.id, "name": self.name, "home": self.home, "lang": self.lang, "sections": self.sections,
                 "basics": self.basics, "limits": self.limits, "preset": self.preset, "notes": self.notes,
                 "learned": self.learned, "kind": self.kind, "company": self.company, "system": self.system,
-                "learned_from": self.learned_from,
+                "learned_from": self.learned_from, "app_store": self.app_store,
                 "fields": {s: self.fields(s) for s in self.sections if s in FIELDS}}
 
     def owns(self, url: str) -> bool:
@@ -93,7 +96,7 @@ PRESETS: dict[str, Site] = {
     "boss": Site(
         id="boss", name="BOSS直聘", preset="boss", home="https://www.zhipin.com/", domains=["zhipin.com"], lang="zh",
         sections=["experience", "projects", "education"], basics=["about"],
-        login_paths=["/web/user"],
+        login_paths=["/web/user"], app_store="cn:887314963",
         guide="""\
 - The editable online resume (在线简历 / 我的简历) is reached from the signed-in job seeker's menu
   (avatar or 个人中心 → 我的简历 / 在线简历). Find it from the home page and remember its address

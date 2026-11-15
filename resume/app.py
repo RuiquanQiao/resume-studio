@@ -391,6 +391,9 @@ def _load(inst: Instance, app: App, data_path: str | Path, watch_interval: float
                                   browser=inst.browser)
     hunt_store = inst.hunt
     fill.companies = lambda: {c["id"]: c for c in hunt_store.companies()}
+    fill.logo_url = hunt_store.platform_logo_url
+    fill.want_logos = hunt_store.want_platform_logos
+    hunt_store.want_platform_logos(wait=True)   # the platforms already on the list
     inst.fill = fill
 
     # ---- the plan: one document Claude helps the user write, with its versions (docs/PLAN.md) ----

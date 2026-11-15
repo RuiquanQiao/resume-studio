@@ -133,6 +133,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
                 raise HttpError(400, t("First give the address where you sign up on its careers site."))
             raise bad_home(e)
         publish(site.id)
+        fill.want_logos()
         return {"site": site.public(), "sites": fill.summary(), "presets": fill.presets()}
 
     @app.route("PUT", "/api/autofill/{site}/settings")
@@ -145,6 +146,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         except ValueError as e:
             raise bad_home(e)
         publish(site.id)
+        fill.want_logos()   # a new address: the logo follows it
         return {"sites": fill.summary(), "presets": fill.presets()}
 
     @app.route("DELETE", "/api/autofill/{site}")

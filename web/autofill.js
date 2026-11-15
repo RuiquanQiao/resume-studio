@@ -200,6 +200,7 @@ function listenFill(es) {
       F.sites = r.sites; F.presets = r.presets;
       // the list itself changed (here or in another window): the page follows it
       if (had !== F.sites.map((s) => s.id).join() || !F.sites.some((s) => s.id === F.site)) fillSitesChanged();
+      else if (W.ws === "fill" && H.tab === "platforms" && !H.page) paintHunt();   // the table: a logo found, a check done
       else if (W.ws === "fill") paintFillSites();
     }).catch(() => {});
   });

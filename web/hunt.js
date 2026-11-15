@@ -1678,7 +1678,8 @@ function platformsTable() {
   const nApps = (s) => apps.filter((a) => a.channel === "platform" && a.platform === s.id).length;
   const props = [
     { key: "name", label: t("Platform"), type: "title", width: 200, get: (s) => s.name,
-      render: (s) => h("span", { class: "co-text" }, h("span", { class: "c-main-name" }, s.name), h("span", { class: "c-alias" }, host(s))) },
+      render: (s) => h("span", { class: "co-name" }, companyLogo(s, "", true),
+        h("span", { class: "co-text" }, h("span", { class: "c-main-name" }, s.name), h("span", { class: "c-alias" }, host(s)))) },
     { key: "profile", label: t("Your profile there"), type: "custom", width: 180, group: true, get: (s) => PROFILE[profile(s)],
       render: (s) => s.check_error ? h("span", { class: "fs-status bad", title: s.check_error }, icon("alert"), PROFILE.failed)
         : h("span", { class: "c-muted" }, !s.synced_at ? t("Not read yet") : s.conflicts ? t("{n} conflict", { n: s.conflicts }, "{n} conflicts")

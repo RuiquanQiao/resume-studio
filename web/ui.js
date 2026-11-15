@@ -685,11 +685,19 @@ function uiSelect(o) {
 }
 
 // ---- segmented control: [{value, label, tip}] ----
+// The control shows the pick itself the moment it is clicked, so a caller that only records the value
+// (a dialog waiting for Done) needs no repaint; callers that repaint simply replace it.
 function uiSeg(options, value, onChange, { cls = "", disabled = false, label = "" } = {}) {
-  return h("div", { class: "seg " + cls, role: "radiogroup", "aria-label": label },
-    options.map((x) => h("button", { type: "button", role: "radio", "aria-checked": String(x.value === value),
-      class: x.value === value ? "on" : "", disabled, title: x.tip, "data-value": x.value,
-      onclick: () => { if (x.value !== value) onChange(x.value); } }, x.label)));
+  let cur = value;
+  const btns = options.map((x) => h("button", { type: "button", role: "radio", "aria-checked": String(x.value === cur),
+    class: x.value === cur ? "on" : "", disabled, title: x.tip, "data-value": x.value,
+    onclick: () => {
+      if (x.value === cur) return;
+      cur = x.value;
+      for (const b of btns) { const on = b.dataset.value === String(cur); b.classList.toggle("on", on); b.setAttribute("aria-checked", String(on)); }
+      onChange(x.value);
+    } }, x.label));
+  return h("div", { class: "seg " + cls, role: "radiogroup", "aria-label": label }, btns);
 }
 
 // ================================================================ colour picker

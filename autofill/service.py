@@ -30,6 +30,10 @@ class Autofill:
         # the tracker's companies (jobhunt), id -> company: a company's 网申 profile takes its name, address, system
         # and subset from there. Set by the app once the tracker exists; none until then.
         self.companies: Callable[[], dict[str, dict]] = lambda: {}
+        # a platform's logo (jobhunt keeps them): its address for the window, "" for none; and a call that looks for
+        # the logos still missing, made when a site is added or its address changes. Set by the app like `companies`.
+        self.logo_url: Callable[[str, str], str] = lambda site_id, home: ""   # (site, its address now)
+        self.want_logos: Callable[[], None] = lambda: None
 
     def _path(self, site_id: str) -> Path:
         return self.root / f"{site_id}.json"
@@ -360,7 +364,8 @@ class Autofill:
             pend = [p for p in self.pending(site, st) if p["checked"]] if st.get("base") or st.get("current") else None
             out.append({**site.public(), "synced_at": st.get("synced_at") or st.get("read_at"), "signed_out": bool(st.get("signed_out")),
                         "changes": len(pend) if pend is not None else None, "conflicts": len(st.get("conflicts") or {}),
-                        "check_error": (st.get("last_check") or {}).get("error") or ""})
+                        "check_error": (st.get("last_check") or {}).get("error") or "",
+                        "logo_url": "" if site.kind == "company" else self.logo_url(site.id, site.home)})
         return out
 
     # ---- a fresh read of the site comes in (by the route, or from Claude) ---------------
