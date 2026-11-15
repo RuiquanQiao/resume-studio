@@ -654,9 +654,18 @@ def test_polish_shows_diff_and_undo_restores(page, server, data_file, fake_claud
     page.click("#polish-box button")
     page.wait_for_selector(".msg-user:has-text('QuizLoom')")
     page.wait_for_selector(".card.diff h3:text('AI 已修改此条')", timeout=15000)
-    assert "Solo developer (polished)" in page.inner_text(".card.diff")
-    page.click(".card.diff button:text('撤销，恢复到改动前')")
+    # shown like `git diff`: − the old line, + the new one, never "Before / After" words (2026-11-15)
+    assert "Solo developer" in page.inner_text(".card.diff .ai-change .dl-del")
+    assert "Solo developer (polished)" in page.inner_text(".card.diff .ai-change .dl-add")
+    assert "修改前" not in page.inner_text(".card.diff") and not page.query_selector(".ai-change-side")
+    # and under the reply, every entry it changed with its +/− lines, kept or undone right there
+    page.wait_for_selector("#chat-log .rv-box .rv-row[data-id='EXP-002']")
+    assert "已修改 1 条经历" in page.inner_text("#chat-log .rv-head")
+    assert page.inner_text("#chat-log .rv-row .rv-add") == "+1" and page.inner_text("#chat-log .rv-row .rv-del") == "−1"
+    page.click("#chat-log .rv-row button[aria-label^='撤销']")
     wait_until(lambda: "Solo developer (polished)" not in data_file.read_text(encoding="utf-8"), msg="undo applied")
+    page.wait_for_selector("#chat-log .rv-box", state="detached")
+    page.wait_for_selector(".card.diff h3:text('AI 已修改此条')", state="detached")
     assert "subtitle: {en: Solo developer, zh: 独立开发}" in data_file.read_text(encoding="utf-8")
     assert original.splitlines()[0] == data_file.read_text(encoding="utf-8").splitlines()[0]
 
@@ -1019,11 +1028,27 @@ def test_line_chips_and_issue_strip(page, server):
     # the second sample bullet fills 68% of its line: under 70% it is flagged short (user, 2026-11-15)
     assert chips == ["1 行", "过短", "2 行"]
     assert "过短" in page.locator("#bullets .line-chip.short").inner_text()
-    assert "1 条要点超过一行" in page.inner_text("#bullet-notes") and "1 条要点不足一行的 70%" in page.inner_text("#bullet-notes")
-    assert "让 AI 调整为满一行" in page.inner_text("#bullet-notes")
+    assert "1 条要点过长（超过 100%）" in page.inner_text("#bullet-notes") and "1 条要点过短（不足 70%）" in page.inner_text("#bullet-notes")
+    assert "让 AI 调整长度" in page.inner_text("#bullet-notes")
     page.click("#issues .issue.warn")                                         # the strip lists it, and jumps there
     page.click(".float .menu-item:has-text('第 3 条')")
     wait_until(lambda: page.evaluate("document.activeElement.dataset.bullet") == "2", msg="focused the long bullet")
+    # the range is the user's, under Layout (2026-11-15): someone who accepts two lines sets 60-150%, and the two
+    # bullets flagged above are in range then, with nothing to fix; the strip's menu leads there
+    page.click("#issues .issue.warn")
+    page.click(".float .menu-item:has-text('修改范围')")
+    page.wait_for_selector("#layout-panel:not(.hidden) #ctl-bullet_max")
+    for key, val in (("bullet_min", "60"), ("bullet_max", "150")):
+        page.fill(f"#ctl-{key}", val)
+        page.press(f"#ctl-{key}", "Enter")
+        page.locator(f"#ctl-{key}").blur()
+    wait_until(lambda: subset(server)["layout"].get("bullet_max") == 150 and subset(server)["layout"].get("bullet_min") == 60, msg="range saved")
+    page.wait_for_function("() => !document.querySelector('#bullets .line-chip.long, #bullets .line-chip.short')")
+    assert page.locator("#bullets .line-chip").all_inner_texts() == ["1 行", "1 行", "2 行"]
+    assert not page.query_selector("#issues .issue.warn") and "过长" not in page.inner_text("#bullet-notes")
+    page.click("#layout-panel [data-reset='bullet_min,bullet_max']")             # back to 70-100%
+    page.wait_for_selector("#bullets .line-chip.long")
+    assert "bullet_max" not in subset(server)["layout"]
 
 
 @needs_tex
@@ -2047,14 +2072,23 @@ def test_a_companys_wangshen_profile_is_copied_from_its_page_and_comes_back_afte
     pg.wait_for_selector(".dbv-view[data-table=platforms] tbody tr")
     row = pg.locator(".dbv-view[data-table=platforms] tbody tr:has-text('星河网申')")
     assert "公司官网（网申）" in row.inner_text() and "招聘平台" in pg.inner_text(".dbv-view[data-table=platforms] tbody tr:has-text('LinkedIn')")
+    # grouped by that Type: the platforms, then the companies' sites (2026-11-15)
+    assert [x.strip() for x in pg.locator(".dbv-view[data-table=platforms] .dbv-grouphead b").all_inner_texts()] == ["招聘平台", "公司官网（网申）"]
     row.locator("button.linkish").click()                                       # its Type leads to its company
     pg.wait_for_selector("#company-profile-open")
-    # and the company table has the same profile, one click away
+    # and the company table has the same profile under 网申资料, one click from its page under Job sites
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.wait_for_selector(".dbv-view[data-table=companies] tbody:has-text('星河网申')")
+    assert "网申资料" in pg.inner_text(".dbv-view[data-table=companies] thead")
+    assert "你在那里" not in pg.inner_text(".dbv-view[data-table=companies]")
+    # a company with no address yet says what is missing and leads to its page
+    pg.locator(".dbv-view[data-table=companies] tbody tr:has-text('无网址公司') button.linkish:has-text('填写官网地址')").click()
+    pg.wait_for_selector("#company-profile-add[disabled]")
     pg.click(".hunt-tab[data-tab=companies]")
     pg.wait_for_selector(".dbv-view[data-table=companies] tbody:has-text('星河网申')")
     pg.locator(".dbv-view[data-table=companies] tbody tr:has-text('星河网申') button.linkish:has-text('尚未读取')").click()
     pg.wait_for_selector(".fill-card.fill-start")
-    assert pg.evaluate("() => H.tab") == "companies"
+    assert pg.evaluate("() => H.tab") == "platforms"
     # and the copy can go: off the company's page, with what was read kept for when it comes back
     pg.evaluate("(id) => openHunt('company', id)", cid)
     pg.wait_for_selector("#company-profile-open")
@@ -2063,6 +2097,14 @@ def test_a_companys_wangshen_profile_is_copied_from_its_page_and_comes_back_afte
     pg.click(".modal .btn.danger-soft")
     pg.wait_for_selector("#company-profile-add")
     assert not pg.query_selector("#company-profile-open")
+    # with an address and no copy, the company table offers to set it up, and Job sites can add it too
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.wait_for_selector(".dbv-view[data-table=companies] tbody tr:has-text('星河网申') button.linkish:has-text('建立')")
+    pg.click(".hunt-tab[data-tab=platforms]")
+    pg.click("#hunt-new-company-site")
+    pg.click(".float .lb-opt:has-text('星河网申')")
+    pg.wait_for_selector(".fill-card.fill-start")
+    assert "星河网申" in pg.inner_text(".fill-head h1") and pg.evaluate("() => H.tab") == "platforms"
 
 
 def test_the_company_table_shows_while_changes_keep_coming(page_all, server):

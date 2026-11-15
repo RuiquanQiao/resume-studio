@@ -7,6 +7,7 @@ on the user's behalf. No reply language is forced.
 """
 from __future__ import annotations
 
+from contextvars import ContextVar
 from pathlib import Path
 
 from core.i18n import t
@@ -22,6 +23,23 @@ RENDER = SKILL_ROOT / "scripts" / "render.py"
 def lang_name(code: str) -> str:
     """A resume language by its own name ('Deutsch', '简体中文')."""
     return langs.info(code)["name"]
+
+
+# (least, most) share of a line a bullet may fill, from the subset's Layout (model.bullet_range); the chat's send
+# sets it before it builds a message, so every rule below names the user's own numbers
+RANGE: ContextVar[tuple[float, float]] = ContextVar("bullet_range", default=(0.70, 1.00))
+
+
+def _pct(x: float) -> int:
+    return round(x * 100)
+
+
+def range_text() -> str:
+    """'70–100% of one line' and what the most means for wrapping."""
+    lo, hi = RANGE.get()
+    if hi <= 1:
+        return t("between {lo}% and {hi}% of one line (never onto a second line)", lo=_pct(lo), hi=_pct(hi))
+    return t("between {lo}% and {hi}% of one line (it may run onto a second line up to {hi}%)", lo=_pct(lo), hi=_pct(hi))
 
 
 def render_cmd(subset_id: str, data_path: str, lang: str | None = None) -> str:
@@ -71,12 +89,16 @@ def ui_context(data_path: str, subset: dict | None, entry: dict | None, project_
 # These are sent as the user's own message and shown in the chat, so they are in the interface
 # language (t). Codes and commands stay as they are.
 def one_line(cmd: str) -> str:
-    return t("Every bullet must fit on one line with the current template and layout and fill 70–100% of it (the "
-             "user's hard rule; over 90% is fine): never two lines, never a stub. When done, run {cmd} to check: "
-             "shorten the bullets it lists as \"take more than one line\" and lengthen the ones it lists as filling "
-             "less than 70% (more substance from notes / evidence, such as the scale, the lever or the result, or "
-             "merge two related ones; never filler words), until none is listed. The percentage is how much of a "
-             "line the text fills, so 112% means cutting about 12%.", cmd=cmd)
+    lo, hi = RANGE.get()
+    return t("Every bullet's length must be {range}, with the current template and layout: the range the user set under "
+             "Layout. It is a range, not a target: never shorter than {lo}%, never longer than {hi}%, and any length "
+             "in between is fine, so leave a bullet that is already in range exactly as it is, and when a long one "
+             "must come down, cut only what brings it under {hi}% rather than down to {lo}%. When done, run {cmd} "
+             "to check: it lists only the bullets out of range. Shorten the ones it lists as too long; lengthen the "
+             "ones it lists as too short with substance from notes / evidence (the scale, the lever or the result) "
+             "or merge two related ones, never with filler words; repeat until none is listed. The percentage is "
+             "how much of one line the text fills, so 112% is 12% more than a full line.",
+             range=range_text(), lo=_pct(lo), hi=_pct(hi), cmd=cmd)
 
 
 def lang_independent() -> str:
@@ -149,7 +171,8 @@ def translate_message(name: str, target: str, others: list[str], subset_id: str,
 
 
 def fit_message(name: str, lang: str, subset_id: str, data_path: str, bullets: list[dict]) -> str:
-    """Fit the line: shorten the bullets that wrap, lengthen the ones that fill too little of their line."""
+    """Bring the bullets out of the user's range back into it, and touch nothing else."""
+    lo, hi = RANGE.get()
     def listed(rows: list[dict]) -> str:
         return "\n".join("  - " + t("bullet {n} ({lines} lines, the text fills {pct}% of a line): {text}",
                                     n=b["index"] + 1, lines=b["lines"], pct=round(b["fill"] * 100), text=b["text"])
@@ -158,15 +181,17 @@ def fit_message(name: str, lang: str, subset_id: str, data_path: str, bullets: l
     short = [b for b in bullets if b.get("short")]
     parts = []
     if long:
-        parts.append(t("These {lang} bullets of “{name}” run past one line:", lang=lang_name(lang), name=name) + "\n" + listed(long))
+        parts.append(t("These {lang} bullets of “{name}” are longer than {hi}% of a line:", lang=lang_name(lang), name=name,
+                       hi=_pct(hi)) + "\n" + listed(long))
     if short:
-        parts.append(t("These {lang} bullets of “{name}” fill less than 70% of their line:", lang=lang_name(lang), name=name)
-                     + "\n" + listed(short))
+        parts.append(t("These {lang} bullets of “{name}” are shorter than {lo}% of a line:", lang=lang_name(lang), name=name,
+                       lo=_pct(lo)) + "\n" + listed(short))
     return ("\n".join(parts) + "\n"
-            + t("Change only `{code}` of this entry: bring each listed bullet to one line filling 70–100% of it. Cut a "
-                "long one to its strongest action and result; give a short one more substance from the fact layer "
-                "(notes, evidence) or merge it with a related bullet. Don't change the facts, and don't touch other "
-                "languages or other entries.", code=lang) + " "
+            + t("Change only `{code}` of this entry, and only the listed bullets: bring each one {range}. Trim a long "
+                "one just under {hi}% (keep its action and result; don't cut it down to the shortest allowed); give a "
+                "short one more substance from the fact layer (notes, evidence) or merge it with a related bullet. "
+                "Don't change the facts, and don't touch the bullets already in range, other languages or other entries.",
+                code=lang, range=range_text(), hi=_pct(hi)) + " "
             + lang_independent() + " " + one_line(f"`{render_cmd(subset_id, data_path, lang)}`"))
 
 
@@ -236,9 +261,9 @@ def batch_message(kind: str, subset: dict, data_path: str, names: list[str], tar
                   "following these rules:", lang=lang_name(target), job=job, list=lst) + "\n"
                 + _translate_rules(target, others or [], vid, data_path))
     if kind == "fit":
-        return (t("These entries in the current subset ({job}) have bullets that run past one line or fill less than "
-                  "70% of it: {list}. Bring every such bullet to one line filling 70–100% of it, entry by entry, without "
-                  "changing facts or other languages.", job=job, list=lst)
+        return (t("These entries in the current subset ({job}) have bullets out of the length range the user set: "
+                  "{list}. Bring each such bullet {range}, entry by entry, without changing facts, the bullets "
+                  "already in range or other languages.", job=job, list=lst, range=range_text())
                 + " " + one_line(f"`{render_cmd(vid, data_path)}`"))
     raise ValueError(kind)
 

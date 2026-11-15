@@ -555,7 +555,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         return [by_id[str(i)] for i in subset.get("entries") or [] if str(i) in by_id]
 
     def long_bullets(subset_id: str, lang: str) -> list[dict]:
-        """The bullets off their line: more than one line, or a line filled less than model.LINE_MIN."""
+        """The bullets out of the subset's length range (model.bullet_range): too long or too short."""
         with render_lock(f"{subset_id}@{lang}"):
             r = studio.render(subset_id, lang=lang, pdf=False)
         if not r["ok"]:
@@ -573,13 +573,13 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         names = {
             "polish": lambda: t("{entry}: polish", entry=entry),
             "translate": lambda: t("{entry}: into {lang}", entry=entry, lang=to),
-            "fit": lambda: t("{entry}: fit on one line", entry=entry),
+            "fit": lambda: t("{entry}: adjust bullet length", entry=entry),
             "sync": lambda: t("{entry}: update from the project", entry=entry),
             "mock": lambda: t("{entry}: mock interview", entry=entry),
             "probe": lambda: t("{entry}: follow-up questions", entry=entry),
             "answer": lambda: t("{entry}: answer a question", entry=entry),
             "batch_translate": lambda: t("{subset}: all into {lang}", subset=sub, lang=to),
-            "batch_fit": lambda: t("{subset}: fit every line", subset=sub),
+            "batch_fit": lambda: t("{subset}: adjust bullet length", subset=sub),
             "batch_sync": lambda: t("Every changed project: update"),
             "skills": lambda: t("Skill levels: read the fact layer"),
         }
@@ -603,6 +603,8 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         if action in ONE_ENTRY and entry is None:
             raise HttpError(404, t("Entry not found"))
         lang = str(b.get("lang") or vlang)
+        # the bullet length range named in every writing rule: this subset's Layout setting
+        prompts.RANGE.set(model.bullet_range(((subset or model.get_subset(doc, vid)) or {}).get("layout")))
         name = lambda e: model.tr(e.get("title"), lang) or model.tr(e.get("title"), "en") or t("this entry")  # noqa: E731
         instruction = str(b.get("text") or "")
         involved = [entry] if entry is not None else []
@@ -621,7 +623,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
             untranslated = set(model.missing_text(entry, lang).get("bullets", []))   # shown in the other language
             mine = [x for x in long_bullets(vid, lang) if x["id"] == str(entry.get("id")) and x["index"] not in untranslated]
             if not mine:
-                raise HttpError(409, t("Every bullet of this entry already fills one line in the current preview"))
+                raise HttpError(409, t("Every bullet of this entry is already within the length range in the current preview"))
             text = prompts.fit_message(name(entry), lang, vid, data_path, mine)
         elif action == "sync":
             st = tracker.status([entry], force=True).get(str(entry.get("id")))
@@ -657,7 +659,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
                     ids.append(x["id"])
             involved = [model.get_item(doc, "entry", i) for i in ids]
             if not involved:
-                raise HttpError(409, t("Every bullet in the current preview already fills one line"))
+                raise HttpError(409, t("Every bullet in the current preview is already within the length range"))
             text = prompts.batch_message("fit", subset, data_path, [name(e) for e in involved])
         elif action == "batch_sync":
             st = tracker.status(doc.get("entries") or [], force=True)

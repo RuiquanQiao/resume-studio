@@ -1592,15 +1592,19 @@ function companyProps() {
       } },
     text("size", t("Size"), 120, { hidden: true }),
     text("site", t("Careers site"), 220, { hidden: true }),
-    // the 网申 profile kept for this company: the same row as in Job sites, one click to it
-    { key: "profile", label: t("Your profile there"), type: "custom", width: 150, group: true,
-      get: (c) => { const s = companySite(c.id); return s ? siteState(s) || t("In step") : ""; },
+    // the 网申 profile on the company's careers site, as the user goes through it: kept → its page under Job sites;
+    // an address but no copy yet → set it up in one click; no address → the company's page, where it goes
+    { key: "profile", label: t("Application profile"), type: "custom", width: 160, group: true,
+      get: (c) => { const s = companySite(c.id); return s ? siteState(s) || t("In step") : c.site ? t("Not set up") : t("No careers site address"); },
       render: (c) => {
         const s = companySite(c.id);
-        if (!s) return "";
-        const say = siteState(s) || t("In step");
-        return h("button", { class: "linkish" + (s.signed_out || s.check_error ? " warn" : ""), title: t("Open your profile on {company}'s careers site", { company: c.name }),
-          onclick: (e) => { e.stopPropagation(); openHunt("platform", s.id, { tab: "companies" }); } }, say);
+        const go = (fn) => (e) => { e.stopPropagation(); fn(); };
+        if (s) return h("button", { class: "linkish" + (s.signed_out || s.check_error ? " warn" : ""), title: t("Open the application profile on {company}'s careers site", { company: c.name }),
+          onclick: go(() => openHunt("platform", s.id, { tab: "platforms" })) }, siteState(s) || t("In step"));
+        if (c.site) return h("button", { class: "linkish co-setup", title: t("Keep a copy of your profile on {company}'s careers site and fill it from your resume", { company: c.name }),
+          onclick: go(() => addCompanySite(c, { tab: "platforms" })) }, icon("plus"), t("Set up"));
+        return h("button", { class: "linkish co-setup", title: t("Give {company}'s careers site address on its page first", { company: c.name }),
+          onclick: go(() => openHunt("company", c.id)) }, t("Add the address"));
       } },
     text("note", t("Notes"), 220, { hidden: true }),
   ];
@@ -1608,7 +1612,7 @@ function companyProps() {
 
 function companiesTable() {
   const d = H.data;
-  if (!F.sites) loadFill();   // the "Your profile there" column; the page repaints once they are in
+  if (!F.sites) loadFill();   // the "Application profile" column; the page repaints once they are in
   const shown = d.companies.filter((c) => matches(c.name, (c.aliases || []).join(" "), c.industry, natureName(c.nature), c.strength, c.note, c.hq ? placeName(c.hq) : "", ...(c.places || []).map(placeText)));
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Companies")),
@@ -1695,9 +1699,11 @@ function platformsTable() {
   const KIND = { platform: t("Job platform"), company: t("Company careers site") };
   const kind = (s) => (s.kind === "company" ? "company" : "platform");
   const nApps = (s) => apps.filter((a) => (s.kind === "company" ? a.company === s.company : a.channel === "platform" && a.platform === s.id)).length;
-  // the first view was named "All platforms" when it was made; it lists every site now, so its old name goes
+  // the first view was named "All platforms" when it was made; it lists every site now, so its old name goes, and
+  // it is grouped by Type once (platforms, then companies' sites); a grouping the user changes after that stays
   const first = DBV.tables && DBV.tables.platforms && DBV.tables.platforms.views.find((v) => v.id === "v1");
   if (first && OLD_ALL_PLATFORMS.has(first.name)) first.name = t("All sites");
+  if (first && !first.by_type) { first.by_type = true; if (!first.group) first.group = "kind"; dbvSave("platforms", null); }
   const props = [
     { key: "name", label: t("Site"), type: "title", width: 220, get: (s) => s.name,
       render: (s) => h("span", { class: "co-name" }, companyLogo(s.kind === "company" ? companies[s.company] || s : s, "", true),
@@ -1708,7 +1714,7 @@ function platformsTable() {
         ? h("button", { class: "linkish", title: t("Open {company}", { company: companies[s.company].name }),
           onclick: (e) => { e.stopPropagation(); openHunt("company", s.company); } }, KIND.company)
         : h("span", { class: "c-muted" }, KIND[kind(s)]) },
-    { key: "profile", label: t("Your profile there"), type: "custom", width: 180, group: true, get: (s) => PROFILE[profile(s)],
+    { key: "profile", label: t("Profile status"), type: "custom", width: 180, group: true, get: (s) => PROFILE[profile(s)],
       render: (s) => s.check_error ? h("span", { class: "fs-status bad", title: s.check_error }, icon("alert"), PROFILE.failed)
         : h("span", { class: "c-muted" }, !s.synced_at ? t("Not read yet") : s.conflicts ? t("{n} conflict", { n: s.conflicts }, "{n} conflicts")
         : s.changes ? t("{n} change to push", { n: s.changes }, "{n} changes to push") : t("In step")) },
@@ -1719,12 +1725,27 @@ function platformsTable() {
   ];
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Job sites")),
-      h("p", null, t("Your profiles on job platforms and on companies' careers sites (网申). Resume Studio keeps a copy of each, in step with the site: open one to see it field by field. A company's careers site is added from its company's page."))),
+      h("p", null, t("Your profiles on job platforms and on companies' careers sites (网申). Resume Studio keeps a copy of each, in step with the site: open one to see it field by field."))),
     // with no sites the card below is the start, its known sites one click each: the toolbar doesn't compete with it
-    tableTools(h("button", { class: "btn sm" + (sites.length ? " primary" : ""), id: "hunt-new-platform", onclick: () => siteDialog(null) }, icon("plus"), t("Add a platform"))),
+    tableTools(h("button", { class: "btn sm" + (sites.length ? " primary" : ""), id: "hunt-new-platform", onclick: () => siteDialog(null) }, icon("plus"), t("Add a platform")),
+      addCompanySitePick(Object.values(companies))),
     sites.length ? dbView({ table: "platforms", props, rows: sites.filter((s) => matches(s.name, s.home)), rowId: (s) => s.id,
-      open: (s) => openHunt("platform", s.id, { tab: "platforms" }), defaults: [{ id: "v1", name: t("All sites") }], repaint: paintHunt, empty: t("Nothing matches") }) : noSitesCard(),
+      open: (s) => openHunt("platform", s.id, { tab: "platforms" }), defaults: [{ id: "v1", name: t("All sites"), group: "kind", by_type: true }], repaint: paintHunt, empty: t("Nothing matches") }) : noSitesCard(),
   ];
+}
+
+// Add a company's careers site from Job sites: the companies without one, searchable; one with no address yet
+// opens its page, where the address goes
+function addCompanySitePick(companies) {
+  const open = companies.filter((c) => !companySite(c.id)).sort((a, b) => (b.site ? 1 : 0) - (a.site ? 1 : 0));
+  if (!open.length) return null;
+  const pick = uiSelect({ id: "hunt-new-company-site", cls: "hunt-add-pick", placeholder: t("Add a company's careers site"), search: true, menuWidth: 320,
+    label: t("Add a company's careers site"), searchPlaceholder: t("Search companies"),
+    options: open.map((c) => ({ value: c.id, label: c.name, hint: c.site ? (c.site || "").replace(/^https?:\/\/(www\.)?/, "").split("/")[0] : t("No careers site address"),
+      group: c.site ? t("Has a careers site address") : t("Address not given yet") })),
+    onChange: (id) => { const c = companies.find((x) => x.id === id); if (c.site) addCompanySite(c, { tab: "platforms" }); else openHunt("company", c.id); } });
+  pick.el.prepend(icon("plus"));   // reads like the Add button beside it
+  return pick.el;
 }
 
 // ================================================================ a small form dialog (several fields, nothing saved before OK)
@@ -2144,7 +2165,7 @@ function companyPage(v) {
 function companyProfileField(c) {
   if (!F.sites) { loadFill(); return null; }
   const s = companySite(c.id);
-  const label = h("label", null, t("Your profile there"), h("span", { class: "hint" }, t("the online resume the company reads")));
+  const label = h("label", null, t("Application profile"), h("span", { class: "hint" }, t("your online resume on its careers site")));
   if (!s) {
     return h("div", { class: "field", id: "company-profile" }, label,
       h("div", { class: "co-profile" },
@@ -2162,12 +2183,12 @@ function companyProfileField(c) {
       h("button", { class: "btn sm", id: "company-profile-open", onclick: () => openHunt("platform", s.id) }, icon("file"), t("Open the copy"))));
 }
 
-async function addCompanySite(c) {
+async function addCompanySite(c, { tab = null } = {}) {
   let r;
   try { r = await api("POST", "/api/autofill/sites", { company: c.id }); }
   catch (e) { toast(e.message, { ms: 7000 }); return; }
   F.sites = r.sites; F.presets = r.presets;
-  await openHunt("platform", r.site.id);
+  await openHunt("platform", r.site.id, { tab });
 }
 
 async function removeCompanySite(c) {

@@ -17,6 +17,38 @@ def test_ai_review_shows_only_changed_language_and_interview_answer(page_all):
     assert 'Old answer' in review.inner_text()
     assert 'New answer' in review.inner_text()
     assert review.locator('mark').count() > 0
+    # git-style: − the old line, + the new one (2026-11-15: "Before / After" words were the odd one out)
+    assert review.locator('.ai-change .dl-del').count() == 2 and review.locator('.ai-change .dl-add').count() == 2
+    assert review.locator('.ai-change-side').count() == 0
+
+
+def test_the_reply_lists_every_changed_entry_to_open_keep_or_undo(page_all):
+    """2026-11-15: a batch changed several entries and each had to be found and approved on its own card. Under the
+    reply now: each changed entry with its +/− lines, a click opens its diff, Keep all keeps every one."""
+    got = page_all.evaluate('''() => {
+      const [a, b] = entries();
+      const was = { messages: ui.chat.messages, running: ui.chat.running };
+      // a long chat: the log is a column of flex items, and the list was squeezed with its rows spilling out, unclickable
+      ui.chat.messages = Array.from({ length: 30 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", text: "Message " + i, blocks: [{ type: "text", text: "Reply " + i }] }));
+      ui.chat.running = false;
+      for (const e of [a, b]) {
+        const after = structuredClone(e); after.subtitle = { en: "Changed by the AI" };
+        ui.ai[e.id] = { chat: ui.chat.id, action: "batch_fit", snapshot: structuredClone(e), result: after, done: true };
+      }
+      renderChat();
+      const box = document.querySelector("#chat-log .rv-box");
+      const out = { rows: box ? box.querySelectorAll(".rv-row").length : 0, head: box ? box.querySelector(".rv-head").innerText : "",
+        stat: box ? box.querySelector(".rv-stat").innerText : "", ids: [a.id, b.id],
+        inside: box ? [...box.querySelectorAll(".rv-row")].every((r) => r.getBoundingClientRect().bottom <= box.getBoundingClientRect().bottom + 0.5) : false };
+      window.__was = was;
+      return out;
+    }''')
+    assert got["rows"] == 2 and "2" in got["head"] and "+" in got["stat"] and "−" in got["stat"]
+    assert got["inside"], "the list's rows spill out of it in a long chat"
+    page_all.click("#chat-log .rv-head .btn.primary")                       # Keep all
+    page_all.wait_for_selector("#chat-log .rv-box", state="detached")
+    assert page_all.evaluate("(ids) => ids.filter((id) => ui.ai[id]).length", got["ids"]) == 0
+    page_all.evaluate("() => { Object.assign(ui.chat, window.__was); renderChat(); }")
 
 
 def test_review_move_and_undo_guard(page_all):

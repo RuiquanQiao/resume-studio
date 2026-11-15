@@ -40,6 +40,8 @@ def content(doc: Any, subset: Any) -> dict:
     picked = [by_id[str(i)] for i in sub.get("entries") or [] if str(i) in by_id]
     chosen = [_visible(e) for e in picked]
     used = {str(e.get("section")) for e in chosen}
+    if isinstance(sub.get("layout"), dict):   # the bullet length range guides the writing; it prints nothing
+        sub["layout"] = {k: v for k, v in sub["layout"].items() if k not in ("bullet_min", "bullet_max")}
     c = {"subset": {k: v for k, v in sub.items() if k not in ("postings", "posting", *SKILL_PICKS)},
          "profile": _visible(doc.get("profile")),
          "sections": [to_plain(s) for s in doc.get("sections") or [] if str(s.get("id")) in used],

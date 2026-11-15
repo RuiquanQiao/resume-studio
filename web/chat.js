@@ -733,6 +733,7 @@ function buildChat(log) {
   }
   ui.chat.messages.forEach((m, i) => log.append(messageEl(m, i)));
   if (ui.chat.running) log.append(messageEl({ role: "assistant", blocks: (ui.chat.live || {}).blocks || [], live: true }));
+  else { const review = aiReviewEl(ui.chat.id); if (review) log.append(review); }   // what the AI changed, to keep or undo
 }
 
 // Put a freshly built tree into the one on screen, changing only what differs. Text that only grew is appended to,
@@ -751,6 +752,10 @@ function patchNode(a, b) {
   // a card (permission, question, plan) is one unit: the same card in the same state stays as the user left it
   if (a.dataset.ask || b.dataset.ask) {
     if (a.dataset.ask !== b.dataset.ask || a._status !== b._status) a.replaceWith(b);
+    return;
+  }
+  if (a.dataset.review || b.dataset.review) {   // the AI's changes to review (app.js aiReviewEl): same list, same node
+    if (a.dataset.review !== b.dataset.review) a.replaceWith(b);
     return;
   }
   if (SWAP_WHOLE.has(a.nodeName)) { a.replaceWith(b); return; }

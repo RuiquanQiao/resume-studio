@@ -180,7 +180,7 @@ def test_update_from_project_flow(server, data_file, fake_claude, repo):
     assert code == 200
     # the languages are written each on its own, every bullet filling 70-100% of a line (2026-11-15: the Chinese
     # bullets, translated from full English lines, came out at half a line)
-    assert "不逐条对应" in r["text"] and "70–100%" in r["text"]               # the suite's window speaks Chinese
+    assert "不逐条对应" in r["text"] and "70%–100%" in r["text"]              # the suite's window speaks Chinese
 
 
 @needs_git

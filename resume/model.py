@@ -125,8 +125,33 @@ def add_language_titles(doc: Any, lang: str) -> None:
 
 
 ALL_ID = "ALL"
-# a bullet fills 70-100% of one line (user, 2026-11-15): under this share of the line it is a stub to lengthen
+# How long a bullet may be, as a share of one line: never shorter than the least, never longer than the most;
+# anything between is fine. Each subset sets its own under Layout (`bullet_min` / `bullet_max`, in %): 70-100
+# means one full-ish line, 70-150 lets a bullet run onto a second line (user, 2026-11-15).
 LINE_MIN = 0.70
+LINE_MAX = 1.00
+
+
+def bullet_range(layout: dict | None) -> tuple[float, float]:
+    """(least, most) share of a line a bullet may fill, from a subset's layout."""
+    def pct(key: str, default: float) -> float:
+        try:
+            return float((layout or {}).get(key))
+        except (TypeError, ValueError):
+            return default
+    lo = min(max(pct("bullet_min", LINE_MIN * 100), 0), 100) / 100
+    hi = min(max(pct("bullet_max", LINE_MAX * 100), lo * 100, 50), 300) / 100
+    return lo, hi
+
+
+def off_range(m: dict, lo: float, hi: float) -> str | None:
+    """'long' or 'short' when a measured bullet ({n: lines, fill: width / one line}) is out of range, else None.
+    Up to one line (most <= 100%), a bullet that wraps is long whatever its width says (a word that didn't fit)."""
+    if m["fill"] > hi + 1e-9 or (hi <= 1 and m["n"] > 1):
+        return "long"
+    if m["fill"] < lo - 1e-9:
+        return "short"
+    return None
 
 
 def default_all_subset(lang: str = "en") -> dict:
@@ -149,6 +174,8 @@ DEFAULT_LAYOUT = {
     "accent": "1F4E79",     # hex, no '#'
     "font": "",             # Latin font name; empty = default (see render/fonts.py)
     "cjk_font": "",         # Chinese font name; empty = default (FandolSong)
+    "bullet_min": 70,       # % of a line a bullet fills at least (bullet_range)
+    "bullet_max": 100,      # % of a line a bullet fills at most; over 100 lets it wrap
 }
 
 

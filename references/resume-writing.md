@@ -78,8 +78,9 @@ it, leave it out.
    recency and not by how much effort they took. A capability counts when it is hard, uncommon or clearly engineered.
 3. **Then the engineering signals:** architecture, performance, testing, reliability, each with a number where the
    facts give one.
-4. **One idea per bullet, one line per bullet, and the line used: each bullet fills 70–100% of its line** (over
-   90% is fine). Never two lines, never a stub. A short bullet gets more substance from the fact layer (the scale,
+4. **One idea per bullet, and each bullet within the length range set under Layout** (70–100% of one line by
+   default): never shorter than the least, never longer than the most, any length between is fine, so a bullet
+   in range is left as it is and a long one is trimmed only to just under the most. A short bullet gets more substance from the fact layer (the scale,
    the lever, the result), or merges with a related one; never padding words.
 5. **Each language is written on its own.** The languages tell the same story, not the same sentences: plan each
    language's bullets by that language's line length, so the count, the split and the order may differ between

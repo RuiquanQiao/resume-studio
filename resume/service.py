@@ -355,23 +355,25 @@ class Studio:
             if not (result.cached and len(pngs) == result.pages and all(p.stat().st_mtime >= pdf_time for p in pngs)):
                 pngs = rasterize(result.pdf, build_dir, pages=result.pages)
         return {**result.to_json(), "lang": view["lang"], "missing": view["missing"], "images": len(pngs),
+                "range": list(model.bullet_range(view["layout"])),
                 "stamp": int(time.time() * 1000)}
 
     def bullet_report(self, result: dict, short: bool = False) -> list[dict]:
-        """Bullets that take more than one line (and, with `short`, the ones that fill less than
-        model.LINE_MIN of their line, marked `short: True`), with the text, for people and for Claude."""
+        """Bullets longer than the subset's most (`result["range"]`, model.bullet_range) and, with `short`, the
+        ones shorter than its least (marked `short: True`), with the text, for people and for Claude."""
         doc, _ = self.store.load()
+        lo, hi = result.get("range") or (model.LINE_MIN, model.LINE_MAX)
         out = []
         for eid, by_idx in (result.get("lines") or {}).items():
             e = model.get_item(doc, "entry", eid)
             if e is None:
                 continue
             for idx, m in sorted(by_idx.items(), key=lambda kv: int(kv[0])):
-                is_short = m["n"] == 1 and m["fill"] < model.LINE_MIN
-                if m["n"] > 1 or (short and is_short):
+                off = model.off_range(m, lo, hi)
+                if off == "long" or (short and off == "short"):
                     b = (e.get("bullets") or [])[int(idx)]
                     out.append({"id": eid, "title": model.tr(e.get("title"), result["lang"]), "index": int(idx),
-                                "lines": m["n"], "fill": m["fill"], "short": is_short,
+                                "lines": m["n"], "fill": m["fill"], "short": off == "short",
                                 "text": model.bullet_text(b, result["lang"])})
         return out
 

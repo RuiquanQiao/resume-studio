@@ -581,6 +581,11 @@ body.sorting, body.sorting * { cursor: grabbing !important; user-select: none; }
 .font-pick { grid-column: span 2; display: flex; gap: 6px; min-width: 0; }
 .font-pick > .select { flex: 1; min-width: 0; }
 .font-pick > input { flex: 1; min-width: 0; }
+/* the bullet length range: two small number boxes, "70 – 100 % of a line" */
+.len-range { grid-column: span 2; display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); }
+.len-range .len-pct { width: 64px; height: 28px; border: 1px solid var(--line-strong); border-radius: 5px; padding: 0 6px; background: var(--panel); color: var(--text); font: var(--fs-meta) var(--mono); text-align: right; }
+.len-range .len-pct:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.len-unit { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ctl input[type=text] { height: 28px; border: 1px solid var(--line-strong); border-radius: 5px; padding: 0 8px; background: var(--panel); width: 100%; }
 .render-errors { flex: none; margin: 0; padding: 10px 14px; background: var(--bad-soft); color: var(--bad); font: var(--fs-meta)/1.45 var(--mono); white-space: pre-wrap; max-height: 140px; overflow: auto; }
 .canvas { flex: 1; min-height: 0; overflow: auto; }
@@ -669,6 +674,15 @@ textarea::-webkit-resizer {
 .select[aria-expanded="true"] > svg.i { transform: rotate(180deg); color: var(--accent); }
 .select:disabled { opacity: .5; cursor: not-allowed; }
 .select.grow { flex: 1; }
+/* the Companies table's 网申资料 cell before a copy is kept: a quiet "+ Set up" that turns accent on hover */
+.linkish.co-setup { display: inline-flex; align-items: center; gap: 3px; color: var(--text-3); }
+.linkish.co-setup svg.i { width: 13px; height: 13px; }
+tr:hover .linkish.co-setup, .linkish.co-setup:focus-visible { color: var(--accent); }
+/* a picker that reads as a button: "Add a company's careers site ▾" beside "Add a platform" (web/hunt.js) */
+.select.hunt-add-pick { height: 30px; padding: 0 8px 0 12px; border-color: transparent; background: var(--tint); font-size: var(--fs-body); max-width: 260px; }
+.select.hunt-add-pick > svg.i:first-child { width: 14px; height: 14px; color: var(--text); transform: none; }
+.select.hunt-add-pick:hover { background: var(--hover); border-color: transparent; }
+.select.hunt-add-pick .sel-label.ph { color: var(--text); }
 .select.field-select { width: 100%; height: 32px; }
 .select.ghost { height: 22px; padding: 0 3px 0 6px; gap: 3px; border-color: transparent; background: transparent; color: var(--text-2); font-size: var(--fs-meta); }
 .select.ghost:hover { background: var(--hover); border-color: transparent; }
@@ -2015,13 +2029,23 @@ body[data-ws="plan"][data-chat="off"] .workspace { grid-template-columns: minmax
 .lb-opt.on:has(.chat-mark), .lb-opt.on { background: var(--accent-soft); }
 .ai-review .card-b { min-width: 0; }
 .ai-changes { display: grid; gap: 10px; }
+/* under the AI's reply: the entries it changed, like an editor's review list (web/app.js aiReviewEl) */
+.rv-box { flex: none; margin: 4px 0 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--panel); overflow: hidden; }
+.rv-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 10px; background: var(--panel-2); border-bottom: 1px solid var(--line); }
+.rv-count { font-size: var(--fs-meta); font-weight: 600; color: var(--text-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-row { display: flex; align-items: center; gap: 4px; padding: 2px 4px 2px 6px; min-width: 0; }
+.rv-row + .rv-row { border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.rv-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 4px; border: 0; border-radius: 5px; background: none; color: var(--text); font: inherit; font-size: var(--fs-body); text-align: left; cursor: pointer; }
+.rv-name:hover { background: var(--hover); color: var(--accent); }
+.rv-name svg.i { flex: none; width: 14px; height: 14px; color: var(--text-3); }
+.rv-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-stat { flex: none; display: inline-flex; gap: 6px; font: var(--fs-meta) var(--mono); padding: 0 4px; }
+.rv-add { color: var(--ok); }
+.rv-del { color: var(--bad); }
 .ai-change { border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; min-width: 0; }
 .ai-change-path { padding: 6px 10px; background: var(--panel-2); color: var(--text-2); font-size: var(--fs-meta); font-weight: 600; overflow-wrap: anywhere; }
-.ai-change-line { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 8px; padding: 7px 10px; font-size: var(--fs-meta); line-height: 1.55; }
-.ai-change-line + .ai-change-line { border-top: 1px solid var(--line); }
-.ai-change-side { color: var(--text-2); font-size: var(--fs-meta); font-weight: 600; }
-.ai-change-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.ai-change mark { color: inherit; border-radius: 2px; text-decoration: none; }
+.ai-change .diff { border: 0; border-radius: 0; }
+.ai-change-move { margin-left: 8px; font-weight: 400; color: var(--text-3); }
 .ai-review-summary { margin: 0 0 10px; color: var(--text-2); font-size: var(--fs-meta); }
 .ai-review .row { flex-wrap: wrap; }
 

@@ -72,7 +72,7 @@ shows approve / keep-refining cards; the user can stop at any time (a real inter
 files, call commands and skills with `/`, and pick the model, effort and permission mode. When the user
 has to decide something, just use AskUserQuestion rather than listing options in text.
 
-The editor's buttons (polish, write another language, fit on one line, update from the project) send
+The editor's buttons (polish, write another language, adjust bullet length, update from the project) send
 their request as a message in the user's interface language; follow it like any other message.
 
 ## Checking results without the window
@@ -86,11 +86,12 @@ python <skill>/scripts/render.py --check                          # validate the
 ```
 
 - `OVER ONE PAGE` means more than one page.
-- Every render lists the **bullets that take more than one line**: `EXP-002 "QuizLoom" bullet 2:
-  2 lines, text is 117% of one line`. This is measured from LaTeX's actual typesetting, not estimated from
-  character counts; 117% means cutting about 15% of the text. It also lists the **short bullets**, one line
-  filled less than 70% (`bullet 3: 1 line, text is 48% of one line`): lengthen them with substance from the
-  fact layer or merge them.
+- Every render lists the **bullets out of the subset's length range** (the user sets it under Layout,
+  `layout.bullet_min` / `bullet_max` in %, 70-100 by default): the ones longer than the most
+  (`EXP-002 "QuizLoom" bullet 2: 2 line(s), text is 117% of one line`) and the ones shorter than the least
+  (`bullet 3: 1 line(s), text is 48% of one line`). This is measured from LaTeX's actual typesetting, not
+  estimated from character counts; 117% is 17% more than a full line. Bullets it doesn't list are fine as
+  they are.
 - `missing <lang> text` lists entries that lack text in that language and fall back to another one.
 
 ## Data format (resume.yaml)
@@ -237,12 +238,13 @@ subsets:
    running to several pages is normal.
 7. Tasks started from the window need no PDF compile from you: the window re-renders by itself. In the
    terminal, check pages with `render.py`.
-8. **Every bullet on one line, filling 70–100% of it**: the user's hard rule (over 90% is fine; never two
-   lines, never a stub). After writing or changing bullets, check with `render.py <subset> --lang <code>`:
-   shorten the bullets it lists as taking more than one line (drop modifiers and repetition → shorter
-   phrasing → drop secondary details) and lengthen the ones it lists as short (more substance from notes /
-   evidence: scale, the lever, the result; or merge two related short bullets). Never pad with filler and
-   never change facts.
+8. **Every bullet within the length range the user set under Layout** (70–100% of a line by default; a
+   user who accepts two lines may set 70–150%). It is a range, not a target: never shorter than the least,
+   never longer than the most, any length between is fine. After writing or changing bullets, check with
+   `render.py <subset> --lang <code>` and change only what it lists: trim a long one just under the most
+   (drop modifiers and repetition → shorter phrasing → drop secondary details; never down to the least),
+   lengthen a short one (more substance from notes / evidence: scale, the lever, the result; or merge two
+   related short bullets). Leave bullets already in range alone. Never pad with filler and never change facts.
 9. **Languages are rewritten, not translated, and not paired**: write each language the way a native resume
    in it reads (English: strong past-tense verbs, no pronouns, quantify where the facts allow; Chinese: start
    with a verb, never "我", no articles or clauses, technical terms and numbers kept, dense; other languages:

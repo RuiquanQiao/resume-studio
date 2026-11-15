@@ -455,7 +455,7 @@ function openSubsetMenu() {
     ...(bilingual ? langs().map((l) => ({ label: t("Fill in the {lang} version", { lang: langName(l) }),
       hint: lacking(l) ? t("{n} entry lacks it", { n: lacking(l) }, "{n} entries lack it") : t("All done"), icon: "translate", disabled: !ui.chat.available || !lacking(l),
       onClick: () => aiBatch("batch_translate", { target: l }) })) : []),
-    { label: t("Bring bullets to one full line"), hint: long ? t("{n} bullet", { n: long }, "{n} bullets") : t("All fill one line"), icon: "compress", disabled: !ui.chat.available || !long,
+    { label: t("Adjust bullet length"), hint: long ? t("{n} bullet", { n: long }, "{n} bullets") : t("All within the range"), icon: "compress", disabled: !ui.chat.available || !long,
       onClick: () => aiBatch("batch_fit") },
     "sep",
     { label: t("Open the export folder"), icon: "folder", onClick: revealExports },
@@ -1242,7 +1242,7 @@ function bulletNotes(e) {
   const off = entryOffLine(e, m, L);
   if (off.length) {
     out.push(noteBar("compress", offLineText(off),
-      ui.chat.available && h("button", { class: "btn sm", "data-ai": "entry:" + e.id, onclick: () => aiEntry("fit", e.id, { lang: L }) }, icon("sparkle"), t("Let AI bring them to one full line")), "warn"));
+      ui.chat.available && h("button", { class: "btn sm", "data-ai": "entry:" + e.id, onclick: () => aiEntry("fit", e.id, { lang: L }) }, icon("sparkle"), t("Let AI adjust the length")), "warn"));
   } else if (m === null && e.bullets.some((b) => getT(b, L))) {
     out.push(h("div", { class: "note-line" }, icon("alert"), isAll() ? t("This entry's section is hidden, so it isn't in the preview and its lines can't be measured.") : t("This entry isn't ticked in “{job}”, so it isn't in the preview and its lines can't be measured.", { job: subsetName(subset()) })));
   }
@@ -1275,9 +1275,13 @@ function lineChip(i, m, st) {
   const x = m && m[i];
   if (!x) return h("span", { class: "line-chip none", "data-line": i });
   const pct = Math.round(x.fill * 100);
-  if (x.n > 1) return h("span", { class: "line-chip long", "data-line": i, title: t("Takes {n} lines: the text is {pct}% of a line, cut about {cut}%", { n: x.n, pct, cut: Math.max(1, pct - 98) }) }, t("{n} line", { n: x.n }, "{n} lines"));
-  if (isShort(x)) return h("span", { class: "line-chip short", "data-line": i, title: t("Only {pct}% of the line is used: add substance from the fact layer (scale, how, result) or merge it with a related bullet", { pct }) }, t("Short"));
-  return h("span", { class: "line-chip ok" + (x.fill > 0.93 ? " tight" : ""), "data-line": i, title: t("One line, {pct}% of it used", { pct }) }, x.fill > 0.93 ? t("Full") : t("{n} line", { n: 1 }, "{n} lines"));
+  const [lo, hi] = lineRange();
+  const lines = t("{n} line", { n: x.n }, "{n} lines");
+  const off = offRange(x);
+  if (off === "long") return h("span", { class: "line-chip long", "data-line": i, title: t("The text is {pct}% of a line; the most allowed is {hi}% (set under Layout)", { pct, hi: pctOf(hi) }) }, x.n > 1 ? lines : t("Too long"));
+  if (off === "short") return h("span", { class: "line-chip short", "data-line": i, title: t("The text is {pct}% of a line; the least allowed is {lo}% (set under Layout). Add substance from the fact layer (scale, how, result) or merge it with a related bullet", { pct, lo: pctOf(lo) }) }, t("Short"));
+  const full = x.n === 1 && x.fill > 0.93;
+  return h("span", { class: "line-chip ok" + (full ? " tight" : ""), "data-line": i, title: t("{lines}, the text is {pct}% of a line: within {lo}–{hi}%", { lines, pct, lo: pctOf(lo), hi: pctOf(hi) }) }, full ? t("Full") : lines);
 }
 
 function bulletsEditor(e) {
@@ -1329,7 +1333,7 @@ function openAiMenu(anchor, e) {
     { label: empty ? t("Draft bullets") : bilingual ? t("Polish the {lang} bullets", { lang: langName(L) }) : t("Polish bullets"), hint: t("extra instructions welcome"), icon: "sparkle",
       onClick: () => { const box = $("#polish-box"); box.classList.remove("hidden"); $("input", box).focus(); } },
     ...(bilingual ? langs().map((l) => ({ label: t("Write the {lang} version", { lang: langName(l) }), hint: t("rewritten the way a {lang} resume reads", { lang: langName(l) }), icon: "translate", onClick: () => aiEntry("translate", e.id, { target: l }) })) : []),
-    { label: t("Bring bullets to one full line"), hint: long ? t("{n} bullet", { n: long }, "{n} bullets") : t("All fill one line"), icon: "compress", disabled: !long, onClick: () => aiEntry("fit", e.id, { lang: L }) },
+    { label: t("Adjust bullet length"), hint: long ? t("{n} bullet", { n: long }, "{n} bullets") : t("All within the range"), icon: "compress", disabled: !long, onClick: () => aiEntry("fit", e.id, { lang: L }) },
     "sep",
     { label: t("Update from project progress"), hint: ev.state === "changed" ? t("changed") : ev.state === "new" ? t("not read yet") : (e.evidence || []).length ? t("no changes") : t("no folder linked"),
       icon: "refresh", disabled: !changed, onClick: () => aiEntry("sync", e.id) },
@@ -2120,7 +2124,7 @@ async function restoreVersion(n) {
 }
 
 // ================================================================ AI polish (runs in the chat)
-const AI_LABELS = { mock: "Mock interview", probe: "Follow-up", answer: "Answer", polish: "Polish", translate: "Another language", fit: "Fit on one line", sync: "Update from the project", batch_translate: "Fill in a language", batch_fit: "Fit on one line", batch_sync: "Update from the project",
+const AI_LABELS = { mock: "Mock interview", probe: "Follow-up", answer: "Answer", polish: "Polish", translate: "Another language", fit: "Adjust bullet length", sync: "Update from the project", batch_translate: "Fill in a language", batch_fit: "Adjust bullet length", batch_sync: "Update from the project",
   autofill_read: "Read a profile", autofill_apply: "Update a profile" };
 
 // Compare individual values instead of treating an entire field as a replacement.
@@ -2193,28 +2197,22 @@ function aiChanges(before, after) {
 function aiDiff(id) {
   const a = ui.ai[id], before = a.snapshot, after = a.result || entryById(id) || {};
   const changes = aiChanges(before, after);
-  const show = (v) => v === undefined || v === null ? t("(empty)") : v === "" ? t("(hidden)") : String(v);
+  const show = (v) => v === undefined || v === null ? "" : v === "" ? t("(hidden)") : String(v);
   const clean = (v) => show(v).replace(/\*\*(.*?)\*\*/g, "$1").replace(/`([^`]+)`/g, "$1");
-  const rows = changes.map((c) => {
+  // every change is a path and a diff: − the old line, + the new one, the words that differ marked (like `git diff --word-diff`)
+  const rows = changes.map((c, x) => {
     if (c.move) {
       const value = c.value && typeof c.value === "object" ? (c.value[ui.editLang] || Object.values(c.value).find((v) => typeof v === "string") || JSON.stringify(c.value)) : c.value;
-      return h("div", { class: "ai-change" }, h("div", { class: "ai-change-path" }, c.path),
-        h("div", { class: "ai-change-line" }, h("span", { class: "ai-change-side" }, t("Moved")),
-          h("span", { class: "ai-change-text" }, t("Position {from} → {to}", { from: c.from, to: c.to }), " · ", clean(value))));
+      return h("div", { class: "ai-change" }, h("div", { class: "ai-change-path" }, c.path, h("span", { class: "ai-change-move" }, t("Moved: position {from} → {to}", { from: c.from, to: c.to }))),
+        h("div", { class: "diff" }, h("div", { class: "dl dl-same" }, h("span", { class: "dl-sign", "aria-hidden": "true" }, "↕"), h("span", { class: "dl-text" }, clean(value)))));
     }
     const old = clean(c.before), next = clean(c.after);
-    // Keep formatting-only edits visible rather than silently hiding them.
-    const from = old === next && !Object.is(c.before, c.after) ? show(c.before) : old;
-    const to = old === next && !Object.is(c.before, c.after) ? show(c.after) : next;
-    const marks = c.before != null && c.after != null ? wordMarks(from, to) : null;
-    const line = (side, value, parts) => h("div", { class: "ai-change-line " + side },
-      h("span", { class: "ai-change-side" }, side === "old" ? t("Before") : t("After")),
-      h("span", { class: "ai-change-text" }, ...(parts || [value])));
+    // formatting-only edits (bold, code marks) stay visible rather than showing as no change
+    const same = old === next && !Object.is(c.before, c.after);
     return h("div", { class: "ai-change" }, h("div", { class: "ai-change-path" }, c.path),
-      c.before != null && line("old", from, marks && marks.del),
-      c.after != null && line("new", to, marks && marks.add));
+      diffEl(same ? show(c.before) : old, same ? show(c.after) : next, `ai:${id}:${x}`));
   });
-  const close = () => { delete ui.ai[id]; paintItem(edFor("entry", id)); };
+  const close = () => keepAi(id);
   return card(changes.length ? t("The AI changed this entry") : t("The AI didn't change this entry"), `${a.action in AI_LABELS ? t(AI_LABELS[a.action]) : ""} · ${t("the chat explains why")}`, [
     changes.length && h("p", { class: "ai-review-summary" }, t("{n} changed item", { n: changes.length }, "{n} changed items")),
     h("div", { class: "ai-changes" }, rows),
@@ -2226,9 +2224,79 @@ function aiDiff(id) {
   ], { cls: "diff ai-review" });   // diff: sits flush in its doc card (style.css)
 }
 
+// Keep what the AI wrote: the review card goes, the words stay
+function keepAi(id) {
+  if (!ui.ai[id]) return;
+  delete ui.ai[id];
+  paintItem(edFor("entry", id));
+  renderChat();
+}
+
+// lines taken out and put in by the AI in one entry, counted like `git diff --stat`
+function aiStat(id) {
+  const a = ui.ai[id];
+  let add = 0, del = 0;
+  for (const c of aiChanges(a.snapshot, a.result || entryById(id) || {})) {
+    if (c.move) { add++; del++; continue; }
+    const str = (v) => (v === undefined || v === null ? "" : String(v));
+    for (const r of diffRows(str(c.before), str(c.after))) { if (r.kind === "add") add++; else if (r.kind === "del") del++; }
+  }
+  return { add, del };
+}
+
+// the entries this chat's AI changed and the user hasn't kept or undone yet, in the library's order
+function pendingReview(chatId) {
+  const order = new Map(entries().map((e, i) => [e.id, i]));
+  return Object.entries(ui.ai).filter(([, a]) => a.chat === chatId && a.done && a.result).map(([id]) => id)
+    .sort((x, y) => (order.get(x) ?? 1e9) - (order.get(y) ?? 1e9));
+}
+
+// open an entry's review card: the resume workspace, the entry, its diff in view
+async function showAiReview(id) {
+  if (W.ws !== "resume") setWorkspace("resume");
+  await select("entry", id);
+  const card = document.querySelector(`#editor .doc-card[data-key="entry:${CSS.escape(id)}"] .ai-review`);
+  if (card) card.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
+// Under the last reply, like an editor's "review changes" list: each changed entry with +/− lines, a click
+// opens its diff, and each can be kept or undone without going there (2026-11-15).
+function aiReviewEl(chatId) {
+  const ids = pendingReview(chatId);
+  if (!ids.length) return null;
+  const stats = Object.fromEntries(ids.map((id) => [id, aiStat(id)]));
+  const rows = ids.map((id) => {
+    const e = entryById(id), st = stats[id];
+    const name = e ? display(e.title) || entryLabel(e) : id;
+    return h("div", { class: "rv-row", "data-id": id },
+      h("button", { type: "button", class: "rv-name", title: t("Show what changed in “{name}”", { name }), onclick: () => showAiReview(id) },
+        icon("file"), h("span", { class: "rv-title" }, name)),
+      h("span", { class: "rv-stat", title: t("{add} line(s) added, {del} removed", { add: st.add, del: st.del }) },
+        h("span", { class: "rv-add" }, "+" + st.add), h("span", { class: "rv-del" }, "−" + st.del)),
+      h("button", { type: "button", class: "btn icon sm ghost", title: t("Undo, back to before"), "aria-label": t("Undo the changes to “{name}”", { name }), onclick: () => undoAi(id) }, icon("undo")),
+      h("button", { type: "button", class: "btn icon sm ghost rv-keep", title: t("Keep"), "aria-label": t("Keep the changes to “{name}”", { name }), onclick: () => keepAi(id) }, icon("check")));
+  });
+  // one unit for the chat's redraws (chat.js patchNode): the same list stays as it is, so a click never lands on a
+  // button that a redraw is swapping out
+  const sig = ids.map((id) => `${id}:${stats[id].add}:${stats[id].del}:${display((entryById(id) || {}).title)}`).join("|");
+  return h("div", { class: "rv-box", "data-review": sig },
+    h("div", { class: "rv-head" },
+      h("span", { class: "rv-count" }, t("{n} entry changed", { n: ids.length }, "{n} entries changed")),
+      h("span", { class: "spacer" }),
+      ids.length > 1 && h("button", { type: "button", class: "btn sm ghost", onclick: () => undoAllAi(ids) }, t("Undo all")),
+      h("button", { type: "button", class: "btn sm primary", onclick: () => { for (const id of ids) keepAi(id); } }, icon("check"), ids.length > 1 ? t("Keep all") : t("Keep"))),
+    rows);
+}
+
+async function undoAllAi(ids) {
+  for (const id of ids) await undoAi(id, { quiet: true });
+  renderChat();
+  toast(t("Restored to before the change"));
+}
+
 // the actions after which the project counts as read (resume/api.py `synced`)
 const SYNCING = new Set(["sync", "polish", "batch_sync"]);
-async function undoAi(id) {
+async function undoAi(id, { quiet = false } = {}) {
   const a = ui.ai[id], current = entryById(id), result = a.result;
   if (!current || !result) return;
   const ed = ui.eds.get("entry:" + id);
@@ -2255,7 +2323,8 @@ async function undoAi(id) {
     resetEd(editor);
     paintItem(editor, { flash: true });
     scheduleRender();
-    toast(t("Restored to before the change"));
+    renderChat();
+    if (!quiet) toast(t("Restored to before the change"));
   } catch (e) { toast(t("Undo failed: {error}", { error: e.message })); }
 }
 
@@ -2297,6 +2366,7 @@ function finishAi(chatId) {
     if (!touched.length) { toast(t("The AI didn't change any entry this time; see the chat")); return; }
   }
   if (!touched.length) return;
+  renderChat();   // the reply was drawn before its changes were known: the list under it comes now
   const open = ui.sel.kind === "entry" && touched.includes(ui.sel.id);
   for (const id of touched) {   // each card Claude changed shows what changed, with undo
     const ed = ui.eds.get("entry:" + id);
@@ -2305,8 +2375,8 @@ function finishAi(chatId) {
   const first = touched.find((id) => id !== ui.sel.id) || touched[0];
   if (!open || touched.length > 1) {
     const name = display((entryById(first) || {}).title) || entryLabel(entryById(first));
-    toast(touched.length > 1 ? t("The AI changed {n} entries; each card shows what changed, with undo", { n: touched.length }) : t("The AI finished “{name}”", { name }),
-      { ms: 6000, action: { label: t("View"), fn: () => select("entry", first) } });
+    toast(touched.length > 1 ? t("The AI changed {n} entries: the list under its reply opens each one, to keep or undo", { n: touched.length }) : t("The AI finished “{name}”", { name }),
+      { ms: 6000, action: { label: t("View"), fn: () => showAiReview(first) } });
   }
 }
 
@@ -2338,10 +2408,23 @@ function measuredFor(id, lang) {
   if (!inPreview(id)) return null;
   return (ui.lines[lang] || {})[id] || {};
 }
-// a bullet fills 70-100% of one line (resume/model.py LINE_MIN): more lines is too long, less is a stub
-const LINE_MIN = 0.70;
-const isShort = (x) => !!x && x.n === 1 && x.fill < LINE_MIN;
-const offLine = (x) => !!x && (x.n > 1 || isShort(x));
+// How long a bullet may be, as a share of one line: never shorter than the least, never longer than the most, any
+// length between is fine. Each subset sets it under Layout (resume/model.py bullet_range; 70-100% by default).
+function lineRange() {
+  const pct = (k, d) => { const v = parseFloat(layoutValue(k)); return Number.isFinite(v) ? v : d; };
+  const lo = Math.min(Math.max(pct("bullet_min", 70), 0), 100) / 100;
+  const hi = Math.min(Math.max(pct("bullet_max", 100), lo * 100, 50), 300) / 100;
+  return [lo, hi];
+}
+// "long" / "short" / null (resume/model.py off_range): up to one line, a bullet that wraps is long whatever its width
+function offRange(x) {
+  if (!x) return null;
+  const [lo, hi] = lineRange();
+  return x.fill > hi + 1e-9 || (hi <= 1 && x.n > 1) ? "long" : x.fill < lo - 1e-9 ? "short" : null;
+}
+const isShort = (x) => offRange(x) === "short";
+const offLine = (x) => !!offRange(x);
+const pctOf = (x) => Math.round(x * 100);
 // the bullets off their line in the preview: more than one line, or too short (`short: true`)
 function longBullets(lang = (subset() || {}).lang) {
   if (ui.linesFor[lang] !== ui.subsetId) return [];
@@ -2355,11 +2438,12 @@ function longBullets(lang = (subset() || {}).lang) {
   }
   return out;
 }
-// "2 bullets run past one line, 1 is short": what the measurement found, in one phrase
+// "2 bullets too long (over 100%), 1 too short (under 70%)": what the measurement found, in one phrase
 function offLineText(list) {
   const long = list.filter((b) => !b.short).length, short = list.length - long;
-  return [long && t("{n} bullet runs past one line", { n: long }, "{n} bullets run past one line"),
-    short && t("{n} bullet fills less than 70% of its line", { n: short }, "{n} bullets fill less than 70% of their line")].filter(Boolean).join(t(", "));
+  const [lo, hi] = lineRange();
+  return [long && t("{n} bullet too long (over {hi}%)", { n: long, hi: pctOf(hi) }, "{n} bullets too long (over {hi}%)"),
+    short && t("{n} bullet too short (under {lo}%)", { n: short, lo: pctOf(lo) }, "{n} bullets too short (under {lo}%)")].filter(Boolean).join(t(", "));
 }
 
 // the measurement changed: update chips and notes in place (never rebuild the form under the cursor)
@@ -2432,10 +2516,36 @@ function buildLayoutPanel() {
         oninput: (ev) => { val.textContent = ev.target.value + unit; queueLayout(key, parseFloat(ev.target.value)); } });
       return h("div", { class: "ctl" }, h("span", null, t(label)), input, val, reset(key));
     }),
+    lengthControl(),
     h("div", { class: "ctl" }, h("span", null, t("Accent colour")), ui.w.accent.el, h("span"), reset("accent")),
     h("div", { class: "ctl" }, h("span", null, t("Paper")), h("div", { id: "ctl-paper" }), h("span"), reset("paper")),
     fontControl("font", t("Latin font"), reset),
     fontControl("cjk_font", t("CJK font"), reset));
+}
+
+// ---- the bullet length range: never shorter than the least, never longer than the most (resume/model.py bullet_range)
+function lengthControl() {
+  const box = (key, min, max) => h("input", { type: "number", class: "len-pct", id: "ctl-" + key, min, max, step: 5, inputmode: "numeric",
+    "aria-label": key === "bullet_min" ? t("Shortest a bullet may be, % of a line") : t("Longest a bullet may be, % of a line"),
+    onchange: (ev) => {
+      const n = Math.round(parseFloat(ev.target.value));
+      if (!Number.isFinite(n)) { ev.target.value = layoutValue(key); return; }
+      const [lo, hi] = lineRange();
+      const v = key === "bullet_min" ? Math.min(Math.max(n, 0), 100, pctOf(hi)) : Math.min(Math.max(n, pctOf(lo), 50), 300);
+      ev.target.value = v;
+      queueLayout(key, v, 0);
+    } });
+  return h("div", { class: "ctl len-ctl", title: t("How long each bullet may be, as a share of one line. 100% is a full line; over 100% lets a bullet run onto a second line. The line marks, the checks and the AI all follow it.") },
+    h("span", null, t("Bullet length")),
+    h("div", { class: "len-range" }, box("bullet_min", 0, 100), h("span", { class: "len-dash" }, "–"), box("bullet_max", 50, 300), h("span", { class: "len-unit" }, t("% of a line"))),
+    h("button", { class: "btn icon sm ghost", title: t("Reset to default"), "data-reset": "bullet_min,bullet_max",
+      onclick: () => { queueLayout("bullet_min", undefined, 0); queueLayout("bullet_max", undefined, 0); } }, icon("undo")));
+}
+function openLengthRange() {
+  ui.layoutOpen = true;
+  renderPreviewToolbar();
+  const el = $("#ctl-bullet_max");
+  if (el) { el.scrollIntoView({ block: "nearest" }); el.focus(); el.select(); }
 }
 
 // ---- font pickers: installed fonts from the server, plus "Custom…" for any other font name
@@ -2499,7 +2609,8 @@ function updateLayoutPanel() {
     syncRange(input);
     input.nextSibling.textContent = (input === active ? input.value : layoutValue(key)) + unit;
   }
-  for (const b of document.querySelectorAll("#layout-panel [data-reset]")) b.disabled = !((v.layout || {})[b.dataset.reset] !== undefined);
+  for (const key of ["bullet_min", "bullet_max"]) set(document.getElementById("ctl-" + key), layoutValue(key));
+  for (const b of document.querySelectorAll("#layout-panel [data-reset]")) b.disabled = !b.dataset.reset.split(",").some((k) => (v.layout || {})[k] !== undefined);
 }
 
 const pendingLayout = {};
@@ -2513,7 +2624,7 @@ function queueLayout(key, value, delay = 300) {
     mutateSubset((x) => {
       x.layout = x.layout || {};
       for (const [k, val] of Object.entries(patch)) { if (val === undefined) delete x.layout[k]; else x.layout[k] = val; }
-    }).then(updateLayoutPanel);
+    }).then(() => { updateLayoutPanel(); if ("bullet_min" in patch || "bullet_max" in patch) paintLines(); });
   }, delay);
 }
 
@@ -2576,10 +2687,11 @@ function renderIssues() {
   const items = [];
   if (long.length) {
     items.push(h("button", { class: "issue warn", "aria-haspopup": "menu", onclick: (ev) => openMenu(ev.currentTarget, [
-      { header: t("{lang} bullets that don't fill one line (70–100%)", { lang: langName(lang) }) },
-      ...long.map((b) => { const e = entryById(b.id); return { label: t("{name} · bullet {n}", { name: display(e.title) || entryLabel(e), n: b.index + 1 }), hint: `${b.short ? t("Short") : t("{n} line", { n: b.n }, "{n} lines")} · ${Math.round(b.fill * 100)}%`, icon: "compress", onClick: () => jumpToBullet(b.id, b.index, lang) }; }),
+      { header: t("{lang} bullets out of the length range ({lo}–{hi}% of a line)", { lang: langName(lang), lo: pctOf(lineRange()[0]), hi: pctOf(lineRange()[1]) }) },
+      ...long.map((b) => { const e = entryById(b.id); return { label: t("{name} · bullet {n}", { name: display(e.title) || entryLabel(e), n: b.index + 1 }), hint: `${b.short ? t("Short") : b.n > 1 ? t("{n} line", { n: b.n }, "{n} lines") : t("Too long")} · ${Math.round(b.fill * 100)}%`, icon: "compress", onClick: () => jumpToBullet(b.id, b.index, lang) }; }),
       "sep",
-      { label: t("Let AI bring them all to one full line"), icon: "sparkle", disabled: !ui.chat.available, onClick: () => aiBatch("batch_fit") },
+      { label: t("Let AI adjust them all"), icon: "sparkle", disabled: !ui.chat.available, onClick: () => aiBatch("batch_fit") },
+      { label: t("Change the range…"), hint: t("Layout"), icon: "sliders", onClick: openLengthRange },
     ], { minWidth: 280 }) }, icon("compress"), offLineText(long)));
   }
   if (missing.length && langs().length > 1) {
