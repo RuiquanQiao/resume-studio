@@ -33,6 +33,7 @@ LISTING_KEEP = 4000        # file listing stored in the baseline (for "which fil
 # a look at 10 git folders takes 4-14 s: the page asks on load and again on focus, which within half a
 # minute shows the same answer (the "check again" button still forces a fresh look)
 CACHE_SECONDS = 30
+PREV = "_prev"             # evidence.json: {entry id: the baseline before its last sync}, for undo (never an entry id)
 
 
 def _git(path: Path, *args: str, timeout: float = 8) -> str | None:
@@ -178,6 +179,8 @@ class EvidenceTracker:
         """Claude has read these paths for this entry: their current state is the new baseline."""
         with self.lock:
             data = self._load()
+            # the baseline before this sync, so undoing the AI's rewrite can put it back (unsync)
+            data.setdefault(PREV, {})[entry_id] = json.loads(json.dumps(data.get(entry_id) or {}))
             rec = data.setdefault(entry_id, {})
             for p in paths:
                 sig = self._sig(p, force=True)
@@ -186,6 +189,21 @@ class EvidenceTracker:
             for p in [p for p in rec if p not in paths]:
                 del rec[p]
             self._save(data)
+
+    def unsync(self, entry_id: str) -> bool:
+        """The user undid what the AI wrote from the project: the baseline goes back to before that sync, so the
+        entry shows the progress as new again. False when there is no earlier baseline to go back to."""
+        with self.lock:
+            data = self._load()
+            prev = (data.get(PREV) or {}).pop(entry_id, None)
+            if prev is None:
+                return False
+            if prev:
+                data[entry_id] = prev
+            else:
+                data.pop(entry_id, None)
+            self._save(data)
+            return True
 
     def rename(self, old: str, new: str) -> None:
         with self.lock:

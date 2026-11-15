@@ -531,7 +531,8 @@ async function openChat(id, { quiet = false, refresh = false } = {}) {
   ui.chat.meta = r.chat;
   ui.chat.messages = r.messages;
   ui.chat.running = r.running;
-  ui.chat.live = r.running ? { blocks: (r.live && r.live.blocks) || [], started_at: r.live && r.live.started_at, status: r.live && r.live.status } : null;
+  ui.chat.live = r.running ? { blocks: (r.live && r.live.blocks) || [], started_at: r.live && r.live.started_at, status: r.live && r.live.status,
+    status_kind: r.live && r.live.status_kind, status_data: (r.live && r.live.status_data) || {} } : null;
   ui.chat.queue = (r.live && r.live.queue) || [];
   if (r.available !== undefined) ui.chat.available = r.available;
   syncAgent();
@@ -869,8 +870,19 @@ function paintWorking(el) {
   const [ge, te, se] = el.children;
   if (ge.textContent !== g) ge.textContent = g;
   if (te.textContent !== text) te.textContent = text;
-  const status = (ui.chat.live && ui.chat.live.status) || "";
-  if (se && se.textContent !== status) { se.textContent = status; se.hidden = !status; }
+  const live = ui.chat.live || {};
+  const status = live.status || "", kind = status ? live.status_kind || "" : "";
+  // redrawn only when it changes (this runs every tick): a sign-in wait carries its way to the sign-in page
+  if (se && se.dataset.key !== status + "|" + kind) {
+    se.dataset.key = status + "|" + kind;
+    se.hidden = !status;
+    se.classList.toggle("signin", kind === "signin");
+    se.replaceChildren(h("span", { class: "wk-status-t" }, status),
+      kind === "signin" ? h("span", { class: "wk-status-acts" },
+        h("button", { class: "btn sm primary", onclick: () => api("POST", "/api/browser/start", {}).catch((e) => toast(e.message)) }, icon("external"), t("Show the sign-in page")),
+        h("button", { class: "linkish", title: t("For a site that refuses to sign in (a code that never arrives): the same browser, not controlled by Resume Studio"),
+          onclick: () => signInMode((live.status_data || {}).url) }, t("No code arriving?"))) : null);
+  }
 }
 
 // Errors that mean the agent's command itself isn't signed in. A fixed check, not the agent:
@@ -1703,7 +1715,7 @@ async function onChatEvent(type, ev) {
   } else if (type === "chat.meta") {
     ui.chat.meta = ev.meta; renderPickers();
   } else if (type === "chat.status") {
-    live.status = ev.text || "";
+    live.status = ev.text || ""; live.status_kind = ev.kind || ""; live.status_data = ev.data || {};
     const shown = document.querySelectorAll(".working");
     if (shown.length) shown.forEach(paintWorking); else renderLive();
   } else if (type === "chat.thinking") {

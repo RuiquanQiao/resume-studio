@@ -228,6 +228,7 @@ class Turn:
         # unreachable. Cleared by the next thing the reply shows. `status_kind`: "retry" | "network".
         self.status: str | None = None
         self.status_kind: str | None = None
+        self.status_data: dict = {}
         self.active_at = self.started_at   # the last time the reply showed anything
 
     def write(self, obj: dict) -> bool:
@@ -336,7 +337,8 @@ class ChatRunner:
         turn = self.turns.get(chat_id)
         if not turn:
             return None
-        return {"blocks": turn.blocks, "queue": turn.queue, "started_at": turn.started_at, "status": turn.status}
+        return {"blocks": turn.blocks, "queue": turn.queue, "started_at": turn.started_at, "status": turn.status,
+                "status_kind": turn.status_kind, "status_data": turn.status_data}
 
     # ---- public --------------------------------------------------------
     def send(self, chat_id: str, text: str, context: str = "", add_dirs: list[str] | None = None,
@@ -504,12 +506,21 @@ class ChatRunner:
                     self._status(turn, None)
         self.bus.publish(event, {"chat": chat_id, **data})
 
-    def _status(self, turn: Turn, text: str | None, kind: str | None = None) -> None:
-        """The line under "Working…": the agent retrying, or its service unreachable. None clears it."""
-        if text == turn.status:
+    def _status(self, turn: Turn, text: str | None, kind: str | None = None, data: dict | None = None) -> None:
+        """The line under "Working…": the agent retrying, its service unreachable, or the reply waiting for the
+        user to sign in to a site (kind "signin", data {url}). None clears it."""
+        if text == turn.status and kind == turn.status_kind:
             return
         turn.status, turn.status_kind = text, (kind if text else None)
-        self.bus.publish("chat.status", {"chat": turn.chat_id, "text": text})
+        turn.status_data = dict(data or {}) if text else {}
+        self.bus.publish("chat.status", {"chat": turn.chat_id, "text": text, "kind": turn.status_kind, "data": turn.status_data})
+
+    def wait_status(self, chat_id: str, text: str | None, kind: str = "signin", data: dict | None = None) -> None:
+        """A tool of the reply waits for the user (a sign-in in the browser): say so under "Working…" until it
+        returns, the way Claude Code shows a reply that waits on a prompt, instead of a reply that looks stuck."""
+        turn = self.turns.get(chat_id)
+        if turn is not None:
+            self._status(turn, text, kind, data)
 
     def watch_quiet(self, turn: Turn, agent: Any, poll: float = 1.0) -> None:
         """While the reply runs: once it has shown nothing for `quiet_after` seconds, check that the agent's
@@ -521,7 +532,7 @@ class ChatRunner:
         while self.turns.get(turn.chat_id) is turn and not turn.cancelled and not turn.closed:
             time.sleep(poll)
             now = _now()
-            if any(a["status"] == "pending" for a in turn.asks.values()):
+            if any(a["status"] == "pending" for a in turn.asks.values()) or turn.status_kind == "signin":
                 continue   # waiting for the user, not for the service
             if now - turn.active_at < self.quiet_after or now - probed_at < self.quiet_after:
                 continue

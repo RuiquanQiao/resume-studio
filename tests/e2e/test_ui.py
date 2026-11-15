@@ -187,8 +187,12 @@ def test_the_document_edits_every_card_in_place(page, server, data_file):
     pg.click("#library .entry[data-id='EXP-003'] .check")
     wait_until(lambda: "EXP-003" in subset(server)["entries"], msg="back in the subset")
     pg.wait_for_selector("#editor .doc-card:not(.out)[data-key='entry:EXP-003']")
-    # the fact layer is folded under each card
-    assert not pg.is_visible("#active .fact-fold textarea")
+    # the fact layer and the mock interview are open under each card, the mock interview last (user, 2026-11-15)
+    assert pg.is_visible("#active .fact-fold textarea") and pg.is_visible("#active .mock-fold .mock-bar")
+    assert pg.eval_on_selector("#active", """c => { const f = c.querySelector('.fact-fold'), m = c.querySelector('.mock-fold');
+        return !!(f.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING) && !m.nextElementSibling; }""")
+    pg.click("#active .fact-fold > summary")                                   # folded by hand, it stays folded
+    pg.wait_for_selector("#active .fact-fold textarea", state="hidden")
     pg.click("#active .fact-fold > summary")
     pg.wait_for_selector("#active .fact-fold textarea", state="visible")
     # the outline folds into a strip that opens on hover, and is pinned again
@@ -718,8 +722,7 @@ def test_mock_interview_predicts_hides_answers_and_follows_up(page, server, data
             "        follow_ups:\n          - {q: 怎么发现跑偏的？, a: 【待补充：一个具体例子】}\n  - id: EXP-003")
     monkeypatch.setenv("FAKE_CLAUDE_EDIT", json.dumps({"file": str(data_file), "from": "    evidence: []\n  - id: EXP-003", "to": mock}))
     open_entry(page, "EXP-002")
-    page.click("#active .mock-fold > summary")
-    page.wait_for_selector("#active .mock-empty", state="visible")
+    page.wait_for_selector("#active .mock-empty", state="visible")             # open from the start
     page.fill("#active .mock-instr", "字节后端")
     page.click("#active .mock-run")
     page.wait_for_selector(".msg-user:has-text('字节后端')")
@@ -1013,8 +1016,11 @@ def test_line_chips_and_issue_strip(page, server):
     open_entry(page, "EXP-002")
     page.wait_for_selector("#bullets .line-chip.long", timeout=40000)
     chips = page.locator("#bullets .line-chip").all_inner_texts()
-    assert chips == ["1 行", "1 行", "2 行"]
-    assert "1 条要点超过一行" in page.inner_text("#bullet-notes")
+    # the second sample bullet fills 68% of its line: under 70% it is flagged short (user, 2026-11-15)
+    assert chips == ["1 行", "过短", "2 行"]
+    assert "过短" in page.locator("#bullets .line-chip.short").inner_text()
+    assert "1 条要点超过一行" in page.inner_text("#bullet-notes") and "1 条要点不足一行的 70%" in page.inner_text("#bullet-notes")
+    assert "让 AI 调整为满一行" in page.inner_text("#bullet-notes")
     page.click("#issues .issue.warn")                                         # the strip lists it, and jumps there
     page.click(".float .menu-item:has-text('第 3 条')")
     wait_until(lambda: page.evaluate("document.activeElement.dataset.bullet") == "2", msg="focused the long bullet")
@@ -1030,7 +1036,7 @@ def test_writing_the_other_language(page, server, data_file):
     assert "missing" in third.get_attribute("class")
     assert third.locator("textarea").get_attribute("placeholder").startswith("EN: Added an evaluation")
     assert third.locator(".line-chip").inner_text() == "缺中文"
-    page.wait_for_function("() => document.querySelectorAll('#bullets .line-chip.ok').length === 2", timeout=40000)  # zh measured too
+    page.wait_for_function("() => document.querySelectorAll('#bullets .line-chip.short').length === 2", timeout=40000)  # zh measured too: 43% each
     third.hover()
     third.locator("button[data-tip^='简体中文简历不显示此条']").click()
     entry = lambda: next(x for x in state(server)["doc"]["entries"] if x["id"] == "EXP-002")  # noqa: E731
@@ -1068,29 +1074,44 @@ def test_project_folder_pick_sync_and_update(page, server, data_file, fake_claud
     monkeypatch.setenv("STUDIO_FAKE_PICK", json.dumps([str(repo)]))
     open_entry(page, "EXP-002")
     open_facts(page)
-    page.click("#evidence button:has-text('选择项目文件夹')")
+    page.click("#evidence .ev-add button:has-text('添加项目文件夹')")
     row = page.locator("#evidence .ev-row")
     row.wait_for()
     assert row.locator(".ev-name b").inner_text() == "demo"
     wait_until(lambda: str(repo).replace("\\", "/") in data_file.read_text(encoding="utf-8"), msg="path saved")
     page.wait_for_selector("#evidence .ev-chip:text('AI 尚未读取')")
-    page.click("#evidence .sync-bar button:text('标记为已同步')")
+    update = "#evidence .ev-head button[id^='ev-update-']"
+    assert page.is_enabled(update) and page.inner_text(update).strip() == "让 AI 读取"
+    page.click("#evidence .ev-head button[aria-label='更多']")                # "mark as in sync" sits in the section's ⋯
+    page.click(".menu .menu-item:has-text('标记为已同步')")
     page.wait_for_selector("#evidence .ev-chip.ok:text('已同步')")
+    assert not page.is_enabled(update)                                        # nothing new: greyed, still in its place
 
     (repo / "eval.py").write_text("x = 1\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-qm", "feat: evaluation harness"], check=True)
     page.evaluate("window.dispatchEvent(new Event('focus'))")                 # coming back to the window re-checks
-    page.wait_for_selector("#evidence .ev-chip.new:text('1 个新提交')", timeout=8000)
+    page.wait_for_selector("#evidence .ev-chip.new:has-text('1 个新提交')", timeout=8000)
     page.wait_for_selector(".entry[data-id='EXP-002'] .e-dot")
-    page.click("#evidence .ev-more")
+    # "new progress" is said once, on the folder's row: no second bar saying the same above it
+    assert "项目有新进展" not in page.locator("#evidence").inner_text() and page.locator("#evidence .sync-bar").count() == 0
+    page.click("#evidence .ev-toggle")                                        # the chip unfolds what changed
     assert "feat: evaluation harness" in page.inner_text("#evidence .change-detail")
-    page.click("#evidence .sync-bar button:has-text('让 AI 根据最新进展更新')")
+    monkeypatch.setenv("FAKE_CLAUDE_EDIT", json.dumps({"file": str(data_file), "from": "subtitle: {en: Solo developer, zh: 独立开发}",
+                                                       "to": "subtitle: {en: Solo developer and maintainer, zh: 独立开发}"}, ensure_ascii=False))
+    page.click(update)
     page.wait_for_selector(".msg-action:text('按项目更新')")
     page.wait_for_selector(".card.diff", timeout=15000)
     page.wait_for_selector(".entry[data-id='EXP-002'] .e-dot", state="detached", timeout=8000)   # read, so in sync again
+    assert not page.is_enabled(update)
     sent = calls(fake_claude)[0]["stdin"]                # the range, not the commits: the agent reads them itself
     assert "..HEAD" in sent and "feat: evaluation harness" not in sent and "resume-writing.md" in sent
+    # undoing the AI's rewrite undoes the reading too: the progress is new again and the button is back (2026-11-15)
+    page.click("#active .card.diff button:has-text('撤销，恢复到改动前')")
+    wait_until(lambda: "Solo developer and maintainer" not in data_file.read_text(encoding="utf-8"), msg="words undone")
+    page.wait_for_selector(".entry[data-id='EXP-002'] .e-dot", timeout=8000)
+    page.wait_for_selector("#evidence .ev-chip.new:has-text('1 个新提交')")
+    assert page.is_enabled(update)
 
 
 def test_project_roots_setting(page, server, monkeypatch):
@@ -1443,7 +1464,7 @@ def test_screenshots_of_new_parts(page, server, fake_claude, monkeypatch, tmp_pa
     add_long_bullet(server, page)
     open_entry(page, "EXP-002")
     open_facts(page)
-    page.click("#evidence button:has-text('选择项目文件夹')")
+    page.click("#evidence .ev-add button:has-text('添加项目文件夹')")
     page.wait_for_selector("#evidence .ev-chip:text('AI 尚未读取')")
     page.wait_for_selector("#bullets .line-chip.long", timeout=40000)
     page.screenshot(path=str(ART / f"new-entry-{scheme}.png"))
@@ -1453,7 +1474,7 @@ def test_screenshots_of_new_parts(page, server, fake_claude, monkeypatch, tmp_pa
     shot_float(page, f"new-ai-menu-{scheme}")
     page.keyboard.press("Escape")
     page.click(".doc-top .seg button:text('中文')")
-    page.wait_for_function("() => document.querySelectorAll('#bullets .line-chip.ok').length === 2", timeout=40000)
+    page.wait_for_function("() => document.querySelectorAll('#bullets .line-chip.short').length === 2", timeout=40000)   # 43% each
     page.locator("#bullets").scroll_into_view_if_needed()
     page.screenshot(path=str(ART / f"new-zh-{scheme}.png"))
     page.click("#subset-select")
@@ -1933,15 +1954,14 @@ def test_the_browser_chip_says_whether_it_runs_in_the_background_or_a_window(pag
                 show(st, mode)
                 pg.screenshot(path=str(ART / f"browser-chip-{mode}-{scheme}.png"),
                               clip={**pg.locator("#ws-tools").bounding_box(), "height": 40, "y": 8})
+        # the browser has one place, the chip: a platform's page repeats neither its state nor a "Show" button
+        # (2026-11-15: three buttons opened the browser on one page)
         open_platform(pg)
-        for scheme in ("light", "dark"):
-            pg.emulate_media(color_scheme=scheme)
-            for mode, st in states[1:]:
-                if mode == "background":
-                    pg.evaluate("() => { browserWorkUntil = 0; }")
-                show(st, mode)
-                pg.wait_for_selector("#fill-browser .fill-browser")
-                pg.screenshot(path=str(ART / f"browser-line-{mode}-{scheme}.png"), clip=pg.locator("#fill-browser .fill-browser").bounding_box())
+        for mode, st in states[1:]:
+            show(st, mode)
+            assert pg.locator("#fillspace .fill-browser").count() == 0
+            assert pg.locator("#fillspace button:has-text('显示')").count() == 0
+            assert pg.locator("#fillspace button:has-text('打开 LinkedIn')").count() == 1
         pg.emulate_media(color_scheme="light")
         pg.set_viewport_size({"width": 1440, "height": 900})
     finally:
@@ -2006,8 +2026,10 @@ def test_a_companys_wangshen_profile_is_copied_from_its_page_and_comes_back_afte
     pg.click("#company-profile-add")
     pg.wait_for_selector(".fill-card.fill-start")
     assert "星河网申" in pg.inner_text(".fill-head h1") and pg.inner_text(".hunt-back").strip() == "星河网申"
-    assert pg.evaluate("() => H.tab") == "companies" and not pg.query_selector("#fill-sites")
-    assert pg.inner_text(".hunt-tab[data-tab=platforms] .n") == "2"   # LinkedIn and BOSS直聘 only
+    assert pg.evaluate("() => H.tab") == "companies"
+    # one site switcher for every site, a company's among them (a tab row ran out of room once companies came in)
+    assert pg.inner_text("#fill-site-pick .sel-label").strip() == "星河网申"
+    assert pg.inner_text(".hunt-tab[data-tab=platforms] .n") == "3"   # LinkedIn, BOSS直聘 and the company's site
     pg.reload()
     pg.wait_for_selector(".fill-card.fill-start")
     assert "星河网申" in pg.inner_text(".fill-head h1")
@@ -2018,11 +2040,21 @@ def test_a_companys_wangshen_profile_is_copied_from_its_page_and_comes_back_afte
     pg.evaluate("() => openHunt('platform', 'linkedin')")
     pg.wait_for_selector("#fill-sites")
     pg.reload()
-    pg.wait_for_selector("#fill-sites .fs-site.on[data-site=linkedin]")
-    # the Platforms table lists platforms only
+    pg.wait_for_selector("#fill-site-pick")
+    assert pg.inner_text("#fill-site-pick .sel-label").strip() == "LinkedIn"
+    # the Job sites table lists the platforms and the companies' careers sites, told apart by their Type
     pg.click(".hunt-tab[data-tab=platforms]")
     pg.wait_for_selector(".dbv-view[data-table=platforms] tbody tr")
-    assert "星河网申" not in pg.inner_text(".dbv-view[data-table=platforms]")
+    row = pg.locator(".dbv-view[data-table=platforms] tbody tr:has-text('星河网申')")
+    assert "公司官网（网申）" in row.inner_text() and "招聘平台" in pg.inner_text(".dbv-view[data-table=platforms] tbody tr:has-text('LinkedIn')")
+    row.locator("button.linkish").click()                                       # its Type leads to its company
+    pg.wait_for_selector("#company-profile-open")
+    # and the company table has the same profile, one click away
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.wait_for_selector(".dbv-view[data-table=companies] tbody:has-text('星河网申')")
+    pg.locator(".dbv-view[data-table=companies] tbody tr:has-text('星河网申') button.linkish:has-text('尚未读取')").click()
+    pg.wait_for_selector(".fill-card.fill-start")
+    assert pg.evaluate("() => H.tab") == "companies"
     # and the copy can go: off the company's page, with what was read kept for when it comes back
     pg.evaluate("(id) => openHunt('company', id)", cid)
     pg.wait_for_selector("#company-profile-open")
@@ -2906,7 +2938,14 @@ def open_platform(pg, sid="linkedin"):
     pg.keyboard.press("Control+3")
     pg.click(".hunt-tab[data-tab=platforms]")
     pg.click(f".dbv-view tr[data-id='{sid}'] .dbv-title")
-    pg.wait_for_selector(f".fs-site.on[data-site='{sid}']")
+    pg.wait_for_selector(f"#fill-site-pick[data-value='{sid}']")
+
+
+def pick_site(pg, sid):
+    """Another site, from the page head's site switcher (a dropdown since 2026-11-15)."""
+    pg.click("#fill-site-pick")
+    pg.click(f".lb-opt[data-value='{sid}']")
+    pg.wait_for_selector(f"#fill-site-pick[data-value='{sid}']")
 
 
 def test_the_platforms_table_shows_each_platforms_logo(page_all, server):
@@ -2956,7 +2995,7 @@ def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, m
     open_platform(pg)
     pg.wait_for_selector("#fillspace .fill-start")
     assert not pg.is_visible("#editor") and not pg.is_visible(".pane.right") and pg.is_visible("#chat")
-    assert pg.get_attribute(".fs-site.on", "data-site") == "linkedin"
+    assert pg.get_attribute("#fill-site-pick", "data-value") == "linkedin"
     assert "读取 LinkedIn" in pg.inner_text("#fill-check") and "记录读取路线" in pg.inner_text("#fillspace")
     assert "false" not in pg.inner_text("#ws-tools") and "false" not in pg.inner_text("#fillspace")
     for scheme in ("light", "dark"):
@@ -3051,15 +3090,14 @@ def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, m
     assert [(c.get("workspace"), c.get("site")) for c in chats] == [(None, "linkedin")]   # a data-folder chat, like any other
 
     # BOSS直聘: a copy of its own, read once first
-    pg.click(".fs-site[data-site='boss']")
-    pg.wait_for_selector(".fs-site.on[data-site='boss']")
+    pick_site(pg, "boss")
     pg.wait_for_selector("#fillspace .fill-start")
     pg.screenshot(path=str(ART / "autofill-boss-light.png"))
     # Resume shows every chat again; Ctrl+3 comes back to the same site
     pg.keyboard.press("Control+1")
     pg.wait_for_selector("#editor", state="visible")
     pg.keyboard.press("Control+3")
-    pg.wait_for_selector(".fs-site.on[data-site='boss']")
+    pg.wait_for_selector("#fill-site-pick[data-value='boss']")
     server.inst.browser.stop()
 
 
@@ -3114,8 +3152,9 @@ def test_autofill_sites_are_the_users_to_pick(page_all, server):
     pg = page_all
     open_platform(pg)
     pg.wait_for_selector("#fillspace .fill-start")
-    # any other site, by its address, with notes for Claude
-    pg.click("#fill-add-site")
+    # any other site, by its address, with notes for Claude (from the page head's ⋯)
+    pg.click("#fill-site-settings")
+    pg.click(".menu-item >> text=添加网站")
     pg.wait_for_selector(".modal.site-dialog")
     assert "支持的网站" not in pg.inner_text(".site-dialog")   # LinkedIn and BOSS are on the list already
     pg.click(".site-dialog .btn.primary")                         # no address: says so, stays open
@@ -3139,7 +3178,7 @@ def test_autofill_sites_are_the_users_to_pick(page_all, server):
         pg.screenshot(path=str(ART / f"autofill-add-site-{scheme}.png"))
     pg.emulate_media(color_scheme="light")
     pg.click(".site-dialog .btn.primary")
-    pg.wait_for_selector(".fs-site.on[data-site='seek']")
+    pg.wait_for_selector("#fill-site-pick[data-value='seek']")
     assert not pg.is_visible(".modal.site-dialog")
     assert "读取 SEEK" in pg.inner_text("#fill-check")
     sites = server.req("GET", "/api/autofill")[1]["sites"]
@@ -3152,19 +3191,23 @@ def test_autofill_sites_are_the_users_to_pick(page_all, server):
     pg.click(".menu-item >> text=网站设置…")
     pg.fill("#site-name", "SEEK AU")
     pg.click(".site-dialog .btn.primary")
-    pg.wait_for_selector(".fs-site[data-site='seek'] >> text=SEEK AU")
-    pg.click(".fs-site[data-site='seek']", button="right")
-    pg.click(".menu-item >> text=左移")
-    pg.click(".fs-site[data-site='seek']", button="right")
-    pg.click(".menu-item >> text=左移")
-    wait_until(lambda: [s.get_attribute("data-site") for s in pg.locator(".fs-site[data-site]").all()] == ["seek", "linkedin", "boss"], msg="moved")
+    pg.wait_for_selector("#fill-site-pick .sel-label:text('SEEK AU')")
+    for _ in range(2):
+        pg.click("#fill-site-settings")
+        pg.click(".menu-item >> text=上移")
+    wait_until(lambda: [s["id"] for s in server.req("GET", "/api/autofill")[1]["sites"]] == ["seek", "linkedin", "boss"], msg="moved")
+    pg.click("#fill-site-pick")
+    assert [o.get_attribute("data-value") for o in pg.locator(".lb-opt").all()] == ["seek", "linkedin", "boss"]
+    pg.keyboard.press("Escape")
 
     # every site can go (asked first); the page then offers what to add
     for sid in ("seek", "linkedin", "boss"):
-        pg.click(f".fs-site[data-site='{sid}']", button="right")
+        if pg.get_attribute("#fill-site-pick", "data-value") != sid:
+            pick_site(pg, sid)
+        pg.click("#fill-site-settings")
         pg.click(".menu-item >> text=从列表中移除")
         pg.click(".modal .btn.danger-soft")
-        pg.wait_for_selector(f".fs-site[data-site='{sid}']", state="detached")
+        wait_until(lambda: sid not in [s["id"] for s in server.req("GET", "/api/autofill")[1]["sites"]], msg=f"{sid} removed")
     pg.wait_for_selector("#fillspace >> text=你在哪些网站上有个人资料？")
     pg.screenshot(path=str(ART / "autofill-no-sites-light.png"))
     assert "LinkedIn" not in pg.inner_text("#chat .chat-welcome")   # no site to name
@@ -3176,7 +3219,7 @@ def test_autofill_sites_are_the_users_to_pick(page_all, server):
     pg.keyboard.press("Escape")
     pg.wait_for_selector(".modal.site-dialog", state="detached")
     pg.click("#fillspace .btn >> text=LinkedIn")
-    pg.wait_for_selector(".fs-site.on[data-site='linkedin']")
+    pg.wait_for_selector("#fill-site-pick[data-value='linkedin']")
     pg.wait_for_selector("#fillspace .fill-start")
     no_native(pg)
 

@@ -18,7 +18,7 @@ const H = {
   notes: {},             // a timeline note typed but not added yet, per application: {text, on}; repaints keep it
 };
 
-const HUNT_TABS = { apps: "Progress", picked: "Matching roles", companies: "Companies", platforms: "Platforms" };
+const HUNT_TABS = { apps: "Progress", picked: "Matching roles", companies: "Companies", platforms: "Job sites" };
 const HSTATES = { saved: "Want to apply", applied: "Applied", assessment: "Tests", interview: "Interviewing", offer: "Offer",
   hired: "Hired", rejected: "Not successful", withdrawn: "Withdrawn", closed: "Posting closed" };
 const HCHANNELS = { site: "Its own site", platform: "A platform", referral: "Referral", other: "Other" };
@@ -214,12 +214,13 @@ async function setHuntTab(tab) {
 // an empty chat's suggestions, and the line above the composer, follow what the page shows
 function welcomeAgain() { if (!ui.chat.messages.length && !ui.chat.running) renderChat(); renderComposerState(); }
 
-async function openHunt(kind, id) {
+async function openHunt(kind, id, { tab = null } = {}) {
   await flushTyping();
   if (kind === "platform") {
-    // a company's 网申 profile is part of the company: its page sits under Companies
+    // a company's 网申 profile is part of the company: opened from its company it sits under Companies (and goes back
+    // there); opened from the Job sites table it stays there
     const s = (F.sites || []).find((x) => x.id === id);
-    H.tab = s && s.kind === "company" ? "companies" : "platforms"; H.page = { kind, id }; H.view = null;
+    H.tab = tab || (s && s.kind === "company" ? "companies" : "platforms"); H.page = { kind, id }; H.view = null;
     storeHunt();
     if (F.site !== id) { F.site = id; store("fill-site", id); F.open = {}; }
     paintFill();
@@ -255,7 +256,7 @@ function paintFill() {
 function huntBar() {
   const d = H.data;
   const n = { apps: d ? d.applications.length : null, picked: d && anyTracks() ? d.companies.reduce((k, c) => k + ((c.postings || {}).matching || 0), 0) : null,
-    companies: d ? d.companies.length : null, platforms: F.sites ? platformSites().length : null };
+    companies: d ? d.companies.length : null, platforms: F.sites ? F.sites.length : null };
   return h("div", { class: "hunt-bar" + (H.page ? " is-page" : "") },
     h("div", { class: "hunt-tabs", role: "tablist", "aria-label": t("Applying") }, Object.entries(HUNT_TABS).map(([id, label]) =>
       h("button", { type: "button", role: "tab", class: "hunt-tab" + (H.tab === id ? " on" : ""), "data-tab": id, "aria-selected": String(H.tab === id),
@@ -1591,12 +1592,23 @@ function companyProps() {
       } },
     text("size", t("Size"), 120, { hidden: true }),
     text("site", t("Careers site"), 220, { hidden: true }),
+    // the 网申 profile kept for this company: the same row as in Job sites, one click to it
+    { key: "profile", label: t("Your profile there"), type: "custom", width: 150, group: true,
+      get: (c) => { const s = companySite(c.id); return s ? siteState(s) || t("In step") : ""; },
+      render: (c) => {
+        const s = companySite(c.id);
+        if (!s) return "";
+        const say = siteState(s) || t("In step");
+        return h("button", { class: "linkish" + (s.signed_out || s.check_error ? " warn" : ""), title: t("Open your profile on {company}'s careers site", { company: c.name }),
+          onclick: (e) => { e.stopPropagation(); openHunt("platform", s.id, { tab: "companies" }); } }, say);
+      } },
     text("note", t("Notes"), 220, { hidden: true }),
   ];
 }
 
 function companiesTable() {
   const d = H.data;
+  if (!F.sites) loadFill();   // the "Your profile there" column; the page repaints once they are in
   const shown = d.companies.filter((c) => matches(c.name, (c.aliases || []).join(" "), c.industry, natureName(c.nature), c.strength, c.note, c.hq ? placeName(c.hq) : "", ...(c.places || []).map(placeText)));
   return [
     h("div", { class: "hunt-head" }, h("h1", null, t("Companies")),
@@ -1667,19 +1679,35 @@ async function reportModal(items, done) {
   } else if (copied) await done("copied");
 }
 
+// the Job sites table's first view, as it was named in each interface language before it held companies' sites too
+const OLD_ALL_PLATFORMS = new Set(["All platforms", "全部平台", "すべての求人サイト", "전체 플랫폼", "Alle Plattformen", "Toutes les plateformes", "Todas las plataformas"]);
+// Every site the user keeps a profile on: the job platforms (LinkedIn, BOSS直聘…) and the companies' own careers
+// sites (网申), told apart by their Type, so the table holds three sites or three hundred (2026-11-15)
 function platformsTable() {
-  const sites = platformSites();
-  const apps = (H.data && H.data.applications) || [];
   if (!F.sites) { loadFill(); return h("div", { class: "muted" }, t("Loading…")); }
+  const sites = F.sites;
+  const apps = (H.data && H.data.applications) || [];
+  const companies = Object.fromEntries(((H.data && H.data.companies) || []).map((c) => [c.id, c]));
   const host = (s) => (s.home || "").replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
   // a check that didn't finish comes first: "Not read yet" or "In step" would hide it
   const profile = (s) => s.check_error ? "failed" : !s.synced_at ? "unread" : s.conflicts ? "conflicts" : s.changes ? "changes" : "step";
   const PROFILE = { failed: t("The last check didn't finish."), unread: t("Not read yet"), conflicts: t("Has conflicts"), changes: t("Changes to push"), step: t("In step") };
-  const nApps = (s) => apps.filter((a) => a.channel === "platform" && a.platform === s.id).length;
+  const KIND = { platform: t("Job platform"), company: t("Company careers site") };
+  const kind = (s) => (s.kind === "company" ? "company" : "platform");
+  const nApps = (s) => apps.filter((a) => (s.kind === "company" ? a.company === s.company : a.channel === "platform" && a.platform === s.id)).length;
+  // the first view was named "All platforms" when it was made; it lists every site now, so its old name goes
+  const first = DBV.tables && DBV.tables.platforms && DBV.tables.platforms.views.find((v) => v.id === "v1");
+  if (first && OLD_ALL_PLATFORMS.has(first.name)) first.name = t("All sites");
   const props = [
-    { key: "name", label: t("Platform"), type: "title", width: 200, get: (s) => s.name,
-      render: (s) => h("span", { class: "co-name" }, companyLogo(s, "", true),
+    { key: "name", label: t("Site"), type: "title", width: 220, get: (s) => s.name,
+      render: (s) => h("span", { class: "co-name" }, companyLogo(s.kind === "company" ? companies[s.company] || s : s, "", true),
         h("span", { class: "co-text" }, h("span", { class: "c-main-name" }, s.name), h("span", { class: "c-alias" }, host(s)))) },
+    { key: "kind", label: t("Type"), type: "custom", width: 130, group: true, get: (s) => KIND[kind(s)],
+      // a company's site leads to its company: the company table's row and this one are the same 网申
+      render: (s) => s.kind === "company" && companies[s.company]
+        ? h("button", { class: "linkish", title: t("Open {company}", { company: companies[s.company].name }),
+          onclick: (e) => { e.stopPropagation(); openHunt("company", s.company); } }, KIND.company)
+        : h("span", { class: "c-muted" }, KIND[kind(s)]) },
     { key: "profile", label: t("Your profile there"), type: "custom", width: 180, group: true, get: (s) => PROFILE[profile(s)],
       render: (s) => s.check_error ? h("span", { class: "fs-status bad", title: s.check_error }, icon("alert"), PROFILE.failed)
         : h("span", { class: "c-muted" }, !s.synced_at ? t("Not read yet") : s.conflicts ? t("{n} conflict", { n: s.conflicts }, "{n} conflicts")
@@ -1690,12 +1718,12 @@ function platformsTable() {
     { key: "checked", label: t("Last checked"), type: "custom", width: 140, get: (s) => s.synced_at || "", render: (s) => h("span", { class: "c-muted" }, s.synced_at ? relTime(s.synced_at) : "") },
   ];
   return [
-    h("div", { class: "hunt-head" }, h("h1", null, t("Platforms")),
-      h("p", null, t("Your profiles on job platforms. Resume Studio keeps a copy of each, in step with the site: open one to see it field by field."))),
+    h("div", { class: "hunt-head" }, h("h1", null, t("Job sites")),
+      h("p", null, t("Your profiles on job platforms and on companies' careers sites (网申). Resume Studio keeps a copy of each, in step with the site: open one to see it field by field. A company's careers site is added from its company's page."))),
     // with no sites the card below is the start, its known sites one click each: the toolbar doesn't compete with it
-    tableTools(h("button", { class: "btn sm" + (sites.length ? " primary" : ""), id: "hunt-new-platform", onclick: () => siteDialog(null) }, icon("plus"), t("Add a site"))),
+    tableTools(h("button", { class: "btn sm" + (sites.length ? " primary" : ""), id: "hunt-new-platform", onclick: () => siteDialog(null) }, icon("plus"), t("Add a platform"))),
     sites.length ? dbView({ table: "platforms", props, rows: sites.filter((s) => matches(s.name, s.home)), rowId: (s) => s.id,
-      open: (s) => openHunt("platform", s.id), defaults: [{ id: "v1", name: t("All platforms") }], repaint: paintHunt, empty: t("Nothing matches") }) : noSitesCard(),
+      open: (s) => openHunt("platform", s.id, { tab: "platforms" }), defaults: [{ id: "v1", name: t("All sites") }], repaint: paintHunt, empty: t("Nothing matches") }) : noSitesCard(),
   ];
 }
 
@@ -1991,7 +2019,7 @@ function hfield(label, value, save, { placeholder = "", hint = "", multiline = f
 }
 
 function backTo(tab) {
-  const label = { apps: t("All applications"), companies: t("All companies"), platforms: t("All platforms") }[tab];
+  const label = { apps: t("All applications"), companies: t("All companies"), platforms: t("All sites") }[tab];
   return h("button", { class: "btn sm ghost hunt-back", onclick: () => setHuntTab(tab) }, icon("chevLeft"), label);
 }
 // from a company's 网申 profile back to the company it belongs to
@@ -2148,9 +2176,13 @@ async function removeCompanySite(c) {
   const ok = await modal({ title: t("Stop keeping a copy of your profile on {company}'s site?", { company: c.name }),
     message: t("Nothing changes on the site itself. What the AI read there stays saved: keep a copy again to get it back."), ok: t("Stop"), danger: true });
   if (!ok) return;
+  F.gone = s.id;   // its "changed" event may come before this answer: nothing asks for the removed site meanwhile
   try { const r = await api("DELETE", "/api/autofill/" + encodeURIComponent(s.id)); F.sites = r.sites; F.presets = r.presets; }
   catch (e) { toast(e.message); return; }
+  finally { F.gone = null; }
   delete F.view[s.id];
+  // the site last open was this one (opened from the company table): the next site page opens a platform instead
+  if (F.site === s.id && platformSites().length) { F.site = platformSites()[0].id; store("fill-site", F.site); }
   paintFill();
 }
 

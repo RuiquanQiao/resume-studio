@@ -7,7 +7,8 @@
     python scripts/render.py JOB-001 --lang de    # same template and layout, in another resume language
 
 Every render also lists the bullets that take more than one line (with how full the text is:
-112% = about 12% too long) and the entries that lack text in the rendered language.
+112% = about 12% too long), the ones that fill less than 70% of their line (too short), and the
+entries that lack text in the rendered language.
 
 Options: --data PATH (default: $RESUME_STUDIO_DATA, else the file the window last opened, else <skill>/resume.yaml)
 """
@@ -64,15 +65,23 @@ def main() -> int:
         else:
             flag = "OK" if r["pages"] == 1 else f"OVER ONE PAGE ({r['pages']} pages)"
         print(f"{vid} [{r['lang']}]: {flag}  {r['seconds']}s  {r['pdf']}")
-        long = studio.bullet_report(r)
-        r["long_bullets"] = long
+        report = studio.bullet_report(r, short=True)
+        long = [b for b in report if not b["short"]]
+        short = [b for b in report if b["short"]]
+        r["long_bullets"], r["short_bullets"] = long, short
         if long:
             print(f"    {len(long)} bullet(s) take more than one line (index = position in the entry's bullets):")
             for b in long:
                 print(f"    - {b['id']} \"{b['title']}\" bullet {b['index']}: {b['lines']} lines, "
                       f"text is {round(b['fill'] * 100)}% of one line: {b['text']}")
-        else:
-            print("    every bullet fits on one line")
+        if short:
+            print(f"    {len(short)} bullet(s) fill less than {round(model.LINE_MIN * 100)}% of their line (lengthen with "
+                  "substance from notes / evidence, or merge two related ones; never pad):")
+            for b in short:
+                print(f"    - {b['id']} \"{b['title']}\" bullet {b['index']}: 1 line, "
+                      f"text is {round(b['fill'] * 100)}% of one line: {b['text']}")
+        if not long and not short:
+            print(f"    every bullet fits on one line and fills at least {round(model.LINE_MIN * 100)}% of it")
         for m in r.get("missing") or []:
             parts = list(m.get("fields") or []) + ([f"bullets {m['bullets']}"] if m.get("bullets") else [])
             print(f"    missing {r['lang']} text (falls back to another language): {m['id']} {', '.join(parts)}")

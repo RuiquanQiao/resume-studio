@@ -262,6 +262,9 @@ body[data-chat="off"] .workspace { grid-template-columns: minmax(600px, 1fr) 5px
 /* the agent retrying, or its service unreachable: its own line, lined up with the text above */
 .wk-status { flex: 1 0 100%; padding-left: 20px; color: var(--warn); line-height: 1.5; overflow-wrap: anywhere; }
 .wk-status[hidden] { display: none; }
+/* waiting for a sign-in: the user's turn, said in the accent, with the way to the sign-in page under it */
+.wk-status.signin { color: var(--accent); }
+.wk-status-acts { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-top: 6px; }
 .wk-g { flex: none; width: 14px; text-align: center; font-size: var(--fs-body); line-height: 1; color: var(--accent); }
 .wk-t { background: linear-gradient(90deg, var(--text-2) 40%, var(--text) 50%, var(--text-2) 60%) 0 0 / 300% 100%;
   -webkit-background-clip: text; background-clip: text; color: transparent; animation: wk-shine 2.4s linear infinite; }
@@ -365,7 +368,12 @@ body[data-outline="strip"] #library { display: none; }
 :is(.fact-fold, .mock-fold) .ff-sub { order: 2; flex: 0 1 auto; min-width: 0; line-height: 22px; color: var(--text-3); }
 .fact-fold .ff-flag .chip.new { background: var(--accent-soft); color: var(--accent); }
 .fact-fold .ff-flag .chip.bad { background: var(--bad-soft); color: var(--bad); }
-.fact-fold > .card.fact { margin: 0; border-top: 1px solid var(--fact-line); background: var(--fact); border-radius: 0 0 var(--r-lg) var(--r-lg); }
+/* open, the section itself says what is new: the summary's flag is for the folded state only */
+.fact-fold[open] .ff-flag { display: none; }
+.fact-fold > .card.fact { margin: 0; border-top: 1px solid var(--fact-line); background: var(--fact); border-radius: 0; }
+/* the mock interview is the entry's last part: it takes the card's bottom corners */
+.mock-fold:last-child > .card.mock { border-radius: 0 0 var(--r-lg) var(--r-lg); }
+.fact-fold:last-child > .card.fact { border-radius: 0 0 var(--r-lg) var(--r-lg); }
 /* mock interview: questions, answers that can be hidden, follow-ups nested under them */
 .mock-fold .ff-t { font-weight: 600; color: var(--accent); }
 .mock-fold > .card.mock { margin: 0; border-top: 1px solid var(--line); border-radius: 0; }
@@ -463,6 +471,9 @@ body[data-ws="resume"][data-preview="off"][data-chat="off"] .workspace { grid-te
 .field:last-child { margin-bottom: 0; }
 /* a hint that doesn't fit beside its label moves whole to the line below; it is never cut */
 .field > label { font-size: var(--fs-meta); color: var(--text-2); font-weight: 500; display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; white-space: nowrap; min-width: 0; }
+/* the fact layer's labels are long sentences ("Job search background, constraints, preferences" in German): they
+   wrap in a narrow card instead of running out of it, now that the layer is open by default */
+.card.fact .field > label { white-space: normal; overflow-wrap: anywhere; }
 .field .hint { font-size: var(--fs-meta); color: var(--text-3); font-weight: 400; white-space: normal; min-width: 0; }
 /* text fields are filled, without an outline; focused, they turn white with a blue ring */
 .field input, .field textarea, .bullet textarea { width: 100%; border: 1px solid transparent; border-radius: var(--r-sm); padding: 6px 10px; background: var(--fill); min-height: 32px; transition: border-color .12s, box-shadow .12s, background .12s; }
@@ -791,13 +802,13 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px va
 .ai-btn > svg.i:last-child { width: 13px; height: 13px; margin-left: -2px; }
 #bullet-notes:empty { display: none; }
 #bullet-notes { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
-.note-bar, .sync-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 8px 7px 10px; border-radius: var(--r-sm);
+.note-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 8px 7px 10px; border-radius: var(--r-sm);
   background: var(--hover); color: var(--text-2); font-size: var(--fs-meta); }
-.note-bar > svg.i, .sync-bar > svg.i { color: var(--text-3); }
+.note-bar > svg.i { color: var(--text-3); }
 .note-bar.warn { background: color-mix(in srgb, var(--bad-soft) 70%, transparent); color: var(--text); }
 .note-bar.warn > svg.i { color: var(--bad); }
 .nb-text { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }   /* every notice's text: a narrow box moves its buttons below, never squeezes it; a long address breaks */
-.note-bar .btn, .sync-bar .btn { flex: none; }
+.note-bar .btn { flex: none; }
 .note-line { display: flex; align-items: center; gap: 6px; font-size: var(--fs-meta); color: var(--text-3); }
 .note-line svg.i { width: 14px; height: 14px; }
 .bullet textarea.is-missing::placeholder { color: color-mix(in srgb, var(--fact-title) 75%, transparent); font-style: italic; }
@@ -809,6 +820,7 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px va
 .line-chip.ok { background: var(--ok-soft); color: var(--ok); }
 .line-chip.ok.tight { background: var(--fact); color: var(--fact-title); }
 .line-chip.long { background: var(--bad-soft); color: var(--bad); font-weight: 600; }
+.line-chip.short { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
 .line-chip.gap { background: var(--fact); color: var(--fact-title); box-shadow: inset 0 0 0 1px var(--fact-line); width: auto; min-width: 44px; }
 .line-chip.off { background: var(--hover); color: var(--text-3); }
 .line-chip.none { visibility: hidden; }
@@ -816,12 +828,12 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px va
 
 /* ================================================================ evidence: project folders */
 .evidence { margin-top: 4px; padding-top: 12px; border-top: 1px dashed var(--fact-line); }
-.ev-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; margin-bottom: 8px; }
+/* the section's title on the left, its one action (and ⋯) on the right; a narrow card puts the action under it */
+.ev-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin-bottom: 8px; }
+.ev-head-text { flex: 1 1 220px; min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; }
+.ev-head > .btn { flex: none; }
 .ev-title { font-size: var(--fs-meta); font-weight: 600; color: var(--text-2); white-space: nowrap; }
 .ev-head .hint { font-size: var(--fs-meta); color: var(--text-3); }
-.sync-bar { margin-bottom: 8px; background: color-mix(in srgb, var(--panel) 65%, transparent); box-shadow: inset 0 0 0 1px var(--fact-line); color: var(--text); }
-.sync-bar.changed { background: var(--accent-soft); box-shadow: none; }
-.sync-bar.changed > svg.i { color: var(--accent); }
 .ev-list { display: flex; flex-direction: column; gap: 6px; }
 .ev-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 8px 9px 10px; border-radius: var(--r);
   background: color-mix(in srgb, var(--panel) 75%, transparent); border: 1px solid color-mix(in srgb, var(--fact-line) 70%, var(--line)); }
@@ -831,9 +843,10 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px va
 .ev-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .ev-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ev-name b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ev-path { font: var(--fs-meta) var(--mono); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
-.ev-meta { display: flex; align-items: center; gap: 10px; font-size: var(--fs-meta); color: var(--text-3); }
-.ev-meta:empty { display: none; }
+/* the path, then when it last changed; a narrow card puts the time under the path rather than cut the path */
+.ev-sub { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; min-width: 0; font-size: var(--fs-meta); color: var(--text-3); }
+.ev-path { flex: 0 1 auto; min-width: 0; max-width: 100%; font: var(--fs-meta) var(--mono); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.ev-when { flex: none; white-space: nowrap; }
 .ev-chip { display: inline-flex; align-items: center; gap: 4px; height: 19px; padding: 0 7px; border-radius: 999px; font-size: var(--fs-meta); background: var(--hover); color: var(--text-2); white-space: nowrap; }
 .ev-chip svg.i { width: 12px; height: 12px; }
 .ev-chip.ok { background: var(--ok-soft); color: var(--ok); }
@@ -841,9 +854,14 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px va
 .ev-chip.bad { background: var(--bad-soft); color: var(--bad); }
 .ev-tools { display: flex; gap: 1px; opacity: .55; transition: opacity .12s; }
 .ev-row:hover .ev-tools, .ev-row:focus-within .ev-tools { opacity: 1; }
-.ev-more { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; background: none; color: var(--accent); font-size: var(--fs-meta); cursor: pointer; }
-.ev-more svg.i { width: 13px; height: 13px; transform: rotate(-90deg); transition: transform .12s; }
-.ev-more[aria-expanded="true"] svg.i { transform: none; }
+/* "1 new commit ▸": the change chip unfolds what changed */
+.ev-toggle { border: 0; font-family: inherit; cursor: pointer; }
+.ev-toggle:hover { background: color-mix(in srgb, var(--accent) 18%, var(--accent-soft)); }
+.ev-toggle svg.i:last-child { transform: rotate(-90deg); transition: transform .12s; }
+.ev-toggle[aria-expanded="true"] svg.i:last-child { transform: none; }
+.ev-add { display: inline-flex; }
+.ev-add > .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.ev-add > .btn + .btn { margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .change-detail { margin-top: 6px; padding: 8px 10px; border-radius: var(--r-sm); background: var(--panel-2); border: 1px solid var(--line); }
 .cd-head { margin: 6px 0 2px; font-size: var(--fs-meta); font-weight: 600; color: var(--text-2); }
 .cd-head:first-child { margin-top: 0; }
@@ -871,6 +889,7 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px va
 .jobs-loading { padding: 18px 8px; text-align: center; }
 .linkish { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer; font-size: inherit; }
 .linkish:hover { text-decoration: underline; }
+.linkish.warn { color: var(--warn); }
 .linkish svg.i { width: 13px; height: 13px; }
 /* not connected yet */
 .connect { margin: 8px 2px; padding: 20px 16px 16px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel-2); text-align: left; }
@@ -1164,9 +1183,9 @@ body[data-ws="fill"] .workspace { grid-template-columns: var(--w-left, 340px) 5p
 .fh-text { flex: 1 1 360px; min-width: 0; }
 .fh-text h1 { margin: 0 0 4px; font-size: var(--fs-title); font-weight: 600; letter-spacing: -.1px; }
 .fh-text p { margin: 0; color: var(--text-2); font-size: var(--fs-body); line-height: 1.55; text-wrap: pretty; }
-.fill-sites { display: inline-flex; flex-wrap: wrap; max-width: 100%; padding: 3px; gap: 2px; border-radius: 9px; background: var(--hover); border: 1px solid var(--line); }
-.fs-site.fs-add { padding: 0 8px; }
-.fs-site.fs-add .i { width: 15px; height: 15px; }
+/* the page head's right side: which site (a dropdown), open it, ⋯ */
+.fill-sites { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; max-width: 100%; }
+.fill-sites .fill-site-pick { width: 220px; max-width: 100%; }
 .modal.site-dialog { width: min(500px, 92vw); max-height: 88vh; overflow: auto; }
 .modal.site-dialog .field { margin: 4px 0 16px; }
 .modal.site-dialog .field > label { flex-direction: column; align-items: flex-start; gap: 2px; white-space: normal; }
@@ -1175,10 +1194,6 @@ body[data-ws="fill"] .workspace { grid-template-columns: var(--w-left, 340px) 5p
 .modal.site-dialog .fd-or { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; color: var(--text-3); font-size: var(--fs-meta); }
 .modal.site-dialog .fd-or::before, .modal.site-dialog .fd-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .modal.site-dialog .acts .spacer { flex: 1; }
-.fs-site { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent;
-  color: var(--text-2); cursor: pointer; font-weight: 600; white-space: nowrap; }
-.fs-site:hover { color: var(--text); }
-.fs-site.on { background: var(--panel); color: var(--text); box-shadow: var(--shadow-sm); }
 /* a number in a round badge: the box is trimmed to the digits (cap height to baseline), so the circle centres the
    digits themselves; Noto Sans SC's line box has far more room above them than below (the ① sat low, 2026-11-15) */
 .fs-n, .dbv-pindot, .req-match { line-height: 1; text-box: trim-both cap alphabetic; }
@@ -1195,17 +1210,13 @@ body[data-ws="fill"] .workspace { grid-template-columns: var(--w-left, 340px) 5p
 .fill-banner.ok > svg.i { color: var(--ok); }
 .fill-banner .nb-text { flex: 1 1 260px; min-width: 0; }
 #fill-browser { display: flex; flex-direction: column; gap: 8px; }
-.fill-browser { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 8px 10px 8px 14px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel); }
+#fill-browser:empty { display: none; }
 .fb-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
 .fb-dot.on { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
 .fb-dot.busy { background: var(--warn); }
 .fb-dot.on.win { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .fb-dot.on.work { animation: pulse 1.2s ease-in-out infinite; }
 .ws-tools .ws-here .bh-mode { flex: none; color: var(--text-3); }
-.fb-text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 220px; font-size: var(--fs-body); line-height: 1.4; }
-.fb-text b { font-weight: 600; overflow-wrap: anywhere; text-spacing-trim: space-all; }   /* the card's subject; a full-width "）" at a line's end wraps instead of being squeezed past the box: the same tier as the copy card's (.fsy-text b) */
-.fb-text .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-meta); }
-.fill-browser > .spacer { display: none; }
 .fill-target { display: flex; flex-direction: column; gap: 6px; }
 .ft-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; }
 .ft-k { font-weight: 600; }

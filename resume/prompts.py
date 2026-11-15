@@ -71,10 +71,20 @@ def ui_context(data_path: str, subset: dict | None, entry: dict | None, project_
 # These are sent as the user's own message and shown in the chat, so they are in the interface
 # language (t). Codes and commands stay as they are.
 def one_line(cmd: str) -> str:
-    return t("Every bullet must fit on one line with the current template and layout (the user's hard rule: "
-             "one line looks better). When done, run {cmd} to check: keep shortening the bullets it lists as "
-             "\"take more than one line\" until all fit; the percentage is how much of a line the text fills, "
-             "so 112% means cutting about 12%.", cmd=cmd)
+    return t("Every bullet must fit on one line with the current template and layout and fill 70–100% of it (the "
+             "user's hard rule; over 90% is fine): never two lines, never a stub. When done, run {cmd} to check: "
+             "shorten the bullets it lists as \"take more than one line\" and lengthen the ones it lists as filling "
+             "less than 70% (more substance from notes / evidence, such as the scale, the lever or the result, or "
+             "merge two related ones; never filler words), until none is listed. The percentage is how much of a "
+             "line the text fills, so 112% means cutting about 12%.", cmd=cmd)
+
+
+def lang_independent() -> str:
+    """The languages tell one story, not the same sentences (user, 2026-11-15)."""
+    return t("The languages are not paired bullet by bullet: they cover the same story overall, but plan each "
+             "language's bullets by its own line length (Chinese says the same in fewer characters, so its "
+             "bullets carry more per line or there are fewer of them). Bullets are stored by position, so a "
+             "bullet only one language has keeps '' in the others.")
 
 
 def writing_style(lang: str) -> str:
@@ -85,8 +95,9 @@ def writing_style(lang: str) -> str:
     if langs.script(lang) in ("zh", "zh-tw"):
         return t("Chinese resume style: start with a verb (主导, 搭建, 设计, 优化, 实现, 定位…), never \"I\"; drop articles, "
                  "clauses and filler from other languages and keep the information dense; keep technical terms, product "
-                 "names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so two "
-                 "bullets may merge into one, and one that doesn't matter for the job may be left out.")
+                 "names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so "
+                 "never translate an English bullet line for line: give each Chinese bullet a full line's substance, "
+                 "merge two into one, and leave out one that doesn't matter for the job.")
     return t("{lang} resume style: write it the way a native {lang} resume reads (verbs, tense, formality and length "
              "as local recruiters expect), keep technical terms, product names and numbers as they are, and rebuild "
              "the phrasing instead of translating word by word.", lang=lang_name(lang))
@@ -118,7 +129,7 @@ def _translate_rules(target: str, others: list[str], subset_id: str, data_path: 
     keep = ", ".join(f"`{o}`" for o in others) or "`en`"
     return ("- " + t("This is not a sentence-by-sentence translation.") + " " + writing_style(target) + " "
             + writing_rules() + "\n"
-            "- " + t("Bullets line up by position (each one is a map like {example}). When a bullet isn't needed in the "
+            "- " + lang_independent() + " " + t("Each bullet is a map like {example}. When a bullet isn't needed in the "
                      "{lang} version, set its `{code}` to an empty string '' and it shows only in the other languages; "
                      "when the {lang} version needs an extra bullet, add one and set the other languages to ''.",
                      example="{" + ", ".join(f"{c}: ..." for c in [*others, target]) + "}",
@@ -137,16 +148,26 @@ def translate_message(name: str, target: str, others: list[str], subset_id: str,
     return msg + _extra(instruction)
 
 
-def fit_message(name: str, lang: str, subset_id: str, data_path: str, long_bullets: list[dict]) -> str:
-    """Fit on one line: shorten only the bullets that wrap."""
-    lines = "\n".join("  - " + t("bullet {n} ({lines} lines, the text fills {pct}% of a line): {text}",
-                                 n=b["index"] + 1, lines=b["lines"], pct=round(b["fill"] * 100), text=b["text"])
-                      for b in long_bullets)
-    return (t("These {lang} bullets of “{name}” run past one line:", lang=lang_name(lang), name=name) + f"\n{lines}\n"
-            + t("Change only `{code}` of these bullets and bring each onto one line: keep the strongest actions and "
-                "results, drop modifiers and repetition, don't change the facts, and don't touch other languages or "
-                "other entries.", code=lang) + " "
-            + one_line(f"`{render_cmd(subset_id, data_path, lang)}`"))
+def fit_message(name: str, lang: str, subset_id: str, data_path: str, bullets: list[dict]) -> str:
+    """Fit the line: shorten the bullets that wrap, lengthen the ones that fill too little of their line."""
+    def listed(rows: list[dict]) -> str:
+        return "\n".join("  - " + t("bullet {n} ({lines} lines, the text fills {pct}% of a line): {text}",
+                                    n=b["index"] + 1, lines=b["lines"], pct=round(b["fill"] * 100), text=b["text"])
+                         for b in rows)
+    long = [b for b in bullets if not b.get("short")]
+    short = [b for b in bullets if b.get("short")]
+    parts = []
+    if long:
+        parts.append(t("These {lang} bullets of “{name}” run past one line:", lang=lang_name(lang), name=name) + "\n" + listed(long))
+    if short:
+        parts.append(t("These {lang} bullets of “{name}” fill less than 70% of their line:", lang=lang_name(lang), name=name)
+                     + "\n" + listed(short))
+    return ("\n".join(parts) + "\n"
+            + t("Change only `{code}` of this entry: bring each listed bullet to one line filling 70–100% of it. Cut a "
+                "long one to its strongest action and result; give a short one more substance from the fact layer "
+                "(notes, evidence) or merge it with a related bullet. Don't change the facts, and don't touch other "
+                "languages or other entries.", code=lang) + " "
+            + lang_independent() + " " + one_line(f"`{render_cmd(subset_id, data_path, lang)}`"))
 
 
 def interview_rules(lang: str) -> str:
@@ -195,7 +216,7 @@ def sync_rules(codes: list[str], subset_id: str, data_path: str) -> str:
               "place only if it beats what is there. Update every language ({langs}), each written its own way rather "
               "than translated from another. If nothing changes the picture, change nothing and tell me why. Leave notes "
               "and evidence alone.", langs=names) + " " + writing_rules() + "\n"
-            + one_line(", ".join(f"`{render_cmd(subset_id, data_path, c)}`" for c in codes)))
+            + lang_independent() + "\n" + one_line(", ".join(f"`{render_cmd(subset_id, data_path, c)}`" for c in codes)))
 
 
 def sync_message(name: str, change_text: str, codes: list[str], subset_id: str, data_path: str) -> str:
@@ -215,8 +236,9 @@ def batch_message(kind: str, subset: dict, data_path: str, names: list[str], tar
                   "following these rules:", lang=lang_name(target), job=job, list=lst) + "\n"
                 + _translate_rules(target, others or [], vid, data_path))
     if kind == "fit":
-        return (t("These entries in the current subset ({job}) have bullets running past one line: {list}. Bring every "
-                  "such bullet onto one line, entry by entry, without changing facts or other languages.", job=job, list=lst)
+        return (t("These entries in the current subset ({job}) have bullets that run past one line or fill less than "
+                  "70% of it: {list}. Bring every such bullet to one line filling 70–100% of it, entry by entry, without "
+                  "changing facts or other languages.", job=job, list=lst)
                 + " " + one_line(f"`{render_cmd(vid, data_path)}`"))
     raise ValueError(kind)
 

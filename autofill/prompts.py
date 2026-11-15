@@ -53,9 +53,10 @@ these sites). You work in it only through this command (Bash); every call prints
 Work like a careful person: one change at a time, read the dialog before saving, check the value after
 typing (`type` prints what the field now holds), and never click anything you weren't asked to.
 If the site asks for a sign-in, a verification code or a captcha, ask the user in one line to do it in the
-browser window, then run `{b} wait-signed-in <site>` (a site on the list; it returns once the page is past the
-sign-in, run it again while it says "not signed in yet") and continue in the same reply. Without a site id,
-ask with AskUserQuestion and a "Done" option. Never type passwords or codes.
+browser window, then run `{b} wait-signed-in <site>` (the site's id when it is on the list; without one for any
+other site, such as a company's careers site). It returns once the page is past the sign-in; while it says "not
+signed in yet", run it again at once. The chat shows the user that you are waiting, like a prompt in a terminal:
+continue in the same reply, and never end it to ask the user to tell you. Never type passwords or codes.
 If the sign-in itself fails here (a code that never arrives, a sign-in that bounces back), the site is refusing
 a driven browser: run `{b} sign-in <the sign-in page's address>`, which reopens the same browser without
 remote control, and ask the user to sign in there and press "switch back" in the window."""
@@ -186,8 +187,10 @@ A field the site doesn't have: leave it out and say so in the report note.
   the page shows it: `report {site.id} <id> done`. If it can't be done: `report {site.id} <id> failed
   --note "why"` and go on with the next one. The window shows each one's state live.
 - Removing an item: confirm the site's own "delete" dialog only for items with op remove.
-- Stop and ask the user (AskUserQuestion) if the site shows anything unexpected: a sign-in, a captcha,
-  a warning that the account is limited, a prompt to pay. Never type a password or a code.
+- A sign-in, code or captcha: ask the user in one line to do it in the browser and run
+  `{cli(data_path)} wait-signed-in {site.id}`, then go on in the same reply. Stop and ask the user
+  (AskUserQuestion) if the site shows anything else unexpected: a warning that the account is limited, a
+  prompt to pay. Never type a password or a code.
 - At the end, one short reply: how many were done, and any that failed and why.{recording(site, data_path, items, st or {}, list(redo))}"""
 
 

@@ -1013,6 +1013,34 @@ def test_the_ai_waits_for_the_sign_in_and_the_flag_follows_it(live, data_file, f
     assert live.req("GET", "/api/autofill/linkedin")[1]["signed_out"] is True
 
 
+def test_any_site_waits_for_the_sign_in_and_the_chat_says_so(live, data_file, fake_site):
+    """2026-11-15: a sign-in stopped the chat on the left, unlike Claude Code / Codex, which wait on a prompt. A page
+    that asks to sign in now tells the AI to wait where it lands, the wait works on any site (no id needed), and the
+    chat shows "waiting for you to sign in" with the way to the sign-in page until the wait returns."""
+    import threading
+    chat = live.inst.chats.store.create(title="A company's careers site")["id"]
+    login_page = fake_site + "/login/index.html"
+    r = out(cli(data_file, "open", login_page, chat=chat))
+    assert "asks to sign in" in r and "wait-signed-in" in r and "never end your reply" in r, r
+
+    seen = []
+    live.inst.chats.wait_status = lambda cid, text, kind="signin", data=None: seen.append((cid, text, kind, data))
+    live.inst.fill.sign_in_wait = 2.0
+    r = out(cli(data_file, "wait-signed-in", chat=chat))
+    assert "not signed in yet" in r and "without ending your reply" in r, r
+    assert seen[0][0] == chat and seen[0][2] == "signin" and "127.0.0.1" in seen[0][1] and seen[0][3]["url"].startswith(fake_site)
+    assert seen[-1][1] is None                                                   # cleared once the command returns
+
+    live.inst.fill.sign_in_wait = 30.0
+    def sign_in():
+        time.sleep(1.5)
+        with live.inst.browser.acting(chat):
+            live.inst.browser.open(fake_site + "/linkedin/profile.html")
+    threading.Thread(target=sign_in, daemon=True).start()
+    r = out(cli(data_file, "wait-signed-in", chat=chat))
+    assert "signed in" in r and "not signed in" not in r, r
+
+
 def test_any_reply_in_a_sites_chat_tells_its_page(server, fake_claude):
     """The read chat's second message ended and the page still said "the AI is reading" (国聘, 2026-11-15): only
     the reply the button started told the page. Every reply that starts or ends in a site's chat does now."""

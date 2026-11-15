@@ -61,7 +61,7 @@ def test_roles_get_their_tier():
     2026-11-15: 工作经历 and 简历中的建议： on a platform's profile page)."""
     css = (WEB / "style.css").read_text(encoding="utf-8")
     heads = [".fg-title", "button.fg-title"]
-    bodies = [".fb-text", ".fill-compare",".report-md", ".card-p", ".fit ul", ".fv", ".ffc-v", ".bk-notes", ".connect p"]
+    bodies = [".fill-compare",".report-md", ".card-p", ".fit ul", ".fv", ".ffc-v", ".bk-notes", ".connect p"]
     for sel in heads:
         assert "var(--fs-head)" in _rule(css, sel), f"{sel} is a section heading: --fs-head"
     for sel in bodies:

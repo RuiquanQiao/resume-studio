@@ -88,7 +88,9 @@ python <skill>/scripts/render.py --check                          # validate the
 - `OVER ONE PAGE` means more than one page.
 - Every render lists the **bullets that take more than one line**: `EXP-002 "QuizLoom" bullet 2:
   2 lines, text is 117% of one line`. This is measured from LaTeX's actual typesetting, not estimated from
-  character counts; 117% means cutting about 15% of the text.
+  character counts; 117% means cutting about 15% of the text. It also lists the **short bullets**, one line
+  filled less than 70% (`bullet 3: 1 line, text is 48% of one line`): lengthen them with substance from the
+  fact layer or merge them.
 - `missing <lang> text` lists entries that lack text in that language and fall back to another one.
 
 ## Data format (resume.yaml)
@@ -193,7 +195,8 @@ subsets:
   for an ongoing end date by itself; CJK resumes use that language's own CJK font.
 - **Text fields** are a plain string (shared by every language) or a map like `{en: ..., de: ...}`.
   Change only the language you were asked to; keep the others as they are.
-- **Bullets** line up by position; each one is a map with one key per language.
+- **Bullets** are stored by position, each one a map with one key per language. The position is only storage:
+  the languages are not paired sentence by sentence (rule 9), so a bullet may exist in one language only.
   - A missing key (e.g. only `en`) = not written yet: that language's resume shows another language there
     for now, and the window marks it as missing.
   - A key with an empty string (`de: ''`) = this bullet is **not on** the German resume. So languages can
@@ -234,14 +237,20 @@ subsets:
    running to several pages is normal.
 7. Tasks started from the window need no PDF compile from you: the window re-renders by itself. In the
    terminal, check pages with `render.py`.
-8. **Every bullet on one line**: the user's hard rule. After writing or changing bullets, check with
-   `render.py <subset> --lang <code>` and keep shortening the bullets it lists until all fit. Order of
-   cuts: drop modifiers and repetition → shorter phrasing → drop secondary details. Never change facts.
-9. **Languages are rewritten, not translated**: write each language the way a native resume in it reads
-   (English: strong past-tense verbs, no pronouns, quantify where the facts allow; Chinese: start with a
-   verb, never "我", no articles or clauses, technical terms and numbers kept, dense; other languages:
-   the verbs, tense, formality and length local recruiters expect). Languages may have different numbers
-   of bullets (see `''` above). Change only the target language.
+8. **Every bullet on one line, filling 70–100% of it**: the user's hard rule (over 90% is fine; never two
+   lines, never a stub). After writing or changing bullets, check with `render.py <subset> --lang <code>`:
+   shorten the bullets it lists as taking more than one line (drop modifiers and repetition → shorter
+   phrasing → drop secondary details) and lengthen the ones it lists as short (more substance from notes /
+   evidence: scale, the lever, the result; or merge two related short bullets). Never pad with filler and
+   never change facts.
+9. **Languages are rewritten, not translated, and not paired**: write each language the way a native resume
+   in it reads (English: strong past-tense verbs, no pronouns, quantify where the facts allow; Chinese: start
+   with a verb, never "我", no articles or clauses, technical terms and numbers kept, dense; other languages:
+   the verbs, tense, formality and length local recruiters expect). The languages tell the same story
+   overall, but each language's bullets are planned by its own line length: their number, split and order may
+   differ (a bullet missing in one language is `''` there, see above). Never write a bullet as a translation of
+   the other language's bullet at the same position: a Chinese line translated from a full English one fills
+   about half a line. Change only the target language.
 10. **Adding a resume language**: append its code to `settings.languages`; the window then fills in the
     default sections' titles in that language. Write entries in it only when the user asks.
 
@@ -453,8 +462,10 @@ Edge) with a profile of its own in `<skill>/.local/browser/` and drives it over 
 - **The resume is a reference, not the source.** The window shows, next to the copy, where the chosen
   resume subset words a field differently and which of its entries the copy lacks; the user takes
   them with a click. A profile may say things the resume doesn't.
-- Sign-ins, verification codes and captchas are always the user's: stop and ask (AskUserQuestion) and
-  never type a password. `browser.py signed-out <site>` makes the window show its sign-in banner.
+- Sign-ins, verification codes and captchas are always the user's, and never end the reply: ask in one
+  line, run `browser.py wait-signed-in [<site>]` (the chat shows the user it waits; run it again while it
+  says "not signed in yet") and go on once it returns. Never type a password. `browser.py signed-out <site>`
+  makes the window show its sign-in banner.
   Some sites drop a sign-in from a driven browser (their risk check sees `navigator.webdriver`; Xinghe's
   "send the code" silently never arrives). Then `browser.py sign-in <url>` reopens the same browser
   profile without remote control for the user to sign in; browser commands are refused until they press

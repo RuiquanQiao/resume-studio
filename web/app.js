@@ -181,8 +181,9 @@ const ui = {
   ed: null,         // the one being edited
   lastDoc: null,    // {kind, id}: where the document was, for "Back to the document" from a page
   docOpen: new Set(),   // entries not in the subset, opened as cards anyway
-  factOpen: new Set(),  // entries whose fact layer is unfolded
-  mockOpen: new Set(),  // entries whose mock interview is unfolded
+  // the fact layer and the mock interview start unfolded (user, 2026-11-15); these hold the ones folded by hand
+  factClosed: new Set(),
+  mockClosed: new Set(),
   mockSeen: new Set(),  // "entryId:path" answers opened one by one while answers are hidden
   here: null,       // the card at the top of the document (marked in the outline)
   saving: 0, refreshAfterSave: false,
@@ -454,7 +455,7 @@ function openSubsetMenu() {
     ...(bilingual ? langs().map((l) => ({ label: t("Fill in the {lang} version", { lang: langName(l) }),
       hint: lacking(l) ? t("{n} entry lacks it", { n: lacking(l) }, "{n} entries lack it") : t("All done"), icon: "translate", disabled: !ui.chat.available || !lacking(l),
       onClick: () => aiBatch("batch_translate", { target: l }) })) : []),
-    { label: t("Fit bullets that run past one line"), hint: long ? t("{n} bullet", { n: long }, "{n} bullets") : t("All on one line"), icon: "compress", disabled: !ui.chat.available || !long,
+    { label: t("Bring bullets to one full line"), hint: long ? t("{n} bullet", { n: long }, "{n} bullets") : t("All fill one line"), icon: "compress", disabled: !ui.chat.available || !long,
       onClick: () => aiBatch("batch_fit") },
     "sep",
     { label: t("Open the export folder"), icon: "folder", onClick: revealExports },
@@ -1093,17 +1094,18 @@ function entryForm(e = ui.draft, { out = false } = {}) {
   parts.push(card(t("Basics"), null, basics));
 
   if (!isList) parts.push(bulletsCard(e));
-  parts.push(mockFold(e));
 
-  // what only Claude reads, folded under the card (opened on a click, remembered while the window is open)
-  parts.push(h("details", { class: "fact-fold", open: ui.factOpen.has(e.id) || null,
-    ontoggle: (x) => { if (x.target.open) ui.factOpen.add(e.id); else ui.factOpen.delete(e.id); } },
+  // what only Claude reads, under the card: open unless folded by hand (remembered while the window is open)
+  parts.push(h("details", { class: "fact-fold", open: !ui.factClosed.has(e.id) || null,
+    ontoggle: (x) => { if (x.target.open) ui.factClosed.delete(e.id); else ui.factClosed.add(e.id); } },
   h("summary", null, icon("chevRight"), h("span", { class: "ff-t" }, t("Fact layer and project folders")),
     h("span", { class: "ff-sub" }, t("Only the AI sees this; it never appears on the resume")), h("span", { class: "ff-flag" }, factFlag(e.id))),
   h("div", { class: "card fact" }, h("div", { class: "card-b" },
     h("p", { class: "muted", style: "margin:0 0 10px;font-size:var(--fs-meta)" }, t("Write what really happened: what you did, what AI wrote, where the numbers come from, the details you wouldn't put on a resume. When the AI polishes, it stays within what this supports.")),
     tfield(t("What really happened / raw notes"), e, "notes", { multiline: true, rows: 6 }),
     evidenceEditor(e)))));
+  // the mock interview comes last: it builds on everything above it (bullets, notes, the project)
+  parts.push(mockFold(e));
   return parts;
 }
 
@@ -1134,8 +1136,8 @@ function mockFold(e) {
   const list = e.interview || [];
   const n = mockCount(list);
   const sum = list.length ? t("{n} question", { n: list.length }, "{n} questions") + (n ? " · " + t("{n} follow-up", { n }, "{n} follow-ups") : "") : "";
-  return h("details", { class: "mock-fold", "data-aid": "mock", open: ui.mockOpen.has(e.id) || null,
-    ontoggle: (x) => { if (x.target.open) ui.mockOpen.add(e.id); else ui.mockOpen.delete(e.id); } },
+  return h("details", { class: "mock-fold", "data-aid": "mock", open: !ui.mockClosed.has(e.id) || null,
+    ontoggle: (x) => { if (x.target.open) ui.mockClosed.delete(e.id); else ui.mockClosed.add(e.id); } },
   h("summary", null, icon("chevRight"), h("span", { class: "ff-t" }, t("Mock interview")),
     h("span", { class: "ff-sub" }, sum || t("The questions an interviewer will ask about this, and your answers"))),
   h("div", { class: "card mock" }, h("div", { class: "card-b" }, mockBody(e))));
@@ -1237,14 +1239,19 @@ function bulletNotes(e) {
   }
   const m = measuredFor(e.id, L);
   // only bullets written in this language: an untranslated one is flagged as missing instead
-  const long = m ? Object.entries(m).filter(([i, x]) => x.n > 1 && bulletState(e.bullets[i], L) === "ok").length : 0;
-  if (long) {
-    out.push(noteBar("compress", t("{n} bullet runs past one line", { n: long }, "{n} bullets run past one line"),
-      ui.chat.available && h("button", { class: "btn sm", "data-ai": "entry:" + e.id, onclick: () => aiEntry("fit", e.id, { lang: L }) }, icon("sparkle"), t("Let AI fit them on one line")), "warn"));
+  const off = entryOffLine(e, m, L);
+  if (off.length) {
+    out.push(noteBar("compress", offLineText(off),
+      ui.chat.available && h("button", { class: "btn sm", "data-ai": "entry:" + e.id, onclick: () => aiEntry("fit", e.id, { lang: L }) }, icon("sparkle"), t("Let AI bring them to one full line")), "warn"));
   } else if (m === null && e.bullets.some((b) => getT(b, L))) {
     out.push(h("div", { class: "note-line" }, icon("alert"), isAll() ? t("This entry's section is hidden, so it isn't in the preview and its lines can't be measured.") : t("This entry isn't ticked in “{job}”, so it isn't in the preview and its lines can't be measured.", { job: subsetName(subset()) })));
   }
   return out;
+}
+
+// one entry's bullets off their line (too long or too short), written in this language
+function entryOffLine(e, m, L) {
+  return m ? Object.entries(m).filter(([i, x]) => offLine(x) && bulletState(e.bullets[i], L) === "ok").map(([i, x]) => ({ index: +i, short: isShort(x), ...x })) : [];
 }
 
 const NOTE_TIPS = {
@@ -1269,6 +1276,7 @@ function lineChip(i, m, st) {
   if (!x) return h("span", { class: "line-chip none", "data-line": i });
   const pct = Math.round(x.fill * 100);
   if (x.n > 1) return h("span", { class: "line-chip long", "data-line": i, title: t("Takes {n} lines: the text is {pct}% of a line, cut about {cut}%", { n: x.n, pct, cut: Math.max(1, pct - 98) }) }, t("{n} line", { n: x.n }, "{n} lines"));
+  if (isShort(x)) return h("span", { class: "line-chip short", "data-line": i, title: t("Only {pct}% of the line is used: add substance from the fact layer (scale, how, result) or merge it with a related bullet", { pct }) }, t("Short"));
   return h("span", { class: "line-chip ok" + (x.fill > 0.93 ? " tight" : ""), "data-line": i, title: t("One line, {pct}% of it used", { pct }) }, x.fill > 0.93 ? t("Full") : t("{n} line", { n: 1 }, "{n} lines"));
 }
 
@@ -1313,7 +1321,7 @@ function bulletsEditor(e) {
 function openAiMenu(anchor, e) {
   const L = ui.editLang, bilingual = langs().length > 1;
   const m = measuredFor(e.id, L);
-  const long = m ? Object.entries(m).filter(([i, x]) => x.n > 1 && bulletState(e.bullets[i], L) === "ok").length : 0;
+  const long = entryOffLine(e, m, L).length;
   const ev = ui.evidence[e.id] || {};
   const changed = ev.state === "changed" || ev.state === "new";
   const empty = !e.bullets.some((b) => getT(b, L));
@@ -1321,7 +1329,7 @@ function openAiMenu(anchor, e) {
     { label: empty ? t("Draft bullets") : bilingual ? t("Polish the {lang} bullets", { lang: langName(L) }) : t("Polish bullets"), hint: t("extra instructions welcome"), icon: "sparkle",
       onClick: () => { const box = $("#polish-box"); box.classList.remove("hidden"); $("input", box).focus(); } },
     ...(bilingual ? langs().map((l) => ({ label: t("Write the {lang} version", { lang: langName(l) }), hint: t("rewritten the way a {lang} resume reads", { lang: langName(l) }), icon: "translate", onClick: () => aiEntry("translate", e.id, { target: l }) })) : []),
-    { label: t("Fit bullets that run past one line"), hint: long ? t("{n} bullet", { n: long }, "{n} bullets") : t("All on one line"), icon: "compress", disabled: !long, onClick: () => aiEntry("fit", e.id, { lang: L }) },
+    { label: t("Bring bullets to one full line"), hint: long ? t("{n} bullet", { n: long }, "{n} bullets") : t("All fill one line"), icon: "compress", disabled: !long, onClick: () => aiEntry("fit", e.id, { lang: L }) },
     "sep",
     { label: t("Update from project progress"), hint: ev.state === "changed" ? t("changed") : ev.state === "new" ? t("not read yet") : (e.evidence || []).length ? t("no changes") : t("no folder linked"),
       icon: "refresh", disabled: !changed, onClick: () => aiEntry("sync", e.id) },
@@ -1381,23 +1389,26 @@ function evidenceRow(e, p, i, row) {
     changed: h("span", { class: "ev-chip new" }, icon("refresh"), changeSummary(row && row.changes)),
     missing: h("span", { class: "ev-chip bad" }, icon("alert"), t("This path can't be found")),
   }[st];
+  // what changed is the chip itself: a click unfolds the commits and files under the row
   const detail = st === "changed" && row.changes ? changeDetail(row.changes) : null;
-  const toggle = detail && h("button", { class: "ev-more", "aria-expanded": "false", onclick: (ev) => {
-    const open = detail.classList.toggle("hidden") === false;
-    ev.currentTarget.setAttribute("aria-expanded", String(open));
-    ev.currentTarget.lastChild.textContent = open ? t("Hide") : t("See what changed");
-  } }, icon("chev"), t("See what changed"));
+  const status = detail
+    ? h("button", { class: "ev-chip new ev-toggle", "aria-expanded": "false", title: t("See what changed"), onclick: (ev) => {
+      const open = detail.classList.toggle("hidden") === false;
+      ev.currentTarget.setAttribute("aria-expanded", String(open));
+    } }, icon("refresh"), changeSummary(row.changes), icon("chev"))
+    : chip;
+  // one line under the name: where it is, and when it last changed
+  const when = row && row.mtime ? t("last changed {when}", { when: relTime(row.mtime) }) : "";
   return h("div", { class: "ev-row " + st, "data-path": p },
     h("span", { class: "ev-ic" }, icon(kind === "git" ? "git" : kind === "file" ? "file" : "folder")),
     h("div", { class: "ev-main" },
-      h("div", { class: "ev-name" }, h("b", null, name), chip),
-      h("div", { class: "ev-path", title: p }, p),
-      h("div", { class: "ev-meta" }, row && row.mtime ? t("last changed {when}", { when: relTime(row.mtime) }) : null, toggle),
+      h("div", { class: "ev-name" }, h("b", null, name), status),
+      h("div", { class: "ev-sub" }, h("span", { class: "ev-path", title: p }, p), when && h("span", { class: "ev-when" }, when)),
       detail),
     h("div", { class: "ev-tools" },
-      h("button", { class: "btn icon sm ghost", title: t("Show in the file manager"), disabled: st === "missing", onclick: () => api("POST", "/api/reveal-any", { path: p }) }, icon("external")),
-      h("button", { class: "btn icon sm ghost", title: st === "missing" ? t("Choose this folder again") : t("Replace with another folder"), onclick: () => addEvidence(e, kind === "file" ? "files" : "folder", i) }, icon("folderOpen")),
-      h("button", { class: "btn icon sm ghost danger", title: t("Remove (doesn't delete any files)"), onclick: () => { e.evidence.splice(i, 1); touch(); buildEditorKeepDraft(); } }, icon("x"))));
+      h("button", { class: "btn icon sm ghost", title: t("Show in the file manager"), "aria-label": t("Show in the file manager"), disabled: st === "missing", onclick: () => api("POST", "/api/reveal-any", { path: p }) }, icon("external")),
+      h("button", { class: "btn icon sm ghost", title: st === "missing" ? t("Choose this folder again") : t("Replace with another folder"), "aria-label": st === "missing" ? t("Choose this folder again") : t("Replace with another folder"), onclick: () => addEvidence(e, kind === "file" ? "files" : "folder", i) }, icon("folderOpen")),
+      h("button", { class: "btn icon sm ghost danger", title: t("Remove (doesn't delete any files)"), "aria-label": t("Remove (doesn't delete any files)"), onclick: () => { e.evidence.splice(i, 1); touch(); buildEditorKeepDraft(); } }, icon("x"))));
 }
 
 function changeDetail(c) {
@@ -1415,27 +1426,36 @@ function evidenceEditor(e) {
   const st = ui.evidence[e.id] || { paths: [] };
   const rows = Object.fromEntries((st.paths || []).map((r) => [r.path, r]));
   const box = h("div", { class: "evidence", "data-aid": "evidence" });
-  box.append(h("div", { class: "ev-head" }, h("span", { class: "ev-title" }, t("Project folders and evidence")),
-    h("span", { class: "hint" }, t("The AI reads the code, README and commit history in them"))));
   const pending = e.evidence.map((p) => rows[p]).filter((r) => r && (r.state === "changed" || r.state === "new"));
-  if (pending.length) {
-    const changed = pending.some((r) => r.state === "changed");
-    const empty = !e.bullets.some((b) => getT(b, ui.editLang));
-    box.append(h("div", { class: "sync-bar" + (changed ? " changed" : "") }, icon(changed ? "refresh" : "folderOpen"),
-      h("span", { class: "nb-text" }, changed ? t("The project has new progress") : t("The AI hasn't read this project yet")),
-      ui.chat.available && h("button", { class: "btn sm primary", "data-ai": "entry:" + e.id, onclick: () => aiEntry(empty && !changed ? "polish" : "sync", e.id, { lang: ui.editLang }) }, icon("sparkle"),
-        changed ? t("Let AI update from the progress") : empty ? t("Let AI read the project and write bullets") : t("Let AI read it")),
-      h("button", { class: "btn sm ghost", title: t("The bullets already reflect the project, so the AI needn't read it; you'll be told when it changes again"), onclick: () => markSynced(e.id) }, t("Mark as in sync"))));
-  }
+  const changed = pending.some((r) => r.state === "changed");
+  const empty = !e.bullets.some((b) => getT(b, ui.editLang));
+  const has = e.evidence.length > 0;
+  // The section's one action, always in the same place (like a Pull button): on while the AI has something
+  // unread, greyed when there is nothing new. What changed is said once, on the folder's own row.
+  const update = has && h("button", { class: "btn sm" + (pending.length ? " primary" : ""), id: "ev-update-" + e.id, "data-ai": "entry:" + e.id,
+    disabled: !pending.length || !ui.chat.available,
+    title: !ui.chat.available ? missingAgentText() : pending.length ? "" : t("Nothing new since the AI last read it"),
+    onclick: () => aiEntry(empty && !changed ? "polish" : "sync", e.id, { lang: ui.editLang }) }, icon("sparkle"),
+    pending.length && !changed ? (empty ? t("Let AI read the project and write bullets") : t("Let AI read it")) : t("Let AI update from the progress"));
+  const more = has && h("button", { class: "btn icon sm ghost", title: t("More"), "aria-label": t("More"), onclick: (ev) => openMenu(ev.currentTarget, [
+    { label: t("Check for updates"), icon: "refresh", onClick: () => checkEvidence(true).then(() => toast(t("Checked"))) },
+    { label: t("Mark as in sync"), hint: t("the bullets already say it"), icon: "check", disabled: !pending.length, onClick: () => markSynced(e.id) },
+  ], { align: "end" }) }, icon("more"));
+  box.append(h("div", { class: "ev-head" },
+    h("div", { class: "ev-head-text" }, h("span", { class: "ev-title" }, t("Project folders and evidence")),
+      h("span", { class: "hint" }, t("The AI reads the code, README and commit history in them"))),
+    update, more));
   const list = h("div", { class: "ev-list" });
   e.evidence.forEach((p, i) => list.append(evidenceRow(e, p, i, rows[p])));
-  if (!e.evidence.length) list.append(h("div", { class: "ev-empty" }, t("No project linked yet. Choose a folder and the AI reads it when writing bullets; when the project changes later, this place and the library on the left will tell you.")));
+  if (!has) list.append(h("div", { class: "ev-empty" }, t("No project linked yet. Choose a folder and the AI reads it when writing bullets; when the project changes later, this place and the library on the left will tell you.")));
+  // one way to add: the folder (the usual case), with files or a typed path behind its arrow
   box.append(list, h("div", { class: "ev-actions" },
-    h("button", { class: "btn sm", onclick: () => addEvidence(e, "folder") }, icon("folder"), t("Choose project folder")),
-    h("button", { class: "btn sm ghost", onclick: () => addEvidence(e, "files") }, icon("file"), t("Add files")),
-    h("button", { class: "btn sm ghost", onclick: () => typeEvidence(e) }, icon("pen"), t("Type a path")),
-    h("span", { class: "spacer" }),
-    e.evidence.length ? h("button", { class: "btn sm ghost", title: t("Check these folders for changes now (it also happens whenever you come back to the window)"), onclick: () => checkEvidence(true).then(() => toast(t("Checked"))) }, icon("refresh"), t("Check for updates")) : null));
+    h("div", { class: "ev-add" },
+      h("button", { class: "btn sm", onclick: () => addEvidence(e, "folder") }, icon("plus"), t("Add project folder")),
+      h("button", { class: "btn sm icon", title: t("More ways to add"), "aria-label": t("More ways to add"), onclick: (ev) => openMenu(ev.currentTarget, [
+        { label: t("Add files"), icon: "file", onClick: () => addEvidence(e, "files") },
+        { label: t("Type a path"), icon: "pen", onClick: () => typeEvidence(e) },
+      ]) }, icon("chev")))));
   return box;
 }
 
@@ -1526,8 +1546,8 @@ function profileForm(p = ui.draft) {
     ]),
     card(t("Contacts"), job ? t("Shown in order under the name; ticked = shown in “{job}”", { job: subsetName(v) }) : t("Shown in order under the name; switch to a subset to hide some of them"), rows),
     workCard(p),
-    h("details", { class: "fact-fold", open: ui.factOpen.has("profile") || null,
-      ontoggle: (x) => { if (x.target.open) ui.factOpen.add("profile"); else ui.factOpen.delete("profile"); } },
+    h("details", { class: "fact-fold", open: !ui.factClosed.has("profile") || null,
+      ontoggle: (x) => { if (x.target.open) ui.factClosed.delete("profile"); else ui.factClosed.add("profile"); } },
     h("summary", null, icon("chevRight"), h("span", { class: "ff-t" }, t("Fact layer")), h("span", { class: "ff-sub" }, t("Only the AI sees this"))),
     h("div", { class: "card fact" }, h("div", { class: "card-b" }, tfield(t("Job search background, constraints, preferences"), p, "notes", { multiline: true, rows: 5 })))),
   ];
@@ -2206,6 +2226,8 @@ function aiDiff(id) {
   ], { cls: "diff ai-review" });   // diff: sits flush in its doc card (style.css)
 }
 
+// the actions after which the project counts as read (resume/api.py `synced`)
+const SYNCING = new Set(["sync", "polish", "batch_sync"]);
 async function undoAi(id) {
   const a = ui.ai[id], current = entryById(id), result = a.result;
   if (!current || !result) return;
@@ -2221,7 +2243,14 @@ async function undoAi(id) {
   try {
     const s = await api("PUT", "/api/item", { kind: "entry", id, data: restored, base: itemHash("entry", id) });
     delete ui.ai[id];
+    // what the AI took in from the project is undone with its words: the progress shows as new again
+    if (SYNCING.has(a.action)) {
+      try { Object.assign(ui.evidence, (await api("POST", `/api/evidence/${encodeURIComponent(id)}/unsync`)).status); }
+      catch (e) { /* the words are back; the status refreshes on the next check */ }
+    }
     applyState(s);
+    paintEvidence();
+    renderLibrary();
     const editor = edFor("entry", id);
     resetEd(editor);
     paintItem(editor, { flash: true });
@@ -2237,7 +2266,7 @@ async function aiEntry(action, entryId, extra = {}) {
     await saveDraft();
     const snapshot = clone(entryById(entryId));
     delete ui.ai[entryId];
-    if (["mock", "probe", "answer"].includes(action)) ui.mockOpen.add(entryId);   // the result shows where it was asked
+    if (["mock", "probe", "answer"].includes(action)) ui.mockClosed.delete(entryId);   // the result shows where it was asked
     const ok = await sendChat(extra.text || "", { action, entryId, target: extra.target, lang: extra.lang, path: extra.path, fresh: true });
     if (ok) ui.ai[entryId] = { chat: ui.chat.id, action, snapshot, done: false };
     return ok;
@@ -2309,13 +2338,28 @@ function measuredFor(id, lang) {
   if (!inPreview(id)) return null;
   return (ui.lines[lang] || {})[id] || {};
 }
+// a bullet fills 70-100% of one line (resume/model.py LINE_MIN): more lines is too long, less is a stub
+const LINE_MIN = 0.70;
+const isShort = (x) => !!x && x.n === 1 && x.fill < LINE_MIN;
+const offLine = (x) => !!x && (x.n > 1 || isShort(x));
+// the bullets off their line in the preview: more than one line, or too short (`short: true`)
 function longBullets(lang = (subset() || {}).lang) {
   if (ui.linesFor[lang] !== ui.subsetId) return [];
   const out = [];
   for (const [id, by] of Object.entries(ui.lines[lang] || {})) {
-    for (const [i, x] of Object.entries(by)) if (x.n > 1) out.push({ id, index: +i, ...x });
+    const e = entryById(id);
+    for (const [i, x] of Object.entries(by)) {
+      // an untranslated bullet is flagged as missing, not measured against this language's line
+      if (offLine(x) && (!e || bulletState((e.bullets || [])[i], lang) === "ok")) out.push({ id, index: +i, short: isShort(x), ...x });
+    }
   }
   return out;
+}
+// "2 bullets run past one line, 1 is short": what the measurement found, in one phrase
+function offLineText(list) {
+  const long = list.filter((b) => !b.short).length, short = list.length - long;
+  return [long && t("{n} bullet runs past one line", { n: long }, "{n} bullets run past one line"),
+    short && t("{n} bullet fills less than 70% of its line", { n: short }, "{n} bullets fill less than 70% of their line")].filter(Boolean).join(t(", "));
 }
 
 // the measurement changed: update chips and notes in place (never rebuild the form under the cursor)
@@ -2532,11 +2576,11 @@ function renderIssues() {
   const items = [];
   if (long.length) {
     items.push(h("button", { class: "issue warn", "aria-haspopup": "menu", onclick: (ev) => openMenu(ev.currentTarget, [
-      { header: t("{lang} bullets that run past one line", { lang: langName(lang) }) },
-      ...long.map((b) => { const e = entryById(b.id); return { label: t("{name} · bullet {n}", { name: display(e.title) || entryLabel(e), n: b.index + 1 }), hint: `${t("{n} line", { n: b.n }, "{n} lines")} · ${Math.round(b.fill * 100)}%`, icon: "compress", onClick: () => jumpToBullet(b.id, b.index, lang) }; }),
+      { header: t("{lang} bullets that don't fill one line (70–100%)", { lang: langName(lang) }) },
+      ...long.map((b) => { const e = entryById(b.id); return { label: t("{name} · bullet {n}", { name: display(e.title) || entryLabel(e), n: b.index + 1 }), hint: `${b.short ? t("Short") : t("{n} line", { n: b.n }, "{n} lines")} · ${Math.round(b.fill * 100)}%`, icon: "compress", onClick: () => jumpToBullet(b.id, b.index, lang) }; }),
       "sep",
-      { label: t("Let AI fit them all on one line"), icon: "sparkle", disabled: !ui.chat.available, onClick: () => aiBatch("batch_fit") },
-    ], { minWidth: 280 }) }, icon("compress"), t("{n} bullet runs past one line", { n: long.length }, "{n} bullets run past one line")));
+      { label: t("Let AI bring them all to one full line"), icon: "sparkle", disabled: !ui.chat.available, onClick: () => aiBatch("batch_fit") },
+    ], { minWidth: 280 }) }, icon("compress"), offLineText(long)));
   }
   if (missing.length && langs().length > 1) {
     items.push(h("button", { class: "issue", "aria-haspopup": "menu", onclick: (ev) => openMenu(ev.currentTarget, [

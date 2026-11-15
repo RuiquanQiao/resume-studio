@@ -280,7 +280,8 @@ function paintPlatform() {
   if (!el) return;
   // a company's 网申 profile goes back to its company; a platform's to the Platforms
   const own = fillSite().kind === "company" ? fillSite().company : null;
-  const back = own ? backToCompany(own) : backTo("platforms");
+  // back to where it was opened from: its company's page, or the Job sites table
+  const back = own && H.tab === "companies" ? backToCompany(own) : backTo("platforms");
   if (!F.sites || !fillView()) {
     el.replaceChildren(huntBar(), h("div", { class: "fill-wrap" }, back, h("div", { class: "muted" }, t("Loading…"))));
     return;
@@ -300,7 +301,8 @@ function paintPlatform() {
               { site: ((F.sites || []).find((s) => s.id === fillSite().learned_from) || {}).name || fillSite().learned_from, system: fillSite().system })))
             : h("div", { class: "fh-text" }, h("h1", null, t("Your profile on {site}", { site: fillSite().name })),
               h("p", null, t("Resume Studio keeps a copy of each profile. Edit it here or on the site: “Check for updates” brings the site's changes in, and yours go up when you say so."))),
-          !own && h("div", { id: "fill-sites", class: "fill-sites" })),
+          // the site's own actions, in one place: which site (a list that grows with the companies), open it, ⋯
+          h("div", { id: "fill-sites", class: "fill-sites" })),
         h("div", { id: "fill-browser" }),
         syncCard(v),
         v.synced && h("div", { id: "fill-tabs" }),
@@ -324,7 +326,7 @@ function syncCard(v) {
     return h("div", { class: "fill-card fill-start" },
       h("h2", null, t("Read your {site} profile once", { site: site.name })),
       // a read that was tried and didn't finish says so, not only "read it once"
-      err && h("div", { class: "fill-banner warn" }, icon("alert"), h("span", { class: "nb-text" },
+      err && !v.signed_out && h("div", { class: "fill-banner warn" }, icon("alert"), h("span", { class: "nb-text" },
         (v.last_check || {}).signed_out ? t("{site} wants you to sign in.", { site: site.name }) : t("The last check didn't finish.") + " " + err)),
       h("ol", { class: "fill-steps" },
         h("li", null, t("Sign in to {site} once in Resume Studio's browser (“Open {site}” above).", { site: site.name })),
@@ -348,18 +350,15 @@ function syncCard(v) {
       (lc.mode === "claude" || !lc.at) && !lc.synced ? t("The AI read {site}", { site: site.name })   // no check yet: the copy is Claude's first read
         : lc.synced ? t("{n} change from {site} came into the copy", { n: lc.synced, site: site.name }, "{n} changes from {site} came into the copy")
         : t("Nothing new on {site}", { site: site.name }));
-  const menu = (e) => openMenu(e.currentTarget, [
-    { label: t("Let AI read {site} again and record the route anew", { site: site.name }), icon: "sparkle", onClick: learnRoute, disabled: !ui.chat.available || reading },
-    { label: t("Open {site}", { site: site.name }), icon: "external", onClick: openSite },
-    // a platform's settings are on its tab's right-click; a company's site has no tab row: they are here
-    site.kind === "company" && { label: t("Site settings…"), icon: "settings", onClick: () => siteDialog(site) },
-  ].filter(Boolean), { align: "end" });
+  // the site's other actions (read anew, settings, open it) are in the page head's ⋯, once
+  const broken = r.broken && !c && !reading;
   return h("div", { class: "fill-card fill-sync" },
     h("div", { class: "fsy-row" },
       h("div", { class: "fsy-text" },
         h("b", null, t("Your copy of {site}", { site: site.name })),
         h("span", { class: "muted" }, v.synced_at ? t("synced {when}", { when: relTime(v.synced_at) }) : "")),
-      status,
+      // a broken route is said once, by the banner below with its reason: not also as "the last check didn't finish"
+      !broken && !v.signed_out && status,
       h("span", { class: "spacer" }),
       // a broken route can't check: the row's button is the way on, never one that fails the same way again
       r.broken && !c && !reading
@@ -367,9 +366,8 @@ function syncCard(v) {
           icon("sparkle"), t("Record the route anew"))
         : h("button", { class: "btn", id: "fill-check", "aria-busy": (!!c || reading) && "true", disabled: !!c || reading || (!r.recorded && !ui.chat.available),
           title: !r.recorded && !ui.chat.available ? missingAgentText() : null, onclick: checkSite },
-          icon("refresh"), busyText || t("Check for updates")),
-      h("button", { class: "btn icon ghost", title: t("More"), "aria-label": t("More"), onclick: menu }, icon("more"))),
-    h("div", { class: "fsy-route muted" }, r.recorded
+          icon("refresh"), busyText || t("Check for updates"))),
+    !broken && h("div", { class: "fsy-route muted" }, r.recorded
       ? t("Reads {site} by the recorded route ({n} page), without AI.", { site: site.name, n: r.pages }, "Reads {site} by the recorded route ({n} pages), without AI.")
       : t("No read route yet: “Check for updates” lets the AI read {site} and record one.", { site: site.name })),
     r.broken && h("div", { class: "fill-banner warn" }, icon("alert"),
@@ -620,31 +618,48 @@ function pushItem(v, i) {
 }
 function autosizeFull(ta) { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + 2 + "px"; }
 
+// The site switcher: one dropdown, searchable, the platforms first and then the companies' careers sites, so it
+// holds three sites or three hundred (a row of tabs ran out of room once companies came in, 2026-11-15).
+function siteState(s) {
+  return s.signed_out ? t("Sign in") : s.check_error ? t("The last check didn't finish.") : !s.synced_at ? t("Not read yet")
+    : s.conflicts ? t("{n} conflict", { n: s.conflicts }, "{n} conflicts") : s.changes ? t("{n} change to push", { n: s.changes }, "{n} changes to push") : "";
+}
 function paintFillSites() {
   const box = $("#fill-sites");
   if (!box) return;
-  box.replaceChildren(...platformSites().map((s) => h("button", { type: "button", role: "tab", class: "fs-site" + (s.id === F.site ? " on" : ""),
-    "aria-selected": String(s.id === F.site), "data-site": s.id, onclick: () => switchFillSite(s.id),
-    oncontextmenu: (e) => { e.preventDefault(); siteMenu(e.currentTarget, s); } },
-  h("span", { class: "fs-name" }, s.name),
-  s.signed_out ? h("span", { class: "fs-n warn", title: t("Not signed in") }, "!")
-    : s.changes ? h("span", { class: "fs-n", title: t("{n} change ticked", { n: s.changes }, "{n} changes ticked") }, s.changes) : null)),
-  h("button", { type: "button", class: "fs-site fs-add", id: "fill-add-site", title: t("Add a site"), "aria-label": t("Add a site"),
-    onclick: () => siteDialog(null) }, icon("plus")));
+  const site = fillSite();
+  const sites = [...platformSites(), ...(F.sites || []).filter((s) => s.kind === "company")];
+  const pick = uiSelect({
+    id: "fill-site-pick", label: t("Site"), value: F.site, cls: "fill-site-pick", search: sites.length > 8, menuWidth: 300,
+    options: sites.map((s) => ({ value: s.id, label: s.name, hint: siteState(s), hintClass: s.signed_out || s.check_error ? "warn" : "",
+      group: s.kind === "company" ? t("Companies' careers sites") : t("Job platforms"), find: s.home || "" })),
+    // the page stays under the tab it is in (Job sites, or a company's page under Companies)
+    onChange: (id) => openHunt("platform", id, { tab: H.tab === "companies" && sites.find((s) => s.id === id).kind !== "company" ? "platforms" : H.tab }),
+  });
+  box.replaceChildren(pick.el,
+    h("button", { class: "btn sm", id: "fill-open-site", disabled: (F.browser || {}).found === false, title: t("Show {site} in Resume Studio's browser", { site: site.name }),
+      onclick: openSite }, icon("external"), t("Open {site}", { site: site.name })),
+    h("button", { class: "btn sm icon ghost", id: "fill-site-settings", title: t("More"), "aria-label": t("More"), onclick: (e) => siteMenu(e.currentTarget, site) }, icon("more")));
 }
 
 // ================================================================ the user's sites
 function siteMenu(anchor, s) {
-  // the order is the platforms' order: moving past a company's site (not on this row) would look like nothing
+  const v = fillView();
+  const reading = !!(v && v.reading);
+  // the platforms' order (the switcher's, and which one opens first) stays the user's to set
   const list = platformSites();
   const i = list.findIndex((x) => x.id === s.id);
   const at = (x) => F.sites.findIndex((y) => y.id === x.id);
   openMenu(anchor, [
+    v && v.synced && { label: t("Let AI read {site} again and record the route anew", { site: s.name }), icon: "sparkle", onClick: learnRoute, disabled: !ui.chat.available || reading },
     { label: t("Site settings…"), icon: "settings", onClick: () => siteDialog(s) },
-    i > 0 && { label: t("Move left"), icon: "chevLeft", onClick: () => moveSite(s, at(list[i - 1])) },
-    i < list.length - 1 && { label: t("Move right"), icon: "chevRight", onClick: () => moveSite(s, at(list[i + 1])) },
-    { label: t("Remove from the list"), icon: "trash", danger: true, onClick: () => removeSite(s) },
-  ].filter(Boolean));
+    s.kind !== "company" && { label: t("Add a site"), icon: "plus", onClick: () => siteDialog(null) },
+    s.kind !== "company" && i > 0 && { label: t("Move up"), icon: "up", onClick: () => moveSite(s, at(list[i - 1])) },
+    s.kind !== "company" && i >= 0 && i < list.length - 1 && { label: t("Move down"), icon: "down", onClick: () => moveSite(s, at(list[i + 1])) },
+    "sep",
+    // a company's site goes with its company (removed from the company's page); a platform leaves the list
+    s.kind !== "company" && { label: t("Remove from the list"), icon: "trash", danger: true, onClick: () => removeSite(s) },
+  ].filter(Boolean).filter((x, i, a) => x !== "sep" || (i > 0 && i < a.length - 1)), { align: "end" });
 }
 
 async function moveSite(s, index) {
@@ -765,17 +780,6 @@ function siteDialog(s) {
   setTimeout(() => (co ? notes : name).focus(), 0);
 }
 
-async function switchFillSite(id) {
-  if (id === F.site) return;
-  await flushTyping();
-  F.site = id;
-  store("fill-site", id);
-  F.open = {};
-  paintFill();   // its saved view right away (or "Loading…"), then the fresh one
-  await loadFillSite(id);
-  renderWsTools();
-  if (!ui.chat.messages.length && !ui.chat.running) renderChat();   // its suggestions name the site
-}
 
 function paintFillBrowser() {
   const box = $("#fill-browser");
@@ -783,17 +787,10 @@ function paintFillBrowser() {
   const b = F.browser || { state: "off" };
   const v = fillView();
   const site = fillSite();
+  // The browser's state and its controls live in one place, the chip at the top right of the window; here only
+  // what stops this site's work: a sign-in it needs (one way to do it), or a browser that can't run.
   const out = [];
-  if (v && v.signed_out) {
-    out.push(h("div", { class: "fill-banner warn" }, icon("user"),
-      // while the AI's read waits for the sign-in (browser.py wait-signed-in) it goes on by itself: never "read again"
-      h("span", { class: "nb-text" }, v.reading
-        ? t("{site} wants you to sign in. Sign in in the browser window: the AI goes on reading by itself once you have.", { site: site.name })
-        : t("{site} wants you to sign in. Sign in in the browser window (Resume Studio's browser remembers it), then read the profile again.", { site: site.name })),
-      h("button", { class: "btn sm primary", onclick: openSite }, icon("external"), t("Show the sign-in page")),
-      h("button", { class: "btn sm", title: t("For a site that refuses to sign in (a code that never arrives): the same browser, not controlled by Resume Studio"),
-        onclick: () => signInMode(/^https?:/.test(b.url || "") ? b.url : site.home) }, t("Sign in without remote control"))));
-  }
+  if (v && v.signed_out && b.state !== "signin") out.push(signInBanner(site, v.reading, b));
   if (!b.found) {
     out.push(h("div", { class: "fill-banner warn" }, icon("alert"),
       h("span", { class: "nb-text" }, t("Autofill needs Google Chrome or Microsoft Edge on this computer. Install one, then come back here."))));
@@ -801,23 +798,20 @@ function paintFillBrowser() {
     out.push(h("div", { class: "fill-banner warn" }, icon("alert"), h("span", { class: "nb-text" }, t("The browser didn't start: {error}", { error: b.error })),
       h("button", { class: "btn sm", onclick: showBrowser }, icon("refresh"), t("Try again"))));
   }
-  const running = b.state === "running";
-  const mode = browserMode(b);
-  out.push(h("div", { class: "fill-browser", title: browserTip(mode) },
-    browserDot(mode),
-    h("span", { class: "fb-text" },
-      h("b", null, b.browser ? t("Resume Studio's browser ({browser})", { browser: b.browser }) : t("Resume Studio's browser")),
-      h("span", { class: "muted" }, running ? (mode === "window" ? t("In a window: {page}", { page: pageName(b) || t("open") })
-        : t("In the background: {page}", { page: pageName(b) || t("open") }))
-        : b.state === "starting" ? t("starting…")
-        : b.state === "signin" ? t("open for you to sign in, without remote control")
-        : t("a window of its own; your sign-ins stay in it, apart from your everyday browser"))),
-    h("span", { class: "spacer" }),
-    running && h("button", { class: "btn sm ghost", onclick: showBrowser, title: t("Bring the browser window to the front") }, t("Show")),
-    h("button", { class: "btn sm", disabled: !b.found, onclick: openSite }, icon("external"), t("Open {site}", { site: site.name })),
-    h("button", { class: "btn sm icon ghost", id: "fill-site-settings", title: t("{site} settings", { site: site.name }),
-      "aria-label": t("{site} settings", { site: site.name }), onclick: (e) => siteMenu(e.currentTarget, site) }, icon("settings"))));
   box.replaceChildren(...out);
+}
+
+// "{site} wants you to sign in": one button that takes the user to the sign-in page; a site that refuses a driven
+// browser (a code that never arrives) has its way round as a quiet link, not a second button
+function signInBanner(site, reading, b) {
+  return h("div", { class: "fill-banner warn", id: "fill-signin" }, icon("user"),
+    // while the AI's read waits for the sign-in (browser.py wait-signed-in) it goes on by itself: never "read again"
+    h("span", { class: "nb-text" }, reading
+      ? t("{site} wants you to sign in. Sign in in the browser window: the AI goes on reading by itself once you have.", { site: site.name })
+      : t("{site} wants you to sign in. Sign in in the browser window (Resume Studio's browser remembers it), then read the profile again.", { site: site.name }),
+      " ", h("button", { class: "linkish", title: t("For a site that refuses to sign in (a code that never arrives): the same browser, not controlled by Resume Studio"),
+        onclick: () => signInMode(/^https?:/.test((b || {}).url || "") ? b.url : site.home) }, t("No code arriving?"))),
+    h("button", { class: "btn sm primary", onclick: openSite }, icon("external"), t("Sign in to {site}", { site: site.name })));
 }
 
 
@@ -881,11 +875,6 @@ function browserMode(b) {
 function browserDot(mode) {
   return h("span", { class: "fb-dot " + ({ starting: "busy", working: "on bg work", background: "on bg", window: "on win" }[mode] || "") });
 }
-function browserTip(mode) {
-  return mode === "working" || mode === "background"
-    ? t("Running in the background with no window, so it doesn't get in your way. Show the browser to watch it.")
-    : mode === "window" ? t("Open in a window of its own") : "";
-}
 
 // The browser's state is the button that shows it (user, 2026-11-09): one chip, right of the bar, the status and
 // what it does in one place; its ▾ holds the rest and is always there, greyed while the browser is off, so nothing
@@ -898,8 +887,8 @@ function renderFillTools(el) {
   const tip = mode === "working" || mode === "background" ? t("Running in the background with no window, so it doesn't get in your way. Click to show it.")
     : mode === "window" ? t("Open in a window of its own. Click to bring it to the front.")
     : mode === "starting" ? "" : t("Click to open Resume Studio's browser");
+  // signing in has one place (the site's banner, or the chat that waits for it), so this menu only closes
   const items = [
-    /^https?:/.test(b.url || "") && { label: t("Sign in here without remote control"), icon: "user", onClick: () => signInMode(b.url) },
     running && { label: t("Close the browser"), icon: "x", onClick: async () => { F.browser = await api("POST", "/api/browser/stop", {}); paintFillBrowser(); renderWsTools(); } },
   ].filter(Boolean);
   el.replaceChildren(

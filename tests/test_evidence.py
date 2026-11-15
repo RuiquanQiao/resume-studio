@@ -172,6 +172,34 @@ def test_update_from_project_flow(server, data_file, fake_claude, repo):
     assert "--lang zh" in r["text"] and "--lang en" in r["text"]       # both languages get checked
     server.wait_idle(chat["id"])
     assert server.req("GET", "/api/evidence?force=1")[1]["status"]["EXP-002"]["state"] == "same"   # Claude read it
+    # the user undid the AI's rewrite: the progress is new again, and "Update from progress" is back (2026-11-15:
+    # undone, the app still took the project as read and the button never came back)
+    r = server.req("POST", "/api/evidence/EXP-002/unsync")[1]
+    assert r["status"]["EXP-002"]["state"] == "changed"
+    code, r = server.req("POST", f"/api/chats/{chat['id']}/send", {"action": "sync", "entry_id": "EXP-002", "subset_id": "RES-TECH-EN"})
+    assert code == 200
+    # the languages are written each on its own, every bullet filling 70-100% of a line (2026-11-15: the Chinese
+    # bullets, translated from full English lines, came out at half a line)
+    assert "不逐条对应" in r["text"] and "70–100%" in r["text"]               # the suite's window speaks Chinese
+
+
+@needs_git
+def test_unsync_puts_back_the_baseline_before_the_last_sync(tmp_path, repo):
+    tr = EvidenceTracker(tmp_path / "resume-studio-data")
+    p = str(repo).replace("\\", "/")
+    assert tr.unsync("E1") is False                                    # never synced: nothing to go back to
+    tr.mark_synced("E1", [p])                                          # first read
+    assert tr.unsync("E1") is True and state(tr, "E1", p)["state"] == "new"   # undone: not read yet again
+    tr.mark_synced("E1", [p])
+    (repo / "app.py").write_text("print(1)\n", encoding="utf-8")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "feat: x")
+    tr.mark_synced("E1", [p])                                          # the AI took the commit in
+    assert state(tr, "E1", p)["state"] == "same"
+    assert tr.unsync("E1") is True                                     # the user undid it
+    row = state(tr, "E1", p)["paths"][0]
+    assert row["state"] == "changed" and row["changes"]["commits"] == 1
+    assert tr.unsync("E1") is False                                    # one step back, not further
 
 
 def test_project_roots_reach_claude(server, data_file, fake_claude):

@@ -535,6 +535,17 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         tracker.mark_synced(str(entry.get("id")), [str(p) for p in entry.get("evidence") or []])
         return {"status": tracker.status([entry], force=True)}
 
+    @app.route("POST", "/api/evidence/{eid}/unsync")
+    def evidence_unsync(req: Request):
+        """The user undid the AI's update from the project: the progress counts as not taken in yet."""
+        doc, _ = studio.store.load()
+        entry = model.get_item(doc, "entry", req.params["eid"])
+        if entry is None:
+            raise HttpError(404, t("Entry not found"))
+        tracker.unsync(str(entry.get("id")))
+        app.bus.publish("evidence", {"entries": [str(entry.get("id"))]})
+        return {"status": tracker.status([entry], force=True)}
+
     def subset_entries(doc, subset) -> list:
         if subset is None:
             return []
@@ -544,11 +555,12 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         return [by_id[str(i)] for i in subset.get("entries") or [] if str(i) in by_id]
 
     def long_bullets(subset_id: str, lang: str) -> list[dict]:
+        """The bullets off their line: more than one line, or a line filled less than model.LINE_MIN."""
         with render_lock(f"{subset_id}@{lang}"):
             r = studio.render(subset_id, lang=lang, pdf=False)
         if not r["ok"]:
             raise HttpError(409, t("Rendering failed; see the error above the preview first"))
-        return studio.bullet_report(r)
+        return studio.bullet_report(r, short=True)
 
     ACTIONS = ("polish", "translate", "fit", "sync", "mock", "probe", "answer", "batch_translate", "batch_fit", "batch_sync",
                "skills")
@@ -609,7 +621,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
             untranslated = set(model.missing_text(entry, lang).get("bullets", []))   # shown in the other language
             mine = [x for x in long_bullets(vid, lang) if x["id"] == str(entry.get("id")) and x["index"] not in untranslated]
             if not mine:
-                raise HttpError(409, t("Every bullet of this entry already fits on one line in the current preview"))
+                raise HttpError(409, t("Every bullet of this entry already fills one line in the current preview"))
             text = prompts.fit_message(name(entry), lang, vid, data_path, mine)
         elif action == "sync":
             st = tracker.status([entry], force=True).get(str(entry.get("id")))
@@ -645,7 +657,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
                     ids.append(x["id"])
             involved = [model.get_item(doc, "entry", i) for i in ids]
             if not involved:
-                raise HttpError(409, t("Every bullet in the current preview already fits on one line"))
+                raise HttpError(409, t("Every bullet in the current preview already fills one line"))
             text = prompts.batch_message("fit", subset, data_path, [name(e) for e in involved])
         elif action == "batch_sync":
             st = tracker.status(doc.get("entries") or [], force=True)

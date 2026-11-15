@@ -17,6 +17,7 @@
     python scripts/browser.py recipe linkedin experience.update --stdin <<'JSON' ... JSON   # save a write recipe
     python scripts/browser.py push linkedin item.i3 [--dry]   # make an approved change by its recipe, read it back
     python scripts/browser.py sign-in https://careers.example.com/   # a site refuses to sign in a driven browser
+    python scripts/browser.py wait-signed-in [linkedin]   # the page asks to sign in: wait while the user does
 
 Every command prints what happened. The browser is a real Chrome or Edge with its own profile, which
 the window starts; this script only talks to the window (standard library only, no venv needed).
@@ -144,8 +145,8 @@ def main() -> int:
     p = sub.add_parser("report", help="how one approved change went"); p.add_argument("site"); p.add_argument("id")
     p.add_argument("state", choices=["doing", "done", "failed", "skipped"]); p.add_argument("--note", default="")
     p = sub.add_parser("signed-out", help="the site wants the user to sign in"); p.add_argument("site")
-    p = sub.add_parser("wait-signed-in", help="wait (up to 90 s a run) until the user has signed in to the site")
-    p.add_argument("site")
+    p = sub.add_parser("wait-signed-in", help="wait (up to 90 s a run) until the user has signed in; any site, its id when listed")
+    p.add_argument("site", nargs="?", default="")
     p = sub.add_parser("recipe", help="save a write recipe for one kind of change (experience.update, basics.about…)")
     p.add_argument("site"); p.add_argument("key"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("push", help="make one approved change by its recipe, read it back and report it")
@@ -188,7 +189,8 @@ def main() -> int:
         show(call(url, "POST", f"/api/autofill/{args.site}/signed-out", {}))
         return 0
     if c == "wait-signed-in":
-        show(call(url, "POST", f"/api/autofill/{args.site}/wait-signed-in", {}))
+        # a listed site by its id; any other (a company's careers site, a page the AI found) by the open tab
+        show(call(url, "POST", f"/api/autofill/{args.site}/wait-signed-in" if args.site else "/api/browser/wait-signed-in", {}))
         return 0
     payload: dict = {"cmd": c}
     if c == "open":

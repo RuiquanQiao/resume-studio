@@ -456,7 +456,7 @@ def open_platform(pg, c, sid="linkedin"):
     pg.keyboard.press("Control+3")
     pg.click(".hunt-tab[data-tab=platforms]")
     pg.click(f".dbv-view tr[data-id='{sid}'] .dbv-title")
-    pg.wait_for_selector(f".fs-site.on[data-site='{sid}']")
+    pg.wait_for_selector(f"#fill-site-pick[data-value='{sid}']")
 
 
 def read_linkedin(c):
@@ -591,12 +591,15 @@ STATES = [
     State("resume, progress in one project, a folder gone", evidence({"EXP-002": "changed", "EXP-003": "missing"}),
           ["#library .lib-update .btn", "#library .e-dot.bad"]),
     State("resume, a card with its facts open", lambda pg, c: (open_entry(pg, "EXP-002"), open_facts(pg)), ["#evidence .ev-empty"]),
-    # the card's own flag on its folded facts (2026-10-31: "new progress" broke onto two lines there)
+    # the card's own flag on its folded facts (2026-10-31: "new progress" broke onto two lines there); the facts are
+    # open by default (2026-11-15) and the flag shows only folded, so these states fold them first
     State("resume, a card whose project has new progress",
-          lambda pg, c: (open_entry(pg, "EXP-002"), evidence({"EXP-002": "changed"})(pg, c), js("() => paintEvidence()")(pg, c)),
+          lambda pg, c: (open_entry(pg, "EXP-002"), evidence({"EXP-002": "changed"})(pg, c), js("() => paintEvidence()")(pg, c),
+                         click("#active .fact-fold > summary")(pg, c)),
           ["#active .ff-flag .chip.new"]),
     State("resume, a card whose project folder is gone",
-          lambda pg, c: (open_entry(pg, "EXP-002"), evidence({"EXP-002": "missing"})(pg, c), js("() => paintEvidence()")(pg, c)),
+          lambda pg, c: (open_entry(pg, "EXP-002"), evidence({"EXP-002": "missing"})(pg, c), js("() => paintEvidence()")(pg, c),
+                         click("#active .fact-fold > summary")(pg, c)),
           ["#active .ff-flag .chip.bad"]),
     State("resume, a subset with a long name, a card that isn't in it, unfolded",
           then(lambda pg, c: choose(pg, "#subset-select", "RES-TECH-EN"), click(".doc-fold .df-title >> nth=0"),
@@ -1267,7 +1270,9 @@ NOT_SHOWN = {
 
 
 def open_mock(pg):
-    pg.click("#active .mock-fold > summary")
+    """The mock interview is open from the start (2026-11-15); unfold it only if a state folded it."""
+    if not pg.is_visible("#active .mock-body"):
+        pg.click("#active .mock-fold > summary")
     pg.wait_for_selector("#active .mock-body", state="visible")
 
 

@@ -125,6 +125,8 @@ def add_language_titles(doc: Any, lang: str) -> None:
 
 
 ALL_ID = "ALL"
+# a bullet fills 70-100% of one line (user, 2026-11-15): under this share of the line it is a stub to lengthen
+LINE_MIN = 0.70
 
 
 def default_all_subset(lang: str = "en") -> dict:
