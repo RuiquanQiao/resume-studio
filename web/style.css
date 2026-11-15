@@ -1229,6 +1229,13 @@ button.fg-title { text-transform: none; letter-spacing: 0; font-size: var(--fs-m
 .fi-state .spin { width: 9px; height: 9px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
 .fi-note { display: flex; align-items: flex-start; gap: 6px; margin: 0 12px 8px 39px; font-size: var(--fs-meta); color: var(--bad); }
 .fi-note svg.i { width: 14px; height: 14px; margin-top: 2px; }
+.fi-note-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.fi-note .fi-redo { flex: none; margin-top: -2px; color: var(--text); }
+.fi-note .fi-redo svg.i { margin-top: 0; }
+/* how a change goes up: by a recorded recipe (no AI) or by the AI; plain meta text, so the state pill stays the row's only pill */
+.fi-via { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-meta); color: var(--text-3); white-space: nowrap; }
+.fi-via svg.i { width: 12px; height: 12px; }
+.fi-via[data-via="recipe"] { color: var(--ok); }
 .fi-body { display: flex; flex-direction: column; gap: 10px; padding: 2px 14px 14px 39px; }
 .fi-draft { display: flex; align-items: flex-start; gap: 6px; padding: 7px 10px; border-radius: var(--r); background: var(--fact); border: 1px solid var(--fact-line); font-size: var(--fs-meta); color: var(--text-2); line-height: 1.45; }
 .fi-draft svg.i { width: 14px; height: 14px; margin-top: 2px; color: var(--fact-title); }

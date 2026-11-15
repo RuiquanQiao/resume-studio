@@ -1,0 +1,241 @@
+<!doctype html>
+<!-- A stand-in for a job site's online resume editor (tests only, autofill write recipes): an edit dialog per item
+     whose fields are React-like (a value counts only when an input event arrives), a native select, an AntD-like
+     custom dropdown, a searchable company / school picker whose suggestions come late, a year-and-month date
+     picker, a delete confirmation, and buttons a recipe must never press. Flags in localStorage simulate a
+     redesign (editor-redesign), a sign-in asked for on save (editor-signout) and a save that drops the
+     description (editor-drop-desc). -->
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>在线简历</title>
+<style>
+  body { font-family: sans-serif; margin: 0; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  section { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 12px 0; }
+  .hidden { display: none !important; }
+  [role=dialog], [role=alertdialog] { position: fixed; inset: 40px; background: white; border: 2px solid #333; padding: 16px; overflow: auto; }
+  [role=alertdialog] { inset: 200px; z-index: 5; }
+  [role=listbox] { position: fixed; top: 120px; right: 60px; width: 260px; max-height: 420px; overflow: auto; background: #fff; border: 1px solid #888; z-index: 10; }
+  [role=option] { padding: 4px 8px; cursor: pointer; }
+  [role=combobox] { display: inline-block; min-width: 160px; min-height: 20px; border: 1px solid #888; padding: 2px 6px; cursor: pointer; }
+  textarea { width: 100%; height: 100px; }
+  .row { margin: 6px 0; }
+</style>
+</head>
+<body>
+<main>
+  <header><button id="chat">立即沟通</button> <button id="status">求职状态</button></header>
+  <section id="about-sec">
+    <h2>个人优势</h2>
+    <p id="about"></p>
+    <button aria-label="编辑个人优势" onclick="openAbout()">✎</button>
+  </section>
+  <section id="exp-sec">
+    <h2>工作经历</h2>
+    <ul id="exp-list"></ul>
+    <button onclick="openExp(-1)">添加工作经历</button>
+  </section>
+  <section id="edu-sec">
+    <h2>教育经历</h2>
+    <ul id="edu-list"></ul>
+  </section>
+</main>
+
+<div id="dlg" role="dialog" aria-label="编辑" class="hidden">
+  <h2 id="dlg-title">编辑</h2>
+  <div id="about-fields">
+    <label for="f-about">个人优势</label><textarea id="f-about" maxlength="600"></textarea>
+  </div>
+  <div id="exp-fields">
+    <div class="row"><label for="f-title">职位名称*</label> <input id="f-title"></div>
+    <div class="row">公司 <input id="f-org" role="combobox" aria-label="公司名称" autocomplete="off"></div>
+    <div class="row"><label for="f-city">城市</label> <select id="f-city"><option value="">请选择</option><option>北京</option>
+      <option>上海</option><option>深圳</option><option>杭州</option><option>悉尼</option><option>堪培拉</option></select></div>
+    <div class="row">时间 <span role="combobox" tabindex="0" aria-label="开始时间" data-date="start"></span> –
+      <span role="combobox" tabindex="0" aria-label="结束时间" data-date="end"></span></div>
+    <div class="row"><label for="f-desc">工作内容</label><textarea id="f-desc" maxlength="1000"></textarea></div>
+  </div>
+  <div id="edu-fields">
+    <div class="row">学校 <input id="f-school" role="combobox" aria-label="学校" autocomplete="off"></div>
+    <div class="row">学历 <span role="combobox" tabindex="0" aria-label="学历" id="f-degree"></span></div>
+    <div class="row">时间 <span role="combobox" tabindex="0" aria-label="入学时间" data-date="start"></span> –
+      <span role="combobox" tabindex="0" aria-label="毕业时间" data-date="end"></span></div>
+  </div>
+  <div id="err" role="alert"></div>
+  <button onclick="save()">保存</button> <button onclick="closeDlg()">取消</button>
+</div>
+
+<div id="confirm" role="alertdialog" aria-label="确认删除" class="hidden">
+  <p>确认删除这条经历？</p>
+  <button onclick="reallyDelete()">确定</button> <button onclick="hideConfirm()">取消</button>
+</div>
+
+<div id="pop" role="listbox" aria-label="选项" class="hidden"></div>
+
+<script>
+  const KEY = "editor-db";
+  const DB = JSON.parse(localStorage.getItem(KEY) || "null") || {
+    about: "熟悉 Python 与地理信息系统。",
+    exp: [{ title: "Research Intern", org: "CSIRO", city: "堪培拉", start: "2024-02", end: "2024-11", desc: "Mapped flood risk." },
+          { title: "后端开发实习生", org: "字节跳动", city: "北京", start: "2025-03", end: "present", desc: "写接口。" }],
+    edu: [{ org: "Harbour City University", degree: "硕士", start: "2025-02", end: "2026-12" }],
+    saves: 0,
+  };
+  const COMPANIES = ["CSIRO", "CSIRO Data61", "字节跳动", "腾讯", "腾讯音乐", "阿里巴巴", "Atlassian"];
+  const SCHOOLS = ["Harbour City University", "Harbour City Institute", "南京信息工程大学"];
+  const DEGREES = ["大专", "本科", "硕士", "博士"];
+  const flag = (k) => !!localStorage.getItem(k);
+  const EDIT = flag("editor-redesign") ? "修改" : "编辑";
+  const state = {};
+  let editing = null, deleting = null;
+
+  // React-like: what a field holds counts only through input events from typing
+  for (const id of ["f-about", "f-title", "f-desc"]) {
+    document.getElementById(id).addEventListener("input", (e) => { state[id] = e.target.value; });
+  }
+  document.getElementById("f-city").addEventListener("change", (e) => { state.city = e.target.value; });
+
+  const pop = document.getElementById("pop");
+  function showOptions(list, onPick) {
+    pop.replaceChildren(...list.map((t) => {
+      const o = document.createElement("div");
+      o.setAttribute("role", "option"); o.textContent = t;
+      o.onclick = (ev) => { ev.stopPropagation(); onPick(t); };
+      return o;
+    }));
+    pop.classList.toggle("hidden", !list.length);
+  }
+  const hidePop = () => { pop.classList.add("hidden"); pop.replaceChildren(); };
+
+  // searchable pickers: suggestions arrive a moment after typing; only a picked one counts
+  function searchable(id, list, key) {
+    const box = document.getElementById(id);
+    let timer = 0;
+    box.addEventListener("input", () => {
+      clearTimeout(timer);
+      const q = box.value.trim().toLowerCase();
+      hidePop();
+      timer = setTimeout(() => showOptions(q ? list.filter((x) => x.toLowerCase().includes(q)) : [],
+        (t) => { state[key] = t; box.value = t; hidePop(); }), 400);
+    });
+  }
+  searchable("f-org", COMPANIES, "org");
+  searchable("f-school", SCHOOLS, "school");
+
+  // an AntD-like dropdown: click it, click an option
+  const degree = document.getElementById("f-degree");
+  degree.onclick = (ev) => { ev.stopPropagation(); showOptions(DEGREES, (t) => { state.degree = t; degree.textContent = t; hidePop(); }); };
+
+  // date pickers: a year, then a month; the end one also has 至今
+  for (const el of document.querySelectorAll("[data-date]")) {
+    el.onclick = (ev) => {
+      ev.stopPropagation();
+      const which = el.dataset.date;
+      const years = []; for (let y = 2027; y >= 2018; y--) years.push(String(y));
+      showOptions([...(which === "end" ? ["至今"] : []), ...years], (t) => {
+        if (t === "至今") { state[which] = "present"; el.textContent = "至今"; hidePop(); return; }
+        const months = []; for (let m = 1; m <= 12; m++) months.push(m + "月");
+        showOptions(months, (mm) => {
+          const v = `${t}-${String(parseInt(mm)).padStart(2, "0")}`;
+          state[which] = v; el.textContent = v; hidePop();
+        });
+      });
+    };
+  }
+  document.addEventListener("click", (e) => { if (!pop.contains(e.target)) hidePop(); });
+
+  const shown = (d) => (d === "present" ? "至今" : d || "");
+  function paint() {
+    localStorage.setItem(KEY, JSON.stringify(DB));
+    document.getElementById("about").textContent = DB.about;
+    const ul = document.getElementById("exp-list");
+    ul.replaceChildren(...DB.exp.map((p, i) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<b></b><div data-k="org"></div><div data-k="city"></div><div data-k="dt"></div><p data-k="desc"></p>
+        <button data-op="edit"></button> <button data-op="del">删除</button>`;
+      li.querySelector("b").textContent = p.title;
+      li.querySelector("[data-k=org]").textContent = p.org;
+      li.querySelector("[data-k=city]").textContent = p.city;
+      li.querySelector("[data-k=dt]").textContent = `${shown(p.start)} – ${shown(p.end)}`;
+      li.querySelector("[data-k=desc]").textContent = p.desc;
+      li.querySelector("[data-op=edit]").textContent = EDIT;
+      li.querySelector("[data-op=edit]").onclick = () => openExp(i);
+      li.querySelector("[data-op=del]").onclick = () => askDelete("exp", i);
+      return li;
+    }));
+    const el = document.getElementById("edu-list");
+    el.replaceChildren(...DB.edu.map((p, i) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<b></b><div data-k="degree"></div><div data-k="dt"></div><button data-op="edit"></button>`;
+      li.querySelector("b").textContent = p.org;
+      li.querySelector("[data-k=degree]").textContent = p.degree;
+      li.querySelector("[data-k=dt]").textContent = `${shown(p.start)} – ${shown(p.end)}`;
+      li.querySelector("[data-op=edit]").textContent = EDIT;
+      li.querySelector("[data-op=edit]").onclick = () => openEdu(i);
+      return li;
+    }));
+  }
+  function show(kind, title) {
+    const d = document.getElementById("dlg");
+    d.classList.remove("hidden"); d.setAttribute("aria-label", title);
+    document.getElementById("dlg-title").textContent = title;
+    document.getElementById("err").textContent = "";
+    document.getElementById("f-title").removeAttribute("aria-invalid");
+    for (const k of ["about", "exp", "edu"]) document.getElementById(k + "-fields").classList.toggle("hidden", k !== kind);
+  }
+  const dateEl = (box, which) => document.querySelector(`#${box}-fields [data-date=${which}]`);
+  function openAbout() {
+    editing = { kind: "about" };
+    document.getElementById("f-about").value = DB.about; state["f-about"] = DB.about;
+    show("about", "编辑个人优势");
+  }
+  function openExp(i) {
+    editing = { kind: "exp", i };
+    const p = i >= 0 ? DB.exp[i] : { title: "", org: "", city: "", start: "", end: "", desc: "" };
+    document.getElementById("f-title").value = p.title; state["f-title"] = p.title;
+    document.getElementById("f-org").value = p.org; state.org = p.org;
+    document.getElementById("f-city").value = p.city; state.city = p.city;
+    dateEl("exp", "start").textContent = shown(p.start); state.start = p.start;
+    dateEl("exp", "end").textContent = shown(p.end); state.end = p.end;
+    document.getElementById("f-desc").value = p.desc; state["f-desc"] = p.desc;
+    show("exp", i >= 0 ? "编辑工作经历" : "添加工作经历");
+  }
+  function openEdu(i) {
+    editing = { kind: "edu", i };
+    const p = DB.edu[i];
+    document.getElementById("f-school").value = p.org; state.school = p.org;
+    degree.textContent = p.degree; state.degree = p.degree;
+    dateEl("edu", "start").textContent = shown(p.start); state.start = p.start;
+    dateEl("edu", "end").textContent = shown(p.end); state.end = p.end;
+    show("edu", "编辑教育经历");
+  }
+  function closeDlg() { document.getElementById("dlg").classList.add("hidden"); hidePop(); editing = null; }
+  function save() {
+    if (flag("editor-signout")) { location.href = "/login/index.html"; return; }
+    if (editing.kind === "about") DB.about = state["f-about"];
+    else if (editing.kind === "exp") {
+      if (!state["f-title"]) {
+        document.getElementById("f-title").setAttribute("aria-invalid", "true");
+        document.getElementById("err").textContent = "请填写职位名称";
+        return;
+      }
+      const p = { title: state["f-title"], org: state.org, city: state.city, start: state.start, end: state.end,
+                  desc: flag("editor-drop-desc") ? "" : state["f-desc"] };
+      if (editing.i >= 0) DB.exp[editing.i] = p; else DB.exp.push(p);
+    } else {
+      DB.edu[editing.i] = { org: state.school, degree: state.degree, start: state.start, end: state.end };
+    }
+    DB.saves++;
+    closeDlg();
+    paint();
+  }
+  function askDelete(kind, i) { deleting = { kind, i }; document.getElementById("confirm").classList.remove("hidden"); }
+  function hideConfirm() { document.getElementById("confirm").classList.add("hidden"); deleting = null; }
+  function reallyDelete() { DB[deleting.kind].splice(deleting.i, 1); DB.saves++; hideConfirm(); paint(); }
+  document.getElementById("chat").onclick = () => { DB.greeted = true; paint(); };
+  document.getElementById("status").onclick = () => { DB.status_changed = true; paint(); };
+  paint();
+</script>
+</body>
+</html>

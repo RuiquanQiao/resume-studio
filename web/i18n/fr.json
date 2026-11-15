@@ -2599,5 +2599,22 @@
  "{n} pages didn't read": "{n} pages non lues",
  "Stopped reading job descriptions: {what}": "Lecture des descriptions arrêtée : {what}",
  "Job descriptions read: {what}": "Descriptions lues : {what}",
- "After a scan, the matching roles of the companies it scanned that have no job description read yet are read and scored by themselves (up to 80 a scan, newest first); a score follows your resume and skill levels as they change.": "Après chaque analyse, les postes correspondants des entreprises analysées dont la description n'est pas encore lue sont lus et notés automatiquement (80 au plus par analyse, les plus récents d'abord) ; la note suit les changements de votre CV et de vos niveaux de compétence."
+ "After a scan, the matching roles of the companies it scanned that have no job description read yet are read and scored by themselves (up to 80 a scan, newest first); a score follows your resume and skill levels as they change.": "Après chaque analyse, les postes correspondants des entreprises analysées dont la description n'est pas encore lue sont lus et notés automatiquement (80 au plus par analyse, les plus récents d'abord) ; la note suit les changements de votre CV et de vos niveaux de compétence.",
+ "Resume Studio is already making changes on {site}": "Resume Studio effectue déjà des modifications sur {site}",
+ "A recipe recorded the first time the AI made this kind of change replays it in seconds, then reads {site} back to check it.": "Une recette enregistrée la première fois que l’IA a fait ce type de modification la rejoue en quelques secondes, puis relit {site} pour la vérifier.",
+ "No recipe for this kind of change yet: the AI makes it in the browser and records one.": "Pas encore de recette pour ce type de modification : l’IA la fait dans le navigateur et en enregistre une.",
+ "By recipe, no AI": "Par recette, sans IA",
+ "By the AI": "Par l’IA",
+ "Stopped at step {n} ({step}): {error}": "Arrêté à l’étape {n} ({step}) : {error}",
+ "Nothing was saved.": "Rien n’a été enregistré.",
+ "Let the AI do it and record the recipe anew": "Laisser l’IA le faire et réenregistrer la recette",
+ "Making the changes by the recorded recipes, without AI. Each one is read back from {site}.": "Modifications en cours selon les recettes enregistrées, sans IA. Chacune est relue sur {site}.",
+ "{n} by recipe in seconds, {m} by the AI": "{n} par recette en quelques secondes, {m} par l’IA",
+ "{n} change ticked, all by recipe, without AI": [
+  "{n} modification cochée, toutes par recette, sans IA",
+  "{n} modifications cochées, toutes par recette, sans IA"
+ ],
+ "Record how to make this kind of change on {site}": "Enregistrer comment faire ce type de modification sur {site}",
+ "Fill in {item} by the recorded recipe, without saving": "Remplir {item} selon la recette enregistrée, sans enregistrer",
+ "Make {item} by the recorded recipe": "Faire {item} selon la recette enregistrée"
 }

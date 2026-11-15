@@ -3041,6 +3041,53 @@ def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, m
     server.inst.browser.stop()
 
 
+def test_autofill_push_says_which_changes_go_by_recipe(page_all, server):
+    """To push: each change says whether it goes up by a recorded recipe (no AI) or by the AI; a recipe that stopped
+    says at which step and offers the AI, and the button works with no AI when every ticked change has a recipe."""
+    from autofill import recipe as rc
+    pg = page_all
+    assert server.req("POST", "/api/autofill/linkedin/current", FILL_NOW)[0] == 200
+    fill = server.inst.fill
+    site = fill.site("linkedin")
+    url = "https://www.linkedin.com/in/me/"
+    headline, errs = rc.validate({"steps": [{"do": "open", "url": url}, {"do": "click", "name": "Edit intro"},
+                                            {"do": "type", "field": "Headline", "value": "{headline}"},
+                                            {"do": "save", "name": "Save"}]}, site, "basics.headline")
+    assert not errs, errs
+    fill.save("linkedin", route={"pages": [{"url": url, "reads": ["basics", "education", "projects"], "script": "async (h) => ({})"}]},
+              recipes={"basics.headline": headline})
+    for op in ({"op": "set", "item": "basics", "field": "headline", "value": "ML engineer in training"},
+               {"op": "set", "item": "basics", "field": "about", "value": "Open to ML roles. " + "Long text " * 30}):
+        assert server.req("PUT", "/api/autofill/linkedin/local", op)[0] == 200
+    long_err = "not found: button “Edit about”; it shows: " + ", ".join(f'button "Section {n} with a long name"' for n in range(12))
+    fill.save("linkedin", applied={"basics.about": {"state": "failed", "note": long_err, "by": "recipe", "kind": "broken",
+                                                    "step": 2, "what": "click “Edit about”", "saved": False}})
+    open_platform(pg)
+    pg.click("#fill-review")
+    pg.wait_for_selector(".fill-plan .fi[data-id='basics.headline'] .fi-via")
+    assert pg.get_attribute(".fi[data-id='basics.headline'] .fi-via", "data-via") == "recipe"
+    assert pg.inner_text(".fi[data-id='basics.headline'] .fi-via").strip() == "按配方，无需 AI"
+    note = pg.inner_text(".fi[data-id='basics.about'] .fi-note")
+    assert "在第 2 步（click “Edit about”）停止" in note and "未保存任何内容" in note, note
+    assert pg.locator(".fi[data-id='basics.about'] .fi-redo").inner_text().strip() == "交由 AI 完成并重新记录配方"
+    assert "1 处按配方数秒完成，1 处由 AI 完成" in pg.inner_text("#fill-foot")
+    # nothing spills out of its row, at the user's width and a narrow one, light and dark
+    for w in (2000, 900):
+        pg.set_viewport_size({"width": w, "height": 900})
+        spill = pg.evaluate("""() => [...document.querySelectorAll('.fill-plan .fi, .fill-plan .fi-note, #fill-foot')]
+            .filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.className)""")
+        assert spill == [], (w, spill)
+        for scheme in ("light", "dark"):
+            pg.emulate_media(color_scheme=scheme)
+            pg.screenshot(path=str(ART / f"autofill-recipe-push-{w}-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+    pg.set_viewport_size({"width": 1400, "height": 900})
+    # only the recipe one ticked: the button says so, and needs no AI
+    pg.click(".fi[data-id='basics.about'] .check")
+    wait_until(lambda: "全部按配方完成" in pg.inner_text("#fill-foot"), msg="all by recipe")
+    no_native(pg)
+
+
 def test_autofill_sites_are_the_users_to_pick(page_all, server):
     pg = page_all
     open_platform(pg)

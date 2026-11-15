@@ -2407,5 +2407,19 @@
  "{n} pages didn't read": "{n}개 페이지를 읽지 못함",
  "Stopped reading job descriptions: {what}": "직무 설명 읽기를 멈췄습니다: {what}",
  "Job descriptions read: {what}": "직무 설명 읽기 완료: {what}",
- "After a scan, the matching roles of the companies it scanned that have no job description read yet are read and scored by themselves (up to 80 a scan, newest first); a score follows your resume and skill levels as they change.": "스캔이 끝나면 스캔한 회사의 해당 채용 공고 중 직무 설명을 아직 읽지 않은 것을 자동으로 읽고 점수를 매깁니다(한 번에 최대 80건, 최신순). 이력서나 기술 숙련도를 바꾸면 점수도 자동으로 갱신됩니다."
+ "After a scan, the matching roles of the companies it scanned that have no job description read yet are read and scored by themselves (up to 80 a scan, newest first); a score follows your resume and skill levels as they change.": "스캔이 끝나면 스캔한 회사의 해당 채용 공고 중 직무 설명을 아직 읽지 않은 것을 자동으로 읽고 점수를 매깁니다(한 번에 최대 80건, 최신순). 이력서나 기술 숙련도를 바꾸면 점수도 자동으로 갱신됩니다.",
+ "Resume Studio is already making changes on {site}": "Resume Studio가 {site}에서 변경하는 중입니다",
+ "A recipe recorded the first time the AI made this kind of change replays it in seconds, then reads {site} back to check it.": "이 유형의 변경을 AI가 처음 수행할 때 기록한 레시피로 몇 초 만에 다시 실행한 뒤 {site}에서 다시 읽어 확인합니다.",
+ "No recipe for this kind of change yet: the AI makes it in the browser and records one.": "이 유형의 변경에는 아직 레시피가 없습니다. AI가 브라우저에서 변경하고 레시피를 기록합니다.",
+ "By recipe, no AI": "레시피로, AI 없이",
+ "By the AI": "AI가 수행",
+ "Stopped at step {n} ({step}): {error}": "{n}단계({step})에서 중지됨: {error}",
+ "Nothing was saved.": "아무것도 저장되지 않았습니다.",
+ "Let the AI do it and record the recipe anew": "AI에게 맡기고 레시피 다시 기록",
+ "Making the changes by the recorded recipes, without AI. Each one is read back from {site}.": "기록된 레시피로 변경하는 중입니다(AI 없음). 각 변경은 {site}에서 다시 읽어 확인합니다.",
+ "{n} by recipe in seconds, {m} by the AI": "{n}건은 레시피로 몇 초 만에, {m}건은 AI가 수행",
+ "{n} change ticked, all by recipe, without AI": "변경 {n}건 선택됨, 모두 레시피로 AI 없이",
+ "Record how to make this kind of change on {site}": "{site}에서 이 유형의 변경 방법 기록",
+ "Fill in {item} by the recorded recipe, without saving": "기록된 레시피로 {item} 입력(저장 안 함)",
+ "Make {item} by the recorded recipe": "기록된 레시피로 {item} 수행"
 }

@@ -15,7 +15,7 @@ from typing import Any, Callable
 from resume import model
 from resume.service import Studio
 
-from . import profile, route, sites, sync
+from . import profile, recipe, route, sites, sync
 from .sites import Site
 
 APPLY_STATES = ("doing", "done", "failed", "skipped")
@@ -317,6 +317,7 @@ class Autofill:
             self._limits(site, it)
             if it["id"] in applied:
                 it["applied"] = applied[it["id"]]
+            it["via"] = recipe.via(site, st, it)   # by a recorded recipe (no AI), or by the AI
         return out
 
     def reference(self, site: Site, local: dict | None, st: dict) -> dict:
@@ -353,6 +354,7 @@ class Autofill:
                 "last_check": st.get("last_check"), "checking": st.get("checking"),
                 "route": {"recorded": bool(r), "pages": len((r or {}).get("pages") or []), "covers": route.covers(r),
                           "at": st.get("route_at"), "broken": st.get("route_broken")},
+                "recipes": sorted((st.get("recipes") or {}).keys()), "recipe_broken": st.get("recipe_broken") or {},
                 "pending": self.pending(site, st), "reference": self.reference(site, local, st),
                 "signed_out": bool(st.get("signed_out")), "read_chat": st.get("read_chat"),
                 "apply_chat": st.get("apply_chat"), "applying": st.get("applying") or [], "applied": st.get("applied") or {}}
@@ -420,6 +422,30 @@ class Autofill:
         self.save(site.id, route=r, route_at=time.time(), route_broken=None)
         return r, []
 
+    def set_recipe(self, site: Site, key: str, data: Any) -> tuple[dict, list[str]]:
+        """A write recipe Claude recorded (`browser.py recipe`): checked, then kept next to the read route."""
+        r, errs = recipe.validate(data, site, key)
+        if errs:
+            return {}, errs
+        with self.lock:
+            st = self.load(site.id)
+            broken = {k: v for k, v in (st.get("recipe_broken") or {}).items() if k != key}
+            self.save(site.id, recipes={**(st.get("recipes") or {}), key: r}, recipe_broken=broken)
+        return r, []
+
+    def recipe_failed(self, site: Site, change: dict, e: "recipe.RecipeFailed") -> None:
+        """A recipe the site no longer fits (or whose save the site doesn't show) is broken: the next push of that kind
+        goes to the AI, which records it anew. A value the site has no option for leaves the recipe as it is."""
+        if e.kind not in ("broken", "verify"):
+            return
+        with self.lock:
+            st = self.load(site.id)
+            broken = dict(st.get("recipe_broken") or {})
+            for k in recipe.keys_of(change):
+                broken[k] = {"error": str(e) + (f" ({e.detail})" if e.detail else ""), "step": e.step, "what": e.what,
+                            "at": time.time()}
+            self.save(site.id, recipe_broken=broken)
+
     # ---- the user's edits to the local copy --------------------------------------------
     def edit(self, site: Site, op: dict) -> dict:
         """One change to the local copy: set a field, add / remove / restore an item, settle a conflict,
@@ -484,7 +510,7 @@ class Autofill:
             return {"item": item}
 
     # ---- pushing to the site (Claude, in the browser) ------------------------------------
-    def report(self, site: Site, change_id: str, state: str, note: str = "") -> dict:
+    def report(self, site: Site, change_id: str, state: str, note: str = "", **extra: Any) -> dict:
         if state not in APPLY_STATES:
             raise ValueError(f"state must be one of {', '.join(APPLY_STATES)}")
         with self.lock:
@@ -494,7 +520,7 @@ class Autofill:
             applied = dict(st.get("applied") or {})
             if change_id not in pend and not (state == "done" and change_id in (st.get("applying") or [])):
                 raise KeyError(change_id)
-            applied[change_id] = {"state": state, "note": note, "at": time.time()}
+            applied[change_id] = {"state": state, "note": note, "at": time.time(), **extra}
             fields: dict[str, Any] = {"applied": applied}
             if state == "done" and change_id in pend:
                 fields["base"] = sync.pushed(base or sync.empty(), local or sync.empty(), pend[change_id])

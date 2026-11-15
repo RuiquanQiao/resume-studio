@@ -20,7 +20,7 @@ from resume import model
 from resume import prompts as rp
 from resume.service import Studio
 
-from . import profile, prompts, route
+from . import profile, prompts, recipe, route
 from . import sites as sites_mod
 from .service import Autofill
 from .sites import Site
@@ -166,7 +166,8 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
 
     def full(site: Site) -> dict:
         v = fill.view(site)
-        return {**v, "reading": bool(v["read_chat"]) and chats.busy(v["read_chat"]), "browser": browser.status()}
+        return {**v, "reading": bool(v["read_chat"]) and chats.busy(v["read_chat"]), "browser": browser.status(),
+                "pushing": bool(pushing.get(site.id))}   # recipes replaying now (no AI)
 
     @app.route("GET", "/api/autofill/{site}")
     def site_view(req: Request):
@@ -289,50 +290,170 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         site, b = site_of(req), body(req)
         return {"mode": "claude", "chat": learn_chat(site, b, str(fill.load(site.id).get("route_broken") or ""))}
 
+    # ---- push the ticked changes: by recorded recipes (no AI), else the AI records them as it goes ----------
+    pushing: dict[str, bool] = {}
+
+    def profile_url(st: dict) -> str:
+        """Where the profile is: where it was last read, else the recorded route's first page."""
+        pages = (st.get("route") or {}).get("pages") or [{}]
+        return str((st.get("current") or {}).get("url") or pages[0].get("url") or "")
+
+    def after_push(site: Site) -> None:
+        fill.save(site.id, applying=[])
+        publish(site.id)
+        # see that the site now says it (and pick up anything else that changed there); not while it asks to sign in
+        st = fill.load(site.id)
+        if st.get("route") and not st.get("signed_out") and not checking.get(site.id):
+            try:
+                start_check(site)
+            except HttpError:
+                pass
+
+    def failed_note(e: recipe.RecipeFailed) -> dict:
+        return {"by": "recipe", "kind": e.kind, "step": e.step + 1 if e.step >= 0 else None, "what": e.what,
+                "saved": e.saved}
+
+    def push_one(site: Site, change: dict) -> recipe.RecipeFailed | None:
+        """One change by its recipe, in the browser tab this thread works in; reported done only once read back."""
+        fill.report(site, change["id"], "doing", by="recipe")
+        publish(site.id)
+        st = fill.load(site.id)
+        try:
+            said = recipe.push(browser, site, st, change)
+        except recipe.RecipeFailed as e:
+            fill.report(site, change["id"], "failed", str(e), **failed_note(e))
+            fill.recipe_failed(site, change, e)
+            if e.kind == "signed_out":
+                fill.save(site.id, signed_out=True)
+            publish(site.id)
+            return e
+        fill.report(site, change["id"], "done", said, by="recipe")
+        publish(site.id)
+        return None
+
+    def ai_chat(site: Site, b: dict, items: list[dict], redo: list[str], on_done: Callable[[bool], None]) -> dict:
+        st = fill.load(site.id)
+        chat = start_chat(b, site, t("Update {site}", site=site.name), prompts.apply_message(site, len(items)),
+                          prompts.apply_context(site, str(studio.store.path), items, profile_url(st), st, redo),
+                          on_done, action="autofill_apply")
+        fill.save(site.id, apply_chat=chat["id"])
+        publish(site.id)
+        return chat
+
+    def run_pushes(site: Site, by_recipe: list[dict], by_ai: list[dict], redo: list[str], b: dict) -> None:
+        stopped = False
+        try:
+            with browser.hold(), browser.acting(f"push:{site.id}"):
+                for change in by_recipe:
+                    if stopped:
+                        fill.report(site, change["id"], "skipped", "", by="recipe")
+                        continue
+                    e = push_one(site, change)
+                    stopped = e is not None and e.kind == "signed_out"
+        except BrowserError as e:   # the browser itself went away: what is left waits for the next push
+            for change in by_recipe:
+                if (fill.load(site.id).get("applied") or {}).get(change["id"], {}).get("state") == "doing":
+                    fill.report(site, change["id"], "failed", str(e), by="recipe", kind="browser")
+            stopped = True
+        finally:
+            pushing.pop(site.id, None)
+        if by_ai and not stopped:
+            fill.save(site.id, applying=[i["id"] for i in by_ai])
+            try:
+                ai_chat(site, b, by_ai, redo, lambda ok: after_push(site))
+                return
+            except HttpError as e:
+                for i in by_ai:
+                    fill.report(site, i["id"], "failed", str(e.args[-1] if e.args else e))
+        after_push(site)
+
     @app.route("POST", "/api/autofill/{site}/apply")
     def apply(req: Request):
-        """Push the ticked changes: Claude, in the browser, reporting each one back."""
+        """Push the ticked changes. One with a recorded recipe (and a read route to check it by) goes up by the recipe,
+        no AI; the rest go to the AI, which records a recipe for each kind as it makes it. `only`: just these changes
+        (ticked or not); `ai`: by the AI, recording their recipes anew (a recipe that broke)."""
         site, b = site_of(req), body(req)
         view = fill.view(site)
         if not view["synced"]:
             raise HttpError(409, t("Check {site} for updates first", site=site.name))
         if view["conflicts"]:
             raise HttpError(409, t("Settle the conflicts first: a field was changed both here and on {site}", site=site.name))
-        items = [i for i in view["pending"] if i["checked"]]
+        if pushing.get(site.id) or view["applying"]:
+            raise HttpError(409, t("Resume Studio is already making changes on {site}", site=site.name))
+        only = b.get("only")
+        items = [i for i in view["pending"] if (i["id"] in only if isinstance(only, list) else i["checked"])]
         if not items:
             raise HttpError(409, t("Nothing is ticked"))
         over = [i for i in items if any(f.get("over") for f in i["fields"])]
         if over:
             raise HttpError(409, t("Shorten the text that is over {site}'s limit first: {items}", site=site.name,
                                    items=", ".join(i["label"] for i in over)))
+        force_ai = bool(b.get("ai"))
+        by_recipe = [] if force_ai else [i for i in items if i["via"] == "recipe"]
+        by_ai = [i for i in items if i not in by_recipe]
+        # a recipe recorded anew: the kinds the user sent to the AI, and the ones whose recipe broke
+        redo = sorted({k for i in by_ai for k in recipe.keys_of(i)
+                       if force_ai or k in (view.get("recipe_broken") or {})})
         # changes go up on the user's behalf: in a browser they can watch and take over, from the start (showing it
         # later would open it anew and lose what was typed)
         bro(lambda: browser.ensure(window=True))
-        st = fill.load(site.id)
-
-        def profile_url(st: dict) -> str:
-            """Where the profile is: where Claude last read it, else the recorded route's first page."""
-            pages = (st.get("route") or {}).get("pages") or [{}]
-            return str((st.get("current") or {}).get("url") or pages[0].get("url") or "")
-
         fill.save(site.id, applied={}, applying=[i["id"] for i in items])   # each push reports afresh
-
-        def done(ok: bool) -> None:
-            fill.save(site.id, applying=[])
-            publish(site.id)
-            # see that the site now says it (and pick up anything else that changed there)
-            if fill.load(site.id).get("route") and not checking.get(site.id):
-                try:
-                    start_check(site)
-                except HttpError:
-                    pass
-
-        chat = start_chat(b, site, t("Update {site}", site=site.name), prompts.apply_message(site, len(items)),
-                          prompts.apply_context(site, str(studio.store.path), items, profile_url(st)),
-                          done, action="autofill_apply")
-        fill.save(site.id, apply_chat=chat["id"])
+        if not by_recipe:
+            try:
+                chat = ai_chat(site, b, by_ai, redo, lambda ok: after_push(site))
+            except HttpError:
+                fill.save(site.id, applying=[])
+                raise
+            return {"mode": "claude", "chat": chat, "recipe": [], "ai": [i["id"] for i in by_ai]}
+        pushing[site.id] = True
         publish(site.id)
-        return {"chat": chat}
+        threading.Thread(target=run_pushes, args=(site, by_recipe, by_ai, redo, b), daemon=True,
+                         name=f"autofill-push-{site.id}").start()
+        return {"mode": "recipe" if not by_ai else "mixed", "chat": None,
+                "recipe": [i["id"] for i in by_recipe], "ai": [i["id"] for i in by_ai]}
+
+    @app.route("POST", "/api/autofill/{site}/recipe")
+    def save_recipe(req: Request):
+        """`browser.py recipe <site> <key>`: Claude's write recipe for one kind of change, checked and kept."""
+        site, b = site_of(req), body(req)
+        key = str(b.get("key") or "")
+        r, errs = fill.set_recipe(site, key, b.get("recipe"))
+        if errs:
+            raise HttpError(400, "the recipe has problems:\n- " + "\n- ".join(errs))
+        publish(site.id)
+        return {"text": f"saved the {key} recipe ({len(r['steps'])} steps). Now make the change by it: "
+                        f"`push {site.id} <change id>` (add `--dry` first to fill the dialog in without saving)."}
+
+    @app.route("POST", "/api/autofill/{site}/push")
+    def push_by_recipe(req: Request):
+        """`browser.py push <site> <id>`: one approved change by its recipe, in the chat's own tab, read back by the
+        route and reported. `dry`: fill it in, stop before saving, leave the dialog open."""
+        site, b = site_of(req), body(req)
+        cid = str(b.get("id") or "")
+        change = next((i for i in fill.pending(site) if i["id"] == cid), None)
+        if change is None:
+            raise HttpError(404, f"no change {cid!r} waits to go up; use the ids from the approved list")
+        if not fill.load(site.id).get("route"):
+            raise HttpError(409, "no read route is recorded: a recipe's change is checked by reading it back")
+        with browser.acting(req.headers.get("X-Resume-Studio-Chat")):
+            if b.get("dry"):
+                try:
+                    recipe.push(browser, site, fill.load(site.id), change, dry=True)
+                except recipe.RecipeFailed as e:
+                    more = f" ({e.detail})" if e.detail else ""
+                    return {"text": f"stopped at step {e.step + 1} ({e.what}): {e}{more}. Nothing was saved."}
+                return {"text": "filled in by the recipe and NOT saved; the dialog is still open. Check it with "
+                                "`snapshot --dialog`, close it without saving (its cancel button, or press Escape), "
+                                "then fix the recipe or `push` for real."}
+            e = push_one(site, change)
+        if e is None:
+            return {"text": f"done: {(fill.load(site.id).get('applied') or {}).get(cid, {}).get('note')}. Reported done."}
+        where = f" at step {e.step + 1} ({e.what})" if e.step >= 0 else ""
+        tail = ("Something may have been saved: snapshot the page and check before doing anything else."
+                if e.saved else "Nothing was saved.")
+        more = f" ({e.detail})" if e.detail else ""
+        return {"text": f"failed{where}: {e}{more}. {tail} Reported failed; fix the recipe and send it again, "
+                        "or make the change by hand and report it."}
 
     # ---- what Claude sends back (scripts/browser.py) --------------------------------------
     def check_text(site: Site, res: dict) -> str:

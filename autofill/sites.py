@@ -49,6 +49,14 @@ class Site:
     # its app on the App Store, "<country>:<id>": where its logo comes from when the site shows a script only a
     # sign-in check or a 16 px icon (BOSS直聘, 2026-11-15). The id stays; the picture's address changes with each version.
     app_store: str = ""
+    # what a recorded write recipe may never press here, on top of NEVER_PRESS (regular expressions, matched against
+    # the control's name): the guide says it to Claude in words, this holds the replay to it
+    never_press: list[str] = field(default_factory=list)
+
+    def forbids(self, name: str) -> str:
+        """The rule a control's name breaks ("" for none): applying, messaging, a job-seeking status, paying."""
+        rules = [*NEVER_PRESS, *self.never_press, *(NEVER_PRESS_COMPANY if self.kind == "company" else [])]
+        return next((r for r in rules if re.search(r, name or "", re.I)), "")
 
     def fields(self, section: str) -> list[str]:
         return [f for f in FIELDS[section] if f not in self.lacks.get(section, [])]
@@ -79,6 +87,7 @@ PRESETS: dict[str, Site] = {
         limits={"basics.headline": 220, "basics.about": 2600, "experience.title": 100, "experience.description": 2000,
                 "education.description": 1000, "projects.description": 2000},
         login_paths=["/login", "/authwall", "/checkpoint", "/uas/", "/signup"],
+        never_press=[r"\bconnect\b", r"\bfollow\b", r"\bshare\b", r"\bpost\b", r"\bendorse", r"open to work"],
         lacks={"projects": ["role"]},   # a project there is name, dates, description (and what it is associated with)
         guide="""\
 - `https://www.linkedin.com/in/me/` opens the signed-in user's own profile. Each section card links to a
@@ -97,6 +106,7 @@ PRESETS: dict[str, Site] = {
         id="boss", name="BOSS直聘", preset="boss", home="https://www.zhipin.com/", domains=["zhipin.com"], lang="zh",
         sections=["experience", "projects", "education"], basics=["about"],
         login_paths=["/web/user"], app_store="cn:887314963",
+        never_press=["沟通", "打招呼", "求职状态", "在职-", "离职-", "到岗"],
         guide="""\
 - The editable online resume (在线简历 / 我的简历) is reached from the signed-in job seeker's menu
   (avatar or 个人中心 → 我的简历 / 在线简历). Find it from the home page and remember its address
@@ -110,6 +120,13 @@ PRESETS: dict[str, Site] = {
     ),
 }
 
+
+# never pressed by a replayed recipe, on any site: applying, messaging people, a job-seeking status, paying
+NEVER_PRESS = [r"\bapply\b", r"easy apply", r"submit (an |my |your )?application", r"\bmessage\b", r"\bsend\b", r"\binvite\b",
+               r"\bpay\b", r"\bbuy\b", r"\bsubscribe\b", r"premium", "投递", "申请职位", "立即申请", "提交申请", "一键投递", "确认投递",
+               "撤回", "立即沟通", "打招呼", "发送", "求职状态", "支付", "购买", "开通", "充值", "会员"]
+# on a company's careers site a bare "submit" often sends the application itself
+NEVER_PRESS_COMPANY = [r"\bsubmit\b", "提交", "志愿"]
 
 DEFAULT = ["linkedin", "boss"]   # a data file that never chose its sites
 ALL_SECTIONS = ["experience", "education", "projects", "awards", "skills"]

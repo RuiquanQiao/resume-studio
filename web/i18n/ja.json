@@ -2407,5 +2407,19 @@
  "{n} pages didn't read": "{n} 件のページを読み込めませんでした",
  "Stopped reading job descriptions: {what}": "職務内容の読み込みを停止しました：{what}",
  "Job descriptions read: {what}": "職務内容の読み込み完了：{what}",
- "After a scan, the matching roles of the companies it scanned that have no job description read yet are read and scored by themselves (up to 80 a scan, newest first); a score follows your resume and skill levels as they change.": "スキャン後、スキャンした企業の該当求人のうち職務内容が未読のものを自動で読み込んで採点します（1 回につき最大 80 件、新しい順）。履歴書やスキルの習熟度を変更すると、点数も自動で更新されます。"
+ "After a scan, the matching roles of the companies it scanned that have no job description read yet are read and scored by themselves (up to 80 a scan, newest first); a score follows your resume and skill levels as they change.": "スキャン後、スキャンした企業の該当求人のうち職務内容が未読のものを自動で読み込んで採点します（1 回につき最大 80 件、新しい順）。履歴書やスキルの習熟度を変更すると、点数も自動で更新されます。",
+ "Resume Studio is already making changes on {site}": "Resume Studio は {site} で変更を行っています",
+ "A recipe recorded the first time the AI made this kind of change replays it in seconds, then reads {site} back to check it.": "この種の変更を AI が初めて行ったときに記録したレシピで、数秒で再実行し、{site} を読み直して確認します。",
+ "No recipe for this kind of change yet: the AI makes it in the browser and records one.": "この種の変更のレシピはまだありません。AI がブラウザで変更し、レシピを記録します。",
+ "By recipe, no AI": "レシピで実行（AI 不要）",
+ "By the AI": "AI が実行",
+ "Stopped at step {n} ({step}): {error}": "ステップ {n}（{step}）で停止しました：{error}",
+ "Nothing was saved.": "何も保存されていません。",
+ "Let the AI do it and record the recipe anew": "AI に任せてレシピを記録し直す",
+ "Making the changes by the recorded recipes, without AI. Each one is read back from {site}.": "記録済みのレシピで変更しています（AI 不要）。各変更は {site} から読み直して確認します。",
+ "{n} by recipe in seconds, {m} by the AI": "{n} 件はレシピで数秒、{m} 件は AI が実行",
+ "{n} change ticked, all by recipe, without AI": "{n} 件の変更を選択済み、すべてレシピで実行（AI 不要）",
+ "Record how to make this kind of change on {site}": "{site} でこの種の変更を行う方法を記録",
+ "Fill in {item} by the recorded recipe, without saving": "記録済みのレシピで {item} を入力（保存しない）",
+ "Make {item} by the recorded recipe": "記録済みのレシピで {item} を実行"
 }

@@ -750,6 +750,49 @@ fill the site → submit → track progress. What still costs the user attention
    known, the agent pre-fills the form from the subset version and stops before Submit, for many companies in a
    row, each awaiting one click.
 
+## 2026-11-15: pushing a profile change needs no AI after the first time
+
+Before: "Check for updates" already read a profile with no AI (a read route the AI recorded once), but every
+push of a change ("Make these changes") opened an AI chat. That was slow and spent quota on the same clicks each
+time. Now each kind of change is pushed by a **write recipe** (`autofill/recipe.py`), recorded once by the AI:
+
+- **What a recipe is.** A list of steps for one kind of change: one recipe per section and operation
+  (`experience.update`, `experience.add`, `experience.remove`, …, `basics.about`, `skills.add`). A step opens a
+  page, finds an item by its current text, clicks a control by its role and label, types into a labelled field,
+  chooses in a dropdown, sets a date picker, or saves. Values come from the change: `{title}` is the new title,
+  `{site.title}` the one the site has now (to find the item), `{start.year}` / `{start.month}` are parts of a
+  date. Recipes are stored next to the read route in the site's state file.
+- **Recording.** The first time a kind of change is pushed, it goes to the AI as before. The AI now also writes
+  the recipe (`browser.py recipe`), tries it without saving (`push --dry`), and makes the change through it
+  (`push`). The first push of that kind therefore already proves the recipe on the real site.
+- **Replay.** Later pushes of that kind run the recipe in Resume Studio's own browser tab, one change at a time,
+  with real input events, so React / Vue / AntD fields take the value. After saving, the read route reads that
+  section again, and the change counts as done only when the site shows it. The list says for each change
+  whether it goes "By recipe, no AI" or "By the AI". A push where every change has a recipe needs no AI at all.
+- **Dropdowns.** A dropdown with a fixed list (a degree, a city as a native select) has its options stored with
+  the recipe. A value not on the list fails before the browser is touched. A searchable or async picker (a
+  school or company that suggests as you type) types the value and takes only the suggestion that reads exactly
+  that; anything else is a failure, never a guess. (The user's proposal was to store every dropdown's options.
+  That is right for fixed lists only: a searchable picker's options depend on what is typed, so there the check
+  is an exact match on the suggestion.)
+- **Failures stop.** Each failure stops that change and says at which step (shown as "Stopped at step 2 (click
+  “编辑”): …"); the change is never retried on its own. Before saving, the open dialog is cancelled, so nothing is
+  saved. A recipe the site no longer fits (a redesign renamed a button) or whose save the read-back doesn't show
+  is marked broken. The next push of that kind goes to the AI, and the failed change offers "Let the AI do it and
+  record the recipe anew", the same pattern as a broken read route. A value the site has no option for leaves
+  the recipe as it is. A sign-in page during a replay stops the whole push and shows the sign-in banner.
+- **Safety.** A recipe is checked when the AI saves it and again on every click: it never presses anything that
+  applies, messages, greets a recruiter or changes 求职状态 (`NEVER_PRESS` in `autofill/sites.py`, plus each
+  site's own list; on a company's careers site also a bare 提交 / submit). Only a remove recipe may press a
+  delete. It never types into a password or verification-code field, and it must start by opening a page of
+  that site.
+- **Tests.** `tests/fake_sites/editor/profile.html` is a fake online resume editor: an edit dialog per item with
+  React-like fields, a native select, an AntD-like dropdown, searchable company and school pickers whose
+  suggestions arrive late, year-and-month date pickers, a delete confirmation, and 立即沟通 / 求职状态 buttons
+  that must never be pressed. `tests/test_autofill_write.py` records five kinds through fake Claude, then pushes
+  an edit, an add, a delete, a custom-dropdown pick and an about with no AI call. It also covers a value not on
+  a list, a search with no exact suggestion, a save the site drops, a redesign, and a sign-in during the push.
+
 ## Scan state and tracks in the data
 
 - `scans.json` `tracks: [{id, name, keywords, exclude, subset}]`; `keywords` stays as the union for older readers.

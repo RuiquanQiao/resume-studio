@@ -2407,5 +2407,19 @@
  "{n} pages didn't read": "{n} 个页面读取失败",
  "Stopped reading job descriptions: {what}": "已停止读取 JD：{what}",
  "Job descriptions read: {what}": "JD 读取完成：{what}",
- "After a scan, the matching roles of the companies it scanned that have no job description read yet are read and scored by themselves (up to 80 a scan, newest first); a score follows your resume and skill levels as they change.": "每次扫描后，会自动读取所扫公司中尚未读取 JD 的匹配岗位并评分（每次至多 80 个，由新到旧）；简历或技能掌握程度变更后，评分会自动随之更新。"
+ "After a scan, the matching roles of the companies it scanned that have no job description read yet are read and scored by themselves (up to 80 a scan, newest first); a score follows your resume and skill levels as they change.": "每次扫描后，会自动读取所扫公司中尚未读取 JD 的匹配岗位并评分（每次至多 80 个，由新到旧）；简历或技能掌握程度变更后，评分会自动随之更新。",
+ "Resume Studio is already making changes on {site}": "Resume Studio 正在 {site} 上进行修改",
+ "A recipe recorded the first time the AI made this kind of change replays it in seconds, then reads {site} back to check it.": "此类修改首次由 AI 完成时已记录操作配方：数秒内即可按配方重放，随后从 {site} 读回核对。",
+ "No recipe for this kind of change yet: the AI makes it in the browser and records one.": "此类修改尚无配方：将由 AI 在浏览器中完成，并同时记录配方。",
+ "By recipe, no AI": "按配方，无需 AI",
+ "By the AI": "由 AI 完成",
+ "Stopped at step {n} ({step}): {error}": "在第 {n} 步（{step}）停止：{error}",
+ "Nothing was saved.": "未保存任何内容。",
+ "Let the AI do it and record the recipe anew": "交由 AI 完成并重新记录配方",
+ "Making the changes by the recorded recipes, without AI. Each one is read back from {site}.": "正在按已记录的配方修改，无需 AI。每处修改均会从 {site} 读回核对。",
+ "{n} by recipe in seconds, {m} by the AI": "{n} 处按配方数秒完成，{m} 处由 AI 完成",
+ "{n} change ticked, all by recipe, without AI": "已勾选 {n} 处修改，全部按配方完成，无需 AI",
+ "Record how to make this kind of change on {site}": "记录在 {site} 上进行此类修改的方法",
+ "Fill in {item} by the recorded recipe, without saving": "按已记录的配方填写 {item}，不保存",
+ "Make {item} by the recorded recipe": "按已记录的配方完成 {item}"
 }

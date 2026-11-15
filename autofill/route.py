@@ -57,10 +57,15 @@ def covers(route: dict | None) -> list[str]:
 
 
 def run(browser: Any, site: Site, route: dict, base: dict | None = None,
-        progress: Callable[[int, int, str], None] | None = None) -> tuple[dict, list[str]]:
-    """Read the site by the route: (what it says now, the sections that reading covers)."""
+        progress: Callable[[int, int, str], None] | None = None, only: list[str] | None = None) -> tuple[dict, list[str]]:
+    """Read the site by the route: (what it says now, the sections that reading covers). `only`: just the pages
+    that read these sections (a write recipe reading back what it changed)."""
     reading: dict[str, Any] = {"url": "", "basics": {}, "items": [], "skills": []}
     pages = route.get("pages") or []
+    if only is not None:
+        pages = [p for p in pages if set(p.get("reads") or []) & set(only)]
+        if not pages:
+            raise RouteBroken(f"no page of the route reads {', '.join(only)}")
     for n, p in enumerate(pages):
         if progress:
             progress(n, len(pages), p["url"])
@@ -88,7 +93,7 @@ def run(browser: Any, site: Site, route: dict, base: dict | None = None,
     cur, errs = validate_current(reading, site)
     if errs:
         raise RouteBroken("what the scripts read doesn't fit: " + "; ".join(errs[:3]))
-    scope = covers(route)
+    scope = covers({"pages": pages})
     # a section that had entries and now reads as empty: far more likely a redesign than a wiped profile
     for sec in scope:
         if sec in ("basics", "skills"):

@@ -141,6 +141,7 @@ async function fillChat(url, body = {}) {
   let r;
   try { r = await api("POST", url, { ...chatSettings(), ...body }); }
   catch (e) { toast(e.message); return null; }
+  if (!r.chat) return r;   // the recorded recipes go first; the AI's chat starts after them
   ui.chat.list = [r.chat, ...ui.chat.list.filter((c) => c.id !== r.chat.id)];
   await openChat(r.chat.id);
   return r;
@@ -186,7 +187,21 @@ async function applyPlan() {
   await flushTyping();
   const v = fillView();
   if (!v || !v.pending.some((p) => p.checked)) return;
+  // changes with a recorded recipe go up without AI; a chat opens only for the ones the AI makes
+  if (!v.pending.some((p) => p.checked && p.via !== "recipe")) {
+    try { await api("POST", `/api/autofill/${encodeURIComponent(F.site)}/apply`, {}); }
+    catch (e) { toast(e.message, { ms: 7000 }); }
+    loadFillSite();
+    return;
+  }
   const r = await fillChat(`/api/autofill/${F.site}/apply`);
+  if (r) loadFillSite();
+}
+
+// a change whose recipe stopped: the AI makes it, and records the recipe anew on the way
+async function redoByAI(i) {
+  await flushTyping();
+  const r = await fillChat(`/api/autofill/${F.site}/apply`, { only: [i.id], ai: true });
   if (r) loadFillSite();
 }
 
@@ -579,11 +594,21 @@ function pushItem(v, i) {
       h("button", { type: "button", class: "fi-label", "aria-expanded": String(open), onclick: () => { F.open[key] = !open; paintFill(); } },
         h("span", { class: "fi-name" }, pushLabel(i)),
         i.op === "update" && i.site_label && i.site_label !== i.label && h("span", { class: "fi-was" }, t("on {site}: {label}", { site: site.name, label: i.site_label }))),
+      !a && h("span", { class: "fi-via", "data-via": i.via,
+        title: i.via === "recipe" ? t("A recipe recorded the first time the AI made this kind of change replays it in seconds, then reads {site} back to check it.", { site: site.name })
+          : t("No recipe for this kind of change yet: the AI makes it in the browser and records one.") },
+      icon(i.via === "recipe" ? "bolt" : "sparkle"), i.via === "recipe" ? t("By recipe, no AI") : t("By the AI")),
       a && h("span", { class: "fi-state s-" + a.state, title: a.note || null }, a.state === "doing" ? h("span", { class: "spin" }) : null, t(APPLIED[a.state] || a.state)),
       h("button", { type: "button", class: "btn sm ghost", disabled: busy, title: t("Put back what {site} has", { site: site.name }),
         onclick: () => editCopy({ op: "revert", change: i.id }) }, icon("rewind"), t("Undo")),
       h("button", { type: "button", class: "btn icon sm ghost", title: open ? t("Hide the fields") : t("Show the fields"), onclick: () => { F.open[key] = !open; paintFill(); } }, icon(open ? "up" : "down"))),
-    a && a.state === "failed" && a.note && h("div", { class: "fi-note" }, icon("alert"), a.note),
+    a && a.state === "failed" && a.note && h("div", { class: "fi-note" }, icon("alert"),
+      h("span", { class: "fi-note-text" },
+        a.by === "recipe" && a.step ? t("Stopped at step {n} ({step}): {error}", { n: a.step, step: a.what, error: a.note }) : a.note,
+        a.by === "recipe" && !a.saved ? " " + t("Nothing was saved.") : ""),
+      a.by === "recipe" && a.kind !== "signed_out" && a.kind !== "unsafe" && h("button", { type: "button", class: "btn sm fi-redo",
+        disabled: !ui.chat.available || (v.applying || []).length > 0, title: ui.chat.available ? null : missingAgentText(), onclick: () => redoByAI(i) },
+      icon("sparkle"), t("Let the AI do it and record the recipe anew"))),
     open && h("div", { class: "fi-body" }, i.fields.map((f) => {
       const shown = (s) => (DATE_FIELDS.has(f.name) && s === "present" ? t("present") : s || "");
       return h("div", { class: "ff" },
@@ -807,9 +832,15 @@ function paintFillFoot() {
   const over = ticked.some((i) => i.fields.some((f) => f.over));
   const nc = Object.keys(v.conflicts).length;
   const applying = (v.applying || []).length > 0;
+  const byRecipe = ticked.filter((i) => i.via === "recipe").length;
+  const needAI = ticked.length - byRecipe;
   el.replaceChildren(...[
-    h("span", { class: "ff-sum" }, applying ? t("The AI is making the changes in the browser; follow along in the chat.")
-      : F.tab === "push" && v.pending.length && !ui.chat.available ? missingAgentText()
+    h("span", { class: "ff-sum" }, v.pushing ? t("Making the changes by the recorded recipes, without AI. Each one is read back from {site}.", { site: site.name })
+      : applying ? t("The AI is making the changes in the browser; follow along in the chat.")
+      : F.tab === "push" && needAI && !ui.chat.available ? missingAgentText()
+      : F.tab === "push" && ticked.length && byRecipe && !nc && !over
+        ? (needAI ? t("{n} by recipe in seconds, {m} by the AI", { n: byRecipe, m: needAI })
+          : t("{n} change ticked, all by recipe, without AI", { n: byRecipe }, "{n} changes ticked, all by recipe, without AI"))
       : nc ? t("Settle the {n} conflict first.", { n: nc }, "Settle the {n} conflicts first.")
       : over ? t("Some text is over {site}'s limit.", { site: site.name })
       : !v.pending.length ? t("Your copy says what {site} says.", { site: site.name })
@@ -819,8 +850,8 @@ function paintFillFoot() {
     applying && h("button", { class: "btn", onclick: showBrowser }, t("Show the browser")),
     F.tab !== "push" && v.pending.length > 0 && h("button", { class: "btn primary", id: "fill-review", onclick: () => setFillTab("push") },
       t("Review and push ({n})", { n: v.pending.length })),
-    F.tab === "push" && h("button", { class: "btn primary", id: "fill-apply", disabled: applying || over || nc > 0 || !ticked.length || !ui.chat.available, onclick: applyPlan },
-      icon("sparkle"), t("Make these changes on {site}", { site: site.name }))].filter(Boolean));
+    F.tab === "push" && h("button", { class: "btn primary", id: "fill-apply", disabled: applying || over || nc > 0 || !ticked.length || (needAI > 0 && !ui.chat.available), onclick: applyPlan },
+      icon(ticked.length && !needAI ? "bolt" : "sparkle"),t("Make these changes on {site}", { site: site.name }))].filter(Boolean));
 }
 // ================================================================ the workspace frame
 // What the browser is doing, the same everywhere it is shown: off; in the background (no window), working or idle;

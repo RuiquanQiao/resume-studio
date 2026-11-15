@@ -14,6 +14,8 @@
     python scripts/browser.py sync linkedin             # check for updates now, by the route
     python scripts/browser.py profile linkedin --stdin <<'JSON' ... JSON   # what the site's profile says now
     python scripts/browser.py report linkedin item.i3 done
+    python scripts/browser.py recipe linkedin experience.update --stdin <<'JSON' ... JSON   # save a write recipe
+    python scripts/browser.py push linkedin item.i3 [--dry]   # make an approved change by its recipe, read it back
     python scripts/browser.py sign-in https://careers.example.com/   # a site refuses to sign in a driven browser
 
 Every command prints what happened. The browser is a real Chrome or Edge with its own profile, which
@@ -144,6 +146,10 @@ def main() -> int:
     p = sub.add_parser("signed-out", help="the site wants the user to sign in"); p.add_argument("site")
     p = sub.add_parser("wait-signed-in", help="wait (up to 90 s a run) until the user has signed in to the site")
     p.add_argument("site")
+    p = sub.add_parser("recipe", help="save a write recipe for one kind of change (experience.update, basics.about…)")
+    p.add_argument("site"); p.add_argument("key"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
+    p = sub.add_parser("push", help="make one approved change by its recipe, read it back and report it")
+    p.add_argument("site"); p.add_argument("id"); p.add_argument("--dry", action="store_true", help="fill it in, don't save")
     args = ap.parse_args()
     guard_args()
 
@@ -159,6 +165,16 @@ def main() -> int:
         return 0
     if c == "sync":
         show(call(url, "POST", f"/api/autofill/{args.site}/sync", {}))
+        return 0
+    if c == "recipe":
+        try:
+            data = json.loads(read_text(args))
+        except ValueError as e:
+            sys.exit(f"error: that isn't valid JSON ({e})")
+        show(call(url, "POST", f"/api/autofill/{args.site}/recipe", {"key": args.key, "recipe": data}))
+        return 0
+    if c == "push":
+        show(call(url, "POST", f"/api/autofill/{args.site}/push", {"id": args.id, "dry": args.dry}))
         return 0
     if c == "extract":
         r = call(url, "POST", "/api/browser/do", {"cmd": "extract", "script": read_text(args)})

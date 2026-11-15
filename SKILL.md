@@ -428,10 +428,25 @@ Edge) with a profile of its own in `<skill>/.local/browser/` and drives it over 
   a part can't be scripted, send that reading once with `browser.py profile <site>`. For a site the user
   added, the route (or the reading) also says what the site has (`"site": {sections, basics, limits,
   lacks}`); the window keeps it.
-- **Pushing** ("Make these changes"): a chat gets exactly the ticked changes between the copy and the
-  site, and makes them one at a time, reporting each (`browser.py report <site> <id> doing|done|failed`).
-  A change reported done counts as on the site; the route then checks the site again. Never touch
-  anything else: no messages, connections, posts, applications, or 求职状态.
+- **Pushing** ("Make these changes"): the user ticks and confirms every change. A kind of change that has
+  a recorded **write recipe** (`autofill/recipe.py`) goes up without you: Resume Studio replays the
+  recipe in its own tab, reads the section back with the read route, and marks the change done only when
+  the site shows it. Every other change goes to a chat, which gets exactly those changes and makes them
+  one at a time, **recording a recipe for each kind as it goes** (the chat's note explains the format):
+  explore the editor, save the recipe with `browser.py recipe <site> <kind> --stdin` (kinds:
+  `experience.update|add|remove` and the same for education, projects, awards; `basics.headline`,
+  `basics.about`; `skills.add`, `skills.remove`), try it with `browser.py push <site> <id> --dry` (fills
+  the dialog, doesn't save), then `browser.py push <site> <id>`, which makes the change by the recipe,
+  reads it back and reports it. A kind that really can't be scripted is made by hand and reported
+  (`browser.py report <site> <id> doing|done|failed`). Recipe steps find controls by role and label
+  (never class names) and type with real input events; a static dropdown's options are stored so a value
+  is checked before anything is touched; a searchable picker (school, company, city) types the value and
+  takes only the suggestion that reads exactly that. A recipe that fails stops that change and says at
+  which step; nothing is retried. A recipe the site no longer fits (or whose save the read-back doesn't
+  show) is marked broken and the window offers "Let the AI do it and record the recipe anew". A sign-in
+  page during a replay stops the whole push and shows the sign-in banner. A recipe never presses
+  anything that applies, messages, greets, or changes 求职状态 (`Site.forbids`, `NEVER_PRESS` in
+  `autofill/sites.py`), and never types into a password or code field. Never touch anything else.
 - **The resume is a reference, not the source.** The window shows, next to the copy, where the chosen
   resume subset words a field differently and which of its entries the copy lacks; the user takes
   them with a click. A profile may say things the resume doesn't.
@@ -468,6 +483,8 @@ python <skill>/scripts/browser.py upload <ref> <file>       # only files inside 
 python <skill>/scripts/browser.py extract --stdin <<'JS' ... JS   # run a read script on the open page, print its JSON
 python <skill>/scripts/browser.py route <site> --stdin <<'JSON' ... JSON   # save the read route and run it once
 python <skill>/scripts/browser.py sync <site>       # check for updates now, by the route
+python <skill>/scripts/browser.py recipe <site> <kind> --stdin <<'JSON' ... JSON   # save a write recipe (checked first)
+python <skill>/scripts/browser.py push <site> <id> [--dry]   # make an approved change by its recipe, read back, reported
 ```
 
 - Every message in an Autofill chat carries a note on how to use the browser, so a user's own request

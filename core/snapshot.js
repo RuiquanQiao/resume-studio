@@ -317,6 +317,90 @@
     return `${k} ${q(clip(name(e, k), 80))}`;
   }
 
+  // ---- what a recorded write recipe finds things by (autofill/recipe.py): a control's role and its label or text,
+  // never a class name. `spec`: {within: "dialog" | "page", kinds: [...], name: "Edit" or "/regex/i", near: [texts]}.
+  // `near`: the item it belongs to, by the item's own text (its title, its company): of the controls that match,
+  // the one whose nearest part of the page holding every one of those texts is smallest. Two equally near: ambiguous.
+  const bare = (s) => norm(s).toLowerCase().replace(/[\s*:：]+$/u, "").replace(/^[\s*]+/u, "");
+  function nameOk(got, want) {
+    const m = /^\/(.*)\/([a-z]*)$/s.exec(want || "");
+    if (m) { try { return new RegExp(m[1], m[2].replace(/[^imsu]/g, "")).test(norm(got)); } catch (_) { return false; } }
+    return bare(got) === bare(want);
+  }
+  function rootOf(within) {
+    if (within !== "dialog") return document.body;
+    const ds = [...document.querySelectorAll("[role=dialog],[role=alertdialog],dialog[open]")].filter(shown);
+    return ds[ds.length - 1] || null;
+  }
+  // shown, or a button that shows when the mouse is over its row (click() puts the mouse there first)
+  function reachable(e) {
+    if (shown(e)) return true;
+    let a = e;
+    while (a && a !== document.body) { if (!shown(a)) return hoverOnly(a).includes(e); a = a.parentElement; }
+    return false;
+  }
+  const secret = (e) => (tag(e) === "input" && (e.getAttribute("type") || "").toLowerCase() === "password")
+    || /password|passcode|密码|验证码|verification|one-time|otp\b|短信码/i.test(name(e, kind(e)) + " " + (e.getAttribute("autocomplete") || ""));
+  function find(spec) {
+    const root = rootOf(spec.within);
+    if (!root) return { error: "no dialog is open", count: 0 };
+    const kinds = spec.kinds && spec.kinds.length ? spec.kinds : null;
+    const all = [...root.querySelectorAll("*")].filter((e) => {
+      let k = kind(e);
+      if (!k && clickable(e) && norm(e.innerText).length <= 80 && norm(e.innerText)) k = "clickable";
+      return k && (!kinds || kinds.includes(k)) && reachable(e) && nameOk(name(e, k), spec.name);
+    });
+    // a label wrapping its own control (or a clickable div around a button) counts once: the innermost
+    let hits = all.filter((e) => !all.some((o) => o !== e && e.contains(o)));
+    const seen = () => [...new Set([...root.querySelectorAll("a,button,input,select,textarea,[role]")]
+      .filter((e) => kind(e) && shown(e)).map((e) => kind(e) + " " + q(clip(name(e, kind(e)), 40))))].slice(0, 25);
+    if (!hits.length) return { error: "not found", count: 0, seen: seen() };
+    const near = (spec.near || []).map(norm).filter(Boolean);
+    if (near.length) {
+      const scored = hits.map((e) => {
+        let a = e;
+        while (a && !near.every((t) => norm(a.innerText || a.textContent).includes(t))) a = a.parentElement;
+        return { e, box: a, size: a ? norm(a.innerText || a.textContent).length : Infinity };
+      }).filter((x) => x.box);
+      if (!scored.length) return { error: "no item shows " + near.map(q).join(" and "), count: 0 };
+      const best = Math.min(...scored.map((x) => x.size));
+      const top = scored.filter((x) => x.size === best);
+      const boxes = new Set(top.map((x) => x.box));
+      if (boxes.size > 1 || top.length > 1) return { error: "more than one item shows " + near.map(q).join(" and "), count: top.length };
+      hits = [top[0].e];
+    } else if (hits.length > 1) {
+      // the same control twice (a toolbar and a footer): the first one shown; different controls: ambiguous
+      const vis = hits.filter(shown);
+      if (vis.length !== 1 && new Set(hits.map((e) => e.outerHTML)).size > 1) return { error: "more than one matches", count: hits.length };
+      hits = [vis[0] || hits[0]];
+    }
+    const e = hits[0], k = kind(e) || "clickable";
+    return { ref: refFor(e), kind: k, name: name(e, k), secret: secret(e), tag: tag(e),
+      checked: e.checked === true || e.getAttribute("aria-checked") === "true" };
+  }
+  // the choices a picker shows now: what is in an open list (options, menu items, tree items, grid cells), else
+  // any small shown thing the site made clickable. {texts, ref of the one whose text is `want`}
+  function options(want, exclude) {
+    const skip = exclude ? S.els[Number(exclude)] : null;
+    const pick = (els) => els.filter((e) => shown(e) && e !== skip && !(skip && skip.contains(e)) && norm(e.innerText || e.textContent));
+    let els = pick([...document.querySelectorAll("[role=option],[role=menuitem],[role=menuitemradio],[role=treeitem],[role=gridcell]")]);
+    if (!els.length) {
+      els = pick([...document.querySelectorAll("[role=listbox] *,[role=menu] *,[role=tree] *,[role=grid] *")]
+        .filter((e) => (kind(e) || clickable(e) || ["li", "td"].includes(tag(e))) && norm(e.innerText).length <= 80));
+    }
+    const texts = [...new Set(els.map((e) => norm(e.innerText || e.textContent)))];
+    const hit = want == null ? null : els.find((e) => bare(e.innerText || e.textContent) === bare(want));
+    return { texts: texts.slice(0, 60), count: texts.length, ref: hit ? refFor(hit) : null };
+  }
+  function focused() {
+    let a = document.activeElement;
+    while (a && a.shadowRoot && a.shadowRoot.activeElement) a = a.shadowRoot.activeElement;
+    return a && a !== document.body && kind(a) ? { ref: refFor(a), kind: kind(a), secret: secret(a) } : null;
+  }
+  const dialogs = () => [...document.querySelectorAll("[role=dialog],[role=alertdialog],dialog[open]")].filter(shown)
+    .map((d) => ({ name: name(d, "dialog"), alerts: [...d.querySelectorAll("[role=alert],[aria-invalid=true]")]
+      .map((x) => tag(x) === "input" || tag(x) === "textarea" ? "invalid: " + name(x, kind(x)) : norm(x.innerText)).filter(Boolean) }));
+
   // what a recorded read route's script gets (autofill): reading helpers; the script only reads, apart
   // from opening "see more" and scrolling so that lazy lists load
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -347,5 +431,5 @@
     },
   };
 
-  globalThis.__rs = { snapshot, point, hoverPoint, isShown, focus, choose, read, el, target, helpers, kind: (ref) => kind(el(ref)), rich: (ref) => !!el(ref).isContentEditable };
+  globalThis.__rs = { snapshot, point, hoverPoint, isShown, focus, choose, read, el, target, helpers, find, options, focused, dialogs, kind: (ref) => kind(el(ref)), rich: (ref) => !!el(ref).isContentEditable };
 })();

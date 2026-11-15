@@ -48,7 +48,7 @@ EMPTY_NOTE = ("the page shows nothing yet, after waiting 10 seconds: it is still
               "can't be read until a screenshot shows it blank too")
 
 COMMANDS = {"open", "snapshot", "text", "click", "hover", "type", "select", "press", "scroll", "upload", "screenshot", "tabs",
-            "tab", "back", "front", "sign-in", "profile", "report", "signed-out", "extract", "route", "sync"}
+            "tab", "back", "front", "sign-in", "profile", "report", "signed-out", "extract", "route", "sync", "recipe", "push"}
 
 
 def steps_of(command: str) -> list[dict]:
@@ -182,6 +182,8 @@ def _step(rest: str, body: str) -> dict | None:
         step["index"] = a[0]
     elif cmd in ("profile", "signed-out", "route", "sync") and a:
         step["site"] = a[0]
+    elif cmd in ("recipe", "push") and len(a) >= 2:
+        step.update(site=a[0], id=a[1], dry=bool(flags.get("dry")))
     elif cmd == "report" and len(a) >= 3:
         step.update(site=a[0], id=a[1], state=a[2], note=str(flags.get("note") or "")[:200])
     return step
@@ -1049,6 +1051,30 @@ class ManagedBrowser:
             return json.loads(raw) if isinstance(raw, str) else raw
         except ValueError as e:
             raise BrowserError(f"the script's answer isn't JSON: {e}") from e
+
+    # ---- what a write recipe (autofill/recipe.py) finds controls by: role and label, as snapshot.js names them ----
+    def find(self, spec: dict) -> dict:
+        """{ref, kind, name, secret, checked} of the one control `spec` names, or {error, seen}."""
+        with self._page():
+            return self._js(f"find({json.dumps(spec, ensure_ascii=False)})") or {"error": "not found"}
+
+    def options(self, want: str | None = None, exclude: str | None = None) -> dict:
+        """The choices an open picker shows: {texts, count, ref of the one whose text is `want`}."""
+        with self._page():
+            return self._js(f"options({json.dumps(want, ensure_ascii=False)}, {json.dumps(exclude)})") or {"texts": [], "ref": None}
+
+    def focused(self) -> dict | None:
+        with self._page():
+            return self._js("focused()")
+
+    def dialogs(self) -> list[dict]:
+        """The dialogs open now: their names and what they flag (alerts, invalid fields)."""
+        with self._page():
+            return self._js("dialogs()") or []
+
+    def read(self, ref: str) -> dict:
+        with self._page():
+            return self._js(f"read({int(ref)})")
 
     def read_page(self, url: str, script: str, timeout: float = 60.0) -> Any:
         """Run a read script on `url` in a tab of its own, in a window off the screen, then close it: reading a

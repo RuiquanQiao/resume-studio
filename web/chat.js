@@ -1036,6 +1036,8 @@ function stepLabel(s, result) {
     case "extract": return [t("Try a read script on the page")];
     case "route": return [t("Record how to read {site}", { site })];
     case "sync": return [t("Check {site} for updates by the recorded route", { site })];
+    case "recipe": return [t("Record how to make this kind of change on {site}", { site })];
+    case "push": return [s.dry ? t("Fill in {item} by the recorded recipe, without saving", { item: item() }) : t("Make {item} by the recorded recipe", { item: item() })];
     case "report": return [{ doing: t("Start: {item}", { item: item() }), done: t("Done: {item}", { item: item() }),
       failed: t("Didn't work: {item}", { item: item() }), skipped: t("Skipped: {item}", { item: item() }) }[s.state] || item(), s.note || ""];
     default: return [t("Browser: {cmd}", { cmd: s.cmd })];
