@@ -15,6 +15,7 @@ from . import langs
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 SKILL_MD = SKILL_ROOT / "SKILL.md"
+WRITING = SKILL_ROOT / "references" / "resume-writing.md"
 RENDER = SKILL_ROOT / "scripts" / "render.py"
 
 
@@ -41,6 +42,8 @@ def ui_context(data_path: str, subset: dict | None, entry: dict | None, project_
         "  refresh by themselves, so there is no need to compile or tell the user to reload.",
         f"- Data format, the multilingual rules and the fact-boundary editing rules: `{SKILL_MD}` (the",
         "  resume-studio skill). Read it before your first edit of the data file in this conversation.",
+        f"- How to write what a recruiter sees (bullets, subtitles, the tech line, headlines, job-site profiles): `{WRITING}`.",
+        "  Read it before you write any of them.",
         f"- To check pages and which bullets wrap onto a second line: `{render_cmd('<SUBSET-ID>', data_path)}`",
         "  (add `--lang <code>` to check another resume language with the same template and layout).",
     ]
@@ -80,13 +83,17 @@ def writing_style(lang: str) -> str:
         return t("English resume style: start with a strong past-tense verb, no pronouns, quantify where the facts "
                  "allow, keep each bullet tight; rebuild other languages' phrasing into natural English, not word by word.")
     if langs.script(lang) in ("zh", "zh-tw"):
-        return t("Chinese resume style: start with a verb (负责, 主导, 搭建, 设计, 优化, 实现…), never \"I\"; drop articles, "
+        return t("Chinese resume style: start with a verb (主导, 搭建, 设计, 优化, 实现, 定位…), never \"I\"; drop articles, "
                  "clauses and filler from other languages and keep the information dense; keep technical terms, product "
                  "names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so two "
                  "bullets may merge into one, and one that doesn't matter for the job may be left out.")
     return t("{lang} resume style: write it the way a native {lang} resume reads (verbs, tense, formality and length "
              "as local recruiters expect), keep technical terms, product names and numbers as they are, and rebuild "
              "the phrasing instead of translating word by word.", lang=lang_name(lang))
+
+
+def writing_rules() -> str:
+    return t("Write by the rules in `{path}` (read it first).", path=WRITING)
 
 
 def _extra(instruction: str) -> str:
@@ -101,6 +108,7 @@ def polish_message(name: str, instruction: str, lang: str | None = None, subset_
              name=name, lang=lang_name(lang)) if lang else
            t("Using the fact layer (notes and evidence; read the project's code and README when needed), polish the "
              "visible layer of the entry “{name}”. Change only this entry and leave notes and evidence alone.", name=name))
+    msg += " " + writing_rules()
     if subset_id and data_path:
         msg += "\n" + one_line(f"`{render_cmd(subset_id, data_path, lang)}`")
     return msg + _extra(instruction)
@@ -108,7 +116,8 @@ def polish_message(name: str, instruction: str, lang: str | None = None, subset_
 
 def _translate_rules(target: str, others: list[str], subset_id: str, data_path: str) -> str:
     keep = ", ".join(f"`{o}`" for o in others) or "`en`"
-    return ("- " + t("This is not a sentence-by-sentence translation.") + " " + writing_style(target) + "\n"
+    return ("- " + t("This is not a sentence-by-sentence translation.") + " " + writing_style(target) + " "
+            + writing_rules() + "\n"
             "- " + t("Bullets line up by position (each one is a map like {example}). When a bullet isn't needed in the "
                      "{lang} version, set its `{code}` to an empty string '' and it shows only in the other languages; "
                      "when the {lang} version needs an extra bullet, add one and set the other languages to ''.",
@@ -158,7 +167,9 @@ def mock_message(name: str, lang: str, instruction: str = "") -> str:
               "reasons behind the decisions, the hardest problem, what you'd do differently, and the basics of the "
               "technology it names. Add about 8 new questions to its `interview`, most likely first, each with an "
               "answer and the one or two follow-ups an interviewer would ask after hearing that answer (with answers "
-              "too).", name=name) + "\n" + interview_rules(lang) + _extra(instruction))
+              "too).", name=name) + " " + t("Start with the questions the bullets were written to invite (the "
+                                             "“Hooks” part of {path}).", path=WRITING)
+            + "\n" + interview_rules(lang) + _extra(instruction))
 
 
 def probe_message(name: str, question: str, path: str, lang: str, instruction: str = "") -> str:
@@ -248,7 +259,7 @@ def tailor_message(subset: dict, app: dict, report: str, data_path: str, new: bo
     first = (t("None of my resume subsets fits the posting {posting} well, so the new subset “{job}” (`{id}`) starts from it.",
                posting=posting, job=job, id=vid) if new else
              t("Adjust the subset “{job}” (`{id}`) so it also fits the posting {posting}.", job=job, id=vid, posting=posting))
-    return (first + " " + _where(app, report) + "\n"
+    return (first + " " + _where(app, report) + " " + writing_rules() + "\n"
             "- " + t("A subset is a resume for a kind of role that I send to many similar postings, not to one company: never "
                      "put this company's name (or anything only true of this one posting) into the resume, and name the subset "
                      "after the kind of role (its `label`).") + "\n"

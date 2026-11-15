@@ -247,12 +247,14 @@ subsets:
 
 ## Common tasks
 
-- **Add a new experience**: interview one question at a time, write the real story into `notes` first,
-  then draft bullets from the notes. The interviewing and writing approaches of installed skills such as
-  offer-toolkit-skill or resume-tailoring are good references.
+- **How to write**: everything a recruiter sees (bullets, subtitles, the tech line, headlines, job-site
+  profiles) follows [references/resume-writing.md](references/resume-writing.md): you are the user's
+  defence counsel, the notes hold the whole truth, the page shows the best defensible version of it, no
+  naive items (a vendor API is not a technology), and every bullet invites a question the user can answer.
+- **Add a new experience**: interview one question at a time and make it safe to tell the whole story
+  (what AI wrote, what they don't understand); write it into `notes` first, then draft bullets from the notes.
 - **Polish one entry**: read its notes and evidence (and the repository and README when needed), then
-  rewrite the bullets: start with a verb, put the user's own decisions and results first, one line each
-  (check with render.py).
+  rewrite the entry by the writing rules, one line per bullet (check with render.py).
 - **Mock interview**: predict what an interviewer asks about one entry, starting from what the resume
   claims (every bullet, number and technology can be drilled into), then the reasons behind decisions, the
   hardest problem and the basics of the tech it names. Answers are spoken, first person, about a minute,

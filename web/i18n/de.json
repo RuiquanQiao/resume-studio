@@ -215,7 +215,6 @@
  "Check {site} for updates first": "Prüfen Sie {site} zuerst auf Änderungen",
  "Checked": "Geprüft",
  "Checking…": "Wird geprüft…",
- "Chinese resume style: start with a verb (负责, 主导, 搭建, 设计, 优化, 实现…), never \"I\"; drop articles, clauses and filler from other languages and keep the information dense; keep technical terms, product names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so two bullets may merge into one, and one that doesn't matter for the job may be left out.": "Stil chinesischer Lebensläufe: Mit einem Verb beginnen (负责, 主导, 搭建, 设计, 优化, 实现…), nie „ich“ (我); Artikel, Nebensätze und Füllwörter aus anderen Sprachen streichen und die Information dicht halten; Fachbegriffe, Produktnamen und Zahlen unverändert lassen (Wörter wie LLM oder React nicht zwanghaft übersetzen); Chinesisch ist kürzer, also dürfen zwei Punkte zu einem verschmelzen und ein für die Stelle unwichtiger Punkt wegfallen.",
  "Choose a project folder": "Projektordner auswählen",
  "Choose files": "Dateien auswählen",
  "Choose folder": "Ordner auswählen",
@@ -2616,5 +2615,8 @@
  ],
  "Record how to make this kind of change on {site}": "Aufzeichnen, wie diese Art von Änderung auf {site} vorgenommen wird",
  "Fill in {item} by the recorded recipe, without saving": "{item} nach dem aufgezeichneten Rezept ausfüllen, ohne zu speichern",
- "Make {item} by the recorded recipe": "{item} nach dem aufgezeichneten Rezept vornehmen"
+ "Make {item} by the recorded recipe": "{item} nach dem aufgezeichneten Rezept vornehmen",
+ "Chinese resume style: start with a verb (主导, 搭建, 设计, 优化, 实现, 定位…), never \"I\"; drop articles, clauses and filler from other languages and keep the information dense; keep technical terms, product names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so two bullets may merge into one, and one that doesn't matter for the job may be left out.": "Stil chinesischer Lebensläufe: Mit einem Verb beginnen (主导, 搭建, 设计, 优化, 实现, 定位…), nie „ich“ (我); Artikel, Nebensätze und Füllwörter aus anderen Sprachen streichen und die Information dicht halten; Fachbegriffe, Produktnamen und Zahlen unverändert lassen (Wörter wie LLM oder React nicht zwanghaft übersetzen); Chinesisch ist kürzer, also dürfen zwei Punkte zu einem verschmelzen und ein für die Stelle unwichtiger Punkt wegfallen.",
+ "Write by the rules in `{path}` (read it first).": "Schreiben Sie nach den Regeln in `{path}` (zuerst lesen).",
+ "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "Beginnen Sie mit den Fragen, die die Stichpunkte hervorrufen sollen (Abschnitt „Hooks“ in {path})."
 }

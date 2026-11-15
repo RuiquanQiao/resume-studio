@@ -212,7 +212,6 @@
  "Check {site} for updates first": "まず {site} の更新を確認してください",
  "Checked": "確認しました",
  "Checking…": "確認中…",
- "Chinese resume style: start with a verb (负责, 主导, 搭建, 设计, 优化, 实现…), never \"I\"; drop articles, clauses and filler from other languages and keep the information dense; keep technical terms, product names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so two bullets may merge into one, and one that doesn't matter for the job may be left out.": "中国語の履歴書の書き方：動詞で始め（负责、主导、搭建、设计、优化、实现…）、「我」は使わない。他言語の冠詞・従属節・飾り言葉を削って情報密度を高くする。技術用語・製品名・数字はそのまま残す（LLM や React などを無理に訳さない）。中国語は短くなるので、2 項目を 1 つにまとめたり、求人に関係の薄い項目を省いたりしてよい。",
  "Choose a project folder": "プロジェクトフォルダーを選択",
  "Choose files": "ファイルを選択",
  "Choose folder": "フォルダーを選択",
@@ -2421,5 +2420,8 @@
  "{n} change ticked, all by recipe, without AI": "{n} 件の変更を選択済み、すべてレシピで実行（AI 不要）",
  "Record how to make this kind of change on {site}": "{site} でこの種の変更を行う方法を記録",
  "Fill in {item} by the recorded recipe, without saving": "記録済みのレシピで {item} を入力（保存しない）",
- "Make {item} by the recorded recipe": "記録済みのレシピで {item} を実行"
+ "Make {item} by the recorded recipe": "記録済みのレシピで {item} を実行",
+ "Chinese resume style: start with a verb (主导, 搭建, 设计, 优化, 实现, 定位…), never \"I\"; drop articles, clauses and filler from other languages and keep the information dense; keep technical terms, product names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so two bullets may merge into one, and one that doesn't matter for the job may be left out.": "中国語の履歴書の書き方：動詞で始め（主导、搭建、设计、优化、实现、定位…）、「我」は使わない。他言語の冠詞・従属節・飾り言葉を削って情報密度を高くする。技術用語・製品名・数字はそのまま残す（LLM や React などを無理に訳さない）。中国語は短くなるので、2 項目を 1 つにまとめたり、求人に関係の薄い項目を省いたりしてよい。",
+ "Write by the rules in `{path}` (read it first).": "`{path}` のルールに従って書いてください（先にお読みください）。",
+ "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "箇条書きが引き出すよう意図した質問から始めてください（{path} の「Hooks」の部分）。"
 }

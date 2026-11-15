@@ -215,7 +215,6 @@
  "Check {site} for updates first": "Busca primero cambios en {site}",
  "Checked": "Comprobado",
  "Checking…": "Comprobando…",
- "Chinese resume style: start with a verb (负责, 主导, 搭建, 设计, 优化, 实现…), never \"I\"; drop articles, clauses and filler from other languages and keep the information dense; keep technical terms, product names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so two bullets may merge into one, and one that doesn't matter for the job may be left out.": "Estilo de currículum en chino: empieza con un verbo (负责, 主导, 搭建, 设计, 优化, 实现…), nunca «yo» (我); elimina artículos, subordinadas y relleno de otros idiomas y mantén la información densa; deja los términos técnicos, nombres de productos y cifras tal cual (no fuerces la traducción de palabras como LLM o React); el chino es más corto, así que dos puntos pueden fusionarse y uno irrelevante para el puesto puede omitirse.",
  "Choose a project folder": "Elegir una carpeta de proyecto",
  "Choose files": "Elegir archivos",
  "Choose folder": "Elegir carpeta",
@@ -2616,5 +2615,8 @@
  ],
  "Record how to make this kind of change on {site}": "Grabar cómo hacer este tipo de cambio en {site}",
  "Fill in {item} by the recorded recipe, without saving": "Rellenar {item} según la receta grabada, sin guardar",
- "Make {item} by the recorded recipe": "Hacer {item} según la receta grabada"
+ "Make {item} by the recorded recipe": "Hacer {item} según la receta grabada",
+ "Chinese resume style: start with a verb (主导, 搭建, 设计, 优化, 实现, 定位…), never \"I\"; drop articles, clauses and filler from other languages and keep the information dense; keep technical terms, product names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so two bullets may merge into one, and one that doesn't matter for the job may be left out.": "Estilo de currículum en chino: empieza con un verbo (主导, 搭建, 设计, 优化, 实现, 定位…), nunca «yo» (我); elimina artículos, subordinadas y relleno de otros idiomas y mantén la información densa; deja los términos técnicos, nombres de productos y cifras tal cual (no fuerces la traducción de palabras como LLM o React); el chino es más corto, así que dos puntos pueden fusionarse y uno irrelevante para el puesto puede omitirse.",
+ "Write by the rules in `{path}` (read it first).": "Redacte según las reglas de `{path}` (léalo primero).",
+ "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "Empiece por las preguntas que las viñetas buscan provocar (la parte «Hooks» de {path})."
 }

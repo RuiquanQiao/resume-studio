@@ -212,7 +212,6 @@
  "Check {site} for updates first": "先检查一次 {site} 的更新",
  "Checked": "项目文件夹检查完毕",
  "Checking…": "检查中…",
- "Chinese resume style: start with a verb (负责, 主导, 搭建, 设计, 优化, 实现…), never \"I\"; drop articles, clauses and filler from other languages and keep the information dense; keep technical terms, product names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so two bullets may merge into one, and one that doesn't matter for the job may be left out.": "中文简历的写法：动词开头（负责、主导、搭建、设计、优化、实现……），不写「我」；去掉其他语言里的冠词、从句和客套修饰，信息密度要高；技术名词、产品名、数字照原样保留（不硬译 LLM、React 这类词）；中文更短，可以把两条合成一条，也可以省掉对岗位不重要的一条。",
  "Choose a project folder": "选择项目文件夹",
  "Choose files": "选择文件",
  "Choose folder": "选择文件夹",
@@ -2421,5 +2420,8 @@
  "{n} change ticked, all by recipe, without AI": "已勾选 {n} 处修改，全部按配方完成，无需 AI",
  "Record how to make this kind of change on {site}": "记录在 {site} 上进行此类修改的方法",
  "Fill in {item} by the recorded recipe, without saving": "按已记录的配方填写 {item}，不保存",
- "Make {item} by the recorded recipe": "按已记录的配方完成 {item}"
+ "Make {item} by the recorded recipe": "按已记录的配方完成 {item}",
+ "Chinese resume style: start with a verb (主导, 搭建, 设计, 优化, 实现, 定位…), never \"I\"; drop articles, clauses and filler from other languages and keep the information dense; keep technical terms, product names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so two bullets may merge into one, and one that doesn't matter for the job may be left out.": "中文简历的写法：动词开头（主导、搭建、设计、优化、实现、定位……），不写「我」；去掉其他语言里的冠词、从句和客套修饰，信息密度要高；技术名词、产品名、数字照原样保留（不硬译 LLM、React 这类词）；中文更短，可以把两条合成一条，也可以省掉对岗位不重要的一条。",
+ "Write by the rules in `{path}` (read it first).": "请按 `{path}` 中的规则撰写（先阅读该文件）。",
+ "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "先准备要点有意引出的问题（见 {path} 中的「Hooks」部分）。"
 }

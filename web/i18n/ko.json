@@ -212,7 +212,6 @@
  "Check {site} for updates first": "먼저 {site} 업데이트를 확인하세요",
  "Checked": "확인 완료",
  "Checking…": "확인 중…",
- "Chinese resume style: start with a verb (负责, 主导, 搭建, 设计, 优化, 实现…), never \"I\"; drop articles, clauses and filler from other languages and keep the information dense; keep technical terms, product names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so two bullets may merge into one, and one that doesn't matter for the job may be left out.": "중국어 이력서 작성법: 동사로 시작하고(负责, 主导, 搭建, 设计, 优化, 实现…) '나(我)'는 쓰지 않습니다. 다른 언어의 관사·종속절·꾸밈말을 빼서 정보 밀도를 높이고, 기술 용어·제품명·숫자는 그대로 둡니다(LLM, React 같은 단어를 억지로 번역하지 않음). 중국어는 더 짧으므로 두 항목을 하나로 합치거나 직무와 관계없는 항목은 빼도 됩니다.",
  "Choose a project folder": "프로젝트 폴더 선택",
  "Choose files": "파일 선택",
  "Choose folder": "폴더 선택",
@@ -2421,5 +2420,8 @@
  "{n} change ticked, all by recipe, without AI": "변경 {n}건 선택됨, 모두 레시피로 AI 없이",
  "Record how to make this kind of change on {site}": "{site}에서 이 유형의 변경 방법 기록",
  "Fill in {item} by the recorded recipe, without saving": "기록된 레시피로 {item} 입력(저장 안 함)",
- "Make {item} by the recorded recipe": "기록된 레시피로 {item} 수행"
+ "Make {item} by the recorded recipe": "기록된 레시피로 {item} 수행",
+ "Chinese resume style: start with a verb (主导, 搭建, 设计, 优化, 实现, 定位…), never \"I\"; drop articles, clauses and filler from other languages and keep the information dense; keep technical terms, product names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so two bullets may merge into one, and one that doesn't matter for the job may be left out.": "중국어 이력서 작성법: 동사로 시작하고(主导, 搭建, 设计, 优化, 实现, 定位…) '나(我)'는 쓰지 않습니다. 다른 언어의 관사·종속절·꾸밈말을 빼서 정보 밀도를 높이고, 기술 용어·제품명·숫자는 그대로 둡니다(LLM, React 같은 단어를 억지로 번역하지 않음). 중국어는 더 짧으므로 두 항목을 하나로 합치거나 직무와 관계없는 항목은 빼도 됩니다.",
+ "Write by the rules in `{path}` (read it first).": "`{path}`의 규칙에 따라 작성해 주십시오(먼저 읽어 주십시오).",
+ "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "항목이 유도하도록 작성된 질문부터 시작해 주십시오({path}의 'Hooks' 부분)."
 }
