@@ -50,7 +50,18 @@ def test_git_project_lifecycle(tmp_path, repo):
     row = state(tr, "E1", p)["paths"][0]
     assert row["state"] == "changed" and row["changes"]["commits"] == 1
     assert "feat: add evaluation harness" in row["changes"]["log"][0]
-    assert "新提交" in describe(row) and "app.py" in describe(row)
+    # the prompt names the range and leaves the commits to the agent: it reads them from git anyway (2026-11-15)
+    text = describe(row)
+    assert f"{row['changes']['since']}..HEAD" in text
+    assert "evaluation harness" not in text and "app.py" not in text
+
+    tr.mark_synced("E1", [p])
+    for i in range(30):                                                # long commit messages don't make it longer
+        (repo / f"m{i}.py").write_text("x\n", encoding="utf-8")
+        git(repo, "add", ".")
+        git(repo, "commit", "-qm", f"fix: {'a long user-facing description of what changed ' * 8}{i}")
+    row = state(tr, "E1", p)["paths"][0]
+    assert row["changes"]["commits"] == 30 and len(describe(row)) < 300
 
     tr.mark_synced("E1", [p])
     (repo / "app.py").write_text("print(2)\n", encoding="utf-8")      # uncommitted work counts too
@@ -155,7 +166,9 @@ def test_update_from_project_flow(server, data_file, fake_claude, repo):
     st = server.req("GET", "/api/evidence?force=1")[1]["status"]["EXP-002"]
     assert st["state"] == "changed"
     code, r = server.req("POST", f"/api/chats/{chat['id']}/send", {"action": "sync", "entry_id": "EXP-002", "subset_id": "RES-TECH-EN"})
-    assert code == 200 and "feat: evaluation harness" in r["text"] and "eval.py" in r["text"]
+    assert code == 200 and f"{st['paths'][0]['changes']['since']}..HEAD" in r["text"]
+    assert "feat: evaluation harness" not in r["text"]                 # the agent reads the commits itself
+    assert "resume-writing.md" in r["text"]                           # and rewrites the entry by the writing rules
     assert "--lang zh" in r["text"] and "--lang en" in r["text"]       # both languages get checked
     server.wait_idle(chat["id"])
     assert server.req("GET", "/api/evidence?force=1")[1]["status"]["EXP-002"]["state"] == "same"   # Claude read it

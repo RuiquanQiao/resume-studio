@@ -195,7 +195,6 @@
  "Change only `{code}` of these bullets and bring each onto one line: keep the strongest actions and results, drop modifiers and repetition, don't change the facts, and don't touch other languages or other entries.": "これらの項目の `{code}` だけを変更し、それぞれ 1 行に収めてください。最も重要な行動と成果を残し、修飾や重複を削り、事実は変えず、他の言語や他の経歴には触れないでください。",
  "Changed": "変更",
  "Changed both here and on {site}. Which to keep?": "ここと {site} の両方で変更されています。どちらを残しますか？",
- "Changed files (git diff --stat):": "変更されたファイル（git diff --stat）：",
  "Changed outside the window since v{n}": "v{n} の後にウィンドウの外で変更されました",
  "Changed since v{n}": "v{n} 以降に変更あり",
  "Changes since": "その後の変更",
@@ -619,7 +618,6 @@
  "Look at my project folders ({folders}) and pick the projects most worth putting on my resume, with your reasons. Don't change resume.yaml yet; once I confirm, add them one at a time.": "私のプロジェクトフォルダー（{folders}）を見て、履歴書に載せる価値が最も高いプロジェクトを理由とともに選んでください。resume.yaml はまだ変更せず、私が確認してから 1 つずつ追加してください。",
  "Look at my project folders ({folders}) and pick the projects most worth putting on my resume; don't change anything until I confirm": "私のプロジェクトフォルダー（{folders}）を見て、履歴書に載せる価値が最も高いプロジェクトを選んでください。確認するまで何も変更しないでください",
  "Look at the open tabs": "開いているタブを確認",
- "Look at these changes (commits, changed files, README), decide what is worth putting on the resume, then update the visible layer (bullets, tech, subtitle if needed). Update every language ({langs}), each written its own way rather than translated from another. If the changes aren't worth adding, don't change anything and tell me why. Leave notes and evidence alone.": "これらの変更（コミット、変更されたファイル、README）を見て、履歴書に載せる価値があるものを判断し、表示レイヤー（bullets、tech、必要なら subtitle）を更新してください。すべての言語（{langs}）を、互いに翻訳するのではなくそれぞれの書き方で更新してください。載せる価値がなければ何も変更せず、理由を教えてください。notes と evidence は変更しないでください。",
  "Look into it first": "まず調べる",
  "Looks genuine": "本物らしい",
  "Lost the connection to Resume Studio's background service; reconnecting… Changes you make now may not be saved.": "Resume Studio のバックグラウンドサービスとの接続が切れました。再接続しています… いまの変更は保存されないことがあります。",
@@ -1656,7 +1654,6 @@
  "{n} more file has uncommitted changes.": "ほかに {n} 件のファイルに未コミットの変更があります。",
  "{n} new": "{n} 件新着",
  "{n} new commit": "{n} 件の新しいコミット",
- "{n} new commit:": "{n} 件の新しいコミット：",
  "{n} of {total} requirements": "{total} 件中 {n} 件の要件",
  "{n} open": "募集中 {n} 件",
  "{n} open on its sites": "サイト上で募集中 {n} 件",
@@ -2423,5 +2420,7 @@
  "Make {item} by the recorded recipe": "記録済みのレシピで {item} を実行",
  "Chinese resume style: start with a verb (主导, 搭建, 设计, 优化, 实现, 定位…), never \"I\"; drop articles, clauses and filler from other languages and keep the information dense; keep technical terms, product names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so two bullets may merge into one, and one that doesn't matter for the job may be left out.": "中国語の履歴書の書き方：動詞で始め（主导、搭建、设计、优化、实现、定位…）、「我」は使わない。他言語の冠詞・従属節・飾り言葉を削って情報密度を高くする。技術用語・製品名・数字はそのまま残す（LLM や React などを無理に訳さない）。中国語は短くなるので、2 項目を 1 つにまとめたり、求人に関係の薄い項目を省いたりしてよい。",
  "Write by the rules in `{path}` (read it first).": "`{path}` のルールに従って書いてください（先にお読みください）。",
- "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "箇条書きが引き出すよう意図した質問から始めてください（{path} の「Hooks」の部分）。"
+ "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "箇条書きが引き出すよう意図した質問から始めてください（{path} の「Hooks」の部分）。",
+ "Read what changed yourself (the commits in that range, the README, the code), then re-judge the whole entry as the project stands now: rank all of its capabilities again and rewrite the visible layer (subtitle, bullets, tech) to show the product at its best. Never just append the newest work: it earns a place only if it beats what is there. Update every language ({langs}), each written its own way rather than translated from another. If nothing changes the picture, change nothing and tell me why. Leave notes and evidence alone.": "変更内容（この範囲のコミット、README、コード）はご自身で確認し、プロジェクトの現在の全体像に基づいて経歴全体を評価し直してください。すべての機能を改めて順位付けし、表示層（サブタイトル、箇条書き、技術）を製品が最もよく伝わるように書き直してください。最新の作業を単に追加しないでください。既存の内容を上回る場合にのみ掲載します。すべての言語（{langs}）を、他の言語からの翻訳ではなくそれぞれの書き方で更新してください。全体像が変わらない場合は何も変更せず、その理由を説明してください。notes と evidence は変更しないでください。",
+ "{n} new commit since {since} (`git log {since}..HEAD`).": "{since} 以降の新しいコミット {n} 件（`git log {since}..HEAD`）。"
 }

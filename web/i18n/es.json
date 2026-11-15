@@ -198,7 +198,6 @@
  "Change only `{code}` of these bullets and bring each onto one line: keep the strongest actions and results, drop modifiers and repetition, don't change the facts, and don't touch other languages or other entries.": "Cambia solo `{code}` de estos puntos y deja cada uno en una línea: conserva las acciones y resultados más fuertes, quita adornos y repeticiones, no cambies los hechos y no toques otros idiomas ni otras entradas.",
  "Changed": "Cambiado",
  "Changed both here and on {site}. Which to keep?": "Cambiado aquí y en {site}. ¿Cuál conservar?",
- "Changed files (git diff --stat):": "Archivos modificados (git diff --stat):",
  "Changed outside the window since v{n}": "Cambiado fuera de la ventana desde v{n}",
  "Changed since v{n}": "Cambiado desde v{n}",
  "Changes since": "Cambios desde entonces",
@@ -625,7 +624,6 @@
  "Look at my project folders ({folders}) and pick the projects most worth putting on my resume, with your reasons. Don't change resume.yaml yet; once I confirm, add them one at a time.": "Mira mis carpetas de proyectos ({folders}) y elige los proyectos que más merecen estar en mi currículum, con tus razones. No cambies resume.yaml todavía; cuando lo confirme, añádelos de uno en uno.",
  "Look at my project folders ({folders}) and pick the projects most worth putting on my resume; don't change anything until I confirm": "Mira mis carpetas de proyectos ({folders}) y elige los proyectos que más merecen estar en mi currículum; no cambies nada hasta que lo confirme",
  "Look at the open tabs": "Mirar las pestañas abiertas",
- "Look at these changes (commits, changed files, README), decide what is worth putting on the resume, then update the visible layer (bullets, tech, subtitle if needed). Update every language ({langs}), each written its own way rather than translated from another. If the changes aren't worth adding, don't change anything and tell me why. Leave notes and evidence alone.": "Mira estos cambios (commits, archivos modificados, README), decide qué merece estar en el currículum y luego actualiza la capa visible (bullets, tech y subtitle si hace falta). Actualiza todos los idiomas ({langs}), cada uno escrito a su manera en lugar de traducido de otro. Si los cambios no merecen añadirse, no cambies nada y dime por qué. No toques notes ni evidence.",
  "Look into it first": "Investigar antes",
  "Looks genuine": "Parece auténtica",
  "Lost the connection to Resume Studio's background service; reconnecting… Changes you make now may not be saved.": "Se perdió la conexión con el servicio en segundo plano de Resume Studio; reconectando… Puede que los cambios que hagas ahora no se guarden.",
@@ -1743,10 +1741,6 @@
   "{n} commit nuevo",
   "{n} commits nuevos"
  ],
- "{n} new commit:": [
-  "{n} commit nuevo:",
-  "{n} commits nuevos:"
- ],
  "{n} of {total} requirements": "{n} de {total} requisitos",
  "{n} open": "{n} abiertos",
  "{n} open on its sites": "{n} abiertos en sus sitios",
@@ -2618,5 +2612,7 @@
  "Make {item} by the recorded recipe": "Hacer {item} según la receta grabada",
  "Chinese resume style: start with a verb (主导, 搭建, 设计, 优化, 实现, 定位…), never \"I\"; drop articles, clauses and filler from other languages and keep the information dense; keep technical terms, product names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so two bullets may merge into one, and one that doesn't matter for the job may be left out.": "Estilo de currículum en chino: empieza con un verbo (主导, 搭建, 设计, 优化, 实现, 定位…), nunca «yo» (我); elimina artículos, subordinadas y relleno de otros idiomas y mantén la información densa; deja los términos técnicos, nombres de productos y cifras tal cual (no fuerces la traducción de palabras como LLM o React); el chino es más corto, así que dos puntos pueden fusionarse y uno irrelevante para el puesto puede omitirse.",
  "Write by the rules in `{path}` (read it first).": "Redacte según las reglas de `{path}` (léalo primero).",
- "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "Empiece por las preguntas que las viñetas buscan provocar (la parte «Hooks» de {path})."
+ "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "Empiece por las preguntas que las viñetas buscan provocar (la parte «Hooks» de {path}).",
+ "Read what changed yourself (the commits in that range, the README, the code), then re-judge the whole entry as the project stands now: rank all of its capabilities again and rewrite the visible layer (subtitle, bullets, tech) to show the product at its best. Never just append the newest work: it earns a place only if it beats what is there. Update every language ({langs}), each written its own way rather than translated from another. If nothing changes the picture, change nothing and tell me why. Leave notes and evidence alone.": "Revise usted mismo los cambios (los commits de ese rango, el README, el código) y vuelva a evaluar toda la entrada según el estado actual del proyecto: ordene de nuevo todas sus capacidades y reescriba la capa visible (subtítulo, viñetas, tecnologías) para mostrar el producto en su mejor versión. No añada simplemente el trabajo más reciente: solo ocupa un lugar si supera lo que ya hay. Actualice cada idioma ({langs}), redactado a su manera y no traducido de otro. Si el panorama no cambia, no modifique nada y explique por qué. No modifique notes ni evidence.",
+ "{n} new commit since {since} (`git log {since}..HEAD`).": "{n} commit nuevo desde {since} (`git log {since}..HEAD`)."
 }

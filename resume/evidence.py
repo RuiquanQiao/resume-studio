@@ -128,6 +128,7 @@ def changes(base: dict, cur: dict, path_str: str) -> dict:
             stat = _git(path, "diff", "--stat", "--stat-width=100", old, "HEAD") or ""
             if count.isdigit():
                 out["commits"] = int(count)
+                out["since"] = old[:7]
                 out["log"] = [l for l in log.splitlines() if l.strip()]
                 out["stat"] = [l for l in stat.splitlines() if l.strip()][-25:]
             else:  # history rewritten: the old commit is gone
@@ -243,15 +244,13 @@ class EvidenceTracker:
 
 
 def describe(row: dict) -> str:
-    """One path's changes as plain text for the prompt."""
+    """One path's changes for the prompt: where and how much, not the commits themselves (the agent reads those
+    from git when it needs them, so sending them too only pays for the same text twice)."""
     c = row.get("changes") or {}
     lines = [f"- {row['path']}"]
     if c.get("commits"):
-        lines.append("  " + t("{n} new commit:", "{n} new commits:", n=c["commits"]))
-        lines += [f"    {l}" for l in c.get("log", [])]
-        if c.get("stat"):
-            lines.append("  " + t("Changed files (git diff --stat):"))
-            lines += [f"    {l.strip()}" for l in c["stat"]]
+        lines.append("  " + t("{n} new commit since {since} (`git log {since}..HEAD`).",
+                              "{n} new commits since {since} (`git log {since}..HEAD`).", n=c["commits"], since=c.get("since") or "?"))
     if c.get("rewritten"):
         lines.append("  " + t("The git history was rewritten, so the new commits can't be listed; look at git log and the code directly."))
     if c.get("uncommitted"):

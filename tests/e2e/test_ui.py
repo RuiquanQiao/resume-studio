@@ -1089,7 +1089,8 @@ def test_project_folder_pick_sync_and_update(page, server, data_file, fake_claud
     page.wait_for_selector(".msg-action:text('按项目更新')")
     page.wait_for_selector(".card.diff", timeout=15000)
     page.wait_for_selector(".entry[data-id='EXP-002'] .e-dot", state="detached", timeout=8000)   # read, so in sync again
-    assert "feat: evaluation harness" in calls(fake_claude)[0]["stdin"]
+    sent = calls(fake_claude)[0]["stdin"]                # the range, not the commits: the agent reads them itself
+    assert "..HEAD" in sent and "feat: evaluation harness" not in sent and "resume-writing.md" in sent
 
 
 def test_project_roots_setting(page, server, monkeypatch):

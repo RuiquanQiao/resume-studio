@@ -189,10 +189,12 @@ def answer_message(name: str, question: str, path: str, lang: str, instruction: 
 
 def sync_rules(codes: list[str], subset_id: str, data_path: str) -> str:
     names = ", ".join(lang_name(c) for c in codes)
-    return (t("Look at these changes (commits, changed files, README), decide what is worth putting on the resume, then "
-              "update the visible layer (bullets, tech, subtitle if needed). Update every language ({langs}), each "
-              "written its own way rather than translated from another. If the changes aren't worth adding, don't "
-              "change anything and tell me why. Leave notes and evidence alone.", langs=names) + "\n"
+    return (t("Read what changed yourself (the commits in that range, the README, the code), then re-judge the whole "
+              "entry as the project stands now: rank all of its capabilities again and rewrite the visible layer "
+              "(subtitle, bullets, tech) to show the product at its best. Never just append the newest work: it earns a "
+              "place only if it beats what is there. Update every language ({langs}), each written its own way rather "
+              "than translated from another. If nothing changes the picture, change nothing and tell me why. Leave notes "
+              "and evidence alone.", langs=names) + " " + writing_rules() + "\n"
             + one_line(", ".join(f"`{render_cmd(subset_id, data_path, c)}`" for c in codes)))
 
 

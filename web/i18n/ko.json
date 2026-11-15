@@ -195,7 +195,6 @@
  "Change only `{code}` of these bullets and bring each onto one line: keep the strongest actions and results, drop modifiers and repetition, don't change the facts, and don't touch other languages or other entries.": "이 항목들의 `{code}`만 고쳐 각각 한 줄에 맞춰 주세요. 가장 중요한 행동과 성과는 남기고, 수식어와 중복은 빼며, 사실은 바꾸지 말고, 다른 언어나 다른 경력은 건드리지 마세요.",
  "Changed": "변경",
  "Changed both here and on {site}. Which to keep?": "여기와 {site} 양쪽에서 바뀌었습니다. 어느 쪽을 남길까요?",
- "Changed files (git diff --stat):": "변경된 파일 (git diff --stat):",
  "Changed outside the window since v{n}": "v{n} 이후 창 밖에서 바뀜",
  "Changed since v{n}": "v{n} 이후 변경됨",
  "Changes since": "그 뒤의 변경",
@@ -619,7 +618,6 @@
  "Look at my project folders ({folders}) and pick the projects most worth putting on my resume, with your reasons. Don't change resume.yaml yet; once I confirm, add them one at a time.": "내 프로젝트 폴더({folders})를 보고 이력서에 넣을 가치가 가장 큰 프로젝트를 이유와 함께 골라 줘. resume.yaml은 아직 바꾸지 말고, 내가 확인하면 하나씩 추가해 줘.",
  "Look at my project folders ({folders}) and pick the projects most worth putting on my resume; don't change anything until I confirm": "내 프로젝트 폴더({folders})를 보고 이력서에 넣을 가치가 가장 큰 프로젝트를 골라 줘. 내가 확인할 때까지 아무것도 바꾸지 마",
  "Look at the open tabs": "열린 탭 확인",
- "Look at these changes (commits, changed files, README), decide what is worth putting on the resume, then update the visible layer (bullets, tech, subtitle if needed). Update every language ({langs}), each written its own way rather than translated from another. If the changes aren't worth adding, don't change anything and tell me why. Leave notes and evidence alone.": "이 변경 사항(커밋, 변경된 파일, README)을 보고 이력서에 넣을 만한 것을 판단한 뒤 표시 레이어(bullets, tech, 필요하면 subtitle)를 업데이트하세요. 모든 언어({langs})를 서로 번역하지 말고 각 언어의 방식으로 업데이트하세요. 넣을 가치가 없으면 아무것도 바꾸지 말고 이유를 알려 주세요. notes와 evidence는 건드리지 마세요.",
  "Look into it first": "먼저 알아보기",
  "Looks genuine": "진짜로 보임",
  "Lost the connection to Resume Studio's background service; reconnecting… Changes you make now may not be saved.": "Resume Studio 백그라운드 서비스와 연결이 끊겼습니다. 다시 연결하는 중… 지금 바꾼 내용은 저장되지 않을 수 있습니다.",
@@ -1656,7 +1654,6 @@
  "{n} more file has uncommitted changes.": "그 밖에 파일 {n}개에 커밋되지 않은 변경이 있습니다.",
  "{n} new": "{n}개 새로",
  "{n} new commit": "새 커밋 {n}개",
- "{n} new commit:": "새 커밋 {n}개:",
  "{n} of {total} requirements": "요구사항 {total}개 중 {n}개",
  "{n} open": "모집 {n}개",
  "{n} open on its sites": "사이트에서 모집 중 {n}개",
@@ -2423,5 +2420,7 @@
  "Make {item} by the recorded recipe": "기록된 레시피로 {item} 수행",
  "Chinese resume style: start with a verb (主导, 搭建, 设计, 优化, 实现, 定位…), never \"I\"; drop articles, clauses and filler from other languages and keep the information dense; keep technical terms, product names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so two bullets may merge into one, and one that doesn't matter for the job may be left out.": "중국어 이력서 작성법: 동사로 시작하고(主导, 搭建, 设计, 优化, 实现, 定位…) '나(我)'는 쓰지 않습니다. 다른 언어의 관사·종속절·꾸밈말을 빼서 정보 밀도를 높이고, 기술 용어·제품명·숫자는 그대로 둡니다(LLM, React 같은 단어를 억지로 번역하지 않음). 중국어는 더 짧으므로 두 항목을 하나로 합치거나 직무와 관계없는 항목은 빼도 됩니다.",
  "Write by the rules in `{path}` (read it first).": "`{path}`의 규칙에 따라 작성해 주십시오(먼저 읽어 주십시오).",
- "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "항목이 유도하도록 작성된 질문부터 시작해 주십시오({path}의 'Hooks' 부분)."
+ "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "항목이 유도하도록 작성된 질문부터 시작해 주십시오({path}의 'Hooks' 부분).",
+ "Read what changed yourself (the commits in that range, the README, the code), then re-judge the whole entry as the project stands now: rank all of its capabilities again and rewrite the visible layer (subtitle, bullets, tech) to show the product at its best. Never just append the newest work: it earns a place only if it beats what is there. Update every language ({langs}), each written its own way rather than translated from another. If nothing changes the picture, change nothing and tell me why. Leave notes and evidence alone.": "변경 내용(해당 범위의 커밋, README, 코드)은 직접 확인한 뒤, 프로젝트의 현재 전체 상태를 기준으로 경력 전체를 다시 평가해 주십시오. 모든 기능의 순위를 다시 매기고, 제품이 가장 잘 드러나도록 표시 계층(부제목, 항목, 기술)을 다시 작성해 주십시오. 최신 작업을 단순히 덧붙이지 마십시오. 기존 내용보다 나을 때에만 자리를 차지합니다. 모든 언어({langs})를 다른 언어에서 번역하지 말고 각 언어의 방식으로 업데이트해 주십시오. 전체 상황이 바뀌지 않았다면 아무것도 변경하지 말고 이유를 알려 주십시오. notes와 evidence는 변경하지 마십시오.",
+ "{n} new commit since {since} (`git log {since}..HEAD`).": "{since} 이후 새 커밋 {n}개(`git log {since}..HEAD`)."
 }

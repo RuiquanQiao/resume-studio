@@ -262,8 +262,9 @@ subsets:
   out, leave 【to fill in: …】 instead of inventing. Follow-ups go under the answer they react to.
 - **A project changed**: the window records each evidence folder's state when Claude last read it (git
   HEAD + uncommitted changes, or a file list, in `resume-studio-data/evidence.json`) and tells the user when it
-  changes. "Update from project progress" sends the new commits and changed files; read them, put only
-  what is worth it into the visible layer, and update every resume language.
+  changes. "Update from project progress" sends only the folder, the commit range and how much changed;
+  read the commits and code yourself, then re-judge the whole entry as the project stands now and rewrite
+  it by the writing rules (never just append the newest work), in every resume language.
 - **Write another language**: rule 9. The window's buttons send the request together with the check
   command.
 - **A new subset**: append to `subsets` with the next `SUB-xxx`, a `label` and `headline`, `lang` (usually

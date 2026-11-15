@@ -195,7 +195,6 @@
  "Change only `{code}` of these bullets and bring each onto one line: keep the strongest actions and results, drop modifiers and repetition, don't change the facts, and don't touch other languages or other entries.": "请仅修改这几条的 `{code}`，将每条压缩至一行：保留最有分量的动作和结果，删除修饰和重复信息，不改变事实，也不要修改其他语言和其他条目。",
  "Changed": "修改",
  "Changed both here and on {site}. Which to keep?": "此处与 {site} 均有修改，保留哪一版？",
- "Changed files (git diff --stat):": "改动的文件（git diff --stat）：",
  "Changed outside the window since v{n}": "v{n} 之后曾在窗口外修改",
  "Changed since v{n}": "v{n} 之后有改动",
  "Changes since": "之后的改动",
@@ -619,7 +618,6 @@
  "Look at my project folders ({folders}) and pick the projects most worth putting on my resume, with your reasons. Don't change resume.yaml yet; once I confirm, add them one at a time.": "查看我的项目文件夹（{folders}），挑选最值得写入简历的几个项目并说明理由。暂不修改 resume.yaml，待我确认后再逐个录入。",
  "Look at my project folders ({folders}) and pick the projects most worth putting on my resume; don't change anything until I confirm": "查看我的项目文件夹（{folders}），挑选最值得写入简历的项目；在我确认前不做修改",
  "Look at the open tabs": "查看打开的标签页",
- "Look at these changes (commits, changed files, README), decide what is worth putting on the resume, then update the visible layer (bullets, tech, subtitle if needed). Update every language ({langs}), each written its own way rather than translated from another. If the changes aren't worth adding, don't change anything and tell me why. Leave notes and evidence alone.": "请查看这些变化（提交记录、改动的文件、README），判断哪些值得写进简历，再更新展示层（bullets、tech，必要时 subtitle）。所有语言（{langs}）都要同步更新，每种语言按各自的写法来写，不是互相翻译。如果改动不值得写进简历，则不作修改，并说明原因。不要改 notes 和 evidence。",
  "Look into it first": "先行调查",
  "Looks genuine": "看起来真实",
  "Lost the connection to Resume Studio's background service; reconnecting… Changes you make now may not be saved.": "与 Resume Studio 后台服务的连接已断开，正在重新连接……此时所做的修改可能无法保存。",
@@ -1656,7 +1654,6 @@
  "{n} more file has uncommitted changes.": "另有 {n} 个文件有未提交的改动。",
  "{n} new": "{n} 个新增",
  "{n} new commit": "{n} 个新提交",
- "{n} new commit:": "{n} 个新提交：",
  "{n} of {total} requirements": "{total} 项要求中覆盖 {n} 项",
  "{n} open": "{n} 个在招",
  "{n} open on its sites": "官网上共 {n} 个在招",
@@ -2423,5 +2420,7 @@
  "Make {item} by the recorded recipe": "按已记录的配方完成 {item}",
  "Chinese resume style: start with a verb (主导, 搭建, 设计, 优化, 实现, 定位…), never \"I\"; drop articles, clauses and filler from other languages and keep the information dense; keep technical terms, product names and numbers as they are (don't force-translate words like LLM or React); Chinese is shorter, so two bullets may merge into one, and one that doesn't matter for the job may be left out.": "中文简历的写法：动词开头（主导、搭建、设计、优化、实现、定位……），不写「我」；去掉其他语言里的冠词、从句和客套修饰，信息密度要高；技术名词、产品名、数字照原样保留（不硬译 LLM、React 这类词）；中文更短，可以把两条合成一条，也可以省掉对岗位不重要的一条。",
  "Write by the rules in `{path}` (read it first).": "请按 `{path}` 中的规则撰写（先阅读该文件）。",
- "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "先准备要点有意引出的问题（见 {path} 中的「Hooks」部分）。"
+ "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "先准备要点有意引出的问题（见 {path} 中的「Hooks」部分）。",
+ "Read what changed yourself (the commits in that range, the README, the code), then re-judge the whole entry as the project stands now: rank all of its capabilities again and rewrite the visible layer (subtitle, bullets, tech) to show the product at its best. Never just append the newest work: it earns a place only if it beats what is there. Update every language ({langs}), each written its own way rather than translated from another. If nothing changes the picture, change nothing and tell me why. Leave notes and evidence alone.": "请自行查看改动（该范围内的提交、README、代码），再按项目当前的整体状态重新评估整条经历：重新为它的全部能力排序，改写可见层（副标题、要点、技术栈），呈现产品最好的一面。不要只把最新的工作追加上去：它只有胜过已有内容才能占一个位置。每种语言（{langs}）都要更新，各按其自身写法撰写，而不是从另一种语言翻译。若整体情况没有变化，则不作修改并说明原因。不要改动 notes 和 evidence。",
+ "{n} new commit since {since} (`git log {since}..HEAD`).": "自 {since} 以来有 {n} 个新提交（`git log {since}..HEAD`）。"
 }
