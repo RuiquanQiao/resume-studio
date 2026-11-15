@@ -70,6 +70,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
     hand = browser.handoff
     hand.cli = prompts.cli(str(studio.store.path))
     checks = signin.Checks(fill.root)
+    judge = signin.Judge(browser, checks)   # is the user signed in: the address, the site's own check, the page
 
     def control_changed(key: str | None, c: Control) -> None:
         """The chat says it too, under "Working…": the tab is the user's, with the way to hand it back."""
@@ -244,10 +245,68 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         here = bro(lambda: browser.open(url if site.owns(url) else site.home))
         bro(browser.front)
         browser.claim()                                    # the user's now: it stays until they close it
-        out = site.signed_out(here["url"])
-        fill.save(site.id, signed_out=out)
+        said, _ = judge(site, str(here.get("url") or ""))
+        if said is not None:                               # no answer (no check, an ordinary address): as it was
+            fill.save(site.id, signed_out=not said)
+        out = bool(fill.load(site.id).get("signed_out"))
         publish(site.id)
+        if needs_reading(site):
+            watch_sign_in(site)
         return {**here, "signed_out": out, "browser": browser.status()}
+
+    def needs_reading(site: Site) -> bool:
+        """The site's page asks the user to do something before it reads again: sign in, or a read that failed with
+        no way to tell whether the sign-in expired. Not a route the site's own check says is broken while signed in."""
+        st = fill.load(site.id)
+        if not st.get("route"):
+            return False
+        return bool(st.get("signed_out")) or (bool(st.get("route_broken"))
+                                              and (st.get("last_check") or {}).get("sign_in") != "in")
+
+    watching: dict[str, bool] = {}
+
+    def watch_sign_in(site: Site) -> None:
+        """The user opened the site to sign in ("Sign in to …"): the window sees by itself when they are, and reads the
+        site again by the route (no AI, seconds), so the yellow bar goes once the read works; no "I've signed in" to
+        press, and nothing at all when they were signed in already (国聘, 2026-11-16: the bar stayed although the
+        site had them signed in). Signed in means the site's sign-in check says so when one is recorded, else a page
+        of the site with no sign of a sign-in on it (no sign-in address, password field or lone "登录" button); then
+        the read itself is the test, tried again while it fails."""
+        if watching.get(site.id):
+            return
+        watching[site.id] = True
+
+        def run() -> None:
+            end = time.monotonic() + 15 * 60
+            tried_at, tried_url = 0.0, ""
+            try:
+                while time.monotonic() < end and browser.state == "running" and needs_reading(site):
+                    if tried_at:
+                        time.sleep(3)
+                    try:
+                        with browser.acting(None), hand.exempt():   # a read-only look, never the user's input
+                            url = str(bro(browser.here).get("url") or "")
+                            if not site.owns(url):
+                                continue
+                            said, _ = judge(site, url, deep=not checks.find(url, site))
+                    except (HttpError, BrowserError, UserHasControl):
+                        continue
+                    if said is False:
+                        continue
+                    # signed in (by the check), or no sign against it: read. Without a check, a read that failed is
+                    # tried again when the page changes, else after a while (the user may still be signing in)
+                    if said is None and tried_at and url == tried_url and time.monotonic() - tried_at < 20:
+                        continue
+                    tried_at, tried_url = time.monotonic(), url
+                    if checking.get(site.id):
+                        continue
+                    try:
+                        start_check(site, wait=True)
+                    except HttpError:
+                        pass
+            finally:
+                watching.pop(site.id, None)
+        threading.Thread(target=run, daemon=True, name=f"autofill-signin-{site.id}").start()
 
     # ---- check for updates: by the recorded route (no Claude), or Claude reads and records it ----
     checking: dict[str, bool] = {}
@@ -264,11 +323,11 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         try:
             with browser.hold(), browser.acting(f"check:{site.id}"):
                 bro(browser.ensure)
-                reading, scope = route.run(browser, site, r, base, progress)
+                reading, scope = route.run(browser, site, r, base, progress, judge=judge)
             return {"ok": True, **fill.take_reading(site, reading, scope, "route")}
         except route.RouteBroken as e:
-            fill.check_failed(site, str(e), e.signed_out)
-            return {"ok": False, "error": str(e), "page": e.page, "signed_out": e.signed_out}
+            fill.check_failed(site, str(e), e.signed_out, e.sign_in)
+            return {"ok": False, "error": str(e), "page": e.page, "signed_out": e.signed_out, "sign_in": e.sign_in}
         except (BrowserError, HttpError) as e:
             fill.check_failed(site, str(e))
             return {"ok": False, "error": str(e)}
@@ -345,7 +404,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         publish(site.id)
         st = fill.load(site.id)
         try:
-            said = recipe.push(browser, site, st, change)
+            said = recipe.push(browser, site, st, change, judge=judge)
         except recipe.RecipeFailed as e:
             fill.report(site, change["id"], "failed", str(e), **failed_note(e))
             fill.recipe_failed(site, change, e)
@@ -464,7 +523,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         with browser.acting(req.headers.get("X-Resume-Studio-Chat")):
             if b.get("dry"):
                 try:
-                    recipe.push(browser, site, fill.load(site.id), change, dry=True)
+                    recipe.push(browser, site, fill.load(site.id), change, dry=True, judge=judge)
                 except recipe.RecipeFailed as e:
                     more = f" ({e.detail})" if e.detail else ""
                     return {"text": f"stopped at step {e.step + 1} ({e.what}): {e}{more}. Nothing was saved."}
@@ -516,11 +575,15 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         base, _ = fill.copies(site.id, st)
         try:
             with browser.acting(req.headers.get("X-Resume-Studio-Chat")):   # in the tab of the chat that sent it
-                reading, scope = route.run(browser, site, r, base)
+                reading, scope = route.run(browser, site, r, base, judge=judge)
         except route.RouteBroken as e:
+            if e.signed_out:
+                return {"text": f"saved, but {site.name} is not signed in now ({e}). Run `signed-out {site.id}`, then "
+                                f"`wait-signed-in {site.id}`, and send the route again once the user has signed in."}
             return {"text": f"saved, but running it failed{' on ' + e.page if e.page else ''}: {e}\nFix the script and send the route again."}
         return {"text": "saved. Running it read this (compare it with the page; when it matches, run `sync`):\n"
-                        + json.dumps({"covers": scope, **reading}, ensure_ascii=False, indent=1)[:30000]}
+                        + json.dumps({"covers": scope, **reading}, ensure_ascii=False, indent=1)[:30000]
+                        + needs_check_text(site, reading.get("url") or r["pages"][0]["url"])}
 
     @app.route("POST", "/api/autofill/{site}/sync")
     def sync_now(req: Request):
@@ -622,6 +685,12 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
                 "{\"script\": \"async (h) => { const r = await fetch('<that address>', {credentials: 'include'}); "
                 "const j = await r.json(); return {signed_in: <true when j names a user>}; }\"}. "
                 "It is run at once here (it must say true) and in a fresh browser with no sign-in (it must say false).")
+
+    def needs_check_text(site: Site, url: str) -> str:
+        """A route just recorded on a site with no sign-in check: without one, a check that fails later can't tell an
+        expired sign-in from a route that broke (国聘 asks to sign in again often), so the AI records one now."""
+        said = record_check_text(url, site)
+        return "\n\nBefore `sync`:" + said if said else ""
 
     def plain_now() -> bool:
         """The user is signing in without remote control, or switching back from it (the browser is off for a

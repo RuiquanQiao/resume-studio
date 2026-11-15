@@ -393,9 +393,13 @@ class Autofill:
                       current={**reading, "url": reading.get("url", "")})
             return check
 
-    def check_failed(self, site: Site, err: str, signed_out: bool = False) -> None:
+    def check_failed(self, site: Site, err: str, signed_out: bool = False, sign_in: str = "") -> None:
+        """A check that didn't read the site. `sign_in`: what was known of the sign-in then ("in", "out", "unknown",
+        "" for a failure before the page was read): "unknown" lets the window offer to sign in and check again
+        before recording the route anew."""
         self.save(site.id, checking=None, signed_out=signed_out or self.load(site.id).get("signed_out", False),
-                  last_check={"at": time.time(), "mode": "route", "error": err, "signed_out": signed_out},
+                  last_check={"at": time.time(), "mode": "route", "error": err, "signed_out": signed_out,
+                              "sign_in": "out" if signed_out else sign_in},
                   route_broken=None if signed_out else err)
 
     def set_current(self, site: Site, data: Any) -> tuple[dict, list[str]]:

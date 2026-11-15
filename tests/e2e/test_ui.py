@@ -3048,7 +3048,7 @@ def test_autofill_copy_edits_conflicts_and_push(page_all, server, fake_claude, m
     # the first read arrives (Claude's): the copy appears by itself
     assert server.req("POST", "/api/autofill/linkedin/current", FILL_NOW)[0] == 200
     pg.wait_for_selector("#fill-tabs .fv-tab.on")
-    assert "你的 LinkedIn 副本" in pg.inner_text(".fill-sync")
+    assert "LinkedIn 资料副本" in pg.inner_text(".fill-sync")
     head = pg.locator("[data-edit='basics|headline']")
     assert head.input_value() == "Student at HCU"
     # the resume's wording, one click away
@@ -3605,6 +3605,30 @@ def test_one_piece_of_work_shows_one_spinner(page_all):
     pg.evaluate("""() => { const card = postingsCard({company: {id: 'C82', name: 'Test Company'}, scan: {running: true}, postings: []});
       card.id = 'one-spinner'; card.style.cssText = 'position: fixed; top: 16px; left: 16px; width: 900px; z-index: 9999'; document.body.append(card); }""")
     pg.locator("#one-spinner").screenshot(path=str(ART / "hunt-scan-one-spinner.png"))
+
+
+def test_a_failed_read_offers_to_sign_in_first_unless_the_site_says_signed_in(page_all):
+    """国聘 (2026-11-16): a read that failed because the sign-in expired was shown as "the site has probably changed"
+    with "Record the route anew" as the only way on. Unless the site's sign-in check said the user was signed in, the
+    card now offers to sign in first, keeps "Check for updates", and records the route anew only as the second way."""
+    out = page_all.evaluate("""() => {
+      F.site = 'linkedin';
+      const card = (sign_in) => syncCard({synced: true, synced_at: Date.now() / 1000 - 600,
+        route: {recorded: true, pages: 1, broken: '简历尚未加载完整或登录已失效'}, last_check: {at: 1, error: 'x', sign_in}});
+      const name = fillSite().name;
+      const sum = (c) => ({unsure: !!c.querySelector('#fill-unsure'),
+        row: c.querySelector('#fill-check').textContent.trim() === t('Check for updates'),
+        signIn: [...c.querySelectorAll('.fill-banner .btn.primary')].map((b) => b.textContent.trim()).includes(t('Sign in to {site}', {site: name})),
+        anew: [...c.querySelectorAll('button')].some((b) => b.textContent.trim() === t('Record the route anew'))});
+      return {unknown: sum(card('unknown')), older: sum(card(undefined)), signedIn: sum(card('in'))};
+    }""")
+    assert out["unknown"] == {"unsure": True, "row": True, "signIn": True, "anew": True}, out
+    assert out["older"] == out["unknown"], out          # a failure recorded before sign-ins were judged
+    assert out["signedIn"] == {"unsure": False, "row": False, "signIn": False, "anew": True}, out
+    page_all.evaluate("""() => { const c = syncCard({synced: true, synced_at: Date.now() / 1000 - 600,
+      route: {recorded: true, pages: 1, broken: '简历尚未加载完整或登录已失效'}, last_check: {at: 1, error: 'x', sign_in: 'unknown'}});
+      c.id = 'unsure-card'; c.style.cssText = 'position: fixed; top: 16px; left: 16px; width: 1100px; z-index: 9999'; document.body.append(c); }""")
+    page_all.locator("#unsure-card").screenshot(path=str(ART / "fill-read-failed-sign-in-unknown.png"))
 
 
 def test_working_timer_restarts_for_each_reply(page_all):

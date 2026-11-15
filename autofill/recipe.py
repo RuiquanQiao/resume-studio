@@ -39,9 +39,9 @@ from typing import Any, Callable
 
 from core.browser import BrowserError
 
-from . import route
+from . import route, signin
 from .profile import norm_date, norm_text, same
-from .sites import FIELDS, Site
+from .sites import FIELDS, Site, login_url
 
 OPS = ("update", "add", "remove")
 STEPS = ("open", "click", "type", "select", "pick", "search", "date", "check", "save", "confirm", "wait", "press")
@@ -345,8 +345,10 @@ def plan(site: Site, recipe: dict, op: str, vals: dict, site_vals: dict, changed
 
 # ---- replay ---------------------------------------------------------------------------
 class _Run:
-    def __init__(self, browser: Any, site: Site, key: str, recipe: dict, stop_before_save: bool = False):
+    def __init__(self, browser: Any, site: Site, key: str, recipe: dict, stop_before_save: bool = False,
+                 judge: Callable[..., tuple[bool | None, str]] | None = None):
         self.b, self.site, self.key, self.recipe = browser, site, key, recipe
+        self.judge = judge or signin.Judge(browser, None)
         self.removing = key.endswith(".remove")
         self.saved = False
         self.n, self.what = -1, ""
@@ -357,10 +359,16 @@ class _Run:
 
     def where_am_i(self) -> None:
         url = str(self.b.here().get("url") or "")
-        if self.site.signed_out(url):
+        if self.site.signed_out(url) or login_url(url):
             raise self.fail(f"{self.site.name} asks to sign in", "signed_out")
         if url.startswith("http") and not self.site.owns(url):
             raise self.fail(f"the page went off {self.site.name}, to {url}")
+
+    def _url(self) -> str:
+        try:
+            return str(self.b.here().get("url") or "")
+        except BrowserError:
+            return ""
 
     def locate(self, spec: dict, wait: float = FIND_WAIT) -> dict:
         end = time.time() + wait
@@ -489,6 +497,12 @@ class _Run:
                     self.b.press(st["key"])
                 self.where_am_i()
         except RecipeFailed as e:
+            if e.kind == "broken" and not e.saved:
+                # a control that isn't there: often a page that signed out (a sign-in dialog over it, an empty
+                # editor at the same address), and then nothing is wrong with the recipe
+                said, how = self.judge(self.site, self._url(), deep=True)
+                if said is False:
+                    raise self.fail(f"{self.site.name} asks to sign in ({how})", "signed_out") from e
             if not e.saved and e.kind != "signed_out":
                 self.cancel()
             raise
@@ -543,7 +557,7 @@ def values(change: dict, base: dict | None, local: dict | None) -> tuple[dict, d
 
 
 def push(browser: Any, site: Site, st: dict, change: dict, dry: bool = False,
-         step: Callable[[str], None] | None = None) -> str:
+         step: Callable[[str], None] | None = None, judge: Callable[..., tuple[bool | None, str]] | None = None) -> str:
     """Make one change by its recipe(s), then read the section back and check the site says it. Returns what was
     checked; raises RecipeFailed. `dry`: fill everything in, stop before saving, and leave it open."""
     recipes = st.get("recipes") or {}
@@ -565,20 +579,23 @@ def push(browser: Any, site: Site, st: dict, change: dict, dry: bool = False,
     for k, v, sv, steps in runs:   # every value checked before the first step of the first one
         if step:
             step(k)
-        r = _Run(browser, site, k, recipes[k], stop_before_save=dry)
+        r = _Run(browser, site, k, recipes[k], stop_before_save=dry, judge=judge)
         r.run(steps, v, sv)
     if dry:
         return "filled in, not saved"
-    return verify(browser, site, st.get("route") or {}, change, vals, site_vals, changed)
+    return verify(browser, site, st.get("route") or {}, change, vals, site_vals, changed, judge)
 
 
-def verify(browser: Any, site: Site, rt: dict, change: dict, vals: dict, site_vals: dict, changed: list[str] | None) -> str:
+def verify(browser: Any, site: Site, rt: dict, change: dict, vals: dict, site_vals: dict, changed: list[str] | None,
+           judge: Callable[..., tuple[bool | None, str]] | None = None) -> str:
     """Read the changed section again with the read route: the change counts only when the site now says it."""
     sec = change["section"]
     try:
-        reading, _ = route.run(browser, site, rt, None, only=[sec])
+        reading, _ = route.run(browser, site, rt, None, only=[sec], judge=judge)
     except route.RouteBroken as e:
-        raise RecipeFailed(f"saved, but reading {sec} back failed: {e}", kind="verify", saved=True, what="read it back") from e
+        # signed out on the way: the recipe did its part, only the reading back waits for a sign-in
+        raise RecipeFailed(f"saved, but reading {sec} back failed: {e}", kind="signed_out" if e.signed_out else "verify",
+                           saved=True, what="read it back") from e
     fail = lambda msg: RecipeFailed(f"saved, but {site.name} now shows {msg}", kind="verify", saved=True, what="read it back")  # noqa: E731
     if sec == "basics":
         name = change["item"]

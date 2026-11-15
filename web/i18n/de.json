@@ -1195,7 +1195,6 @@
  "The project folders of these entries changed since the last sync; handle them one by one:": "Die Projektordner dieser Einträge haben sich seit dem letzten Abgleich geändert; bearbeite sie nacheinander:",
  "The questions an interviewer will ask about this, and your answers": "Was ein Interviewer dazu fragen wird, und Ihre Antworten",
  "The role": "Die Stelle",
- "The route no longer reads {site} ({error}). The site has probably changed; the AI can read it again and record the route anew.": "Die Route liest {site} nicht mehr ({error}). Die Website hat sich wohl geändert; die KI kann sie neu lesen und die Route neu aufzeichnen.",
  "The site asks to sign in": "Die Seite verlangt eine Anmeldung",
  "The title can't be empty": "Der Titel darf nicht leer sein",
  "The tracker points at a report that isn't there: {path}": "Der Tracker verweist auf einen fehlenden Bericht: {path}",
@@ -2682,5 +2681,19 @@
  "an element": "ein Element",
  "the site": "die Website",
  "{site} wants you to sign in. Sign in in the browser window, then choose “I've signed in” on the bar at the bottom of the page: the AI then goes on reading.": "{site} erfordert eine Anmeldung. Melden Sie sich im Browserfenster an und wählen Sie dann unten auf der Seite in der Leiste „Angemeldet“: Die KI liest dann weiter.",
- "Pressing {combo}": "Drückt {combo}"
+ "Pressing {combo}": "Drückt {combo}",
+ "The route no longer reads {site} ({error}). {site} still has you signed in, so the site has probably changed; the AI can read it again and record the route anew.": "Die Route liest {site} nicht mehr ({error}). Bei {site} sind Sie weiterhin angemeldet, die Website wurde also vermutlich geändert; die KI kann sie erneut lesen und die Route neu aufzeichnen.",
+ "Resume Studio couldn't read {site} ({error}). The sign-in may have expired, or the site may have changed. Sign in to {site}, then check for updates again; if it still can't be read, have the AI record the route anew.": "Resume Studio konnte {site} nicht lesen ({error}). Möglicherweise ist die Anmeldung abgelaufen oder die Website wurde geändert. Melden Sie sich bei {site} an und suchen Sie erneut nach Aktualisierungen; lässt sie sich dann weiterhin nicht lesen, zeichnet die KI die Route neu auf.",
+ "{site} asks to sign in ({how})": "{site} verlangt eine Anmeldung ({how})",
+ "The page's read script stopped: {error}": "Das Leseskript der Seite wurde abgebrochen: {error}",
+ "the read script says so": "das Leseskript meldet es",
+ "The page's read script returned no profile data": "Das Leseskript der Seite hat keine Profildaten zurückgegeben",
+ "{section} came back empty": "{section} ist leer zurückgekommen",
+ "the address is a sign-in page": "die Adresse ist eine Anmeldeseite",
+ "the site's sign-in check says so": "die Anmeldeprüfung der Website meldet es",
+ "the page shows {what}": "die Seite zeigt {what}",
+ "no sign-in check is recorded": "keine Anmeldeprüfung aufgezeichnet",
+ "the sign-in check had no answer": "die Anmeldeprüfung hat nicht geantwortet",
+ "a password field": "ein Passwortfeld",
+ "a “{name}” button": "eine Schaltfläche „{name}“"
 }

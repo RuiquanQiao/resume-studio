@@ -1180,7 +1180,6 @@
  "The project folders of these entries changed since the last sync; handle them one by one:": "これらの経歴のプロジェクトフォルダーは前回の同期以降に更新されています。1 つずつ対応してください：",
  "The questions an interviewer will ask about this, and your answers": "この経歴について面接官が聞くこと、そしてあなたの回答",
  "The role": "職種",
- "The route no longer reads {site} ({error}). The site has probably changed; the AI can read it again and record the route anew.": "このルートでは {site} を読めなくなりました（{error}）。サイトが変わった可能性があります。AI が読み直してルートを記録し直せます。",
  "The site asks to sign in": "サイトがサインインを求めています",
  "The title can't be empty": "タイトルは空にできません",
  "The tracker points at a report that isn't there: {path}": "トラッカーが存在しないレポートを指しています：{path}",
@@ -2484,5 +2483,19 @@
  "an element": "要素",
  "the site": "このサイト",
  "{site} wants you to sign in. Sign in in the browser window, then choose “I've signed in” on the bar at the bottom of the page: the AI then goes on reading.": "{site} へのサインインが必要です。ブラウザーウィンドウでサインインし、ページ下部のバーで「サインインしました」を選んでください。AI が読み取りを続けます。",
- "Pressing {combo}": "{combo} キーを押しています"
+ "Pressing {combo}": "{combo} キーを押しています",
+ "The route no longer reads {site} ({error}). {site} still has you signed in, so the site has probably changed; the AI can read it again and record the route anew.": "このルートでは {site} を読み取れなくなりました（{error}）。{site} へのログインは有効なため、サイトが変更された可能性があります。AI が再度読み取り、ルートを記録し直せます。",
+ "Resume Studio couldn't read {site} ({error}). The sign-in may have expired, or the site may have changed. Sign in to {site}, then check for updates again; if it still can't be read, have the AI record the route anew.": "{site} を読み取れませんでした（{error}）。ログインの有効期限切れ、またはサイトの変更が考えられます。{site} にログインしてから再度更新を確認してください。それでも読み取れない場合は、AI にルートを記録し直させてください。",
+ "{site} asks to sign in ({how})": "{site} がログインを求めています（{how}）",
+ "The page's read script stopped: {error}": "ページの読み取りスクリプトが停止しました：{error}",
+ "the read script says so": "読み取りスクリプトがログイン画面を検出",
+ "The page's read script returned no profile data": "ページの読み取りスクリプトがプロフィールデータを返しませんでした",
+ "{section} came back empty": "{section} の読み取り結果が空です",
+ "the address is a sign-in page": "現在のアドレスはログインページです",
+ "the site's sign-in check says so": "サイトのログイン確認による",
+ "the page shows {what}": "ページに{what}が表示されています",
+ "no sign-in check is recorded": "ログイン確認が未記録です",
+ "the sign-in check had no answer": "ログイン確認から応答がありません",
+ "a password field": "パスワード入力欄",
+ "a “{name}” button": "「{name}」ボタン"
 }

@@ -352,6 +352,11 @@ function syncCard(v) {
         : t("Nothing new on {site}", { site: site.name }));
   // the site's other actions (read anew, settings, open it) are in the page head's ⋯, once
   const broken = r.broken && !c && !reading;
+  // a read that failed with no way to tell whether the user is still signed in (no sign-in check recorded, no sign
+  // on the page): an expired sign-in is far likelier than a redesign (国聘 signs people out often), so signing in and
+  // checking again comes first, and recording the route anew second
+  // (a failure recorded before this knew of sign-ins has no "sign_in": unsure too)
+  const unsure = broken && lc.sign_in !== "in";
   return h("div", { class: "fill-card fill-sync" },
     h("div", { class: "fsy-row" },
       h("div", { class: "fsy-text" },
@@ -361,7 +366,7 @@ function syncCard(v) {
       !broken && !v.signed_out && status,
       h("span", { class: "spacer" }),
       // a broken route can't check: the row's button is the way on, never one that fails the same way again
-      r.broken && !c && !reading
+      broken && !unsure
         ? h("button", { class: "btn primary", id: "fill-check", disabled: !ui.chat.available, title: ui.chat.available ? null : missingAgentText(), onclick: learnRoute },
           icon("sparkle"), t("Record the route anew"))
         : h("button", { class: "btn", id: "fill-check", "aria-busy": (!!c || reading) && "true", disabled: !!c || reading || (!r.recorded && !ui.chat.available),
@@ -370,8 +375,13 @@ function syncCard(v) {
     !broken && h("div", { class: "fsy-route muted" }, r.recorded
       ? t("Reads {site} by the recorded route ({n} page), without AI.", { site: site.name, n: r.pages }, "Reads {site} by the recorded route ({n} pages), without AI.")
       : t("No read route yet: “Check for updates” lets the AI read {site} and record one.", { site: site.name })),
-    r.broken && h("div", { class: "fill-banner warn" }, icon("alert"),
-      h("span", { class: "nb-text" }, t("The route no longer reads {site} ({error}). The site has probably changed; the AI can read it again and record the route anew.", { site: site.name, error: r.broken }))),
+    r.broken && !unsure && h("div", { class: "fill-banner warn" }, icon("alert"),
+      h("span", { class: "nb-text" }, t("The route no longer reads {site} ({error}). {site} still has you signed in, so the site has probably changed; the AI can read it again and record the route anew.", { site: site.name, error: r.broken }))),
+    unsure && h("div", { class: "fill-banner warn", id: "fill-unsure" }, icon("alert"),
+      h("span", { class: "nb-text" }, t("Resume Studio couldn't read {site} ({error}). The sign-in may have expired, or the site may have changed. Sign in to {site}, then check for updates again; if it still can't be read, have the AI record the route anew.", { site: site.name, error: r.broken })),
+      h("button", { class: "btn sm primary", onclick: openSite }, icon("external"), t("Sign in to {site}", { site: site.name })),
+      h("button", { class: "btn sm", disabled: !ui.chat.available, title: ui.chat.available ? null : missingAgentText(), onclick: learnRoute },
+        icon("sparkle"), t("Record the route anew"))),
     (lc.notes || []).map((n) => h("div", { class: "fill-banner" }, icon("alert"), h("span", { class: "nb-text" },
       n.kind === "removed_there_changed_here"
         ? t("“{item}” is gone from {site}, but you had edited it here: it stays in your copy and goes up again if you push it.", { item: n.label, site: site.name })

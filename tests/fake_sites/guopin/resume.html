@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh">
+<head><meta charset="utf-8"><title>Fake online resume</title>
+<style> body { font-family: sans-serif; margin: 0; } header { display: flex; justify-content: flex-end; padding: 12px; } </style>
+</head>
+<body>
+<!-- An online resume like 国聘's (2026-11-16): when the sign-in expires, the address stays the same and the page
+     shows no resume, only a "登录/注册" button in its header (none with ?bare: a page with no sign of it at all).
+     The page asks /api/me who is signed in, as such sites do. -->
+<header id="top"></header>
+<main id="main"></main>
+<script>
+  fetch('/api/me', { credentials: 'include' }).then((r) => r.json()).then((j) => {
+    if (j.user) {
+      document.querySelector('#top').innerHTML = '<span>' + j.user.name + '</span>';
+      document.querySelector('#main').innerHTML = '<section id="exp"><h2>工作经历</h2><ul><li>Research Intern · CSIRO</li></ul></section>';
+    } else if (!location.search.includes('bare')) {
+      document.querySelector('#top').innerHTML = '<button>登录/注册</button>';
+    }
+    document.body.dataset.ready = '1';
+  });
+</script>
+</body>
+</html>

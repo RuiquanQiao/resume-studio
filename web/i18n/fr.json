@@ -1195,7 +1195,6 @@
  "The project folders of these entries changed since the last sync; handle them one by one:": "Les dossiers de projet de ces entrées ont changé depuis la dernière synchronisation ; traitez-les un par un :",
  "The questions an interviewer will ask about this, and your answers": "Ce qu'un recruteur demandera là-dessus, et vos réponses",
  "The role": "Le poste",
- "The route no longer reads {site} ({error}). The site has probably changed; the AI can read it again and record the route anew.": "L’itinéraire ne lit plus {site} ({error}). Le site a probablement changé ; l’IA peut le relire et réenregistrer l’itinéraire.",
  "The site asks to sign in": "Le site demande de se connecter",
  "The title can't be empty": "Le titre ne peut pas être vide",
  "The tracker points at a report that isn't there: {path}": "Le suivi pointe vers un rapport absent : {path}",
@@ -2682,5 +2681,19 @@
  "an element": "un élément",
  "the site": "le site",
  "{site} wants you to sign in. Sign in in the browser window, then choose “I've signed in” on the bar at the bottom of the page: the AI then goes on reading.": "{site} demande une connexion. Connectez-vous dans la fenêtre du navigateur, puis choisissez « Connexion effectuée » dans la barre en bas de la page : l'IA reprend la lecture.",
- "Pressing {combo}": "Appui sur {combo}"
+ "Pressing {combo}": "Appui sur {combo}",
+ "The route no longer reads {site} ({error}). {site} still has you signed in, so the site has probably changed; the AI can read it again and record the route anew.": "La route ne lit plus {site} ({error}). Vous êtes toujours connecté à {site} : le site a donc probablement changé ; l'IA peut le relire et enregistrer la route à nouveau.",
+ "Resume Studio couldn't read {site} ({error}). The sign-in may have expired, or the site may have changed. Sign in to {site}, then check for updates again; if it still can't be read, have the AI record the route anew.": "Resume Studio n'a pas pu lire {site} ({error}). La connexion a peut-être expiré, ou le site a changé. Connectez-vous à {site}, puis recherchez à nouveau les mises à jour ; si la lecture échoue encore, l'IA peut enregistrer la route à nouveau.",
+ "{site} asks to sign in ({how})": "{site} demande une connexion ({how})",
+ "The page's read script stopped: {error}": "Le script de lecture de la page s'est arrêté : {error}",
+ "the read script says so": "le script de lecture l'indique",
+ "The page's read script returned no profile data": "Le script de lecture de la page n'a renvoyé aucune donnée de profil",
+ "{section} came back empty": "{section} est revenu vide",
+ "the address is a sign-in page": "l'adresse est une page de connexion",
+ "the site's sign-in check says so": "la vérification de connexion du site l'indique",
+ "the page shows {what}": "la page affiche {what}",
+ "no sign-in check is recorded": "aucune vérification de connexion n'est enregistrée",
+ "the sign-in check had no answer": "la vérification de connexion n'a pas répondu",
+ "a password field": "un champ de mot de passe",
+ "a “{name}” button": "un bouton « {name} »"
 }

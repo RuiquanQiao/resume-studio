@@ -1180,7 +1180,6 @@
  "The project folders of these entries changed since the last sync; handle them one by one:": "이 경력들의 프로젝트 폴더가 지난 동기화 이후 바뀌었습니다. 하나씩 처리하세요:",
  "The questions an interviewer will ask about this, and your answers": "면접관이 이 경력에 대해 물을 질문과 당신의 답변",
  "The role": "직무 정보",
- "The route no longer reads {site} ({error}). The site has probably changed; the AI can read it again and record the route anew.": "이 경로로는 더 이상 {site}를 읽을 수 없습니다({error}). 사이트가 바뀌었을 수 있습니다. AI가 다시 읽고 경로를 새로 기록할 수 있습니다.",
  "The site asks to sign in": "사이트가 로그인을 요구합니다",
  "The title can't be empty": "제목은 비워 둘 수 없습니다",
  "The tracker points at a report that isn't there: {path}": "트래커가 없는 보고서를 가리킵니다: {path}",
@@ -2484,5 +2483,19 @@
  "an element": "요소",
  "the site": "이 사이트",
  "{site} wants you to sign in. Sign in in the browser window, then choose “I've signed in” on the bar at the bottom of the page: the AI then goes on reading.": "{site}에 로그인해야 합니다. 브라우저 창에서 로그인한 다음 페이지 하단 막대에서 '로그인 완료'를 선택하십시오. AI가 이어서 읽습니다.",
- "Pressing {combo}": "{combo} 키를 누르는 중"
+ "Pressing {combo}": "{combo} 키를 누르는 중",
+ "The route no longer reads {site} ({error}). {site} still has you signed in, so the site has probably changed; the AI can read it again and record the route anew.": "이 경로로 더 이상 {site}을(를) 읽을 수 없습니다({error}). {site} 로그인은 유지되어 있으므로 사이트가 변경되었을 수 있습니다. AI가 다시 읽고 경로를 새로 기록할 수 있습니다.",
+ "Resume Studio couldn't read {site} ({error}). The sign-in may have expired, or the site may have changed. Sign in to {site}, then check for updates again; if it still can't be read, have the AI record the route anew.": "{site}을(를) 읽을 수 없습니다({error}). 로그인이 만료되었거나 사이트가 변경되었을 수 있습니다. {site}에 로그인한 후 업데이트를 다시 확인하십시오. 그래도 읽을 수 없으면 AI가 경로를 새로 기록하도록 하십시오.",
+ "{site} asks to sign in ({how})": "{site}에서 로그인을 요구합니다({how})",
+ "The page's read script stopped: {error}": "페이지 읽기 스크립트가 중단되었습니다: {error}",
+ "the read script says so": "읽기 스크립트가 로그인 화면을 감지함",
+ "The page's read script returned no profile data": "페이지 읽기 스크립트가 프로필 데이터를 반환하지 않았습니다",
+ "{section} came back empty": "{section} 읽기 결과가 비어 있습니다",
+ "the address is a sign-in page": "현재 주소가 로그인 페이지입니다",
+ "the site's sign-in check says so": "사이트의 로그인 확인 결과",
+ "the page shows {what}": "페이지에 {what}이(가) 표시됨",
+ "no sign-in check is recorded": "기록된 로그인 확인이 없습니다",
+ "the sign-in check had no answer": "로그인 확인에서 응답이 없습니다",
+ "a password field": "비밀번호 입력란",
+ "a “{name}” button": "‘{name}’ 버튼"
 }

@@ -48,6 +48,8 @@ def auth_site():
         def do_POST(self):
             if self.path.startswith("/api/login"):
                 return self._json(200, {"ok": True}, "sess=ok; Path=/; HttpOnly")
+            if self.path.startswith("/api/logout"):   # the site ending the session (国聘 does it every so often)
+                return self._json(200, {"ok": True}, "sess=; Path=/; Max-Age=0")
             self.send_response(404)
             self.end_headers()
 
@@ -367,3 +369,95 @@ def test_the_bar_says_who_drives_and_stop_ends_the_reply(live, data_file, fake_s
         assert said[-1] == (chat, None, "signin")
     finally:
         live.inst.chats.turns.pop(chat, None)
+
+
+# an online resume's read script, as the AI wrote it for 国聘: one error for "not loaded" and "signed out" alike
+RESUME_SCRIPT = ("async (h) => { for (let i = 0; i < 50 && !document.body.dataset.ready; i++) await h.sleep(100); "
+                 "const s = document.getElementById('exp'); if (!s) throw new Error('简历尚未加载完整或登录已失效'); "
+                 "return {items: h.all('li', s).map((li) => ({section: 'experience', fields: "
+                 "{title: h.text(li).split(' · ')[0], org: h.text(li).split(' · ')[1]}}))}; }")
+
+
+def test_an_expired_sign_in_is_not_a_broken_route(live, data_file, auth_site):
+    """国聘 (2026-11-16): the site ended the session; the online resume stayed at the same address and showed no
+    resume, the read script threw, and the window called the route broken and offered to record it anew. A failed
+    read now asks first whether the user is still signed in: the site's own sign-in check, else the page's signs."""
+    b, fill = live.inst.browser, live.inst.fill
+    page = auth_site + "/guopin/resume.html"
+
+    def as_user(path: str) -> None:   # the user (or the site) signing in or out, in the same browser
+        with b.acting("the-user"):
+            b.ensure()
+            b.open(page)
+            b.run_script(f"async () => {{ await fetch('{path}', {{method: 'POST', credentials: 'include'}}); return 1; }}")
+
+    def route_to(url: str, script: str = RESUME_SCRIPT) -> None:
+        assert not fill.set_route(fill.site("linkedin"), {"pages": [{"url": url, "reads": ["experience"], "script": script}]})[1]
+
+    def check() -> dict:
+        st, r = live.req("POST", "/api/autofill/linkedin/check", {"wait": True})
+        assert st == 200, r
+        return r
+
+    route_to(page)
+    as_user("/api/login")
+    r = check()
+    assert r["ok"], r
+
+    # signed out, the page shows its "登录/注册" button: a sign-in, not a broken route
+    as_user("/api/logout")
+    r = check()
+    v = live.req("GET", "/api/autofill/linkedin")[1]
+    assert not r["ok"] and r["signed_out"] and r["sign_in"] == "out", r
+    assert v["signed_out"] and not v["route"]["broken"], v["route"]
+
+    # no sign of it on the page and no sign-in check recorded: nothing can tell, so the window says it can't
+    # (sign in first, then record the route anew), never "the site changed"
+    route_to(page + "?bare")
+    r = check()
+    v = live.req("GET", "/api/autofill/linkedin")[1]
+    assert not r["ok"] and not r["signed_out"] and r["sign_in"] == "unknown", r
+    assert v["route"]["broken"] and v["last_check"]["sign_in"] == "unknown"
+
+    # the site's own sign-in check, once recorded, answers: signed out
+    (fill.root / "sign-in-checks.json").write_text(json.dumps({"domain:127.0.0.1": {"script": CHECK, "url": page, "at": 1}}),
+                                                   encoding="utf-8")
+    r = check()
+    assert not r["ok"] and r["signed_out"], r
+    assert not live.req("GET", "/api/autofill/linkedin")[1]["route"]["broken"]
+
+    # signed in and the script still fails: that is a broken route, and the check says so
+    as_user("/api/login")
+    route_to(page, RESUME_SCRIPT.replace("getElementById('exp')", "getElementById('gone')"))
+    r = check()
+    v = live.req("GET", "/api/autofill/linkedin")[1]
+    assert not r["ok"] and not r["signed_out"] and r["sign_in"] == "in", r
+    assert v["route"]["broken"] and v["last_check"]["sign_in"] == "in"
+
+    # signed out again: "Sign in to …" opens the site, and the sign-in is seen by itself (the check asks the site),
+    # the flag clears and the profile is read again, with no "I've signed in" to press
+    route_to(page)
+    as_user("/api/logout")
+    assert check()["signed_out"]
+    st, r = live.req("POST", "/api/autofill/linkedin/open", {})
+    assert st == 200 and r["signed_out"] is True, r
+    t0 = time.time()
+    as_user("/api/login")
+    wait_for(lambda: (lambda v: not v["signed_out"] and (v.get("last_check") or {}).get("at", 0) > t0
+                      and not (v["last_check"] or {}).get("error"))(live.req("GET", "/api/autofill/linkedin")[1]),
+             "the sign-in seen and the profile read again", timeout=30)
+
+    # 国聘 again, with no sign-in check recorded: a read failed while signed out (nothing could tell why), the user
+    # signed in since; "Sign in to …" opens the site already signed in, and the read goes again by itself: the bar
+    # goes, with nothing more to press
+    (fill.root / "sign-in-checks.json").unlink()
+    route_to(page + "?bare")
+    as_user("/api/logout")
+    assert check()["sign_in"] == "unknown"
+    as_user("/api/login")
+    t0 = time.time()
+    st, r = live.req("POST", "/api/autofill/linkedin/open", {})
+    assert st == 200, r
+    wait_for(lambda: (lambda v: not v["route"]["broken"] and (v.get("last_check") or {}).get("at", 0) > t0
+                      and not (v["last_check"] or {}).get("error"))(live.req("GET", "/api/autofill/linkedin")[1]),
+             "the profile read again once the site was open, signed in", timeout=30)

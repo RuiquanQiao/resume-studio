@@ -22,6 +22,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from core.browser import BrowserError, ManagedBrowser
+from core.i18n import t
 
 from .sites import Site
 
@@ -107,6 +108,68 @@ def run(browser: ManagedBrowser, script: str, timeout: float = 10.0) -> tuple[bo
     if isinstance(out, dict) and isinstance(out.get("signed_in"), bool):
         return out["signed_in"], json.dumps(out, ensure_ascii=False)[:300]
     return None, "the check didn't return {signed_in: true|false}: " + json.dumps(out, ensure_ascii=False)[:200]
+
+
+# what a signed-out page shows, read only once a read went wrong (a page with a sign-in dialog or a "登录" button in
+# its header, at the same address: 国聘, 2026-11-16): a visible password field, or a visible control that is only
+# "sign in". Signs, not an answer: a recorded sign-in check always goes first.
+PAGE_SIGNS = r"""async () => {
+  const shown = (e) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e);
+    return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
+  if ([...document.querySelectorAll('input[type=password]')].some(shown)) return 'password';
+  const only = /^(登录|登錄|立即登录|登录\s*[\/|｜]\s*注册|注册\s*[\/|｜]\s*登录|sign\s*in|log\s*in|login|sign\s*in\s*\/\s*sign\s*up)$/i;
+  const c = [...document.querySelectorAll('a, button, [role=button], input[type=submit], input[type=button]')]
+    .find((e) => shown(e) && only.test((e.innerText || e.value || '').replace(/\s+/g, ' ').trim()));
+  return c ? 'button:' + (c.innerText || c.value).replace(/\s+/g, ' ').trim() : '';
+}"""
+
+
+def page_signs(browser: Any) -> str:
+    """What on the open page says it is signed out ("" for nothing)."""
+    try:
+        h = getattr(browser, "handoff", None)
+        if h is not None:
+            with h.exempt():
+                out = browser.run_script(PAGE_SIGNS, timeout=8)
+        else:
+            out = browser.run_script(PAGE_SIGNS, timeout=8)
+    except BrowserError:
+        return ""
+    if not isinstance(out, str) or not out:
+        return ""
+    return t("a password field") if out == "password" else t("a “{name}” button", name=out.split(":", 1)[1])
+
+
+class Judge:
+    """Is the user signed in on the page open in this work's tab? One answer for every reader of a site (the read
+    route, a recipe's replay, the chat's sign-in wait):
+
+    1. the address: the site's sign-in paths, or one that names a sign-in (/login, /passport…): signed out;
+    2. the recorded sign-in check, which asks the site's server: its answer, either way;
+    3. `deep` (only once something went wrong, it costs a script): the page's signs, a password field or a lone
+       "登录" button: signed out.
+
+    Returns (True | False | None, how it knows); None: nothing can tell, which is never "signed in".
+    国聘 (2026-11-16): a signed-out visit stays at c.iguopin.com/resume and shows an empty page, so the address alone
+    said "signed in" and the window called the route broken."""
+
+    def __init__(self, browser: Any, checks: Checks | None):
+        self.b, self.checks = browser, checks
+
+    def __call__(self, site: Site | None, url: str, deep: bool = False) -> tuple[bool | None, str]:
+        from .sites import login_url
+        if url.startswith("http") and ((site is not None and site.signed_out(url)) or login_url(url)):
+            return False, t("the address is a sign-in page")
+        rec = self.checks.find(url, site) if self.checks is not None and url.startswith("http") else None
+        if rec:
+            said, what = run(self.b, str(rec.get("script") or ""))
+            if said is not None:
+                return said, t("the site's sign-in check says so")
+        if deep:
+            sign = page_signs(self.b)
+            if sign:
+                return False, t("the page shows {what}", what=sign)
+        return None, t("no sign-in check is recorded") if not rec else t("the sign-in check had no answer")
 
 
 class Signs:

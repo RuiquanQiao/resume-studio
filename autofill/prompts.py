@@ -103,7 +103,10 @@ def _shape_step(site: Site) -> str:
 
 def learn_context(site: Site, data_path: str, old_route: dict | None, broken: str, synced: bool) -> str:
     b = cli(data_path)
-    why = (f"The recorded route stopped working ({broken}): the site probably changed. Record it anew."
+    why = (f"The recorded route stopped working ({broken}). A page that has signed the user out reads as a broken "
+           f"one (an empty profile, a script that finds nothing), so first see whether {site.name} still has the user "
+           f"signed in. If it asks to sign in, have them sign in (step 1), then run `sync {site.id}`: if that reads the "
+           "profile, the route was fine and you are done. Otherwise the site probably changed: record it anew."
            if broken else "Record it anew (the user asked)." if old_route else
            "Nothing is recorded for this site yet.")
     old = ("\nThe route recorded before (fix what broke, keep what still works):\n```\n"
@@ -139,12 +142,19 @@ Resume Studio then runs by itself every time, without you. {why} Change nothing 
      text, **never by generated class names** (like `pvs-1x7a`): those change every release.
    - Read only. The script may scroll and click a "see more" / "…more" toggle to show the whole text,
      and nothing else.
+   - When the page asks to sign in instead of showing the profile (a sign-in dialog or page, a "登录" button
+     where the user's name was, a profile that stays empty because the sign-in expired), return
+     `{{signed_out: true}}`. Throw only for a page that is there but not as expected, and never fold "signed
+     out" and "not loaded" into one error: the window asks the user to sign in for the one, and records the
+     route anew for the other.
    - Test it on the page: `{b} extract --stdin` (a quoted heredoc; no file) prints what
      it returns. Fix it until it matches what you see, every item and the whole text.
 4. Save the route: `{b} route {site.id} --stdin` with
    `{{"pages": [{{"url": "<the page's full address>", "reads": ["experience"], "script": "async (h) => ..."}}]}}`
    (`reads`: what that page gives, from basics, {", ".join(site.sections)}). It is run once at once and prints
-   what it read: compare it with the pages; send it again until it is right.{_shape_step(site)}
+   what it read: compare it with the pages; send it again until it is right. When the site has no sign-in
+   check recorded yet, the answer says so: record one then, before `sync` (many sites, 国聘 among them, sign
+   the user out every so often, and only the site's own answer tells that apart from a broken route).{_shape_step(site)}
 5. Then `{b} sync {site.id}`: Resume Studio reads the site by the route and updates the local copy
    {"(changes from the site come in; the user's own local edits stay)" if synced else "(the first copy of the profile)"}.
 6. If a part really can't be read by a script, record the route for the rest and send that part's

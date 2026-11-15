@@ -940,7 +940,8 @@ def test_claude_records_a_route_then_checks_need_no_claude(live, data_file, fake
     # a redesign: the route stops reading, and the window offers to let Claude record it anew
     live.inst.browser._eval_page("localStorage.setItem('exp-heading', 'Work'); 1")
     st, r = live.req("POST", "/api/autofill/linkedin/check", {"wait": True})
-    assert st == 200 and not r["ok"] and ("experience came back empty" in r["error"] or "the script stopped" in r["error"]), r
+    # signed in all along (no sign on the page, no sign-in check to ask): not a sign-in, so the route is broken
+    assert st == 200 and not r["ok"] and not r["signed_out"] and r["sign_in"] in ("in", "unknown"), r
     v = live.req("GET", "/api/autofill/linkedin")[1]
     assert v["route"]["broken"] and v["local"]["items"][0]["section"] == "experience"   # the copy is untouched
     st, r = live.req("POST", "/api/autofill/linkedin/learn", {})

@@ -1195,7 +1195,6 @@
  "The project folders of these entries changed since the last sync; handle them one by one:": "Las carpetas de proyecto de estas entradas cambiaron desde la última sincronización; trátalas de una en una:",
  "The questions an interviewer will ask about this, and your answers": "Lo que un entrevistador preguntará sobre esto, y tus respuestas",
  "The role": "El puesto",
- "The route no longer reads {site} ({error}). The site has probably changed; the AI can read it again and record the route anew.": "La ruta ya no lee {site} ({error}). Probablemente el sitio cambió; la IA puede volver a leerlo y grabar la ruta de nuevo.",
  "The site asks to sign in": "El sitio pide iniciar sesión",
  "The title can't be empty": "El título no puede estar vacío",
  "The tracker points at a report that isn't there: {path}": "El registro apunta a un informe que no existe: {path}",
@@ -2682,5 +2681,19 @@
  "an element": "un elemento",
  "the site": "el sitio",
  "{site} wants you to sign in. Sign in in the browser window, then choose “I've signed in” on the bar at the bottom of the page: the AI then goes on reading.": "{site} requiere iniciar sesión. Inicia sesión en la ventana del navegador y elige «Ya he iniciado sesión» en la barra de la parte inferior de la página: la IA seguirá leyendo.",
- "Pressing {combo}": "Pulsando {combo}"
+ "Pressing {combo}": "Pulsando {combo}",
+ "The route no longer reads {site} ({error}). {site} still has you signed in, so the site has probably changed; the AI can read it again and record the route anew.": "La ruta ya no lee {site} ({error}). Su sesión en {site} sigue iniciada, así que probablemente el sitio ha cambiado; la IA puede leerlo de nuevo y volver a registrar la ruta.",
+ "Resume Studio couldn't read {site} ({error}). The sign-in may have expired, or the site may have changed. Sign in to {site}, then check for updates again; if it still can't be read, have the AI record the route anew.": "Resume Studio no pudo leer {site} ({error}). Puede que la sesión haya caducado o que el sitio haya cambiado. Inicie sesión en {site} y vuelva a buscar actualizaciones; si sigue sin poder leerse, la IA puede volver a registrar la ruta.",
+ "{site} asks to sign in ({how})": "{site} pide iniciar sesión ({how})",
+ "The page's read script stopped: {error}": "El script de lectura de la página se detuvo: {error}",
+ "the read script says so": "el script de lectura lo indica",
+ "The page's read script returned no profile data": "El script de lectura de la página no devolvió datos del perfil",
+ "{section} came back empty": "{section} se leyó vacío",
+ "the address is a sign-in page": "la dirección es una página de inicio de sesión",
+ "the site's sign-in check says so": "la comprobación de sesión del sitio lo indica",
+ "the page shows {what}": "la página muestra {what}",
+ "no sign-in check is recorded": "no hay ninguna comprobación de sesión registrada",
+ "the sign-in check had no answer": "la comprobación de sesión no respondió",
+ "a password field": "un campo de contraseña",
+ "a “{name}” button": "un botón «{name}»"
 }
