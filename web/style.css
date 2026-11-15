@@ -1,5 +1,5 @@
 /* Resume Studio: quiet panels floating on a grey window. Light + dark via tokens.
-   Type scale 12.5 / 14 / 16 / 21px, weights 400 / 500 / 600. Things are told apart by fill and space, not outlines. */
+   Type scale 12.5 / 14 / 16 / 21px (13.5 / 15 / 17 / 22px in Chinese, Japanese, Korean), weights 400 / 500 / 600. Things are told apart by fill and space, not outlines. */
 /* "Noto Sans SC" is bundled (SIL OFL, fonts/OFL.txt) so Chinese looks the same on every machine instead of
    falling to Microsoft YaHei; fonts/noto-sc.css serves it in pieces (scripts/build_fonts.py) */
 :root {
@@ -54,6 +54,15 @@
   --fs-meta: 12.5px;
   --icon-letter: 9.5px;  /* not a type size: a letter drawn as an icon inside a 15px icon box (.ws-mono) */
   color-scheme: light;
+}
+/* Chinese, Japanese and Korean read one step larger than Latin text in the same role: a character packs many strokes
+   into one em, and at 12.5-14px they blur into each other (2026-11-16, the user: small Chinese looks cheap). The roles
+   stay the same four; only their sizes rise when the interface speaks one of these languages (ui.js sets <html lang>). */
+:root:is(:lang(zh), :lang(ja), :lang(ko)) {
+  --fs-title: 22px;
+  --fs-head: 17px;
+  --fs-body: 15px;
+  --fs-meta: 13.5px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -1609,6 +1618,19 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-sel
 .dbv-td:not(.wrap) .role-chips { overflow: hidden; text-overflow: ellipsis; }
 .dbv-in .c-last { display: block; }
 .htable.dbv .c-last, .htable.dbv .c-next { min-width: 0; max-width: none; }   /* the column's width rules here, not the old table's */
+/* a status chip in a column narrower than the chip (wrapped or not) stays in its cell: a chip is one line, so it ends
+   in an ellipsis and its hover shows the rest, like every compact label (2026-11-16: "需要登录" ran 5px past a 72px
+   Sign-in column the user had narrowed) */
+.dbv-td :is(.state-chip, .badge) { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.dbv-td .state-chip { line-height: 19px; }
+.dbv-td .badge { line-height: 24px; }
+/* narrower than a pill holds ("需…" says nothing): the status drops its pill and stays coloured words, which wrap in a
+   wrapped column and end in an ellipsis in a one-line one */
+.dbv-in { container-type: inline-size; }
+@container (max-width: 5.5em) {
+  .dbv-in > :is(.state-chip, .badge) { height: auto; padding: 0; border-radius: 0; background: none; line-height: inherit; }
+  .dbv-td.wrap .dbv-in > :is(.state-chip, .badge) { white-space: normal; overflow: visible; }
+}
 .dbv-td:not(.wrap) .dbv-in > span { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: top; }
 .dbv-in .c-date { font-variant-numeric: tabular-nums; color: var(--text-2); }
 .dbv-in .c-date.late { color: var(--warn); }

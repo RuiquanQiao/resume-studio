@@ -2420,6 +2420,11 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     pg.click(".float .dbv-proprow[data-key=last] .btn:not(.drag-handle)")
     pg.keyboard.press("Escape")
     pg.wait_for_selector(".dbv-th[data-key=last]", state="detached")
+    # dragged in a wide window: at 1440px the Chinese table (a size larger since 2026-11-16) scrolls sideways, and
+    # bringing Referral into view slides Company under the frozen title, where nothing can be dropped on it
+    size = pg.viewport_size
+    pg.set_viewport_size({"width": 1920, "height": size["height"]})
+    pg.locator(".dbv-th[data-key=company]").evaluate("(th) => { for (let n = th; n; n = n.parentElement) n.scrollLeft = 0; }")
     pg.drag_and_drop(".dbv-th[data-key=referral]", ".dbv-th[data-key=company]", target_position={"x": 4, "y": 10})
     wait_until(lambda: pg.locator(".dbv-th").evaluate_all("(xs) => xs.map((x) => x.dataset.key)")[1:3] == ["referral", "company"], msg="column moved")
     before = pg.locator(".dbv-th[data-key=status]").bounding_box()["width"]   # the table fits the pane until a column is sized
@@ -2433,6 +2438,7 @@ def test_the_tables_work_like_a_notion_database(page_all, server):
     wait_until(lambda: abs(saved_col("status")["width"] - (before + 80)) <= 2 and saved_col("last")["hidden"], msg="width and hidden saved")
     assert saved_col("role")["width"]                                           # the others keep the widths they had on screen
     assert pg.locator(".dbv-body[data-scrolls] table.sized").count() == 1
+    pg.set_viewport_size(size)
 
     # another view: everything; a filter typed in; grouped by status
     pg.click(".dbv-tab[data-view=v2]")

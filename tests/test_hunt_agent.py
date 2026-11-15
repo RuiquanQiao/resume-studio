@@ -356,14 +356,15 @@ def test_postings_are_matched_across_scans(hunt):
     assert r["found"] == 3 and len(r["new"]) == 3
     intern = next(p for p in ps.all() if p["title"].startswith("算法"))
     assert intern["batch"] == "intern" and intern["deadline"] == "2026-11-01"
-    # the next scan: one gone, one deadline moved, the anchor ignored, one new
+    # the next scan: one gone, one deadline moved, the anchor ignored, one new. The moved deadline is far ahead: one
+    # that has passed closes the role, and "2026-11-15" made this test fail from that day on
     second = [{"title": "后台开发工程师", "url": "https://careers.tencent.com/jobdesc.html?postId=1"},
-              {"title": "算法工程师（实习）", "url": "https://careers.tencent.com/jobdesc.html?postId=2", "deadline": "2026-11-15"},
+              {"title": "算法工程师（实习）", "url": "https://careers.tencent.com/jobdesc.html?postId=2", "deadline": "2099-11-15"},
               {"title": "AI Agent 工程师", "url": "https://careers.tencent.com/jobdesc.html?postId=3"}]
     r = ps.merge("Tencent", second, how="tencent")
     assert [p["title"] for p in r["new"]] == ["AI Agent 工程师"]
     assert [p["title"] for p in r["closed"]] == ["No link here"]
-    assert r["changed"][0]["changed"]["deadline"] == ["2026-11-01", "2026-11-15"]
+    assert r["changed"][0]["changed"]["deadline"] == ["2026-11-01", "2099-11-15"]
     # a partial read (one site of two failed) closes nothing
     r = ps.merge("Tencent", second[:1], how="tencent", complete=False)
     assert not r["closed"] and sum(1 for p in ps.all() if not p["closed"]) == 3

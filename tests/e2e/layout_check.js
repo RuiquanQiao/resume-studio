@@ -116,7 +116,9 @@
     // compact controls by name, and by look: any inline box with its own fill or outline (a badge, a pill, a
     // tab) whatever its class is called; a card or row may wrap
     const boxed = s.backgroundColor !== "rgba(0, 0, 0, 0)" || px(s.borderTopWidth) > 0 || s.boxShadow !== "none";
-    const isControl = el.matches(".btn, [role=tab], .chip, [class*='-chip'], .seg > button")
+    // a chip counts while it draws its pill: one that dropped it in a narrow table cell (style.css) is coloured words
+    const isControl = el.matches(".btn, [role=tab], .seg > button")
+      || (el.matches(".chip, [class*='-chip']") && (boxed || px(s.paddingLeft) > 0))
       || (/^inline-(flex|block|grid)$/.test(s.display) && boxed);
     if (isControl && text && s.whiteSpace !== "nowrap" && lineCount(el) >= 2 && !el.matches("[data-wrap]"))
       report("wrapped", el, `label on ${lineCount(el)} lines`);

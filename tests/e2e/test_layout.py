@@ -824,6 +824,13 @@ STATES = [
     State("applying, platforms, one signed out", then(applying("platforms"), wait(".dbv-view tbody tr"),
                                                       js("() => { F.sites[0].signed_out = true; paintHunt(); }")),
           [".htable .state-chip.s-warn"]),
+    # the user's own view, 2026-11-16: the Sign-in column narrowed to 72px and wrapped; "需要登录" ran past its cell
+    State("applying, platforms, signed out in a narrow wrapped column", then(applying("platforms"), wait(".dbv-view tbody tr"),
+          js("""() => { const v = DBV.tables.platforms.views[0];
+              v.columns = [{key: 'name', width: 211, hidden: false, wrap: true}, {key: 'profile', width: 151, hidden: false, wrap: true},
+                           {key: 'signin', width: 72, hidden: false, wrap: true}, {key: 'apps', width: 198, hidden: false, wrap: true}];
+              F.sites.forEach((s) => { s.signed_out = true; }); paintHunt(); }""")),
+          [".htable .dbv-td.wrap .state-chip.s-warn"]),
     State("applying, a platform not read yet", then(open_platform, wait("#fillspace .fill-start")), ["#fillspace .fill-start"]),
     State("applying, a platform's copy in conflict", then(open_platform, wait("#fill-tabs .fv-tab.on"), linkedin_conflict,
                                                           wait(".ff.conflict .ff-conflict")),

@@ -515,6 +515,10 @@ function dbvHeadMenu(th, o, view, col, repaint) {
 // ---------------------------------------------------------------- the table layout
 const DEF_WIDTH = { title: 220, text: 180, select: 150, date: 130, relation: 220, custom: 170 };
 const MIN_WIDTH = { title: 160, text: 110, select: 90, date: 106, relation: 100, custom: 110 };   // wrapped text stays over 6em wide
+// the widths above are for 14px text: Chinese, Japanese and Korean are set a step larger (style.css), and a column
+// grows with its text so it holds as many characters. A width the user dragged is theirs and never scaled.
+const dbvTextScale = () => (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--fs-body")) || 14) / 14;
+const dbvMin = (c, k = dbvTextScale()) => Math.round((c.prop.min || MIN_WIDTH[c.prop.type] || 90) * k);
 
 // the width a table has to fit: the page's content box (measured on the page as it is, before the repaint)
 function dbvPane() {
@@ -539,13 +543,14 @@ window.addEventListener("resize", () => { clearTimeout(DBV.resizeTimer); DBV.res
 function dbvFit(cols, width, avail) {
   const out = new Map();
   let free = cols.slice();
+  const k = dbvTextScale();
   for (let guard = 0; guard < cols.length + 1; guard++) {
     const left = avail - [...out.values()].reduce((s, w) => s + w, 0);
     const share = free.reduce((s, c) => s + width(c), 0);
     const scale = share ? left / share : 1;
-    const small = free.filter((c) => width(c) * scale < (c.prop.min || MIN_WIDTH[c.prop.type] || 90));
+    const small = free.filter((c) => width(c) * scale < dbvMin(c, k));
     if (!small.length) { for (const c of free) out.set(c.key, Math.floor(width(c) * scale)); break; }
-    for (const c of small) out.set(c.key, c.prop.min || MIN_WIDTH[c.prop.type] || 90);
+    for (const c of small) out.set(c.key, dbvMin(c, k));
     free = free.filter((c) => !small.includes(c));
     if (!free.length) break;
   }
@@ -557,7 +562,8 @@ const dbvFrozen = (view) => (Number.isInteger(view.freeze) ? view.freeze : 1);
 
 function dbvTableEl(o, view, cols, rows, repaint) {
   const shown = cols.filter((c) => !c.hidden);
-  const width = (c) => c.width || c.prop.width || DEF_WIDTH[c.prop.type];
+  const k = dbvTextScale();
+  const width = (c) => c.width || Math.round((c.prop.width || DEF_WIDTH[c.prop.type]) * k);
   // until the user sizes a column, the table fits its pane (each column scaled from its own width, none below a
   // readable minimum); once one is sized, every width is the view's own and the table may run wider, as in Notion
   const sized = shown.some((c) => c.width);
