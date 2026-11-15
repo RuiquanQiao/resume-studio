@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .cdp import CdpError, Connection, version_info
+from .i18n import t
 
 SNAPSHOT_JS = (Path(__file__).with_name("snapshot.js")).read_text(encoding="utf-8")
 WORLD = "resume-studio"
@@ -36,6 +37,16 @@ MAX_TABS = 8            # past this, work takes a tab whose work is done instead
 
 class BrowserError(Exception):
     """Something the caller (and the user) should read."""
+
+
+class UserHasControl(BrowserError):
+    """A command on a tab that is the user's now (they took it over, or they are signing in): core/handoff.py.
+    A BrowserError, so every caller that handles one stops cleanly (a recipe replay reports the change failed);
+    the text says what the AI runs instead."""
+
+    def __init__(self, mode: str, text: str):
+        super().__init__(text)
+        self.mode = mode
 
 
 class PageNotOpened(BrowserError):
@@ -214,6 +225,27 @@ def find_browser(prefer: str | None = None) -> tuple[str, str] | None:
 
 NAMES = {"chrome": "Google Chrome", "msedge": "Microsoft Edge"}
 
+from .handoff import Handoff, NetLog  # noqa: E402  (after BrowserError and UserHasControl, which it raises)
+
+
+def _host(url: str) -> str:
+    """The site a page is on, for the bar ("leapmotor.zhiye.com")."""
+    m = re.match(r"https?://(?:www\.)?([^/:?#]+)", url or "")
+    return m.group(1) if m else url
+
+
+def _said(target: str) -> str:
+    """A control as the bar names it: its visible name in the language's quotes (snapshot.js `target` gives
+    `button "Sign in"`), else what kind of control it is."""
+    m = re.search(r'"(.*)"', target or "")
+    name = (m.group(1) if m else "").strip()
+    if not name:
+        return t("an element")
+    from .i18n import current
+    name = name if len(name) <= 40 else name[:39] + "…"
+    # the quotes of the interface's language, as its catalog writes them (「登录」 in Chinese and Japanese)
+    return f"「{name}」" if current() in ("zh", "ja") else f"“{name}”"
+
 # A browser nobody sees. Edge hands each tab to Windows 11's Alt+Tab (WindowTabManager, "show tabs from apps")
 # even with no window on screen, and Windows keeps those entries after the browser has gone: every test run
 # left "Resume Studio" tiles in Alt+Tab that could not be clicked (2026-11-14). Edge's own log shows the feature
@@ -274,6 +306,7 @@ class ManagedBrowser:
         self.state = "off"                    # off | starting | running | error | signin
         self.error = ""
         self.signin_url = ""                  # sign-in mode: the page it opened at
+        self.returning = False                # switching back from sign-in mode (end_sign_in) right now
         # `lock` guards the bookkeeping only (the tabs, which work has which, starting and stopping): held for
         # moments. What a piece of work does on its page holds that work's own lock (`_page`), so two chats, a
         # scan and a check read their pages at the same time instead of queuing behind the slowest (2026-11-04:
@@ -307,6 +340,9 @@ class ManagedBrowser:
         # done there on their behalf (`show`). `shown` says which this one is.
         self.shown = False
         self.ua: dict | None = None           # a windowless browser's user agent, said as a windowed one says it
+        # who drives each tab, the AI or the user, and the bar on the page that shows it (core/handoff.py)
+        self.handoff = Handoff(self)
+        self.netlogs: dict[str, NetLog] = {}  # sessionId -> what its page asked the network for lately
 
     # ---- whose tab ------------------------------------------------------------
     @property
@@ -353,8 +389,10 @@ class ManagedBrowser:
         return self._Acting(self, key or None)
 
     def _page(self) -> "ManagedBrowser._Waited":
-        """The lock of the work this thread does: its commands run one at a time, other work's alongside."""
+        """The lock of the work this thread does: its commands run one at a time, other work's alongside. Refused
+        (UserHasControl) while the work's tab is the user's: they took it over, or they are signing in."""
         key = self.work
+        self.handoff.gate(self.tab_of.get(key), key)
         with self.lock:
             lk = self.work_locks.get(key)
             if lk is None:
@@ -445,6 +483,8 @@ class ManagedBrowser:
         self.state, self.conn, self.owner, self.closing, self.shown, self.ua = "off", None, "", False, False, None
         self.pages, self.sessions, self.contexts, self.tab_of, self.last_tab = {}, {}, {}, {}, None
         self.closed = set()
+        self.netlogs = {}
+        self.handoff.reset()
 
     def ensure(self, window: bool = False) -> bool:
         """Running and connected, starting it (or reattaching to the one left open) when needed: without a window,
@@ -587,6 +627,7 @@ class ManagedBrowser:
             self._track(t)
         pages = [tid for tid, p in self.pages.items() if p["type"] == "page"]
         self.tab_of = {None: pages[-1] if pages else self._new_tab()}
+        self.handoff.start()
 
     def _windowed_ua(self, ua: str) -> dict | None:
         """A windowless browser names itself "HeadlessChrome" in its user agent, which some sites refuse; every
@@ -633,9 +674,11 @@ class ManagedBrowser:
         elif method == "Target.targetDestroyed":
             tid = p.get("targetId")
             self.pages.pop(tid, None)
+            self.handoff.forget(tid)
             sid = self.sessions.pop(tid, None)
             if sid:
                 self.contexts.pop(sid, None)
+                self.netlogs.pop(sid, None)
             for k, t in list(self.tab_of.items()):
                 if t == tid:
                     self.tab_of.pop(k, None)   # its next command finds it another tab
@@ -644,6 +687,11 @@ class ManagedBrowser:
             sid = msg.get("sessionId")
             if sid and (method != "Page.frameNavigated" or not (p.get("frame") or {}).get("parentId")):
                 self.contexts.pop(sid, None)
+                self.handoff.page_changed(sid)
+        elif method in ("Network.requestWillBeSent", "Network.responseReceived"):
+            log = self.netlogs.get(msg.get("sessionId") or "")
+            if log is not None:
+                log.event(method, p)
 
     # ---- sign-in mode ---------------------------------------------------------
     # Some sites refuse to sign in a browser that is being driven: their risk checks see
@@ -708,16 +756,24 @@ class ManagedBrowser:
                 self._changed()
 
     def end_sign_in(self) -> dict:
-        """Close the sign-in window and bring the controlled browser back at the page signed in to."""
-        with self.lock:
-            url = self.signin_url
-            if self.state == "signin":
-                self._close_signin()
-        if url:
-            self.ensure(window=True)   # the user is looking at that page: it opens where they can see it
-            self.open(url)
-            self.front()
-        return self.status()
+        """Close the sign-in window and bring the controlled browser back at the page signed in to. `returning`
+        is on all the while: the browser is off for a moment in between, which is not the user closing it."""
+        self.returning = True
+        try:
+            with self.lock:
+                url = self.signin_url
+                if self.state == "signin":
+                    self._close_signin()
+            if url:
+                try:
+                    self.ensure(window=True)   # the user is looking at that page: it opens where they can see it
+                    self.open(url)
+                    self.front()
+                except CdpError as e:   # the browser just started and a page didn't answer yet: say so, never a 500
+                    raise BrowserError(f"The browser is back, but {url} didn't open yet ({e}). Open it again.") from e
+            return self.status()
+        finally:
+            self.returning = False
 
     def _close_signin(self) -> None:
         profile = self.profile_dir(self.kind)
@@ -865,11 +921,22 @@ class ManagedBrowser:
         if not (key or "").startswith("read:") and self.last_tab != tid:
             self.last_tab = tid
             self._changed()
+        doing = getattr(self.local, "doing", None)
+        if doing:
+            self.handoff.doing(tid, doing)
         sid = self.sessions.get(tid)
         if sid is None:
             sid = self.conn.send("Target.attachToTarget", {"targetId": tid, "flatten": True})["sessionId"]
             self.sessions[tid] = sid
             self.conn.send("Page.enable", session=sid)
+            if not (key or "").startswith("read:"):
+                # what the page asks the network for: `browser.py requests` (finding a site's "who am I"), and the
+                # sign-in traffic the bar mentions. Not on reading tabs, which only run their script and close.
+                try:
+                    self.conn.send("Network.enable", {"maxTotalBufferSize": 0, "maxResourceBufferSize": 0}, session=sid)
+                    self.netlogs[sid] = NetLog()
+                except CdpError:
+                    pass
             if self.ua:
                 try:
                     self.conn.send("Emulation.setUserAgentOverride", self.ua, session=sid)
@@ -877,9 +944,36 @@ class ManagedBrowser:
                     pass   # it reads all the same, as itself
         return sid
 
+    # what reaches the page as if a person did it: refused on a tab that is the user's, even halfway through a command
+    # (the user takes over while the AI types: the next piece isn't typed)
+    _INPUT = ("Input.", "Page.navigate", "DOM.setFileInputFiles")
+
     def _send(self, method: str, params: dict | None = None, timeout: float = 30.0) -> dict:
         assert self.conn is not None
-        return self.conn.send(method, params, session=self._session(), timeout=timeout)
+        sid = self._session()
+        if not method.startswith(self._INPUT):
+            return self.conn.send(method, params, session=sid, timeout=timeout)
+        tid = self.current
+        self.handoff.gate(tid, self.work)
+        start = time.time()
+        try:
+            return self.conn.send(method, params, session=sid, timeout=timeout)
+        finally:
+            if method.startswith("Input."):
+                self.handoff.input_sent(tid, start, time.time())   # its clicks and keys are Resume Studio's, not the user's
+
+    @contextlib.contextmanager
+    def _doing(self, text: str):
+        """What the AI is doing, for the bar on the page (set once the work's tab is known)."""
+        self.local.doing = text
+        tid = self.current
+        if tid:
+            self.handoff.doing(tid, text)
+        try:
+            yield
+        finally:
+            self.local.doing = None
+            self.handoff.doing(self.current, None)
 
     def _context(self, sid: str) -> int:
         ctx = self.contexts.get(sid)
@@ -985,7 +1079,7 @@ class ManagedBrowser:
     def open(self, url: str, new_tab: bool = False) -> dict:
         if not url.startswith(("http://", "https://", "about:")):
             raise BrowserError("only http(s) addresses can be opened")
-        with self._page():
+        with self._page(), self._doing(t("Opening {page}", page=_host(url))):
             self.ensure()
             assert self.conn is not None
             if new_tab:
@@ -1016,7 +1110,7 @@ class ManagedBrowser:
                 pass
 
     def snapshot(self, within: str | None = None, max_chars: int = 60000) -> dict:
-        with self._page():
+        with self._page(), self._doing(t("Reading the page")):
             here = self.here()
             arg = "null" if within is None else repr(str(within))
             r = self._js(f"snapshot({arg}, {int(max_chars)})")
@@ -1031,7 +1125,7 @@ class ManagedBrowser:
 
     def text(self) -> dict:
         read = "document.body ? document.body.innerText : ''"
-        with self._page():
+        with self._page(), self._doing(t("Reading the page")):
             txt = (self._eval_page(read) or "").strip()
             if not txt:
                 self.wait_drawn()
@@ -1045,7 +1139,7 @@ class ManagedBrowser:
         body = ("helpers.sleep(0).then(async () => { const fn = (" + script + "\n);"
                 " if (typeof fn !== 'function') throw new Error('the script must be a function: async (h) => ({...})');"
                 " const out = await fn(__rs.helpers); return JSON.stringify(out === undefined ? null : out); })")
-        with self._page():
+        with self._page(), self._doing(t("Reading the page")):
             raw = self._js(body, timeout=timeout)
         try:
             return json.loads(raw) if isinstance(raw, str) else raw
@@ -1154,8 +1248,51 @@ class ManagedBrowser:
                     self.work_locks.pop(f"read:{tid}", None)
                 acting.__exit__(None, None, None)
 
+    def run_signed_out(self, url: str, script: str, timeout: float = 30.0) -> Any:
+        """`script` on `url` as a visitor who never signed in sees it: in a browser context of its own (no cookies, no
+        storage), in a tab off the screen, closed afterwards. What a sign-in check must say "no" to."""
+        if not url.startswith(("http://", "https://")):
+            raise BrowserError("only http(s) addresses can be opened")
+        with self.lock:
+            self.ensure()
+            assert self.conn is not None
+            ctx = self.conn.send("Target.createBrowserContext", {"disposeOnDetach": True})["browserContextId"]
+            try:
+                tid = self._new_tab(browserContextId=ctx, newWindow=True, background=True)
+            except CdpError:
+                self.conn.send("Target.disposeBrowserContext", {"browserContextId": ctx})
+                raise
+        key = f"read:{tid}"
+        try:
+            with self.acting(key), self._page():
+                try:
+                    win = self.conn.send("Browser.getWindowForTarget", {"targetId": tid})
+                    self.conn.send("Browser.setWindowBounds", {"windowId": win["windowId"],
+                                                               "bounds": {"left": -32000, "top": 0, "width": 1280, "height": 900}})
+                except CdpError:
+                    pass   # headless: there is no window to move
+                self.current = tid
+                self._open_here(url, timeout)
+                return self.run_script(script, timeout=timeout)
+        finally:
+            with self.lock:
+                for call, params in (("Target.closeTarget", {"targetId": tid}), ("Target.disposeBrowserContext", {"browserContextId": ctx})):
+                    try:
+                        if self.conn is not None:
+                            self.conn.send(call, params)
+                    except CdpError:
+                        pass
+                self.closed.add(tid)
+                self.pages.pop(tid, None)
+                sid = self.sessions.pop(tid, None)
+                if sid:
+                    self.contexts.pop(sid, None)
+                self.tab_of.pop(key, None)
+                self.work_locks.pop(key, None)
+
     def _mouse_click(self, x: float, y: float, count: int = 1) -> None:
         base = {"x": x, "y": y, "button": "left", "clickCount": count}
+        self.handoff.tap(self.current, x, y)   # the bar shows where the AI clicks
         self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
         self._send("Input.dispatchMouseEvent", {"type": "mousePressed", **base})
         self._send("Input.dispatchMouseEvent", {"type": "mouseReleased", **base})
@@ -1178,8 +1315,10 @@ class ManagedBrowser:
                            "take a new snapshot, or hover a nearer ref first")
 
     def hover(self, ref: str) -> dict:
-        with self._page():
+        with self._page(), self._doing(t("Pointing at an element")):
             what = self._js(f"target({int(ref)})")
+            self.handoff.through(self.current)
+            self.handoff.doing(self.current, t("Pointing at {what}", what=_said(what)))
             if not self._reveal(ref):
                 p = self._js(f"point({int(ref)})")
                 self._mouse_move(p["x"], p["y"])
@@ -1187,8 +1326,10 @@ class ManagedBrowser:
             return {**self.here(), "target": what}
 
     def click(self, ref: str) -> dict:
-        with self._page():
+        with self._page(), self._doing(t("Clicking")):
             what = self._js(f"target({int(ref)})")
+            self.handoff.through(self.current)   # the bar never stands between the AI and what it clicks
+            self.handoff.doing(self.current, t("Clicking {what}", what=_said(what)))
             self._reveal(ref)
             p = self._js(f"point({int(ref)})")
             self._pause(0.1, 0.3)
@@ -1222,18 +1363,20 @@ class ManagedBrowser:
                                               "modifiers": mods})
 
     def press(self, combo: str) -> dict:
-        with self._page():
+        with self._page(), self._doing(t("Pressing {combo}", combo=combo)):
             self.key(combo)
             self._pause()
             return self.here()
 
     def type(self, ref: str, text: str, clear: bool = True) -> dict:
         """Click into the field, empty it (select all + delete), then type `text` as real input."""
-        with self._page():
+        with self._page(), self._doing(t("Typing")):
             k = self._js(f"kind({int(ref)})")
             if k not in ("textbox", "combobox"):
                 raise BrowserError(f"ref {ref} is a {k or 'element'}, not a text field")
             what = self._js(f"target({int(ref)})")
+            self.handoff.through(self.current)
+            self.handoff.doing(self.current, t("Typing in {what}", what=_said(what)))   # where, never what
             p = self._js(f"point({int(ref)})")
             self._mouse_click(p["x"], p["y"])
             self._js(f"focus({int(ref)})")
@@ -1257,14 +1400,15 @@ class ManagedBrowser:
             return out
 
     def select(self, ref: str, option: str) -> dict:
-        with self._page():
+        with self._page(), self._doing(t("Choosing an option")):
             what = self._js(f"target({int(ref)})")
+            self.handoff.doing(self.current, t("Choosing in {what}", what=_said(what)))
             r = self._js(f"choose({int(ref)}, {option!r})")
             self._pause()
             return {**self.here(), "value": r["value"], "target": what}
 
     def scroll(self, ref: str | None = None, dy: int = 600) -> dict:
-        with self._page():
+        with self._page(), self._doing(t("Scrolling the page")):
             if ref:
                 self._js(f"point({int(ref)})")
             else:
@@ -1273,7 +1417,7 @@ class ManagedBrowser:
             return self.here()
 
     def upload(self, ref: str, files: list[str]) -> dict:
-        with self._page():
+        with self._page(), self._doing(t("Uploading a file")):
             if self._js(f"kind({int(ref)})") != "file":
                 raise BrowserError(f"ref {ref} is not a file field")
             obj = self._js(f"el({int(ref)})", by_value=False)
@@ -1282,12 +1426,14 @@ class ManagedBrowser:
             return {**self.here(), "target": self._js(f"target({int(ref)})")}
 
     def screenshot(self, path: Path, full: bool = False) -> dict:
-        with self._page():
+        with self._page(), self._doing(t("Taking a screenshot")):
             params: dict[str, Any] = {"format": "png"}
             if full:
                 params["captureBeyondViewport"] = True
             try:
-                data = self._send("Page.captureScreenshot", params, timeout=20)["data"]
+                self._session()
+                with self.handoff.hidden(self.current):   # the page as the site draws it, without the bar
+                    data = self._send("Page.captureScreenshot", params, timeout=20)["data"]
             except CdpError:
                 if not self.shown:   # no window to be minimized: a page still drawing, so wait and try once more
                     time.sleep(1.0)
@@ -1302,6 +1448,22 @@ class ManagedBrowser:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(base64.b64decode(data))
             return {**self.here(), "path": str(path)}
+
+    def cookies(self) -> list[dict]:
+        """The cookies the browser would send to the page open in this work's tab (name, value, domain, httpOnly…)."""
+        with self._page():
+            url = self.here()["url"]
+            if not url.startswith(("http://", "https://")):
+                return []
+            return list(self._send("Network.getCookies", {"urls": [url]}, timeout=10).get("cookies") or [])
+
+    def requests(self, since: float = 0.0, api_only: bool = True) -> list[dict]:
+        """What the page in this work's tab asked the network for lately (newest last): its API calls, or with
+        `api_only` False everything (scripts, pictures). Each: url, method, type, status, mime, at."""
+        with self._page():
+            self._session()
+            log = self.netlogs.get(self.sessions.get(self.current or "") or "")
+            return [] if log is None else log.recent(since, api_only)
 
     def tabs(self) -> list[dict]:
         self.ensure()
@@ -1321,7 +1483,7 @@ class ManagedBrowser:
             return self.here()
 
     def back(self) -> dict:
-        with self._page():
+        with self._page(), self._doing(t("Going back a page")):
             self._eval_page("history.back()")
             self.wait_loaded(10)
             return self.here()

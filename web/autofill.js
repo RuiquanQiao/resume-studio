@@ -807,7 +807,7 @@ function signInBanner(site, reading, b) {
   return h("div", { class: "fill-banner warn", id: "fill-signin" }, icon("user"),
     // while the AI's read waits for the sign-in (browser.py wait-signed-in) it goes on by itself: never "read again"
     h("span", { class: "nb-text" }, reading
-      ? t("{site} wants you to sign in. Sign in in the browser window: the AI goes on reading by itself once you have.", { site: site.name })
+      ? t("{site} wants you to sign in. Sign in in the browser window, then choose “I've signed in” on the bar at the bottom of the page: the AI then goes on reading.", { site: site.name })
       : t("{site} wants you to sign in. Sign in in the browser window (Resume Studio's browser remembers it), then read the profile again.", { site: site.name }),
       " ", h("button", { class: "linkish", title: t("For a site that refuses to sign in (a code that never arrives): the same browser, not controlled by Resume Studio"),
         onclick: () => signInMode(/^https?:/.test((b || {}).url || "") ? b.url : site.home) }, t("No code arriving?"))),

@@ -54,12 +54,21 @@ Work like a careful person: one change at a time, read the dialog before saving,
 typing (`type` prints what the field now holds), and never click anything you weren't asked to.
 If the site asks for a sign-in, a verification code or a captcha, ask the user in one line to do it in the
 browser window, then run `{b} wait-signed-in <site>` (the site's id when it is on the list; without one for any
-other site, such as a company's careers site). It returns once the page is past the sign-in; while it says "not
+other site, such as a company's careers site). That hands the tab to the user: your commands on it are refused
+until they choose "I've signed in" (on the bar at the bottom of the page, or in the chat), or the site's recorded
+sign-in check says they are signed in. Clicking a sign-in button yourself is not signing in. While it says "not
 signed in yet", run it again at once. The chat shows the user that you are waiting, like a prompt in a terminal:
 continue in the same reply, and never end it to ask the user to tell you. Never type passwords or codes.
+When it returns and says no sign-in check is recorded for the site, record one as it says (`{b} requests`, then
+`{b} sign-in-check --stdin`): from then on Resume Studio knows by itself, from the site's own server, whether the
+user is signed in there.
 If the sign-in itself fails here (a code that never arrives, a sign-in that bounces back), the site is refusing
-a driven browser: run `{b} sign-in <the sign-in page's address>`, which reopens the same browser without
-remote control, and ask the user to sign in there and press "switch back" in the window."""
+a driven browser: tell the user in one line that they can choose "No code arriving?" in the window, and keep
+waiting. Only the user switches the browser to that mode; never try to.
+The user can take over your tab at any moment (the bar's "Take over", or just clicking or typing in the page).
+Your next command then says "paused": run `{b} wait`, which returns once they hand it back, then take a new
+snapshot before anything else, since they may have changed the page. The user can also stop your reply from
+the bar."""
 
 
 def guide(site: Site) -> str:

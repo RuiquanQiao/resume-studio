@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from core import agents
-from core.browser import BrowserError, ManagedBrowser
+from core.browser import BrowserError, ManagedBrowser, UserHasControl
 from core.chat import ChatRunner, Workspace, valid_effort, valid_mode, valid_model
+from core.handoff import Control
 from core.i18n import t
 from core.server import App, FileResponse, HttpError, Request
 from jobhunt import prompts as hunt_prompts
@@ -20,7 +21,7 @@ from resume import model
 from resume import prompts as rp
 from resume.service import Studio
 
-from . import profile, prompts, recipe, route
+from . import profile, prompts, recipe, route, signin
 from . import sites as sites_mod
 from .service import Autofill
 from .sites import Site
@@ -62,8 +63,33 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
     def bro(fn: Callable[[], Any]) -> Any:
         try:
             return fn()
-        except BrowserError as e:
+        except (BrowserError, UserHasControl) as e:
             raise HttpError(409, str(e))
+
+    # ---- who drives the chat's tab: the AI, or the user (core/handoff.py) -----------------------------
+    hand = browser.handoff
+    hand.cli = prompts.cli(str(studio.store.path))
+    checks = signin.Checks(fill.root)
+
+    def control_changed(key: str | None, c: Control) -> None:
+        """The chat says it too, under "Working…": the tab is the user's, with the way to hand it back."""
+        turn = chats.turns.get(key or "")
+        if turn is None:
+            return
+        if c.mode == "user":
+            chats.wait_status(key, t("You have taken over the browser. The AI is paused until you hand it back."), "control", {})
+        elif c.mode == "ai" and turn.status_kind == "control":
+            chats.wait_status(key, None)
+    hand.on_change = control_changed
+
+    def stop_work(key: str) -> None:
+        if chats.store.meta(key):
+            chats.cancel(key)
+    hand.on_stop = stop_work
+    hand.stoppable = lambda key: bool(chats.store.meta(key))
+
+    # a reply that ended holds no tab: the next one starts with the AI driving (and the bar gone)
+    chats.on_turn.append(lambda chat_id, running: None if running else hand.release(chat_id))
 
     def settings_of(b: dict) -> dict:
         out = {}
@@ -525,96 +551,257 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
                         f"`wait-signed-in {site.id}` now: it returns once they have, and you go on in the same reply "
                         "(the chat shows the user that you are waiting). Don't end your reply to ask them to tell you."}
 
-    # ---- has the user signed in? (国聘, 2026-11-15: the AI stopped to ask "tell me when you're signed in" and the
-    # "sign in" flag stayed on after they had) ----
+    # ---- has the user signed in? Asked of the site (a recorded sign-in check), else the user says so ----
+    # 国聘 (2026-11-15): the AI stopped to ask "tell me when you're signed in". Then 零跑 (北森, 2026-11-15): the wait
+    # took a sign-in dialog with no password field (a phone number and an SMS code) for "signed in", and the AI went
+    # on clicking while the user was typing the code. Now the tab is the user's while they sign in, and only they, or
+    # a check that asks the site's own server, give it back.
     PASSWORD_SHOWN = "async () => [...document.querySelectorAll('input[type=password]')].some((e) => e.offsetParent !== null)"
 
-    def on_sign_in(site: Site, url: str) -> bool:
-        """The page at `url` (open in this work's tab) is a sign-in: the site's own sign-in paths, an address that
-        names one, or a password field on the page."""
-        if site.signed_out(url) or sites_mod.login_url(url):
+    def owner_of(url: str) -> Site | None:
+        return next((s for s in fill.sites() if s.owns(url)), None)
+
+    def by_check(url: str, site: Site | None) -> bool | None:
+        """What the recorded sign-in check for this page says (None: none recorded, or no answer now)."""
+        rec = checks.find(url, site or owner_of(url))
+        if not rec:
+            return None
+        return signin.run(browser, str(rec.get("script") or ""))[0]
+
+    def on_sign_in(site: Site | None, url: str) -> bool:
+        """The page at `url` (open in this work's tab) asks to sign in. A sign-in check, when recorded, answers;
+        else the signs: the site's own sign-in paths, an address that names one, a password field."""
+        said = by_check(url, site) if url.startswith("http") else None
+        if said is not None:
+            return not said
+        if (site and site.signed_out(url)) or sites_mod.login_url(url):
             return True
+        if site is None:   # a page of a site not on the list: its address only (a password field there may be anything)
+            return False
         try:
-            return bool(browser.run_script(PASSWORD_SHOWN, timeout=5))
-        except BrowserError:
+            with hand.exempt():
+                return bool(browser.run_script(PASSWORD_SHOWN, timeout=5))
+        except (BrowserError, UserHasControl):
             return False
 
-    def signed_in_now(site: Site) -> None:
-        if fill.load(site.id).get("signed_out"):
+    def signed_in_now(site: Site | None) -> None:
+        if site and fill.load(site.id).get("signed_out"):
             fill.save(site.id, signed_out=False)
             publish(site.id)
 
     @app.route("POST", "/api/autofill/{site}/wait-signed-in")
     def wait_signed_in(req: Request):
-        """`browser.py wait-signed-in <site>`: back as soon as the chat's tab is past the sign-in (the user signed in
-        there), or another tab on the site is (they signed in there: this tab opens the site again). At most 90 s a
+        """`browser.py wait-signed-in <site>`: the chat's tab is the user's until they sign in. Back once they choose
+        "I've signed in" (on the page's bar or in the chat), or the site's sign-in check says they are. At most 90 s a
         run, so the AI's command never times out; it runs it again while the user is still at it."""
         return wait_for_sign_in(site_of(req), req.headers.get("X-Resume-Studio-Chat") or "")
 
     @app.route("POST", "/api/browser/wait-signed-in")
     def wait_signed_in_any(req: Request):
-        """`browser.py wait-signed-in` with no site: any site (a company's careers site, a page the AI found), told
-        apart by the open tab: back once that tab shows no sign-in any more."""
+        """`browser.py wait-signed-in` with no site: any site (a company's careers site, a page the AI found)."""
         return wait_for_sign_in(None, req.headers.get("X-Resume-Studio-Chat") or "")
 
     def host_of(url: str) -> str:
         m = re.match(r"https?://(?:www\.)?([^/:?#]+)", url or "")
         return m.group(1) if m else ""
 
+    def again(site: Site | None) -> str:
+        return f"`{prompts.cli(str(studio.store.path))} wait-signed-in{' ' + site.id if site else ''}`"
+
+    def record_check_text(url: str, site: Site | None) -> str:
+        """After a sign-in the user confirmed: no check is recorded for the site, so the AI records one now."""
+        key = signin.key_for(url, site)
+        if checks.all().get(key):
+            return ""
+        b = prompts.cli(str(studio.store.path))
+        whose = f"the {key[7:]} recruiting system" if key.startswith("system:") else key[7:]
+        return (f" No sign-in check is recorded for {whose} yet, so Resume Studio can't tell by itself when the user is "
+                f"signed in there. Record one now, before going on: `{b} requests` lists the calls this page made; find the "
+                "one whose answer is the signed-in user (a name, an id, a phone number), then "
+                f"`{b} sign-in-check --stdin` with "
+                "{\"script\": \"async (h) => { const r = await fetch('<that address>', {credentials: 'include'}); "
+                "const j = await r.json(); return {signed_in: <true when j names a user>}; }\"}. "
+                "It is run at once here (it must say true) and in a fresh browser with no sign-in (it must say false).")
+
+    def plain_now() -> bool:
+        """The user is signing in without remote control, or switching back from it (the browser is off for a
+        moment in between: not the user closing it)."""
+        return getattr(browser, "state", "") == "signin" or bool(getattr(browser, "returning", False))
+
     def wait_for_sign_in(site: Site | None, chat_id: str) -> dict:
         end = time.monotonic() + float(getattr(fill, "sign_in_wait", 90.0))
-        last_retry = time.monotonic()
-        url = ""
         try:
-            with browser.acting(chat_id or None):
+            with browser.acting(chat_id or None), hand.exempt():
+                # the user signing in without remote control (sign-in mode): nothing to look at until they switch back
+                plain = False
+                while plain_now():
+                    plain = True
+                    if chat_id:
+                        chats.wait_status(chat_id, t("Waiting for you to sign in in the browser window and switch back."),
+                                          "signin", {"url": browser.signin_url, "site": site.id if site else ""})
+                    if time.monotonic() > end:
+                        return {"text": "not signed in yet: the user is signing in in the browser without remote control. "
+                                        f"Run {again(site)} again at once; don't end your reply."}
+                    time.sleep(1.5)
+                if plain and getattr(browser, "state", "") != "running":   # checked before `here`, which starts it again
+                    return {"text": "the user closed the sign-in window without switching back. Open the page "
+                                    f"again; if it still asks to sign in, ask them in one line and run {again(site)}."}
+                here = bro(browser.here)
+                url = str(here.get("url") or "")
+                owner = site or owner_of(url)
+                name = owner.name if owner else (host_of(url) or "the site")
+                if plain:   # the user switched back themselves: that is their "I've signed in"
+                    signed_in_now(owner)
+                    return {"text": f"the user signed in without remote control and switched back; the tab is on {url}. Take "
+                                    "a new snapshot, then go on." + record_check_text(url, owner)}
+                rec = checks.find(url, owner)
+                if rec and signin.run(browser, str(rec.get("script") or ""))[0]:
+                    signed_in_now(owner)   # the site says they are signed in already: no need to hand the tab over
+                    return {"text": f"signed in: {name}'s sign-in check says the user is signed in. Go on with what you "
+                                    "were doing (open the page again if this one still shows a sign-in)."}
+                # the user signs in where they can see it: a windowless browser opens anew with a window now, before
+                # the tab is theirs (opening it later would restart the browser under their typing)
+                if hand.get(browser.current).mode != "signin":   # once: a wait run again doesn't pull the window up again
+                    bro(browser.front)
+                    browser.claim()
+                tid = browser.current
+                hand.ask_sign_in(tid, name)
+                signs = signin.Signs(browser) if not rec else None
+                last_check = time.monotonic()
                 while True:
-                    # the user signing in without remote control (sign-in mode): nothing to look at until they switch back
-                    if getattr(browser, "state", "") == "signin":
-                        if time.monotonic() > end:
-                            return {"text": "not signed in yet: the user is signing in in the browser without remote control. "
-                                            "Run `wait-signed-in" + (f" {site.id}" if site else "") + "` again; don't end your reply."}
-                        time.sleep(1.5)
-                        continue
-                    here = bro(browser.here)
-                    url = str(here.get("url") or "")
-                    name = site.name if site else (host_of(url) or "the site")
                     # the chat's own line under "Working…": the reply waits on the user, it isn't stuck
                     if chat_id:
                         chats.wait_status(chat_id, t("Waiting for you to sign in to {site} in Resume Studio's browser.", site=name),
                                           "signin", {"url": url, "site": site.id if site else ""})
-                    if (site.owns(url) and not on_sign_in(site, url)) if site else (url.startswith("http") and not on_sign_in_any(url)):
-                        if site:
-                            signed_in_now(site)
-                        return {"text": f"signed in: the tab is on {url}. Go on with what you were doing on {name}."}
-                    # signed in in another tab: the cookies are the same browser's, so this tab gets past it by opening anew
-                    if site and time.monotonic() - last_retry > 10:
-                        last_retry = time.monotonic()
-                        others = [t for t in bro(browser.tabs) if not t["current"] and site.owns(t["url"]) and not sites_mod.login_url(t["url"])
-                                  and not site.signed_out(t["url"])]
-                        if others:
-                            target = url if site.owns(url) and not sites_mod.login_url(url) else site.home
-                            nxt = bro(lambda: browser.open(sites_mod.after_login(url) or target))
-                            if site.owns(nxt["url"]) and not on_sign_in(site, nxt["url"]):
-                                signed_in_now(site)
-                                return {"text": f"signed in (in another tab): this tab is now on {nxt['url']}. Go on reading {site.name}."}
+                    c = hand.wait_ai(tid, 1.5)
+                    if tid not in browser.pages:
+                        # the browser may be in the middle of switching to sign-in mode (closed, not yet reopened):
+                        # it holds its lock through that, so the state read after it is the settled one
+                        with browser.lock:
+                            pass
+                    if plain_now():
+                        # the user chose "No code arriving?": the same browser without remote control. They switch
+                        # back when they are signed in, and that is their "I've signed in"
+                        while plain_now():
+                            if chat_id:
+                                chats.wait_status(chat_id, t("Waiting for you to sign in in the browser window and switch back."),
+                                                  "signin", {"url": browser.signin_url, "site": site.id if site else ""})
+                            if time.monotonic() > end:
+                                return {"text": "not signed in yet: the user is signing in in the browser without remote "
+                                                f"control. Run {again(site)} again at once; don't end your reply."}
+                            time.sleep(1.5)
+                        if getattr(browser, "state", "") != "running":   # they closed that window instead
+                            return {"text": "the user closed the sign-in window without switching back. Open the page "
+                                            f"again; if it still asks to sign in, ask them in one line and run {again(site)}."}
+                        signed_in_now(owner)
+                        return {"text": "the user signed in without remote control and switched back. Take a new snapshot, "
+                                        "then go on." + record_check_text(url, owner)}
+                    if tid not in browser.pages:
+                        return {"text": "the user closed the tab the sign-in was in. Open the page again with `open`; if it "
+                                        f"still asks to sign in, ask the user in one line and run {again(site)}."}
+                    if c.mode == "ai":
+                        if c.back == "end":
+                            return {"text": "the user stopped the wait. End your reply now."}
+                        said = by_check(url, owner) if rec else None
+                        if said is False:
+                            return {"text": f"the user handed the tab back, but {name}'s sign-in check says they are not signed "
+                                            "in. Take a snapshot: if the page still asks to sign in, ask them in one line and "
+                                            f"run {again(site)} again."}
+                        signed_in_now(owner)
+                        if c.back == "check":
+                            return {"text": f"signed in: {name}'s sign-in check says the user is signed in. Take a new "
+                                            "snapshot, then go on with what you were doing."}
+                        return {"text": f"the user handed the tab back: they have signed in to {name}. Take a new snapshot "
+                                        "before anything else (the page may have changed), then go on." + record_check_text(url, owner)}
+                    if rec and time.monotonic() - last_check >= 3:
+                        last_check = time.monotonic()
+                        if by_check(url, owner):
+                            hand.give(tid, "check")
+                            continue
+                    if signs is not None and signs.seen():
+                        hand.detected(tid, "likely")
                     if time.monotonic() > end:
-                        return {"text": f"not signed in yet: the tab is still on {url}. The user may still be at it (a code, a "
-                                        "scan): run `wait-signed-in" + (f" {site.id}" if site else "") + "` again at once, "
-                                        "without ending your reply; the window shows the user that you are waiting."}
-                    time.sleep(1.5)
+                        return {"text": f"not signed in yet: the user is still signing in to {name} (a code, a scan). Run "
+                                        f"{again(site)} again at once, without ending your reply; the tab stays theirs and "
+                                        "the window shows them that you are waiting."}
         finally:
             if chat_id:
                 chats.wait_status(chat_id, None)
 
-    def on_sign_in_any(url: str) -> bool:
-        """A page of a site that isn't on the list asks to sign in: its address names a sign-in, or it shows a
-        password field."""
-        if sites_mod.login_url(url):
-            return True
-        try:
-            return bool(browser.run_script(PASSWORD_SHOWN, timeout=5))
-        except BrowserError:
-            return False
+    @app.route("POST", "/api/browser/wait")
+    def wait_user(req: Request):
+        """`browser.py wait`: the user took over the chat's tab; back once they hand it back (at most 90 s a run)."""
+        chat_id = req.headers.get("X-Resume-Studio-Chat") or ""
+        tid = browser.tab_of.get(chat_id or None)
+        c = hand.get(tid)
+        if c.mode == "ai":
+            return {"text": "the tab is yours: the user isn't using it. Go on."}
+        c = hand.wait_ai(tid, float(getattr(fill, "sign_in_wait", 90.0)))
+        if c.mode == "ai":
+            if c.back == "end":
+                return {"text": "the user stopped your reply's work in the browser. End your reply now."}
+            return {"text": "the user handed the tab back. Take a new snapshot before anything else: they may have "
+                            "changed the page. Then go on."}
+        if c.mode == "signin":
+            return {"text": f"the user is signing in: run {again(None)} instead."}
+        return {"text": f"still the user's: they are using the page. Run `{prompts.cli(str(studio.store.path))} wait` "
+                        "again at once, without ending your reply."}
+
+    @app.route("POST", "/api/browser/control")
+    def control(req: Request):
+        """The user's own say over a chat's tab, from the chat (the page's bar does the same): `take` it, `give` it
+        back (also "I've signed in"), or `stop` the AI's reply."""
+        b = body(req)
+        chat_id, action = str(b.get("chat") or ""), str(b.get("action") or "")
+        tid = browser.tab_of.get(chat_id)
+        if action not in ("take", "give", "stop"):
+            raise HttpError(400, "action must be take, give or stop")
+        if action == "stop":
+            if tid:
+                hand.give(tid, "end")
+            stop_work(chat_id)
+        elif action == "give" and browser.state == "signin":   # signed in without remote control: switch back
+            bro(browser.end_sign_in)
+        elif not tid:
+            raise HttpError(409, t("This chat has no page open in the browser."))
+        elif action == "take":
+            hand.take(tid, "button")
+        else:
+            hand.give(tid, "button")
+        return {"control": hand.get(tid).mode if tid else "ai"}
+
+    @app.route("POST", "/api/browser/sign-in-check")
+    def save_check(req: Request):
+        """`browser.py sign-in-check`: the AI's check for "is the user signed in here", tested both ways first: on
+        the chat's page (signed in: it must say true) and in a fresh browser context with no cookies (false)."""
+        b = body(req)
+        script = str(b.get("script") or "")
+        errs = signin.problems(script)
+        if errs:
+            raise HttpError(400, "the check has problems:\n- " + "\n- ".join(errs))
+        chat_id = req.headers.get("X-Resume-Studio-Chat") or ""
+        with browser.acting(chat_id or None):
+            url = str(bro(browser.here).get("url") or "")
+            if not url.startswith("http"):
+                raise HttpError(409, "open a page of the site first (signed in), then send the check")
+            site = owner_of(url)
+            yes, said = signin.run(browser, script)
+            if yes is not True:
+                raise HttpError(409, f"on this page, where the user is signed in, the check didn't say signed_in true: {said}. "
+                                     "Fix it and send it again.")
+            try:
+                out = browser.run_signed_out(url, script)
+            except BrowserError as e:
+                raise HttpError(409, f"the check couldn't be tried without a sign-in: {e}")
+            if not (isinstance(out, dict) and out.get("signed_in") is False):
+                raise HttpError(409, "in a fresh browser with no sign-in the check didn't say signed_in false: "
+                                     + json.dumps(out, ensure_ascii=False)[:300] + ". It must ask the server about the "
+                                     "signed-in user, not read something every visitor has.")
+        key = signin.key_for(url, site)
+        checks.save(key, script, url)
+        whose = f"every company on {key[7:]}" if key.startswith("system:") else key[7:]
+        return {"text": f"saved: the sign-in check for {whose}. It said true here and false without a sign-in. From now "
+                        "on Resume Studio knows by itself when the user has signed in there."}
 
     # ---- the browser itself ----------------------------------------------------------------
     @app.route("GET", "/api/browser")
@@ -715,11 +902,22 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
                 browser.front()
                 browser.claim()
                 return browser.here()
-            if cmd == "sign-in":
-                browser.sign_in(str(b.get("url") or ""))
-                return {"text": "the browser is open for signing in, without remote control; the window asks the user "
-                                "to sign in there and switch back. Until then browser commands are refused."}
+            if cmd == "requests":
+                calls = browser.requests(api_only=not b.get("all"))[-int(b.get("max") or 60):]
+                if not calls:
+                    return {"text": "no requests from this page yet (open or reload it first)"}
+                return {"text": "\n".join(f"{c['method']} {c['status'] if c['status'] is not None else '…'} "
+                                          f"{c['type'] or '-'} {c['url'][:300]}" for c in calls)}
             raise HttpError(400, f"unknown command {cmd!r}")
+
+        # Sign-in mode (a plain browser, without remote control) closes the browser the user may be signing in
+        # with: only the user switches to it, from the window (零跑, 2026-11-15: the AI switched on its own and the
+        # half-typed sign-in was gone)
+        if cmd == "sign-in":
+            raise HttpError(409, "only the user switches the browser to sign-in mode (it closes the page they may be "
+                                 "signing in on). If the sign-in fails in this browser (a code never arrives), tell them in "
+                                 "one line that they can choose \"No code arriving?\" in the window, and keep waiting with "
+                                 "`wait-signed-in`.")
 
         # each chat works in a browser tab of its own (scripts/browser.py sends its id): two chats, or a chat and a
         # check for updates, never land on each other's page
@@ -736,8 +934,8 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
             # chat shows the user it waits), never end the reply asking to be told (2026-11-15: the chat just stopped)
             if cmd in ("open", "click", "back", "tab", "press", "snapshot") and isinstance(r, dict) and str(r.get("url") or "").startswith("http"):
                 here_url = str(r["url"])
-                owner = next((s for s in fill.sites() if s.owns(here_url)), None)
-                if (on_sign_in(owner, here_url) if owner else sites_mod.login_url(here_url)):
+                owner = owner_of(here_url)
+                if on_sign_in(owner, here_url):
                     if owner:
                         fill.save(owner.id, signed_out=True)
                         publish(owner.id)

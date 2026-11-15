@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh">
+<head><meta charset="utf-8"><title>Fake careers site</title>
+<style>
+  body { font-family: sans-serif; margin: 0; }
+  header { display: flex; justify-content: center; padding: 18px; }
+  #dialog { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.3); }
+  #dialog.open { display: flex; }
+  .box { background: #fff; padding: 24px; width: 320px; }
+</style>
+</head>
+<body>
+<!-- A careers site like 北森's: "登录/注册" opens a dialog on the same page (the address doesn't change), with a
+     phone number and an SMS code, and no password field. The page asks /api/me who is signed in, as such sites do. -->
+<header><button id="top">登录/注册</button></header>
+<main><h1>职位列表</h1><p id="who">未登录</p><a href="/auth/profile.html">我的简历</a></main>
+<div id="dialog" role="dialog" aria-label="登录">
+  <div class="box">
+    <label>手机号 <input id="phone" type="tel"></label>
+    <label>验证码 <input id="code" type="text"></label>
+    <button id="send">获取验证码</button>
+    <button id="go">登录</button>
+  </div>
+</div>
+<script>
+  const who = () => fetch('/api/me', { credentials: 'include' }).then((r) => r.json())
+    .then((j) => { document.querySelector('#who').textContent = j.user ? j.user.name : '未登录'; });
+  who();
+  document.querySelector('#top').onclick = () => document.querySelector('#dialog').classList.add('open');
+  document.querySelector('#go').onclick = () => fetch('/api/login', { method: 'POST', credentials: 'include' })
+    .then(() => { document.querySelector('#dialog').classList.remove('open'); who(); });
+</script>
+</body>
+</html>

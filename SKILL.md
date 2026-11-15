@@ -466,12 +466,17 @@ Edge) with a profile of its own in `<skill>/.local/browser/` and drives it over 
   them with a click. A profile may say things the resume doesn't.
 - Sign-ins, verification codes and captchas are always the user's, and never end the reply: ask in one
   line, run `browser.py wait-signed-in [<site>]` (the chat shows the user it waits; run it again while it
-  says "not signed in yet") and go on once it returns. Never type a password. `browser.py signed-out <site>`
-  makes the window show its sign-in banner.
+  says "not signed in yet") and go on once it returns. The tab is the user's meanwhile: your commands on it
+  are refused until they choose "I've signed in" (on the page's bar or in the chat), or the site's recorded
+  sign-in check (`browser.py sign-in-check`, found with `browser.py requests`) says so. Never type a
+  password. `browser.py signed-out <site>` makes the window show its sign-in banner.
   Some sites drop a sign-in from a driven browser (their risk check sees `navigator.webdriver`; Xinghe's
-  "send the code" silently never arrives). Then `browser.py sign-in <url>` reopens the same browser
-  profile without remote control for the user to sign in; browser commands are refused until they press
-  "switch back" in the window. Never try to hide that the browser is driven.
+  "send the code" silently never arrives). Then the user can choose "No code arriving?" in the window, which
+  reopens the same browser profile without remote control; only the user switches to it. Never try to hide
+  that the browser is driven.
+- While you work, a bar at the bottom of the page says what you are doing, with "Take over" and "Stop". The
+  user takes the tab with it, or by clicking or typing in the page: your next command says "paused"; run
+  `browser.py wait` and take a new snapshot once it returns.
 - The browser has no window while it only reads (scans, lookups, your `open`/`snapshot`/`text`): nothing
   pops up or flashes while the user works elsewhere. It gets a window when the user should see it: run
   `front` when they should look at or finish something there (a sign-in, a captcha), and **before you

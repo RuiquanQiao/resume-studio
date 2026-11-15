@@ -881,12 +881,19 @@ function paintWorking(el) {
   if (se && se.dataset.key !== status + "|" + kind) {
     se.dataset.key = status + "|" + kind;
     se.hidden = !status;
-    se.classList.toggle("signin", kind === "signin");
+    se.classList.toggle("signin", kind === "signin" || kind === "control");
+    // the user's say over the chat's browser tab, the same as the bar on the page (core/handoff.py)
+    const control = (action) => api("POST", "/api/browser/control", { chat: ui.chat.id, action }).catch((e) => toast(e.message));
     se.replaceChildren(h("span", { class: "wk-status-t" }, status),
       kind === "signin" ? h("span", { class: "wk-status-acts" },
-        h("button", { class: "btn sm primary", onclick: () => api("POST", "/api/browser/start", {}).catch((e) => toast(e.message)) }, icon("external"), t("Show the sign-in page")),
+        h("button", { class: "btn sm primary", title: t("Hand the page back to the AI to continue."), onclick: () => control("give") }, icon("check"), t("I've signed in")),
+        h("button", { class: "btn sm", onclick: () => api("POST", "/api/browser/start", {}).catch((e) => toast(e.message)) }, icon("external"), t("Show the sign-in page")),
         h("button", { class: "linkish", title: t("For a site that refuses to sign in (a code that never arrives): the same browser, not controlled by Resume Studio"),
-          onclick: () => signInMode((live.status_data || {}).url) }, t("No code arriving?"))) : null);
+          onclick: () => signInMode((live.status_data || {}).url) }, t("No code arriving?")))
+      : kind === "control" ? h("span", { class: "wk-status-acts" },
+        h("button", { class: "btn sm primary", title: t("The AI continues from the page as you leave it."), onclick: () => control("give") }, t("Hand back to AI")),
+        h("button", { class: "btn sm", onclick: () => api("POST", "/api/browser/start", {}).catch((e) => toast(e.message)) }, icon("external"), t("Show the browser")))
+      : null);
   }
 }
 

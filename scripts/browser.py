@@ -16,8 +16,10 @@
     python scripts/browser.py report linkedin item.i3 done
     python scripts/browser.py recipe linkedin experience.update --stdin <<'JSON' ... JSON   # save a write recipe
     python scripts/browser.py push linkedin item.i3 [--dry]   # make an approved change by its recipe, read it back
-    python scripts/browser.py sign-in https://careers.example.com/   # a site refuses to sign in a driven browser
-    python scripts/browser.py wait-signed-in [linkedin]   # the page asks to sign in: wait while the user does
+    python scripts/browser.py wait-signed-in [linkedin]   # the page asks to sign in: the tab is the user's until they have
+    python scripts/browser.py wait                        # the user took over the tab: wait until they hand it back
+    python scripts/browser.py requests [--all]            # the calls the page made (find its "who is signed in" call)
+    python scripts/browser.py sign-in-check --stdin <<'JSON' ... JSON   # record how to ask the site who is signed in
 
 Every command prints what happened. The browser is a real Chrome or Edge with its own profile, which
 the window starts; this script only talks to the window (standard library only, no venv needed).
@@ -135,7 +137,6 @@ def main() -> int:
     p = sub.add_parser("tab"); p.add_argument("index", type=int)
     sub.add_parser("back")
     sub.add_parser("front")
-    p = sub.add_parser("sign-in", help="reopen the browser without remote control, for the user to sign in"); p.add_argument("url")
     p = sub.add_parser("extract", help="run a read script on the open page"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("route", help="save a site's read route and run it once"); p.add_argument("site")
     p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
@@ -145,8 +146,13 @@ def main() -> int:
     p = sub.add_parser("report", help="how one approved change went"); p.add_argument("site"); p.add_argument("id")
     p.add_argument("state", choices=["doing", "done", "failed", "skipped"]); p.add_argument("--note", default="")
     p = sub.add_parser("signed-out", help="the site wants the user to sign in"); p.add_argument("site")
-    p = sub.add_parser("wait-signed-in", help="wait (up to 90 s a run) until the user has signed in; any site, its id when listed")
+    p = sub.add_parser("wait-signed-in", help="hand the tab to the user to sign in; back (up to 90 s a run) once they have")
     p.add_argument("site", nargs="?", default="")
+    sub.add_parser("wait", help="the user took over the tab: back (up to 90 s a run) once they hand it back")
+    p = sub.add_parser("requests", help="the calls the page made lately (its API calls; --all for everything)")
+    p.add_argument("--all", action="store_true"); p.add_argument("--max", type=int, default=60)
+    p = sub.add_parser("sign-in-check", help="record the script that asks the site whether the user is signed in")
+    p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("recipe", help="save a write recipe for one kind of change (experience.update, basics.about…)")
     p.add_argument("site"); p.add_argument("key"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("push", help="make one approved change by its recipe, read it back and report it")
@@ -188,6 +194,17 @@ def main() -> int:
     if c == "signed-out":
         show(call(url, "POST", f"/api/autofill/{args.site}/signed-out", {}))
         return 0
+    if c == "wait":
+        show(call(url, "POST", "/api/browser/wait", {}))
+        return 0
+    if c == "sign-in-check":
+        raw = read_text(args)
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            data = {"script": raw}   # the script itself, not wrapped in JSON
+        show(call(url, "POST", "/api/browser/sign-in-check", data if isinstance(data, dict) else {"script": raw}))
+        return 0
     if c == "wait-signed-in":
         # a listed site by its id; any other (a company's careers site, a page the AI found) by the open tab
         show(call(url, "POST", f"/api/autofill/{args.site}/wait-signed-in" if args.site else "/api/browser/wait-signed-in", {}))
@@ -195,8 +212,8 @@ def main() -> int:
     payload: dict = {"cmd": c}
     if c == "open":
         payload.update(url=args.url, new_tab=args.new_tab)
-    elif c == "sign-in":
-        payload["url"] = args.url
+    elif c == "requests":
+        payload.update(all=args.all, max=args.max)
     elif c == "snapshot":
         payload.update(dialog=args.dialog, within=args.within, max=args.max)
     elif c in ("click", "hover", "select", "type", "upload", "scroll"):

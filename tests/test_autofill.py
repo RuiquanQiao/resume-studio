@@ -831,8 +831,10 @@ def test_sign_in_mode_opens_the_same_profile_without_remote_control(live, data_f
     page = base + "/login/risk.html"
     assert cli(data_file, "open", page).returncode == 0
     wait_for(lambda: "webdriver=true" in seen, "the driven page")   # driven: the site can tell
-    r = cli(data_file, "sign-in", page)
-    assert r.returncode == 0 and "without remote control" in out(r), out(r)
+    # only the user switches to it (the window's "No code arriving?"): it closes the page they may be signing in on
+    assert live.req("POST", "/api/browser/do", {"cmd": "sign-in", "url": page})[0] == 409
+    st, r = live.req("POST", "/api/browser/sign-in", {"url": page})
+    assert st == 200 and r["state"] == "signin", r
     wait_for(lambda: "webdriver=false" in seen, "the plain page")  # the same page, now an ordinary browser
     st = live.req("GET", "/api/browser")[1]
     assert st["state"] == "signin" and st["signin_url"] == page
@@ -991,16 +993,21 @@ def test_the_ai_waits_for_the_sign_in_and_the_flag_follows_it(live, data_file, f
     r = out(cli(data_file, "wait-signed-in", "linkedin", chat=chat))
     assert "not signed in yet" in r and live.req("GET", "/api/autofill/linkedin")[1]["signed_out"] is True
 
-    # the user signs in in the tab: the page leaves the sign-in, the wait returns, the flag clears
+    # the user signs in in the tab and says so ("I've signed in"): the wait returns, the flag clears. The page
+    # leaving the sign-in alone doesn't end the wait (a dialog with no password field looked "signed in", 零跑)
     fill.sign_in_wait = 30.0
+    b = live.inst.browser
     def sign_in():
-        time.sleep(1.5)
-        with live.inst.browser.acting(chat):
-            live.inst.browser.open(profile_page)
+        time.sleep(1.0)
+        with b.acting(chat), b.handoff.exempt():   # the user's own page change
+            b.open(profile_page)
+        time.sleep(2.0)
+        assert b.handoff.get(b.tab_of[chat]).mode == "signin"   # still theirs
+        live.req("POST", "/api/browser/control", {"chat": chat, "action": "give"})
     threading.Thread(target=sign_in, daemon=True).start()
     t0 = time.time()
     r = out(cli(data_file, "wait-signed-in", "linkedin", chat=chat))
-    assert "signed in" in r and "not signed in" not in r and time.time() - t0 < 15, r
+    assert "handed the tab back" in r and "not signed in" not in r and 2.5 < time.time() - t0 < 15, r
     assert live.req("GET", "/api/autofill/linkedin")[1]["signed_out"] is False
 
     # set again, then any command of the site's chat that lands past the sign-in clears it too
@@ -1028,17 +1035,14 @@ def test_any_site_waits_for_the_sign_in_and_the_chat_says_so(live, data_file, fa
     live.inst.fill.sign_in_wait = 2.0
     r = out(cli(data_file, "wait-signed-in", chat=chat))
     assert "not signed in yet" in r and "without ending your reply" in r, r
-    assert seen[0][0] == chat and seen[0][2] == "signin" and "127.0.0.1" in seen[0][1] and seen[0][3]["url"].startswith(fake_site)
+    # named by the listed site that owns the page (the fake LinkedIn is on 127.0.0.1 here), else by its host
+    assert seen[0][0] == chat and seen[0][2] == "signin" and "LinkedIn" in seen[0][1] and seen[0][3]["url"].startswith(fake_site)
     assert seen[-1][1] is None                                                   # cleared once the command returns
 
     live.inst.fill.sign_in_wait = 30.0
-    def sign_in():
-        time.sleep(1.5)
-        with live.inst.browser.acting(chat):
-            live.inst.browser.open(fake_site + "/linkedin/profile.html")
-    threading.Thread(target=sign_in, daemon=True).start()
+    threading.Timer(1.5, lambda: live.req("POST", "/api/browser/control", {"chat": chat, "action": "give"})).start()
     r = out(cli(data_file, "wait-signed-in", chat=chat))
-    assert "signed in" in r and "not signed in" not in r, r
+    assert "handed the tab back" in r and "not signed in" not in r, r
 
 
 def test_any_reply_in_a_sites_chat_tells_its_page(server, fake_claude):
