@@ -23,7 +23,11 @@ A recipe is a list of steps, parameterised by the change's values:
 Controls are found by their role and their label or text (core/snapshot.js `find`), never by class names, and
 acted on with real input (core/browser.py click / type / select), so React, Vue and AntD inputs take the value.
 `{title}` is the value the change puts there, `{site.title}` what the site has now (to find the item);
-`{start.year}`, `.month` (1-12), `.mm` (01-12), `.mon` (Jan), `.month_name` (January) are parts of a date.
+`{start.year}`, `.month` (1-12), `.mm` (01-12), `.mon` (Jan), `.month_name` (January), `.month_cn` (四月) are parts
+of a date. What a site requires and a change doesn't carry (国聘's 学制, 统招, its schools' standard names, 2026-11-16):
+`{years}` is the whole years from start to end (2021-09 to 2025-06: 4), `{org.plain}` any value without its notes in
+brackets (南京信息工程大学（双一流） -> 南京信息工程大学), and a step may set a fixed value (全日制) with `fixed` saying
+why it holds for every item; a fixed step runs when an item is added, not on every update.
 
 Before anything is touched, every value is checked against the options a static dropdown has (`options`); a
 searchable or async picker (`search`) types the value and takes only the option that reads exactly that. Any
@@ -48,7 +52,8 @@ STEPS = ("open", "click", "type", "select", "pick", "search", "date", "check", "
 FIELD_STEPS = ("type", "select", "pick", "search", "date", "check")
 CLICK_KINDS = ("button", "link", "clickable", "menuitem", "option", "tab", "checkbox", "radio", "switch", "combobox", "textbox")
 KEYS = ("Enter", "Escape", "Tab")
-PARTS = ("year", "month", "mm", "mon", "month_name")
+PARTS = ("year", "month", "mm", "mon", "month_name", "month_cn")
+CN_MONTHS = ["一月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "十一月", "十二月"]
 MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
           "November", "December"]
 TEMPLATE = re.compile(r"\{([a-z_]+(?:\.[a-z_]+)*)\}")
@@ -128,10 +133,11 @@ def validate(data: Any, site: Site, key: str) -> tuple[dict, list[str]]:
                     errs.append(f"{where}: {{{ref}}}: what the site has now is known only when changing or removing an item")
                     continue
                 parts = parts[1:]
-            if not parts or parts[0] not in names or len(parts) > 2:
-                errs.append(f"{where}: {{{ref}}} isn't one of {', '.join('{' + n + '}' for n in names)}")
-            elif len(parts) == 2 and (parts[1] not in PARTS or parts[0] not in ("start", "end", "date")):
-                errs.append(f"{where}: {{{ref}}}: only dates have parts ({', '.join(PARTS)})")
+            ok = names + (["years"] if "start" in names and "end" in names and len(parts) == 1 else [])
+            if not parts or parts[0] not in ok or len(parts) > 2:
+                errs.append(f"{where}: {{{ref}}} isn't one of {', '.join('{' + n + '}' for n in ok)}")
+            elif len(parts) == 2 and parts[1] != "plain" and (parts[1] not in PARTS or parts[0] not in ("start", "end", "date")):
+                errs.append(f"{where}: {{{ref}}}: only dates have parts ({', '.join(PARTS)}); any field has .plain")
 
     def cond_ok(where: str, c: Any) -> None:
         m = re.fullmatch(r"(!?)([a-z_]+)(?:(!?=)(.*))?", c) if isinstance(c, str) else None
@@ -203,7 +209,15 @@ def validate(data: Any, site: Site, key: str) -> tuple[dict, list[str]]:
             else:
                 template_ok(f"{w}.value", st.get("value"))
                 out["value"] = str(st.get("value") or "")
-                if not _refs(out["value"]):
+                if not _refs(out["value"]) and do != "date":
+                    # a value the site requires and the change doesn't carry, the same for every item (全日制)
+                    why = st.get("fixed")
+                    if not out["value"].strip() or not isinstance(why, str) or not why.strip():
+                        errs.append(f"{w}.value must take the change's value, like \"{{{names[0]}}}\", or be a fixed value "
+                                    "with `fixed` saying why it holds for every item")
+                    else:
+                        out["fixed"] = why.strip()
+                elif not _refs(out["value"]):
                     errs.append(f"{w}.value must take the change's value, like \"{{{names[0]}}}\"")
             if do in ("select", "pick") and st.get("options") is not None:
                 opts = st["options"]
@@ -269,7 +283,23 @@ def _part(v: str, part: str) -> str:
         return y
     if not m:
         return ""
-    return {"month": str(m), "mm": f"{m:02d}", "mon": MONTHS[m - 1][:3], "month_name": MONTHS[m - 1]}[part]
+    return {"month": str(m), "mm": f"{m:02d}", "mon": MONTHS[m - 1][:3], "month_name": MONTHS[m - 1],
+            "month_cn": CN_MONTHS[m - 1]}[part]
+
+
+def plain(v: str) -> str:
+    """A value without its notes in brackets: a school's or company's own name as a site's list has it."""
+    out = re.sub(r"\s*[（(【\[][^（）()【】\[\]]*[）)】\]]", "", v or "")
+    return re.sub(r"\s+", " ", out).strip() or (v or "").strip()
+
+
+def years(start: str, end: str) -> str:
+    """Whole years from start to end, as a 学制 (2021-09 to 2025-06: 4; 2025-07 to 2027-06: 2); "" when not known."""
+    a, b = norm_date(start), norm_date(end)
+    if not (re.fullmatch(r"\d{4}-\d{2}", a) and re.fullmatch(r"\d{4}-\d{2}", b)):
+        return ""
+    months = (int(b[:4]) - int(a[:4])) * 12 + int(b[5:7]) - int(a[5:7]) + 1
+    return str(max(1, (months + 6) // 12)) if months > 0 else ""
 
 
 def render(text: str, vals: dict, site_vals: dict) -> str:
@@ -278,8 +308,12 @@ def render(text: str, vals: dict, site_vals: dict) -> str:
         src = vals
         if parts[0] == "site":
             src, parts = site_vals, parts[1:]
+        if parts == ["years"]:
+            return years(str(src.get("start") or ""), str(src.get("end") or ""))
         v = str(src.get(parts[0]) or "")
-        return _part(v, parts[1]) if len(parts) > 1 else v
+        if len(parts) > 1:
+            return plain(v) if parts[1] == "plain" else _part(v, parts[1])
+        return v
     return TEMPLATE.sub(one, text or "")
 
 
@@ -327,6 +361,10 @@ def plan(site: Site, recipe: dict, op: str, vals: dict, site_vals: dict, changed
         if do in FIELD_STEPS:
             mine = {r.split(".")[0] for r in _refs(st.get("value", "")) + _refs(st.get("text", "")) + _refs(" ".join(st.get("parts") or []))
                     if not r.startswith("site.")}
+            if "years" in mine:
+                mine = (mine - {"years"}) | {"start", "end"}
+            if st.get("fixed") and op == "update":
+                continue   # a fixed value (全日制) is set when the item is added, not again with every change
             if do == "check":
                 mine = {re.sub(r"[!=].*|^!", "", str(st.get("on") or "").lstrip("!"))}
             if op == "update" and changed is not None and mine and not mine & set(changed):

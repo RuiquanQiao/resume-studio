@@ -308,3 +308,54 @@ def test_failures_stop_safely_and_say_where(editor, data_file, fake_claude):
     assert f"item.{edu['id']}" not in v["applied"] or v["applied"][f"item.{edu['id']}"]["state"] != "done"
     flag(live, "editor-signout", False)
     assert db(live)["about"] == "熟悉 Python 与地理信息系统。"
+
+
+# ---- pickers drawn with no roles (国聘, 2026-11-16) -----------------------------------------------------
+def test_a_picker_with_no_roles_shows_its_choices(live, fake_site):
+    """国聘's month picker (like Element UI's: a layer at the end of the body, cells with no roles) gave "the picker
+    showed no options", so the AI gave up recording and filled everything by hand. Its cells are choices now, and a
+    dropdown drawn inside a floating form offers its own choices, not the form's labels."""
+    b = live.inst.browser
+    b.open(fake_site + "/editor/pickers.html")
+    field = b.find({"within": "page", "kinds": ["textbox"], "name": "开始时间"})
+    assert field.get("ref"), field
+    b.click(str(field["ref"]))
+    o = b.options("四月", str(field["ref"]))
+    assert o["ref"] and "一月" in o["texts"] and "十二月" not in o["texts"], o   # 十二月 is disabled there
+    b.click(str(o["ref"]))
+    assert b._eval_page("document.querySelector('#start').value") == "2021-04"
+
+    kind = b.find({"within": "page", "kinds": ["textbox"], "name": "学历类型"})
+    b.click(str(kind["ref"]))
+    o = b.options("统招", str(kind["ref"]))
+    assert o["ref"] and o["texts"] == ["统招", "非统招"], o
+    b.click(str(o["ref"]))
+    assert b._eval_page("document.querySelector('#kind').value") == "统招"
+
+
+def test_what_a_site_requires_beyond_the_change_has_its_own_values():
+    """学制 from the dates, a school's standard name without the resume's notes in brackets, 4月 as 四月, and a fixed
+    value (全日制) with its reason, set when an item is added and not again with every update."""
+    site = dataclasses.replace(PRESETS["boss"], sections=["education"])
+    url = "https://www.zhipin.com/web/geek/resume"
+    vals = {"org": "南京信息工程大学（双一流）", "degree": "本科", "start": "2021-09", "end": "2025-06"}
+    assert recipe.render("{org.plain}|{years}|{start.month_cn}", vals, {}) == "南京信息工程大学|4|九月"
+    assert recipe.render("{years}", {"start": "2025-07", "end": "2027-06"}, {}) == "2"
+    assert recipe.render("{years}", {"start": "2025-07", "end": "present"}, {}) == ""
+    steps = [{"do": "open", "url": url}, {"do": "click", "name": "添加教育经历"},
+             {"do": "search", "field": "学校", "value": "{org.plain}"},
+             {"do": "pick", "field": "学制", "value": "{years}年", "options": ["1年", "2年", "3年", "4年", "5年"]},
+             {"do": "pick", "field": "学习形式", "value": "全日制", "fixed": "every degree in the resume was studied full-time"},
+             {"do": "save", "name": "保存"}]
+    r, errs = recipe.validate({"cancel": "取消", "steps": steps}, site, "education.add")
+    assert not errs, errs
+    done = recipe.plan(site, r, "add", vals, {}, None)
+    assert [(s["field"], v) for _, s, v in done if s.get("field")] == [("学校", "南京信息工程大学"), ("学制", "4年"), ("学习形式", "全日制")]
+    # a fixed value needs its reason; a value from nowhere is refused as before
+    bad = [*steps[:4], {"do": "pick", "field": "学习形式", "value": "全日制"}, steps[-1]]
+    assert "fixed value" in "\n".join(recipe.validate({"steps": bad}, site, "education.add")[1])
+    upd = [{"do": "open", "url": url}, {"do": "click", "kinds": ["button"], "name": "编辑", "near": ["{site.org}"]}, *steps[2:]]
+    r, errs = recipe.validate({"cancel": "取消", "steps": upd}, site, "education.update")
+    assert not errs, errs
+    done = recipe.plan(site, r, "update", vals, {"org": "x"}, ["end"])
+    assert [(s["field"], v) for _, s, v in done if s.get("field")] == [("学制", "4年")]   # the dates changed: 学制 follows

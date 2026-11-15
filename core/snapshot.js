@@ -378,6 +378,37 @@
     return { ref: refFor(e), kind: k, name: name(e, k), secret: secret(e), tag: tag(e),
       checked: e.checked === true || e.getAttribute("aria-checked") === "true" };
   }
+  // the cells of a picker drawn with no roles at all (Element UI's and Ant Design's date panels, a custom dropdown:
+  // 国聘's 开始时间, 2026-11-16): the topmost floating layer (fixed or absolute, the highest z-index, not a dialog),
+  // its small texts, innermost, not disabled
+  function layerCells(skip) {
+    const z = (e) => { const v = parseInt(win(e).getComputedStyle(e).zIndex, 10); return Number.isFinite(v) ? v : 0; };
+    const layers = [...document.body.querySelectorAll("*")].filter((e) => {
+      const cs = win(e).getComputedStyle(e);
+      if (cs.position !== "fixed" && cs.position !== "absolute") return false;
+      if (!shown(e) || (skip && (e.contains(skip) || skip.contains(e)))) return false;
+      if (["dialog", "alertdialog"].includes(role(e)) || e.querySelector("[role=dialog],[role=alertdialog],dialog")) return false;
+      const r = e.getBoundingClientRect();
+      if (r.width < 60 || r.height < 40) return false;
+      for (let a = e; a && a !== document.body; a = a.parentElement) if (z(a) > 0) return true;   // stacked above the page
+      return false;
+    });
+    const cellsOf = (layer) => [...layer.querySelectorAll("*")].filter((e) => {
+      const s = norm(e.innerText || e.textContent);
+      if (!s || s.length > 20 || !shown(e)) return false;
+      if ([...e.children].some((c) => norm(c.innerText || c.textContent) === s)) return false;   // the innermost
+      if (e.closest("[aria-disabled=true],[disabled]") || /(^|[\s_-])(is-)?disabled\b/i.test(String(e.className || "")) ||
+        /(^|[\s_-])(is-)?disabled\b/i.test(String((e.closest("td,li") || {}).className || ""))) return false;
+      return true;
+    });
+    // the innermost layer that holds choices: a dropdown drawn inside a plain floating form, not the whole form
+    const all = layers.map((e) => ({ e, cells: cellsOf(e) })).filter((x) => x.cells.length >= 2);
+    const inner = all.filter((x) => !all.some((o) => o !== x && x.e.contains(o.e)));
+    if (!inner.length) return [];
+    const top = (x) => { let m = 0; for (let a = x.e; a && a !== document.body; a = a.parentElement) m = Math.max(m, z(a)); return m; };
+    inner.sort((a, b) => top(b) - top(a));
+    return inner.filter((x) => top(x) === top(inner[0])).pop().cells;   // equal: the last drawn
+  }
   // the choices a picker shows now: what is in an open list (options, menu items, tree items, grid cells), else
   // any small shown thing the site made clickable. {texts, ref of the one whose text is `want`}
   function options(want, exclude) {
@@ -388,6 +419,7 @@
       els = pick([...document.querySelectorAll("[role=listbox] *,[role=menu] *,[role=tree] *,[role=grid] *")]
         .filter((e) => (kind(e) || clickable(e) || ["li", "td"].includes(tag(e))) && norm(e.innerText).length <= 80));
     }
+    if (!els.length) els = pick(layerCells(skip));
     const texts = [...new Set(els.map((e) => norm(e.innerText || e.textContent)))];
     const hit = want == null ? null : els.find((e) => bare(e.innerText || e.textContent) === bare(want));
     return { texts: texts.slice(0, 60), count: texts.length, ref: hit ? refFor(hit) : null };

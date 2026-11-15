@@ -183,8 +183,18 @@ def apply_context(site: Site, data_path: str, items: list[dict], current_url: st
     return f"""\
 # Resume Studio · update the {site.name} profile
 
-The user ticked these changes in the window and asked you to make them on {site.name}. Make exactly
-these, nothing else.
+The user ticked these changes in the window and asked you to make them on {site.name}. Make these
+changes and no others.
+
+The site may require fields the plan doesn't give (国聘's 统招 / 全日制 and 学制, a degree type, a school
+chosen from its own list). Fill them yourself, the way a careful recruiter would, from what is known about
+the user: the plan's own values, and the user's resume data in `{data_path}` (the entries' fields, notes and
+fact layer). For example: 学制 from the dates (2021-09 to 2025-06 is 4 years); a regular degree with term
+dates is 统招 and 全日制 unless the data says otherwise; a school or company is the site's own entry for it,
+without the resume's notes in brackets (南京信息工程大学（双一流） is 南京信息工程大学). Say each value you
+worked out, and from what, in that change's `done` note. Only when nothing known supports any of the site's
+choices, ask the user (AskUserQuestion, with the site's own choices) in the same reply, then go on. A change
+never fails for a field you could work out or ask about.
 
 ## {site.name}
 {guide(site)}
@@ -264,21 +274,32 @@ Record one for each of these kinds, by making its change through the recipe:
    - `{{"do": "search", "field": "School", "value": "{{org}}"}}`: a searchable or async picker (school, company,
      city): types the value, then takes only the suggestion that reads exactly that (`"input": "<label>"` when
      clicking it opens a separate search box; `"wait": 8` seconds for slow suggestions).
-   - `{{"do": "date", "field": "Start date", "value": "{{start}}", "parts": ["{{start.year}}", "{{start.month}}月"],
-     "present": "至今"}}`: a date picker (click it, click each part); or `"text": "{{start.year}}-{{start.mm}}"` for a
-     typed date field. `present`: the choice for "present".
+   - `{{"do": "date", "field": "Start date", "value": "{{start}}", "text": "{{start.year}}-{{start.mm}}"}}`: a date typed
+     into its field, which most date pickers take (Element UI, Ant Design): try this first. Else
+     `"parts": ["{{start.year}}", "{{start.month}}月"]` clicks each part in the picker (`{{start.month_cn}}` reads 四月).
+     `present`: the choice for "present".
    - `{{"do": "check", "field": "I currently work here", "on": "end=present"}}`: a checkbox ticked when that holds.
    - `{{"do": "save", "name": "Save"}}`: saves and waits for the dialog to close. A remove: click the item's
      delete (`near` it), then `{{"do": "confirm", "name": "<the site's own confirm button>"}}`.
    - Any step can take `"if": "end!=present"` (or `"link"`, `"!link"`).
    Values: `{{field}}` is what the change puts there, `{{site.field}}` what the site has now; dates have parts
-   `.year`, `.month` (1-12), `.mm` (01-12), `.mon` (Jan), `.month_name` (January). The fields here: {fields}.
+   `.year`, `.month` (1-12), `.mm` (01-12), `.mon` (Jan), `.month_name` (January), `.month_cn` (四月). The fields
+   here: {fields}. What the site requires and the change doesn't carry has values too: `{{years}}` is the whole
+   years from start to end (学制: `"value": "{{years}}年"`), `{{org.plain}}` (any field + `.plain`) is the value
+   without its notes in brackets (a school's standard name), and a fixed value (`"value": "全日制", "fixed": "<why
+   it holds for every item>"`) is set when an item is added.
    Basics use `{{headline}}` / `{{about}}`; skills.add / skills.remove use `{{skill}}` (one skill per run).
    Changing an item runs only the steps for the fields the change sets, so give every field its own step.
    Never by generated class names; never a password, a code, or anything that applies, messages or changes a status.
 3. `{b} recipe {site.id} <kind> --stdin` (a quoted heredoc) saves it after checking it.
 4. `{b} push {site.id} <id> --dry` fills the change in by the recipe and stops before saving: `snapshot --dialog`
-   to check it, then close the dialog without saving. Fix the recipe until the dry run is right.
+   to check it, then close the dialog without saving. Fix the recipe until the dry run is right. A dry run that
+   stops says at which step and what the page offered there: change that step and run it again (type the date
+   instead of picking it, pick the text the picker really shows, add the click that opens a panel, `wait` for a
+   slow one). Recording the recipe is the job here, not a side task: keep at it.
 5. `{b} push {site.id} <id>` makes the change by the recipe, reads the section back with the read route, and
    reports it done or failed itself (no `report` needed). If it failed after saving, look at the page before
-   anything else. If a kind really can't be scripted, make that change by hand and report it as before.{old_text}"""
+   anything else. Once a kind's recipe works, make every other change of that kind with `push` too, never by hand.
+6. Only a step that still fails after you tried those ways may be done by hand, for that change alone. Then
+   report it done with a note that names the step that couldn't be recorded, the control, and what you tried,
+   and say so in your reply: the user reads that the next push of that kind needs the AI again, and why.{old_text}"""

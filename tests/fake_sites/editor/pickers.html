@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh">
+<head><meta charset="utf-8"><title>Pickers with no roles</title>
+<style>
+  body { font-family: sans-serif; margin: 0; padding: 24px; }
+  label { display: block; margin: 12px 0; }
+  .panel { position: absolute; z-index: 2001; background: #fff; border: 1px solid #ccc; width: 260px; padding: 8px; display: none; }
+  .panel.open { display: block; }
+  .panel table { width: 100%; } .panel td { padding: 6px; text-align: center; cursor: pointer; }
+  .panel td.disabled { color: #bbb; cursor: not-allowed; }
+  .form { position: fixed; top: 110px; left: 20px; z-index: 100; width: 300px; background: #fafafa; border: 1px solid #ddd; padding: 12px; }
+  .drop { position: absolute; z-index: 3; background: #fff; border: 1px solid #ccc; width: 200px; display: none; }
+  .drop.open { display: block; } .drop li { padding: 4px 8px; cursor: pointer; list-style: none; }
+</style>
+</head>
+<body>
+<!-- 国聘 (2026-11-16): a month picker like Element UI's, drawn in a layer at the end of the body with no roles (cells are
+     td > div > a, months as 一月…十二月, the year in a header), and a form floating with no role holding a dropdown
+     drawn inside it. The recipe engine took neither for a picker ("the picker showed no options"). -->
+<label>开始时间 <input id="start" placeholder="选择月份" readonly></label>
+<div class="form">
+  <label>学历类型 <input id="kind" readonly placeholder="请选择"></label>
+  <ul class="drop" id="kinds"><li>统招</li><li>非统招</li></ul>
+  <label>学习形式 <span>全日制为主</span></label>
+</div>
+<script>
+  const months = ["一月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "十一月", "十二月"];
+  const panel = document.createElement("div");
+  panel.className = "panel";
+  panel.innerHTML = '<div class="head"><span class="year">2021 年</span></div><table><tbody>' +
+    [0, 4, 8].map((r) => "<tr>" + months.slice(r, r + 4).map((m, i) =>
+      `<td class="${r + i === 11 ? "disabled" : ""}"><div><a class="cell">${m}</a></div></td>`).join("") + "</tr>").join("") +
+    "</tbody></table>";
+  document.body.appendChild(panel);
+  const start = document.querySelector("#start");
+  start.onclick = () => { const r = start.getBoundingClientRect(); panel.style.left = r.left + "px"; panel.style.top = r.bottom + 4 + "px"; panel.classList.add("open"); };
+  panel.querySelectorAll("td").forEach((td) => td.onclick = () => {
+    if (td.classList.contains("disabled")) return;
+    start.value = "2021-" + String(months.indexOf(td.innerText.trim()) + 1).padStart(2, "0");
+    panel.classList.remove("open");
+  });
+  const kind = document.querySelector("#kind"), drop = document.querySelector("#kinds");
+  kind.onclick = () => drop.classList.add("open");
+  drop.querySelectorAll("li").forEach((li) => li.onclick = () => { kind.value = li.innerText; drop.classList.remove("open"); });
+</script>
+</body>
+</html>
