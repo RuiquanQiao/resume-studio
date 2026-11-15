@@ -9,6 +9,7 @@
 //   spills    text running past its own box (nothing clips it), over its neighbours
 //   scrolls   a pane or box that scrolls sideways when it should not
 //   overlap   two controls on top of each other
+//   off-scale text in a size outside the type scale (--fs-title / head / body / meta)
 //
 // Things meant to break these rules (a popover, a sideways-scrolling table) are skipped by `opts.skip`,
 // a list of CSS selectors, each with its reason in test_layout.py.
@@ -87,10 +88,22 @@
   };
   const ownText = (el) => [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join("").trim();
 
+  // the type scale (style.css :root): text on screen comes in these sizes and no other
+  const root = getComputedStyle(document.documentElement);
+  const scale = ["--fs-title", "--fs-head", "--fs-body", "--fs-meta"].map((v) => px(root.getPropertyValue(v)));
+  const letterIcon = px(root.getPropertyValue("--icon-letter"));
+
   for (const el of all) {
     const s = css(el), b = el.getBoundingClientRect();
     const fs = px(s.fontSize) || 13;
     const text = ownText(el);
+
+    // off-scale: text in a size that is none of the four roles (a number written in the CSS, a browser default
+    // such as a button's 13.33px, an em that multiplied). Added 2026-11-15 when sizes had drifted below the scale.
+    const typed = ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName);
+    if ((text || typed) && scale.every((v) => Math.abs(v - fs) > 0.05)
+        && !(el.matches(".ws-mono") && Math.abs(fs - letterIcon) < 0.05))
+      report("off-scale", el, `font-size ${fs}px is none of ${scale.join(" / ")}`);
 
     // squeezed: three or more lines in a box narrower than six letters
     if (text.length >= 8) {
