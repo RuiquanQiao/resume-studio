@@ -127,6 +127,54 @@ def test_a_server_that_exits_is_an_error_with_its_log(host):
     assert host.state == "error" and "code 3" in host.error and "boom: no port" in host.error
 
 
+def test_another_program_answering_on_the_chosen_port_is_not_taken_for_the_server(host, monkeypatch):
+    """Between choosing a free port and the child binding it, another program can take that port. Its
+    answer must not count as the child being ready: a child that then exits is an error, never running."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class Other(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"hi")
+
+        def log_message(self, *a):
+            pass
+
+    other = ThreadingHTTPServer(("127.0.0.1", 0), Other)
+    threading.Thread(target=other.serve_forever, daemon=True).start()
+    try:
+        import core.webhost
+        real = core.webhost.find_free_port
+        monkeypatch.setattr(core.webhost, "find_free_port",   # the server's port only; the proxy keeps its own
+                            lambda h, p: other.server_address[1] if p == 8890 else real(h, p))
+        host.start(lambda progress: WebSpec(
+            argv=[sys.executable, "-c", "import time; print('boom: port taken', flush=True); time.sleep(1); raise SystemExit(3)"],
+            cwd=FAKE_WEB.parent, ready_timeout=10))
+        wait(host)
+        assert host.state == "error", host.status()
+        assert "code 3" in host.error and "boom: port taken" in host.error
+    finally:
+        other.shutdown()
+        other.server_close()
+
+
+def test_a_server_that_exits_after_it_is_running_turns_into_an_error(host):
+    server = ("import http.server, os, sys, threading, time\n"
+              "s = http.server.ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), http.server.SimpleHTTPRequestHandler)\n"
+              "threading.Thread(target=s.serve_forever, daemon=True).start()\n"
+              "time.sleep(3); print('bye: crashed', flush=True); os._exit(4)\n")
+    host.start(lambda progress: WebSpec(argv=[sys.executable, "-c", server, "{port}"], cwd=FAKE_WEB.parent,
+                                        ready_timeout=15))
+    wait(host)
+    assert host.state == "running", host.status()
+    wait(host, states=("error",), timeout=20)
+    assert "code 4" in host.error and "bye: crashed" in host.error
+    assert host.proc is None and host.status()["url"] == ""
+
+
 def test_a_failing_prepare_is_an_error(host):
     from core.webhost import StartError
 

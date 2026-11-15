@@ -132,11 +132,65 @@ class _Job:
     def add(self, proc: subprocess.Popen) -> None:
         self.k32.AssignProcessToJobObject(self.handle, int(proc._handle))  # type: ignore[attr-defined]
 
+    def contains(self, pid: int) -> bool:
+        """Whether process `pid` is in this job: the child or anything it started (e.g. the venv launcher's python)."""
+        import ctypes
+        from ctypes import wintypes
+
+        if not self.handle:
+            return False
+        k32 = self.k32
+        k32.OpenProcess.restype = wintypes.HANDLE
+        k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        k32.IsProcessInJob.argtypes = [wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)]
+        h = k32.OpenProcess(0x1000, False, pid)   # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        try:
+            inside = wintypes.BOOL(False)
+            return bool(k32.IsProcessInJob(h, self.handle, ctypes.byref(inside))) and bool(inside.value)
+        finally:
+            k32.CloseHandle(h)
+
     def kill(self) -> None:
         if self.handle:
             self.k32.TerminateJobObject(self.handle, 1)
             self.k32.CloseHandle(self.handle)
             self.handle = None
+
+
+def _loopback_listeners(port: int) -> list[int]:
+    """PIDs of the IPv4 sockets that would answer http://127.0.0.1:<port>: those bound to 127.0.0.1 if
+    there are any (the more specific bind wins), else those bound to 0.0.0.0. Windows only; raises OSError."""
+    import ctypes
+    from ctypes import wintypes
+
+    iphlp = ctypes.WinDLL("iphlpapi")
+    table, af_inet = 3, 2   # TCP_TABLE_OWNER_PID_LISTENER, AF_INET
+    size = wintypes.DWORD(0)
+    iphlp.GetExtendedTcpTable(None, ctypes.byref(size), False, af_inet, table, 0)
+    for _ in range(3):
+        buf = ctypes.create_string_buffer(size.value + 4096)
+        size = wintypes.DWORD(len(buf))
+        rc = iphlp.GetExtendedTcpTable(buf, ctypes.byref(size), False, af_inet, table, 0)
+        if rc == 0:
+            break
+        if rc != 122:   # ERROR_INSUFFICIENT_BUFFER: the table grew meanwhile, try again
+            raise OSError(rc, "GetExtendedTcpTable failed")
+    else:
+        raise OSError(122, "GetExtendedTcpTable kept growing")
+    words = ctypes.cast(buf, ctypes.POINTER(wintypes.DWORD))
+    specific, wildcard = [], []
+    for i in range(words[0]):   # MIB_TCPROW_OWNER_PID: state, local addr, local port, remote addr, remote port, pid
+        row = [words[1 + i * 6 + k] for k in range(6)]
+        addr, lport, pid = row[1], row[2], row[5]
+        if socket.ntohs(lport & 0xFFFF) != port:
+            continue
+        if addr == socket.htonl(0x7F000001):   # 127.0.0.1, as stored (network order)
+            specific.append(pid)
+        elif addr == 0:
+            wildcard.append(pid)
+    return specific or wildcard
 
 
 class WebHost:
@@ -219,6 +273,10 @@ class WebHost:
             self._ensure_proxy()
             if gen == self._gen:
                 self._set("running", step="")
+                proc = self.proc
+                if proc is not None:
+                    threading.Thread(target=self._watch, args=(proc, gen), name=f"webhost-{self.name}-watch",
+                                     daemon=True).start()
         except StartError as e:
             if gen == self._gen:
                 self._stop_process()
@@ -261,19 +319,56 @@ class WebHost:
                 raise StartError("stopped")
             self.proc, self._job, self.upstream = proc, job, port
         deadline = time.time() + spec.ready_timeout
+        foreign = False
         while time.time() < deadline:
             if proc.poll() is not None:
                 raise StartError(f"exited with code {proc.returncode}\n" + self.log_tail())
+            answered = False
             try:
                 with urllib.request.urlopen(f"http://127.0.0.1:{port}{spec.ready_path}", timeout=5):
-                    return
+                    answered = True
             except urllib.error.HTTPError:
-                return          # it answers: that is all "ready" means here
+                answered = True     # it answers: that is all "ready" means here
             except (OSError, ValueError):
-                time.sleep(0.4)
+                pass
+            if answered:
+                # Another program can take the port between choosing it and the child binding it, so an
+                # answer counts only when it comes from our own child (or a process it started).
+                if self._owns(port, proc, job):
+                    return
+                foreign = True
             if gen != self._gen:
                 raise StartError("stopped")
-        raise StartError(f"didn't answer within {int(spec.ready_timeout)} s\n" + self.log_tail())
+            time.sleep(0.4)
+        why = f"port {port} is answered by another program, not the server," if foreign else "didn't answer"
+        raise StartError(f"{why} within {int(spec.ready_timeout)} s\n" + self.log_tail())
+
+    @staticmethod
+    def _owns(port: int, proc: subprocess.Popen, job: _Job | None) -> bool:
+        """Whether what answers on `port` is our child. On Windows: the listening socket's process is the
+        child or in its job. Where the socket table can't be read: the child is still alive a moment after
+        the answer (a child that never bound the port has failed and exited by then)."""
+        if proc.poll() is not None:
+            return False
+        if os.name == "nt":
+            try:
+                pids = _loopback_listeners(port)
+            except OSError:
+                pids = None
+            if pids is not None:
+                return any(pid == proc.pid or (job is not None and job.contains(pid)) for pid in pids)
+        time.sleep(0.5)
+        return proc.poll() is None
+
+    def _watch(self, proc: subprocess.Popen, gen: int) -> None:
+        """A server that exits while it is shown turns the host into an error, with its log."""
+        code = proc.wait()
+        with self._lock:
+            if gen != self._gen or self.proc is not proc:
+                return      # stopped or restarted on purpose
+            self._gen += 1
+            self._stop_process()
+        self._set("error", error=f"exited with code {code}\n" + self.log_tail())
 
     def _stop_process(self) -> None:
         proc, job = self.proc, self._job
