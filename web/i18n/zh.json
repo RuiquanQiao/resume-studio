@@ -1685,6 +1685,7 @@
  "{site} settings": "{site} 设置",
  "{site} takes at most {n} characters here: shorten it before it goes up.": "{site} 此处最多 {n} 个字符：请在上传前缩短。",
  "{site} wants you to sign in.": "{site} 要求登录。",
+ "{site} wants you to sign in. Sign in in the browser window: the AI goes on reading by itself once you have.": "{site} 需要登录。请在浏览器窗口中登录：登录完成后，AI 将自动继续读取。",
  "{site} wants you to sign in. Sign in in the browser window (Resume Studio's browser remembers it), then read the profile again.": "{site} 需要登录。请在浏览器窗口中登录（Resume Studio 的浏览器将保留登录状态），然后重新读取资料。",
  "{title} (fork)": "{title}（分叉）",
  "{tools} not found on this computer. {name} needs git and Node.js 22 or newer.": "在此电脑上未找到 {tools}。{name} 需要 git 和 Node.js 22 或更高版本。",

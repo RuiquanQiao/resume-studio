@@ -142,6 +142,8 @@ def main() -> int:
     p = sub.add_parser("report", help="how one approved change went"); p.add_argument("site"); p.add_argument("id")
     p.add_argument("state", choices=["doing", "done", "failed", "skipped"]); p.add_argument("--note", default="")
     p = sub.add_parser("signed-out", help="the site wants the user to sign in"); p.add_argument("site")
+    p = sub.add_parser("wait-signed-in", help="wait (up to 90 s a run) until the user has signed in to the site")
+    p.add_argument("site")
     args = ap.parse_args()
     guard_args()
 
@@ -168,6 +170,9 @@ def main() -> int:
         return 0
     if c == "signed-out":
         show(call(url, "POST", f"/api/autofill/{args.site}/signed-out", {}))
+        return 0
+    if c == "wait-signed-in":
+        show(call(url, "POST", f"/api/autofill/{args.site}/wait-signed-in", {}))
         return 0
     payload: dict = {"cmd": c}
     if c == "open":

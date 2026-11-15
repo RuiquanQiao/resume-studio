@@ -1805,6 +1805,7 @@
  "{site} settings": "Ajustes de {site}",
  "{site} takes at most {n} characters here: shorten it before it goes up.": "{site} admite como máximo {n} caracteres aquí: acórtalo antes de publicarlo.",
  "{site} wants you to sign in.": "{site} pide que inicies sesión.",
+ "{site} wants you to sign in. Sign in in the browser window: the AI goes on reading by itself once you have.": "{site} pide que inicies sesión. Hazlo en la ventana del navegador: la IA sigue leyendo sola en cuanto lo hayas hecho.",
  "{site} wants you to sign in. Sign in in the browser window (Resume Studio's browser remembers it), then read the profile again.": "{site} pide que inicies sesión. Hazlo en la ventana del navegador (el navegador de Resume Studio lo recuerda) y vuelve a leer el perfil.",
  "{title} (fork)": "{title} (bifurcación)",
  "{tools} not found on this computer. {name} needs git and Node.js 22 or newer.": "No se encontró {tools} en este ordenador. {name} necesita git y Node.js 22 o posterior.",

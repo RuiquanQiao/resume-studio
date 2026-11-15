@@ -1685,6 +1685,7 @@
  "{site} settings": "{site} の設定",
  "{site} takes at most {n} characters here: shorten it before it goes up.": "{site} のこの欄は最大 {n} 文字です。反映する前に短くしてください。",
  "{site} wants you to sign in.": "{site} がログインを求めています。",
+ "{site} wants you to sign in. Sign in in the browser window: the AI goes on reading by itself once you have.": "{site} がログインを求めています。ブラウザーのウィンドウでログインしてください。ログインが済むと、AI が自動で読み取りを続けます。",
  "{site} wants you to sign in. Sign in in the browser window (Resume Studio's browser remembers it), then read the profile again.": "{site} がログインを求めています。ブラウザーのウィンドウでログインし（Resume Studio のブラウザーが覚えます）、もう一度プロフィールを読んでください。",
  "{title} (fork)": "{title}（分岐）",
  "{tools} not found on this computer. {name} needs git and Node.js 22 or newer.": "このコンピューターに {tools} が見つかりません。{name} には git と Node.js 22 以降が必要です。",

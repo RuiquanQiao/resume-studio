@@ -292,6 +292,10 @@ class ChatRunner:
         # the browser's commands), so a chat can do anything from any workspace
         self.notes: list[Any] = []    # callable() -> str
         self.turns: dict[str, Turn] = {}
+        # callable(chat_id, running: bool): every reply that starts and every one that ends, however it was sent.
+        # A workspace whose page shows a chat's state follows it here, not only the reply it started itself (国聘's
+        # page said "the AI is reading" after a second message in the read chat ended, 2026-11-15).
+        self.on_turn: list[Any] = []
         self.limits: dict[str, dict] = {}   # agent id -> its plan's usage windows
         self.default_agent: Any = lambda: agents.DEFAULT   # callable() -> the agent a new chat runs on
         # the app's own code is read-only to every chat (core/codeguard.py); None in tests that don't need it
@@ -413,6 +417,7 @@ class ChatRunner:
         turn.driver = driver_for(agent)
         self.turns[chat_id] = turn
         self._emit("chat.start", chat_id, meta=meta or {}, started_at=turn.started_at)
+        self._turned(chat_id, True)
         threading.Thread(target=turn.driver.run, args=(self, turn, spec), daemon=True).start()
         return {"queued": False}
 
@@ -527,8 +532,16 @@ class ChatRunner:
                 turn.on_done(ok)
             except Exception:  # noqa: BLE001 - a follow-up must never break the chat
                 pass
+        self._turned(turn.chat_id, False)
         self._emit("chat.done", turn.chat_id, ok=ok, error=None if turn.cancelled else turn.error,
                    cancelled=turn.cancelled, cost=cost)
+
+    def _turned(self, chat_id: str, running: bool) -> None:
+        for fn in list(self.on_turn):
+            try:
+                fn(chat_id, running)
+            except Exception:  # noqa: BLE001 - a page that follows chats must never break one
+                pass
 
     def _text(self, turn: Turn, delta: str, kind: str = "text") -> None:
         if not delta:

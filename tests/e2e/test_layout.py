@@ -1198,6 +1198,43 @@ def test_right_hand_tools_sit_next_to_the_settings_button(win, server):
     assert all(g <= 24 for g in gaps.values()), gaps
 
 
+def test_a_number_in_a_round_badge_sits_in_its_middle(win, server):
+    """BOSS直聘's ① had its 1 near the bottom of the circle (user report 2026-11-15): the badge centred the font's
+    whole line box, and Noto Sans SC has far more room above its digits than below. Measured on the ink: the
+    digits' top and bottom gaps differ by at most a pixel, in every round badge that holds a number."""
+    open_window(win, server, "zh")
+    win.click(".ws-btn[data-ws=fill]")
+    settle(win)
+    gaps = win.evaluate("""() => {
+      const host = document.createElement('div');
+      host.style.cssText = 'position:fixed;left:20px;top:20px;z-index:99999;display:flex;gap:12px;background:var(--panel);padding:8px';
+      host.innerHTML = '<div class="fill-sites"><button class="fs-site">BOSS直聘<span class="fs-n">1</span></button>'
+        + '<button class="fs-site">X<span class="fs-n warn">!</span></button><button class="fs-site">Y<span class="fs-n">12</span></button></div>'
+        + '<span class="dbv-pindot">3</span><span class="req-match">2</span>';
+      document.body.append(host);
+      const out = {};
+      for (const el of host.querySelectorAll('.fs-n, .dbv-pindot, .req-match')) {
+        const cs = getComputedStyle(el), box = el.getBoundingClientRect();
+        // the baseline: the text's own box (the font's ascent + descent, wherever the line put it) and the ascent
+        const ctx = document.createElement('canvas').getContext('2d');
+        ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        const m = ctx.measureText(el.textContent);
+        const r = document.createRange(); r.selectNodeContents(el);
+        const tb = r.getClientRects()[0];
+        const base = tb.top + (tb.height - (m.fontBoundingBoxAscent + m.fontBoundingBoxDescent)) / 2 + m.fontBoundingBoxAscent;
+        const top = base - m.actualBoundingBoxAscent - box.top, bottom = box.bottom - (base + m.actualBoundingBoxDescent);
+        out[el.className + ' ' + el.textContent] = { top: +top.toFixed(2), bottom: +bottom.toFixed(2) };
+      }
+      host.id = 'badge-probe';
+      return out;
+    }""")
+    SHOTS.mkdir(parents=True, exist_ok=True)
+    win.locator("#badge-probe").screenshot(path=str(SHOTS / "round-badges.png"))
+    win.evaluate("document.querySelector('#badge-probe').remove()")
+    bad = {k: v for k, v in gaps.items() if abs(v["top"] - v["bottom"]) > 1}
+    assert not bad, gaps
+
+
 @pytest.mark.parametrize("st", PLAIN, ids=[s.name for s in PLAIN])
 def test_layout(st, win, server):
     problems = run_state(win, server, st)

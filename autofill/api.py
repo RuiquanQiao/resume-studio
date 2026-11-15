@@ -21,6 +21,7 @@ from resume import prompts as rp
 from resume.service import Studio
 
 from . import profile, prompts, route
+from . import sites as sites_mod
 from .service import Autofill
 from .sites import Site
 
@@ -33,6 +34,14 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
 
     def publish(site_id: str | None = None) -> None:
         app.bus.publish("autofill", {"site": site_id})
+
+    # a site's page shows whether its read is running: any reply in a site's chat moves it, not only the one a
+    # button started (a second message in 国聘's read chat left "the AI is reading" on after it ended, 2026-11-15)
+    def chat_turned(chat_id: str, running: bool) -> None:
+        site = (chats.store.meta(chat_id) or {}).get("site")
+        if site:
+            publish(str(site))
+    chats.on_turn.append(chat_turned)
 
     browser.on_change = lambda: app.bus.publish("browser", browser.status())
     browser.busy = lambda: bool(chats.running())   # Claude may use it at any point of a reply: it waits for the end
@@ -391,7 +400,59 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         site = site_of(req)
         fill.save(site.id, signed_out=True)
         publish(site.id)
-        return {"text": f"the window now asks the user to sign in to {site.name} in the browser window"}
+        return {"text": f"the window now asks the user to sign in to {site.name} in the browser window. Run "
+                        f"`wait-signed-in {site.id}` now: it returns once they have, and you go on in the same reply. "
+                        "Don't end your reply to ask them to tell you."}
+
+    # ---- has the user signed in? (国聘, 2026-11-15: the AI stopped to ask "tell me when you're signed in" and the
+    # "sign in" flag stayed on after they had) ----
+    PASSWORD_SHOWN = "async () => [...document.querySelectorAll('input[type=password]')].some((e) => e.offsetParent !== null)"
+
+    def on_sign_in(site: Site, url: str) -> bool:
+        """The page at `url` (open in this work's tab) is a sign-in: the site's own sign-in paths, an address that
+        names one, or a password field on the page."""
+        if site.signed_out(url) or sites_mod.login_url(url):
+            return True
+        try:
+            return bool(browser.run_script(PASSWORD_SHOWN, timeout=5))
+        except BrowserError:
+            return False
+
+    def signed_in_now(site: Site) -> None:
+        if fill.load(site.id).get("signed_out"):
+            fill.save(site.id, signed_out=False)
+            publish(site.id)
+
+    @app.route("POST", "/api/autofill/{site}/wait-signed-in")
+    def wait_signed_in(req: Request):
+        """`browser.py wait-signed-in <site>`: back as soon as the chat's tab is past the sign-in (the user signed in
+        there), or another tab on the site is (they signed in there: this tab opens the site again). At most 90 s a
+        run, so the AI's command never times out; it runs it again while the user is still at it."""
+        site = site_of(req)
+        end = time.monotonic() + float(getattr(fill, "sign_in_wait", 90.0))
+        last_retry = time.monotonic()
+        with browser.acting(req.headers.get("X-Resume-Studio-Chat")):
+            while True:
+                here = bro(browser.here)
+                url = str(here.get("url") or "")
+                if site.owns(url) and not on_sign_in(site, url):
+                    signed_in_now(site)
+                    return {"text": f"signed in: the tab is on {url}. Go on reading {site.name}."}
+                # signed in in another tab: the cookies are the same browser's, so this tab gets past it by opening anew
+                if time.monotonic() - last_retry > 10:
+                    last_retry = time.monotonic()
+                    others = [t for t in bro(browser.tabs) if not t["current"] and site.owns(t["url"]) and not sites_mod.login_url(t["url"])
+                              and not site.signed_out(t["url"])]
+                    if others:
+                        target = url if site.owns(url) and not sites_mod.login_url(url) else site.home
+                        nxt = bro(lambda: browser.open(sites_mod.after_login(url) or target))
+                        if site.owns(nxt["url"]) and not on_sign_in(site, nxt["url"]):
+                            signed_in_now(site)
+                            return {"text": f"signed in (in another tab): this tab is now on {nxt['url']}. Go on reading {site.name}."}
+                if time.monotonic() > end:
+                    return {"text": f"not signed in yet: the tab is still on {url}. The user may still be at it (a code, a "
+                                    f"scan): run `wait-signed-in {site.id}` again. Say so in one line first."}
+                time.sleep(1.5)
 
     # ---- the browser itself ----------------------------------------------------------------
     @app.route("GET", "/api/browser")
@@ -503,6 +564,12 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         with browser.acting(req.headers.get("X-Resume-Studio-Chat")):
             browser.take_waited()
             r = bro(run)
+            # a chat's site that was waiting for a sign-in: a page of the site that isn't one clears it, so the window
+            # stops asking (it waited for the next full read, 2026-11-15)
+            chat_site = fill.site(str((chats.store.meta(req.headers.get("X-Resume-Studio-Chat") or "") or {}).get("site") or ""))
+            if chat_site and isinstance(r, dict) and r.get("url") and fill.load(chat_site.id).get("signed_out") \
+                    and chat_site.owns(str(r["url"])) and not on_sign_in(chat_site, str(r["url"])):
+                signed_in_now(chat_site)
             # time spent queuing is said, so the AI never takes it for the site being slow or unreadable
             waited = {k: v for k, v in browser.take_waited().items() if v >= 2}
             if waited and isinstance(r, dict):

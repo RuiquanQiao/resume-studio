@@ -1685,6 +1685,7 @@
  "{site} settings": "{site} 설정",
  "{site} takes at most {n} characters here: shorten it before it goes up.": "{site}의 이 칸은 최대 {n}자입니다. 올리기 전에 줄이세요.",
  "{site} wants you to sign in.": "{site}에서 로그인을 요구합니다.",
+ "{site} wants you to sign in. Sign in in the browser window: the AI goes on reading by itself once you have.": "{site}에서 로그인을 요구합니다. 브라우저 창에서 로그인하세요. 로그인이 끝나면 AI가 자동으로 계속 읽습니다.",
  "{site} wants you to sign in. Sign in in the browser window (Resume Studio's browser remembers it), then read the profile again.": "{site}에서 로그인을 요구합니다. 브라우저 창에서 로그인한 뒤 (Resume Studio 브라우저가 기억합니다) 프로필을 다시 읽으세요.",
  "{title} (fork)": "{title} (분기)",
  "{tools} not found on this computer. {name} needs git and Node.js 22 or newer.": "이 컴퓨터에서 {tools}을(를) 찾을 수 없습니다. {name}에는 git과 Node.js 22 이상이 필요합니다.",

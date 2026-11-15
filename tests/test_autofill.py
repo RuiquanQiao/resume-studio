@@ -960,6 +960,80 @@ def test_signed_out_shows_up(live, data_file, fake_site, monkeypatch):
     assert "sign in" in out(r)
 
 
+def test_sign_in_addresses_on_any_site():
+    from autofill.sites import after_login, login_url
+    for u in ("https://www.iguopin.com/login?redirect=https%3A%2F%2Fwww.iguopin.com%2F", "https://x.com/user/signin",
+              "https://passport.example.cn/", "https://a.com/auth/realms/x", "https://www.linkedin.com/authwall?trk=1",
+              "https://a.com/sso/start", "https://www.zhipin.com/web/passport/zp/verify.html"):
+        assert login_url(u), u
+    for u in ("https://www.iguopin.com/", "https://c.iguopin.com/resume", "https://a.com/author/jane", "https://a.com/blog/login-tips-2026",
+              "https://loginov.example.com/"):
+        assert not login_url(u), u
+    assert after_login("https://www.iguopin.com/login?redirect=https%3A%2F%2Fwww.iguopin.com%2F") == "https://www.iguopin.com/"
+    assert after_login("https://www.iguopin.com/login?redirect=javascript:alert(1)") == ""
+    assert after_login("https://www.iguopin.com/resume?redirect=https://x.com/") == ""   # not a sign-in page
+
+
+def test_the_ai_waits_for_the_sign_in_and_the_flag_follows_it(live, data_file, fake_site):
+    """国聘 (2026-11-15): the AI found the sign-in page, ended its reply to ask "tell me when you're signed in", and
+    the window kept asking to sign in after the user had. Now the AI waits in the same reply, and the flag clears."""
+    import threading
+    fill = live.inst.fill
+    profile_page = fake_site + "/linkedin/profile.html"
+    login_page = fake_site + "/login/index.html?redirect=" + profile_page
+    chat = live.inst.chats.store.create(title="Read LinkedIn", site="linkedin")["id"]
+    assert "ok:" in out(cli(data_file, "open", login_page, chat=chat))
+    r = out(cli(data_file, "signed-out", "linkedin", chat=chat))
+    assert "wait-signed-in linkedin" in r and live.req("GET", "/api/autofill/linkedin")[1]["signed_out"] is True
+
+    # the user doesn't sign in: back within the wait, saying so, the flag kept
+    fill.sign_in_wait = 2.0
+    r = out(cli(data_file, "wait-signed-in", "linkedin", chat=chat))
+    assert "not signed in yet" in r and live.req("GET", "/api/autofill/linkedin")[1]["signed_out"] is True
+
+    # the user signs in in the tab: the page leaves the sign-in, the wait returns, the flag clears
+    fill.sign_in_wait = 30.0
+    def sign_in():
+        time.sleep(1.5)
+        with live.inst.browser.acting(chat):
+            live.inst.browser.open(profile_page)
+    threading.Thread(target=sign_in, daemon=True).start()
+    t0 = time.time()
+    r = out(cli(data_file, "wait-signed-in", "linkedin", chat=chat))
+    assert "signed in" in r and "not signed in" not in r and time.time() - t0 < 15, r
+    assert live.req("GET", "/api/autofill/linkedin")[1]["signed_out"] is False
+
+    # set again, then any command of the site's chat that lands past the sign-in clears it too
+    cli(data_file, "signed-out", "linkedin", chat=chat)
+    assert "ok:" in out(cli(data_file, "open", profile_page, chat=chat))
+    assert live.req("GET", "/api/autofill")[1]["sites"][0]["signed_out"] is False
+    # a sign-in page doesn't
+    cli(data_file, "signed-out", "linkedin", chat=chat)
+    cli(data_file, "open", login_page, chat=chat)
+    assert live.req("GET", "/api/autofill/linkedin")[1]["signed_out"] is True
+
+
+def test_any_reply_in_a_sites_chat_tells_its_page(server, fake_claude):
+    """The read chat's second message ended and the page still said "the AI is reading" (国聘, 2026-11-15): only
+    the reply the button started told the page. Every reply that starts or ends in a site's chat does now."""
+    told = []
+    bus = server.inst.chats.bus
+    real = bus.publish
+    bus.publish = lambda ev, data: (told.append((ev, data)) if ev == "autofill" else None, real(ev, data))[1]
+    try:
+        cid = server.inst.chats.store.create(title="Read LinkedIn", site="linkedin")["id"]
+        code, _ = server.req("POST", f"/api/chats/{cid}/send", {"text": "我已经登录了"})   # typed, not a button's
+        assert code == 200
+        server.wait_idle(cid)
+        end = time.time() + 5
+        while time.time() < end and len([d for e, d in told if d.get("site") == "linkedin"]) < 2:
+            time.sleep(0.05)
+        assert len([d for e, d in told if d.get("site") == "linkedin"]) >= 2   # it started, and it ended
+        assert server.req("GET", "/api/autofill/linkedin")[1]["reading"] is False
+    finally:
+        bus.publish = real
+
+
 def test_degree_first_resumes_and_fields_a_site_lacks(data_file):
     doc = load(data_file)
     edu = next(e for e in doc["entries"] if e["id"] == "EXP-001")

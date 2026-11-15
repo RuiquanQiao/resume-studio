@@ -165,6 +165,29 @@ def company_site(rec: dict, company: dict) -> Site | None:
                 system="" if own_system(system) else system, learned_from=str(rec.get("learned_from") or ""))
 
 
+# an address that is a sign-in page, on any site: /login, /signin, /passport/…, /sso, /auth/… (国聘 sent a signed-out
+# visitor to /login?redirect=…; a site the user added has no sign-in paths of its own)
+_LOGIN = re.compile(r"(^|[/._-])(log-?in|sign-?in|sign_in|signon|log-?on|passport|sso|auth(orize)?|authwall|uas|cas)([/._?]|$)", re.I)   # "login-tips" is a page about it
+_BACK = ("redirect", "redirect_uri", "redirecturl", "redirect_url", "callbackurl", "callback", "returnurl", "return_url",
+         "return_to", "returnto", "next", "service", "continue", "from", "target")
+
+
+def login_url(url: str) -> bool:
+    p = urlparse(url or "")
+    return bool(_LOGIN.search(p.path or "")) or bool(_LOGIN.match((p.hostname or "").split(".")[0] + "/"))
+
+
+def after_login(url: str) -> str:
+    """Where a sign-in page sends the user back to (its redirect parameter), "" when it doesn't say."""
+    from urllib.parse import parse_qsl
+    if not login_url(url):
+        return ""
+    for k, v in parse_qsl(urlparse(url).query):
+        if k.lower() in _BACK and v.startswith(("https://", "http://")) and not login_url(v):
+            return v
+    return ""
+
+
 def domain_of(url: str) -> str:
     host = (urlparse(url).hostname or "").lower()
     return host[4:] if host.startswith("www.") else host

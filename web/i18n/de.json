@@ -1805,6 +1805,7 @@
  "{site} settings": "{site}-Einstellungen",
  "{site} takes at most {n} characters here: shorten it before it goes up.": "{site} erlaubt hier höchstens {n} Zeichen: Kürzen Sie den Text, bevor er hochgeht.",
  "{site} wants you to sign in.": "{site} möchte, dass Sie sich anmelden.",
+ "{site} wants you to sign in. Sign in in the browser window: the AI goes on reading by itself once you have.": "{site} möchte, dass Sie sich anmelden. Melden Sie sich im Browserfenster an: Danach liest die KI von selbst weiter.",
  "{site} wants you to sign in. Sign in in the browser window (Resume Studio's browser remembers it), then read the profile again.": "{site} möchte, dass Sie sich anmelden. Melden Sie sich im Browserfenster an (der Browser von Resume Studio merkt es sich) und lesen Sie das Profil dann neu.",
  "{title} (fork)": "{title} (Abzweigung)",
  "{tools} not found on this computer. {name} needs git and Node.js 22 or newer.": "{tools} auf diesem Computer nicht gefunden. {name} braucht git und Node.js 22 oder neuer.",

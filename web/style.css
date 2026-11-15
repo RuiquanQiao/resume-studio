@@ -1168,6 +1168,9 @@ body[data-ws="fill"] .workspace { grid-template-columns: var(--w-left, 340px) 5p
   color: var(--text-2); cursor: pointer; font-weight: 600; white-space: nowrap; }
 .fs-site:hover { color: var(--text); }
 .fs-site.on { background: var(--panel); color: var(--text); box-shadow: var(--shadow-sm); }
+/* a number in a round badge: the box is trimmed to the digits (cap height to baseline), so the circle centres the
+   digits themselves; Noto Sans SC's line box has far more room above them than below (the ① sat low, 2026-11-15) */
+.fs-n, .dbv-pindot, .req-match { line-height: 1; text-box: trim-both cap alphabetic; }
 .fs-n { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: #fff;
   font-size: var(--fs-meta); font-weight: 600; font-variant-numeric: tabular-nums; }
 .fs-n.warn { background: var(--warn); }

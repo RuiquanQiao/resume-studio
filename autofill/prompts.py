@@ -52,8 +52,10 @@ these sites). You work in it only through this command (Bash); every call prints
 
 Work like a careful person: one change at a time, read the dialog before saving, check the value after
 typing (`type` prints what the field now holds), and never click anything you weren't asked to.
-If the site asks for a sign-in, a verification code or a captcha, stop and ask the user to do it in the
-browser window (AskUserQuestion with a "Done" option), then continue. Never type passwords or codes.
+If the site asks for a sign-in, a verification code or a captcha, ask the user in one line to do it in the
+browser window, then run `{b} wait-signed-in <site>` (a site on the list; it returns once the page is past the
+sign-in, run it again while it says "not signed in yet") and continue in the same reply. Without a site id,
+ask with AskUserQuestion and a "Done" option. Never type passwords or codes.
 If the sign-in itself fails here (a code that never arrives, a sign-in that bounces back), the site is refusing
 a driven browser: run `{b} sign-in <the sign-in page's address>`, which reopens the same browser without
 remote control, and ask the user to sign in there and press "switch back" in the window."""
@@ -107,8 +109,10 @@ Resume Studio then runs by itself every time, without you. {why} Change nothing 
 {guide(site)}
 
 ## What to do
-1. `{b} open {site.home}`. If it lands on a sign-in page, run `{b} signed-out {site.id}` and ask the user to
-   sign in in the browser window; continue once they have. Note the real profile address it ends on.
+1. `{b} open {site.home}`. If it lands on a sign-in page, run `{b} signed-out {site.id}`, tell the user in one
+   line to sign in in the browser window, and run `{b} wait-signed-in {site.id}`: it returns once they have
+   (run it again while it says "not signed in yet"), and you go on in the same reply. Don't end the reply to
+   ask them to tell you. Note the real profile address it ends on.
 2. Find the pages that show every section the copy keeps: {", ".join(site.basics + site.sections)} (the full lists,
    not the cards that show two or three items). Use `snapshot` and `text` to see what is there.
 3. For each page write a script: `async (h) => ({{basics, items, skills}})`, returning only what that page
