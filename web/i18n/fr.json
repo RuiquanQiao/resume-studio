@@ -2614,5 +2614,10 @@
  "Write by the rules in `{path}` (read it first).": "Rédigez selon les règles de `{path}` (lisez-le d'abord).",
  "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "Commencez par les questions que les puces sont censées susciter (la partie « Hooks » de {path}).",
  "Read what changed yourself (the commits in that range, the README, the code), then re-judge the whole entry as the project stands now: rank all of its capabilities again and rewrite the visible layer (subtitle, bullets, tech) to show the product at its best. Never just append the newest work: it earns a place only if it beats what is there. Update every language ({langs}), each written its own way rather than translated from another. If nothing changes the picture, change nothing and tell me why. Leave notes and evidence alone.": "Examinez vous-même les modifications (les commits de cette plage, le README, le code), puis réévaluez l'ensemble de l'entrée selon l'état actuel du projet : reclassez toutes ses capacités et réécrivez la couche visible (sous-titre, puces, technologies) pour présenter le produit sous son meilleur jour. N'ajoutez pas simplement le travail le plus récent : il ne prend une place que s'il surpasse ce qui existe. Mettez à jour chaque langue ({langs}), rédigée à sa manière et non traduite d'une autre. Si rien ne change dans l'ensemble, ne modifiez rien et expliquez pourquoi. Ne modifiez ni notes ni evidence.",
- "{n} new commit since {since} (`git log {since}..HEAD`).": "{n} nouveau commit depuis {since} (`git log {since}..HEAD`)."
+ "{n} new commit since {since} (`git log {since}..HEAD`).": "{n} nouveau commit depuis {since} (`git log {since}..HEAD`).",
+ "Retrying ({n}/{max}): {reason}": "Nouvelle tentative ({n}/{max}) : {reason}",
+ "Retrying ({n}/{max})": "Nouvelle tentative ({n}/{max})",
+ "Retrying: {reason}": "Nouvelle tentative : {reason}",
+ "Retrying…": "Nouvelle tentative…",
+ "Can't reach {host}. {agent} is still waiting for it: check the network, proxy or VPN.": "Impossible de joindre {host}. {agent} attend toujours une réponse : vérifiez le réseau, le proxy ou le VPN."
 }

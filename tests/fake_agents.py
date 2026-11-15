@@ -10,6 +10,7 @@ Each one answers a message with "<agent> heard: <text>", streamed in two pieces.
   SLOW      wait until interrupted (or 30 s)
   FAIL      fail the reply
   PLANNED   report a two-step plan
+  RETRY     (Codex) say it is reconnecting first, then answer slowly: 1.5 s before the first piece and after it
 Env:
   FAKE_AGENT_LOG  append one JSON line per process (argv, cwd) and per message received: {"in": ...}
 """
@@ -112,11 +113,17 @@ def codex():
         if "FAIL" in text:
             out({"method": "turn/completed", "params": {"threadId": tid, "turn": {"id": turn_id, "status": "failed", "error": {"message": "fake codex failed"}}}})
             return
+        if "RETRY" in text:
+            n("error", {"error": {"message": "Reconnecting... 2/5 (stream disconnected before completion: error sending request)"},
+                        "willRetry": True})
+            time.sleep(1.5)
         msg = f"codex heard: {text}"
         item = {"type": "agentMessage", "id": "msg-" + turn_id, "text": ""}
         n("item/started", {"item": item})
         for part in (answer + msg[:6], msg[6:]):
             n("item/agentMessage/delta", {"itemId": item["id"], "delta": part})
+            if "RETRY" in text:
+                time.sleep(1.5)
         n("item/completed", {"item": {**item, "text": answer + msg}})
         n("thread/tokenUsage/updated", {"tokenUsage": {"last": {"inputTokens": 1200, "outputTokens": 34}, "modelContextWindow": 258400}})
         out({"method": "account/rateLimits/updated", "params": {"rateLimits": {"primary": {"usedPercent": 12, "windowDurationMins": 300, "resetsAt": 1900000000}}}})

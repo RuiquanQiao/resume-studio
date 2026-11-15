@@ -258,7 +258,10 @@ body[data-chat="off"] .workspace { grid-template-columns: minmax(600px, 1fr) 5px
 .step-shot { display: block; margin: 4px 0 6px; padding: 0; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--panel); cursor: zoom-in; width: 100%; }
 .step-shot img { display: block; width: 100%; max-height: 180px; object-fit: cover; object-position: top; }
 /* a reply still going (chat.js workingEl): the glyph and the clock change from script; the shimmer is extra */
-.working { display: flex; align-items: center; gap: 6px; padding: 4px 0; font-size: var(--fs-meta); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.working { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; padding: 4px 0; font-size: var(--fs-meta); color: var(--text-2); font-variant-numeric: tabular-nums; }
+/* the agent retrying, or its service unreachable: its own line, lined up with the text above */
+.wk-status { flex: 1 0 100%; padding-left: 20px; color: var(--warn); line-height: 1.5; overflow-wrap: anywhere; }
+.wk-status[hidden] { display: none; }
 .wk-g { flex: none; width: 14px; text-align: center; font-size: var(--fs-body); line-height: 1; color: var(--accent); }
 .wk-t { background: linear-gradient(90deg, var(--text-2) 40%, var(--text) 50%, var(--text-2) 60%) 0 0 / 300% 100%;
   -webkit-background-clip: text; background-clip: text; color: transparent; animation: wk-shine 2.4s linear infinite; }

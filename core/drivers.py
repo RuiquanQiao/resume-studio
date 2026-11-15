@@ -57,6 +57,17 @@ def stderr_text(raw: bytes) -> str:
     return _ANSI.sub("", text).replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
+def _retrying(runner, turn: Turn, attempt: Any, of: Any, reason: Any) -> None:
+    """The agent says it will try again: show it under "Working…" (it used to show nothing until it gave up)."""
+    reason = " ".join(str(reason or "").split())[:300]
+    if attempt and of:
+        text = (t("Retrying ({n}/{max}): {reason}", n=attempt, max=of, reason=reason) if reason
+                else t("Retrying ({n}/{max})", n=attempt, max=of))
+    else:
+        text = t("Retrying: {reason}", reason=reason) if reason else t("Retrying…")
+    runner._status(turn, text, "retry")
+
+
 class Driver:
     """One agent protocol. `run` is the body of the reply's thread and always ends in runner._finish."""
 
@@ -74,6 +85,9 @@ class Driver:
             stderr_chunks: list[bytes] = []
             threading.Thread(target=lambda: stderr_chunks.append(turn.proc.stderr.read()), daemon=True).start()
             self.begin(runner, turn, spec)
+            if hasattr(runner, "watch_quiet"):
+                threading.Thread(target=runner.watch_quiet, args=(turn, self.agent), daemon=True,
+                                 name=f"quiet-{turn.chat_id}").start()
             for raw in turn.proc.stdout:
                 line = raw.decode("utf-8", errors="replace").strip()
                 if not line:
@@ -381,6 +395,10 @@ class ClaudeDriver(Driver):
                 turn.usage = {**(turn.usage or {}), "used": None, "compacted": True}
             elif sub == "thinking_tokens":
                 runner._emit("chat.thinking", turn.chat_id, tokens=msg.get("estimated_tokens"))
+            elif sub == "api_retry":   # Claude Code retrying a failed API request
+                err, code = msg.get("error"), msg.get("error_status")
+                _retrying(runner, turn, msg.get("attempt"), msg.get("max_retries"),
+                          f"{err} (HTTP {code})" if err and code else (err or code))
         elif mtype == "control_request":
             self._ask(runner, turn, msg)
         elif mtype == "control_cancel_request":
@@ -692,6 +710,13 @@ class CodexDriver(Driver):
             err = p.get("error") or {}
             if not p.get("willRetry"):
                 turn.state["error"] = err.get("message") or json.dumps(err)
+            else:   # "Reconnecting... 2/5 (stream disconnected before completion: …)"
+                text = str(err.get("message") or "")
+                m = re.match(r"\s*reconnecting\W*(\d+)\s*/\s*(\d+)\s*(?:\((.*)\))?\s*$", text, re.I | re.S)
+                if m:
+                    _retrying(runner, turn, m.group(1), m.group(2), m.group(3) or err.get("additionalDetails"))
+                else:
+                    _retrying(runner, turn, None, None, text or err.get("additionalDetails"))
         elif method == "turn/completed":
             tr = p.get("turn") or {}
             turn.last_uuid = tr.get("id")
@@ -985,6 +1010,8 @@ class PiDriver(Driver):
             _tool_end(runner, turn, msg.get("toolCallId"), not msg.get("isError"), text)
         elif kind == "compaction_end" and not msg.get("aborted"):
             runner._block(turn, {"type": "note", "text": t("Context compacted")})
+        elif kind == "auto_retry_start":
+            _retrying(runner, turn, msg.get("attempt"), msg.get("maxAttempts"), msg.get("errorMessage"))
         elif kind == "auto_retry_end" and not msg.get("success"):
             turn.state["error"] = msg.get("finalError") or turn.state.get("error")
         elif kind == "extension_ui_request":

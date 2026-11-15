@@ -2422,5 +2422,10 @@
  "Write by the rules in `{path}` (read it first).": "`{path}` のルールに従って書いてください（先にお読みください）。",
  "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "箇条書きが引き出すよう意図した質問から始めてください（{path} の「Hooks」の部分）。",
  "Read what changed yourself (the commits in that range, the README, the code), then re-judge the whole entry as the project stands now: rank all of its capabilities again and rewrite the visible layer (subtitle, bullets, tech) to show the product at its best. Never just append the newest work: it earns a place only if it beats what is there. Update every language ({langs}), each written its own way rather than translated from another. If nothing changes the picture, change nothing and tell me why. Leave notes and evidence alone.": "変更内容（この範囲のコミット、README、コード）はご自身で確認し、プロジェクトの現在の全体像に基づいて経歴全体を評価し直してください。すべての機能を改めて順位付けし、表示層（サブタイトル、箇条書き、技術）を製品が最もよく伝わるように書き直してください。最新の作業を単に追加しないでください。既存の内容を上回る場合にのみ掲載します。すべての言語（{langs}）を、他の言語からの翻訳ではなくそれぞれの書き方で更新してください。全体像が変わらない場合は何も変更せず、その理由を説明してください。notes と evidence は変更しないでください。",
- "{n} new commit since {since} (`git log {since}..HEAD`).": "{since} 以降の新しいコミット {n} 件（`git log {since}..HEAD`）。"
+ "{n} new commit since {since} (`git log {since}..HEAD`).": "{since} 以降の新しいコミット {n} 件（`git log {since}..HEAD`）。",
+ "Retrying ({n}/{max}): {reason}": "再試行中（{n}/{max}）：{reason}",
+ "Retrying ({n}/{max})": "再試行中（{n}/{max}）",
+ "Retrying: {reason}": "再試行中：{reason}",
+ "Retrying…": "再試行中…",
+ "Can't reach {host}. {agent} is still waiting for it: check the network, proxy or VPN.": "{host} に接続できません。{agent} は応答を待ち続けています。ネットワーク、プロキシ、VPN を確認してください。"
 }

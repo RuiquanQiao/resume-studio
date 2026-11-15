@@ -195,6 +195,7 @@ def server(data_file: Path, fake_claude: Path):
 
     inst = create_app(data_file, watch_interval=0.15, prefs_dir=data_file.parent / "local")
     inst.jobtool.web = fake_web   # never npm / next build in the suite
+    inst.chats.probe = lambda hosts: []   # a quiet reply never reaches the real network from the suite
     # scripts/check.py runs the groups side by side, each on a port of its own
     httpd, url = inst.app.start_background(port=int(os.environ.get("STUDIO_TEST_PORT") or 18765))
     inst.url["url"] = url

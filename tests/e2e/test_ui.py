@@ -1163,6 +1163,27 @@ def test_model_effort_and_mode_chips(page, server, fake_claude):
     assert (meta["agent"], meta["model_choice"], meta["mode"]) == ("claude", "claude-opus-4-1", "default")
 
 
+def test_an_agent_retrying_shows_under_working(page, server, fake_claude):
+    """Codex reconnecting used to look like plain "Working…" (2026-11-15). Now the reason is the line under it, in the
+    panel's width however long, and it goes once the reply's text arrives."""
+    open_chat_tab(page)
+    page.evaluate("pickAgent(agentOf('codex'))")
+    page.wait_for_function("() => chatAgentId() === 'codex'")
+    page.fill("#chat-input", "RETRY")
+    page.keyboard.press("Enter")
+    line = page.wait_for_selector(".working .wk-status:not([hidden])")
+    assert "stream disconnected before completion" in line.inner_text() and "2/5" in line.inner_text()
+    box = page.evaluate("""() => { const s = document.querySelector('.wk-status').getBoundingClientRect(),
+        log = document.querySelector('#chat-log').getBoundingClientRect(), t = document.querySelector('.wk-t').getBoundingClientRect();
+        return { inside: s.right <= log.right + 0.5 && s.left >= log.left, below: s.top >= t.bottom - 1, alignedWithText: Math.abs(s.left + 20 - t.left) < 21,
+                 hscroll: document.querySelector('#chat-log').scrollWidth > document.querySelector('#chat-log').clientWidth } }""")
+    assert box["inside"] and box["below"] and not box["hscroll"], box
+    if os.environ.get("STUDIO_SHOT_DIR"):
+        page.locator("#chat-log").screenshot(path=os.path.join(os.environ["STUDIO_SHOT_DIR"], "retry.png"))
+    page.wait_for_selector(".wk-status:not([hidden])", state="detached", timeout=15000)
+    page.wait_for_selector(".msg-ai .md:has-text('codex heard: RETRY')")
+
+
 def test_permission_card_in_the_chat(page, server, fake_claude):
     open_chat_tab(page)
     page.fill("#chat-input", "PERM 写个文件")

@@ -2422,5 +2422,10 @@
  "Write by the rules in `{path}` (read it first).": "请按 `{path}` 中的规则撰写（先阅读该文件）。",
  "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "先准备要点有意引出的问题（见 {path} 中的「Hooks」部分）。",
  "Read what changed yourself (the commits in that range, the README, the code), then re-judge the whole entry as the project stands now: rank all of its capabilities again and rewrite the visible layer (subtitle, bullets, tech) to show the product at its best. Never just append the newest work: it earns a place only if it beats what is there. Update every language ({langs}), each written its own way rather than translated from another. If nothing changes the picture, change nothing and tell me why. Leave notes and evidence alone.": "请自行查看改动（该范围内的提交、README、代码），再按项目当前的整体状态重新评估整条经历：重新为它的全部能力排序，改写可见层（副标题、要点、技术栈），呈现产品最好的一面。不要只把最新的工作追加上去：它只有胜过已有内容才能占一个位置。每种语言（{langs}）都要更新，各按其自身写法撰写，而不是从另一种语言翻译。若整体情况没有变化，则不作修改并说明原因。不要改动 notes 和 evidence。",
- "{n} new commit since {since} (`git log {since}..HEAD`).": "自 {since} 以来有 {n} 个新提交（`git log {since}..HEAD`）。"
+ "{n} new commit since {since} (`git log {since}..HEAD`).": "自 {since} 以来有 {n} 个新提交（`git log {since}..HEAD`）。",
+ "Retrying ({n}/{max}): {reason}": "正在重试（{n}/{max}）：{reason}",
+ "Retrying ({n}/{max})": "正在重试（{n}/{max}）",
+ "Retrying: {reason}": "正在重试：{reason}",
+ "Retrying…": "正在重试…",
+ "Can't reach {host}. {agent} is still waiting for it: check the network, proxy or VPN.": "无法连接{host}，{agent}仍在等待其响应。请检查网络、代理或加速器设置。"
 }

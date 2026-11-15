@@ -531,7 +531,7 @@ async function openChat(id, { quiet = false, refresh = false } = {}) {
   ui.chat.meta = r.chat;
   ui.chat.messages = r.messages;
   ui.chat.running = r.running;
-  ui.chat.live = r.running ? { blocks: (r.live && r.live.blocks) || [], started_at: r.live && r.live.started_at } : null;
+  ui.chat.live = r.running ? { blocks: (r.live && r.live.blocks) || [], started_at: r.live && r.live.started_at, status: r.live && r.live.status } : null;
   ui.chat.queue = (r.live && r.live.queue) || [];
   if (r.available !== undefined) ui.chat.available = r.available;
   syncAgent();
@@ -812,7 +812,8 @@ function messageEl(m, index) {
   });
   const blocks = m.blocks || [];
   const waitingOnUser = blocks.some((b) => b.type === "ask" && b.status === "pending");
-  if (m.live && !waitingOnUser && (!blocks.length || blocks[blocks.length - 1].type !== "text")) {
+  const stalled = m.live && ui.chat.live && ui.chat.live.status;   // retrying / unreachable: shown even after text
+  if (m.live && !waitingOnUser && (stalled || !blocks.length || blocks[blocks.length - 1].type !== "text")) {
     el.append(workingEl());
   }
   if (m.error) el.append(h("div", { class: "msg-error" }, m.error));
@@ -837,9 +838,12 @@ const fmtDuration = (secs) => {
 // never looks stuck. Both change from script, so they go on with Windows' animations off (which stops CSS ones)
 const WORK_GLYPHS = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"];
 let workTimer = 0;
+// Under it, when the agent says it is retrying or its service can't be reached (core/netcheck.py), one line
+// that says so: "Working…" alone hid a dead connection for minutes (2026-11-15).
 function workingEl() {
   const el = h("div", { class: "working", "aria-label": t("{agent} is thinking", { agent: agentOf().short }) },
-    h("span", { class: "wk-g", "aria-hidden": "true" }), h("span", { class: "wk-t" }));
+    h("span", { class: "wk-g", "aria-hidden": "true" }), h("span", { class: "wk-t" }),
+    h("div", { class: "wk-status", role: "status", hidden: true }));
   paintWorking(el);
   if (!workTimer) workTimer = setInterval(tickWorking, 120);
   return el;
@@ -862,9 +866,11 @@ function paintWorking(el) {
   const now = Date.now(), time = fmtDuration((now - workStart()) / 1000);
   const text = ui.chat.thinking ? t("Thinking… ({time} · {n} tokens)", { time, n: fmtK(ui.chat.thinking) }) : t("Working… ({time})", { time });
   const g = WORK_GLYPHS[Math.floor(now / 120) % WORK_GLYPHS.length];
-  const [ge, te] = el.children;
+  const [ge, te, se] = el.children;
   if (ge.textContent !== g) ge.textContent = g;
   if (te.textContent !== text) te.textContent = text;
+  const status = (ui.chat.live && ui.chat.live.status) || "";
+  if (se && se.textContent !== status) { se.textContent = status; se.hidden = !status; }
 }
 
 // Errors that mean the agent's command itself isn't signed in. A fixed check, not the agent:
@@ -1696,6 +1702,10 @@ async function onChatEvent(type, ev) {
     renderPickers();
   } else if (type === "chat.meta") {
     ui.chat.meta = ev.meta; renderPickers();
+  } else if (type === "chat.status") {
+    live.status = ev.text || "";
+    const shown = document.querySelectorAll(".working");
+    if (shown.length) shown.forEach(paintWorking); else renderLive();
   } else if (type === "chat.thinking") {
     ui.chat.thinking = ev.tokens; if (!live.blocks.length) renderLive();
   } else if (type === "chat.delta") {
@@ -1734,7 +1744,7 @@ async function onChatEvent(type, ev) {
 }
 
 const CHAT_EVENTS = ["chat.start", "chat.init", "chat.meta", "chat.title", "chat.thinking", "chat.delta", "chat.tool", "chat.block", "chat.ask",
-  "chat.tasks", "chat.queue", "chat.reply", "chat.next", "chat.done", "claude.info", "claude.limits"];
+  "chat.tasks", "chat.queue", "chat.reply", "chat.next", "chat.done", "chat.status", "claude.info", "claude.limits"];
 function listenChat(es) {
   for (const name of CHAT_EVENTS) es.addEventListener(name, (m) => onChatEvent(name, JSON.parse(m.data)));
 }

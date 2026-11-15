@@ -33,7 +33,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from . import agents, naming
+from . import agents, naming, netcheck
 from .claude_info import EFFORTS, valid_model_id
 from .events import EventBus
 from .i18n import t
@@ -224,6 +224,11 @@ class Turn:
         self.usage: dict | None = None
         self.error: str | None = None
         self.flushed_any = False
+        # what the window shows under "Working…" while nothing else does: the agent retrying, or its service
+        # unreachable. Cleared by the next thing the reply shows. `status_kind`: "retry" | "network".
+        self.status: str | None = None
+        self.status_kind: str | None = None
+        self.active_at = self.started_at   # the last time the reply showed anything
 
     def write(self, obj: dict) -> bool:
         with self.wlock:
@@ -300,6 +305,9 @@ class ChatRunner:
         self.default_agent: Any = lambda: agents.DEFAULT   # callable() -> the agent a new chat runs on
         # the app's own code is read-only to every chat (core/codeguard.py); None in tests that don't need it
         self.guard: Any = None
+        # a reply quiet this long gets its agent's service probed (core/netcheck.py), then again as often
+        self.quiet_after = 30.0
+        self.probe: Any = netcheck.unreachable   # callable(hosts) -> the hosts that don't answer
 
     def workspace(self, chat: dict | None) -> Workspace | None:
         return self.workspaces.get(str((chat or {}).get("workspace") or ""))
@@ -328,7 +336,7 @@ class ChatRunner:
         turn = self.turns.get(chat_id)
         if not turn:
             return None
-        return {"blocks": turn.blocks, "queue": turn.queue, "started_at": turn.started_at}
+        return {"blocks": turn.blocks, "queue": turn.queue, "started_at": turn.started_at, "status": turn.status}
 
     # ---- public --------------------------------------------------------
     def send(self, chat_id: str, text: str, context: str = "", add_dirs: list[str] | None = None,
@@ -488,14 +496,54 @@ class ChatRunner:
         self._emit("chat.title", chat_id, title=name)
 
     def _emit(self, event: str, chat_id: str, **data: Any) -> None:
+        if event in _SHOWS_PROGRESS:
+            turn = self.turns.get(chat_id)
+            if turn is not None:
+                turn.active_at = _now()
+                if turn.status:
+                    self._status(turn, None)
         self.bus.publish(event, {"chat": chat_id, **data})
+
+    def _status(self, turn: Turn, text: str | None, kind: str | None = None) -> None:
+        """The line under "Working…": the agent retrying, or its service unreachable. None clears it."""
+        if text == turn.status:
+            return
+        turn.status, turn.status_kind = text, (kind if text else None)
+        self.bus.publish("chat.status", {"chat": turn.chat_id, "text": text})
+
+    def watch_quiet(self, turn: Turn, agent: Any, poll: float = 1.0) -> None:
+        """While the reply runs: once it has shown nothing for `quiet_after` seconds, check that the agent's
+        service can be reached at all, and say so under "Working…" when it can't. Never stops the reply."""
+        hosts = netcheck.SERVICE_HOSTS.get(agent.id)
+        if not hosts:
+            return
+        probed_at = 0.0
+        while self.turns.get(turn.chat_id) is turn and not turn.cancelled and not turn.closed:
+            time.sleep(poll)
+            now = _now()
+            if any(a["status"] == "pending" for a in turn.asks.values()):
+                continue   # waiting for the user, not for the service
+            if now - turn.active_at < self.quiet_after or now - probed_at < self.quiet_after:
+                continue
+            probed_at = now
+            try:
+                bad = list(self.probe(hosts))
+            except Exception:  # noqa: BLE001 - a failed check must never break the reply
+                continue
+            if self.turns.get(turn.chat_id) is not turn or now < turn.active_at:
+                continue   # the reply moved on while the check ran
+            if len(bad) == len(hosts):
+                self._status(turn, t("Can't reach {host}. {agent} is still waiting for it: check the network, "
+                                     "proxy or VPN.", host=" / ".join(bad), agent=agent.name), "network")
+            elif turn.status_kind == "network":
+                self._status(turn, None)
 
     def _next(self, turn: Turn) -> bool:
         """After a reply: send the next queued message into the same process."""
         if turn.cancelled or not turn.queue:
             return False
         item = turn.queue.pop(0)
-        turn.started_at = _now()
+        turn.started_at = turn.active_at = _now()
         self.store.append(turn.chat_id, item["msg"])
         self.store.update_meta(turn.chat_id)
         self._emit("chat.next", turn.chat_id, message=item["msg"], queue=turn.queue, started_at=turn.started_at)
@@ -555,6 +603,10 @@ class ChatRunner:
     def _block(self, turn: Turn, block: dict) -> None:
         turn.blocks.append(block)
         self._emit("chat.block", turn.chat_id, block=block)
+
+
+# events that show the reply moving: each clears the status line and restarts the quiet clock
+_SHOWS_PROGRESS = {"chat.delta", "chat.block", "chat.tool", "chat.thinking", "chat.ask"}
 
 
 def _title_from(text: str) -> str:

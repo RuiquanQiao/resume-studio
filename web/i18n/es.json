@@ -2614,5 +2614,10 @@
  "Write by the rules in `{path}` (read it first).": "Redacte según las reglas de `{path}` (léalo primero).",
  "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "Empiece por las preguntas que las viñetas buscan provocar (la parte «Hooks» de {path}).",
  "Read what changed yourself (the commits in that range, the README, the code), then re-judge the whole entry as the project stands now: rank all of its capabilities again and rewrite the visible layer (subtitle, bullets, tech) to show the product at its best. Never just append the newest work: it earns a place only if it beats what is there. Update every language ({langs}), each written its own way rather than translated from another. If nothing changes the picture, change nothing and tell me why. Leave notes and evidence alone.": "Revise usted mismo los cambios (los commits de ese rango, el README, el código) y vuelva a evaluar toda la entrada según el estado actual del proyecto: ordene de nuevo todas sus capacidades y reescriba la capa visible (subtítulo, viñetas, tecnologías) para mostrar el producto en su mejor versión. No añada simplemente el trabajo más reciente: solo ocupa un lugar si supera lo que ya hay. Actualice cada idioma ({langs}), redactado a su manera y no traducido de otro. Si el panorama no cambia, no modifique nada y explique por qué. No modifique notes ni evidence.",
- "{n} new commit since {since} (`git log {since}..HEAD`).": "{n} commit nuevo desde {since} (`git log {since}..HEAD`)."
+ "{n} new commit since {since} (`git log {since}..HEAD`).": "{n} commit nuevo desde {since} (`git log {since}..HEAD`).",
+ "Retrying ({n}/{max}): {reason}": "Reintentando ({n}/{max}): {reason}",
+ "Retrying ({n}/{max})": "Reintentando ({n}/{max})",
+ "Retrying: {reason}": "Reintentando: {reason}",
+ "Retrying…": "Reintentando…",
+ "Can't reach {host}. {agent} is still waiting for it: check the network, proxy or VPN.": "No se puede conectar con {host}. {agent} sigue esperando respuesta: revisa la red, el proxy o la VPN."
 }

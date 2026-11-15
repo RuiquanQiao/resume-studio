@@ -9,6 +9,7 @@ import time
 import pytest
 
 from core import agents
+from core.i18n import t
 
 
 def test_an_agents_error_output_reads_as_a_terminal_shows_it(monkeypatch):
@@ -253,6 +254,73 @@ def test_codex_approval_card_and_question(server, agent_log):
     assert ask["kind"] == "question" and ask["input"]["questions"][0]["options"][1]["label"] == "Blue"
     server.req("POST", f"/api/chats/{cid}/answer", {"request_id": ask["id"], "answers": {"Which colour?": "Blue"}})
     assert '"colour": {"answers": ["Blue"]}' in text(reply(server, cid))
+
+
+
+def live_status(server, cid):
+    return (server.req("GET", f"/api/chats/{cid}")[1]["live"] or {}).get("status")
+
+
+def test_codex_retrying_shows_under_working_until_the_reply_moves(server, agent_log):
+    """Codex says "Reconnecting... 2/5" while it retries. The window used to drop that and show only "Working…"
+    until Codex gave up (87 s with a dead connection, 2026-11-15); now it is the line under "Working…", gone with
+    the reply's next text."""
+    cid = new_chat(server, "codex")
+    say(server, cid, "RETRY")
+    shown = _wait(lambda: live_status(server, cid), msg="the retry is shown")
+    assert shown == t("Retrying ({n}/{max}): {reason}", n=2, max=5, reason="stream disconnected before completion: error sending request")
+    _wait(lambda: server.req("GET", f"/api/chats/{cid}")[1]["live"] and live_status(server, cid) is None,
+          msg="the first text clears it while the reply still runs")
+    assert text(reply(server, cid)) == "codex heard: RETRY"
+
+
+def test_a_quiet_reply_says_when_the_agents_service_cant_be_reached(server, agent_log):
+    """No event at all for a while: the chat checks the agent's service hosts and says when none answers.
+    It never stops the reply, it doesn't check while a card waits for the user, and it clears once a host answers."""
+    chats = server.inst.chats
+    asked = []
+    down = {"now": True}
+    chats.quiet_after = 0.5
+    chats.probe = lambda hosts: asked.append(tuple(hosts)) or (list(hosts) if down["now"] else [])
+
+    cid = new_chat(server, "codex")
+    say(server, cid, "QUESTION")
+    pending(server, cid)
+    time.sleep(2)
+    assert asked == [] and live_status(server, cid) is None            # waiting for the user, not the service
+    ask = pending(server, cid)
+    server.req("POST", f"/api/chats/{cid}/answer", {"request_id": ask["id"], "answers": {"Which colour?": "Red"}})
+    reply(server, cid)
+
+    say(server, cid, "SLOW")
+    status = _wait(lambda: live_status(server, cid), timeout=15, msg="the unreachable service is shown")
+    assert status == t("Can't reach {host}. {agent} is still waiting for it: check the network, proxy or VPN.",
+                       host="chatgpt.com / api.openai.com", agent="Codex")
+    assert asked[0] == ("chatgpt.com", "api.openai.com")
+    assert server.req("GET", f"/api/chats/{cid}")[1]["running"]          # only said, never stopped
+    down["now"] = False
+    _wait(lambda: live_status(server, cid) is None, timeout=15, msg="a host that answers again clears it")
+    server.req("POST", f"/api/chats/{cid}/cancel")
+    reply(server, cid)
+
+
+def test_claude_and_pi_retries_show_too(tmp_path):
+    from core.chat import ChatRunner, ChatStore, Turn
+    from core.drivers import ClaudeDriver, PiDriver
+    from core.events import EventBus
+
+    runner = ChatRunner(EventBus(), ChatStore(tmp_path), cwd=tmp_path)
+    turn = Turn("c1")
+    runner.turns["c1"] = turn
+    ClaudeDriver(agents.get("claude")).handle(runner, turn, {"type": "system", "subtype": "api_retry", "attempt": 1,
+                                                             "max_retries": 10, "retry_delay_ms": 600, "error_status": 529,
+                                                             "error": "overloaded"})
+    assert turn.status == t("Retrying ({n}/{max}): {reason}", n=1, max=10, reason="overloaded (HTTP 529)")
+    runner._text(turn, "hello")
+    assert turn.status is None
+    PiDriver(agents.get("pi")).handle(runner, turn, {"type": "auto_retry_start", "attempt": 3, "maxAttempts": 3,
+                                                     "delayMs": 8000, "errorMessage": "fetch failed"})
+    assert turn.status == t("Retrying ({n}/{max}): {reason}", n=3, max=3, reason="fetch failed")
 
 
 def test_codex_stop_interrupts_and_errors_show(server, agent_log):

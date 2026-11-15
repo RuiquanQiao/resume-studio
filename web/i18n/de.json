@@ -2614,5 +2614,10 @@
  "Write by the rules in `{path}` (read it first).": "Schreiben Sie nach den Regeln in `{path}` (zuerst lesen).",
  "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "Beginnen Sie mit den Fragen, die die Stichpunkte hervorrufen sollen (Abschnitt „Hooks“ in {path}).",
  "Read what changed yourself (the commits in that range, the README, the code), then re-judge the whole entry as the project stands now: rank all of its capabilities again and rewrite the visible layer (subtitle, bullets, tech) to show the product at its best. Never just append the newest work: it earns a place only if it beats what is there. Update every language ({langs}), each written its own way rather than translated from another. If nothing changes the picture, change nothing and tell me why. Leave notes and evidence alone.": "Sehen Sie sich die Änderungen selbst an (die Commits in diesem Bereich, die README, den Code) und bewerten Sie den gesamten Eintrag anhand des aktuellen Projektstands neu: Ordnen Sie alle seine Fähigkeiten neu und schreiben Sie die sichtbare Ebene (Untertitel, Stichpunkte, Technologien) so um, dass das Produkt bestmöglich zur Geltung kommt. Hängen Sie nicht einfach die neueste Arbeit an: Sie erhält nur dann einen Platz, wenn sie das Vorhandene übertrifft. Aktualisieren Sie jede Sprache ({langs}), jeweils eigenständig formuliert statt aus einer anderen übersetzt. Ändert sich am Gesamtbild nichts, ändern Sie nichts und begründen Sie dies. Lassen Sie notes und evidence unverändert.",
- "{n} new commit since {since} (`git log {since}..HEAD`).": "{n} neuer Commit seit {since} (`git log {since}..HEAD`)."
+ "{n} new commit since {since} (`git log {since}..HEAD`).": "{n} neuer Commit seit {since} (`git log {since}..HEAD`).",
+ "Retrying ({n}/{max}): {reason}": "Neuer Versuch ({n}/{max}): {reason}",
+ "Retrying ({n}/{max})": "Neuer Versuch ({n}/{max})",
+ "Retrying: {reason}": "Neuer Versuch: {reason}",
+ "Retrying…": "Neuer Versuch …",
+ "Can't reach {host}. {agent} is still waiting for it: check the network, proxy or VPN.": "{host} ist nicht erreichbar. {agent} wartet weiter auf eine Antwort: Netzwerk, Proxy oder VPN prüfen."
 }

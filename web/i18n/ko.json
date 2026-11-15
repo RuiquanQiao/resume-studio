@@ -2422,5 +2422,10 @@
  "Write by the rules in `{path}` (read it first).": "`{path}`의 규칙에 따라 작성해 주십시오(먼저 읽어 주십시오).",
  "Start with the questions the bullets were written to invite (the “Hooks” part of {path}).": "항목이 유도하도록 작성된 질문부터 시작해 주십시오({path}의 'Hooks' 부분).",
  "Read what changed yourself (the commits in that range, the README, the code), then re-judge the whole entry as the project stands now: rank all of its capabilities again and rewrite the visible layer (subtitle, bullets, tech) to show the product at its best. Never just append the newest work: it earns a place only if it beats what is there. Update every language ({langs}), each written its own way rather than translated from another. If nothing changes the picture, change nothing and tell me why. Leave notes and evidence alone.": "변경 내용(해당 범위의 커밋, README, 코드)은 직접 확인한 뒤, 프로젝트의 현재 전체 상태를 기준으로 경력 전체를 다시 평가해 주십시오. 모든 기능의 순위를 다시 매기고, 제품이 가장 잘 드러나도록 표시 계층(부제목, 항목, 기술)을 다시 작성해 주십시오. 최신 작업을 단순히 덧붙이지 마십시오. 기존 내용보다 나을 때에만 자리를 차지합니다. 모든 언어({langs})를 다른 언어에서 번역하지 말고 각 언어의 방식으로 업데이트해 주십시오. 전체 상황이 바뀌지 않았다면 아무것도 변경하지 말고 이유를 알려 주십시오. notes와 evidence는 변경하지 마십시오.",
- "{n} new commit since {since} (`git log {since}..HEAD`).": "{since} 이후 새 커밋 {n}개(`git log {since}..HEAD`)."
+ "{n} new commit since {since} (`git log {since}..HEAD`).": "{since} 이후 새 커밋 {n}개(`git log {since}..HEAD`).",
+ "Retrying ({n}/{max}): {reason}": "재시도 중 ({n}/{max}): {reason}",
+ "Retrying ({n}/{max})": "재시도 중 ({n}/{max})",
+ "Retrying: {reason}": "재시도 중: {reason}",
+ "Retrying…": "재시도 중…",
+ "Can't reach {host}. {agent} is still waiting for it: check the network, proxy or VPN.": "{host}에 연결할 수 없습니다. {agent}이(가) 응답을 계속 기다리고 있습니다. 네트워크, 프록시 또는 VPN을 확인하세요."
 }
