@@ -131,6 +131,19 @@ the company (creating and filling it when new), adds the posting with its detail
   under a `/SU<24 hex>/` portal id) are read the same way. HotJob's school, social and interns pages are each a
   list of its own (`recruitType` 1, 2, 12, as each page's script asks); its first page comes in the tenant's own
   size whatever is asked, so later pages are asked in that size (asked for 50, one campus list lost 37 of its 49 roles).
+- **Routes with no browser** (`jobhunt/replay.py`, `jobhunt/route_node.mjs`, 2026-11-16): most scripts the AI
+  records call the site's own JSON API with `fetch` (304 of 343 pages on 2026-11-16). Such a script runs in node,
+  as on the page: `location` is the page's address, `fetch` resolves against it and sends the page as Referer
+  (Origin for a POST), and the cookies the page sets on opening go with the calls. The first scan of a route
+  page runs it both ways and keeps it for node only when node reads the same roles (`verdict`); then every scan
+  runs it in node alone, and a run that fails or reads far fewer roles (more than 2, or 2%) goes back to the
+  browser that time and is compared again. A script that touches the drawn page (`document`, `DOMParser`,
+  `XMLHttpRequest`, `h.waitFor`) stays in the browser, tried in node again after a week; `scan-route` tells the
+  AI which pages those are, to call the API instead. What is known is in `hunt/replay.json`, by page address and
+  script. The scripts are data, so node runs with its permission model (no file writes, no reads beyond the job,
+  no child processes or workers); the vm context only narrows their globals.
+- **Several at once** (2026-11-16): a run scans 6 companies side by side (`WORKERS`); pages read in the
+  browser take at most 2 tabs at a time (`BROWSER_TABS`).
 - **One system, many routes** (`jobhunt/systems.py`, 2026-11-11): the AI learns one site at a time, so it never
   sees the site it is on is the seventh on the same system; 北森 got about 120 route pages, one company at a time,
   before `beisen.py`. So the code compares: each route page's script comes down to the API paths it calls (a

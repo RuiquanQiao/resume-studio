@@ -1211,6 +1211,9 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                     res["no_total"] = True
                 # the AI sees one site; the code sees every route: one calling the API of others is likely one system
                 res["kin"] = scanner.kin(c["id"])
+                # pages that still need the browser to read (replay.py): told, so the AI calls the site's API instead
+                # and every later scan reads it with no browser and no AI (user, 2026-11-16)
+                res["needs_page"] = scanner.needs_page(r.get("pages") or [])
                 return {"scanned": [res], "company": company_view(c["id"]), "text": "route saved and run"}
             if cmd == "systems":
                 return {"systems": scanner.shared_systems(), "text": "systems"}

@@ -47,7 +47,7 @@ def test_the_daily_scan_is_off_until_the_user_turns_it_on(hunt):
     assert ps.scans()["daily"] is True
 
 
-def test_stop_all_ends_the_run_at_once_and_keeps_nothing_half_read(hunt):
+def test_stop_all_ends_the_run_at_once_and_keeps_nothing_half_read(hunt, monkeypatch):
     """A company whose list takes long: Stop ends the run at once, its roles stay as they were (none closed for a
     half-read list), and the companies still waiting aren't read."""
     release = threading.Event()
@@ -58,6 +58,7 @@ def test_stop_all_ends_the_run_at_once_and_keeps_nothing_half_read(hunt):
         release.wait(10)   # a slow site, far away
         return {"jobs": [beisen.posting(url.rstrip("/"), {"Id": "1", "JobAdName": "新岗位", "PostURL": url + "job/1"})], "total": 1}
 
+    monkeypatch.setattr("jobhunt.scan.WORKERS", 1)   # one at a time: 乙公司 is still waiting when Stop comes
     sc, ps = scanner(hunt, read)
     ps.merge("C1", [{"title": "原有岗位", "url": A + "job/0"}], how="beisen")
     sc.start(["C1", "C2"], every=True)
@@ -73,7 +74,8 @@ def test_stop_all_ends_the_run_at_once_and_keeps_nothing_half_read(hunt):
     assert sc.last_run["stopped"] is True and sc.last_run["reading"] == 0
 
 
-def test_stopping_one_company_takes_it_off_the_queue_and_the_run_goes_on(hunt):
+def test_stopping_one_company_takes_it_off_the_queue_and_the_run_goes_on(hunt, monkeypatch):
+    monkeypatch.setattr("jobhunt.scan.WORKERS", 1)
     sc, ps = scanner(hunt, lambda url: {"jobs": [], "total": 0})
     gate = threading.Event()
     slow = sc.beisen_read
@@ -127,3 +129,24 @@ def test_a_site_added_to_a_company_is_checked_but_not_scanned(hunt):
     sc.start = lambda ids, **kw: started.extend(ids)
     assert sc.check_sites("C1", [A]) == []
     assert started == []
+
+
+def test_a_run_reads_several_companies_at_once(hunt):
+    """User, 2026-11-16: "扫描得也太慢了". Two slow sites are read side by side, not one after the other."""
+    inside, most = [0], [0]
+    lock = threading.Lock()
+
+    def read(url):
+        with lock:
+            inside[0] += 1
+            most[0] = max(most[0], inside[0])
+        time.sleep(0.5)
+        with lock:
+            inside[0] -= 1
+        return {"jobs": [], "total": 0}
+
+    sc, _ = scanner(hunt, read)
+    t0 = time.monotonic()
+    sc.start(["C1", "C2"], every=True)
+    assert wait_for(lambda: sc.batch is None and sc.last_run, 5)
+    assert most[0] == 2 and time.monotonic() - t0 < 0.95 and sc.last_run["companies"] == 2

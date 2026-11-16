@@ -403,7 +403,9 @@ python scripts/hunt.py apply P12                          # the user goes for po
   apply-by date.
 - **Open postings** are scanned, never typed: career-ops' providers (Moka, Feishu/ByteDance, Tencent, Meituan,
   Alibaba, Greenhouse, Lever, Ashby…) read public job APIs; any other site gets a read route Claude records
-  once in the browser (`scan-route`), replayed with no Claude. `tracks` are the kinds of role the user goes for, each with its own title keywords, and optionally `natures`:
+  once in the browser (`scan-route`), replayed with no Claude. A route's script calls the site's own JSON
+  API with `fetch` (relative to the page) whenever there is one, never reading the drawn page: such a script
+  runs with no browser at all on every scan; `scan-route` says which pages still need the browser. `tracks` are the kinds of role the user goes for, each with its own title keywords, and optionally `natures`:
   the kinds of company it is for (a kind takes every country's subtypes of it; a "（国央企）" track is
   `["cn.central_soe", "cn.local_soe", "cn.state_finance", "cn.public"]`; `tracks --help`); a route returns the site's own `total`, so a scan that reads fewer roles is reported as not done.
 

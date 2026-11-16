@@ -1154,7 +1154,7 @@ def test_a_run_shows_how_far_it_got_from_the_click_to_the_end(hunt, monkeypatch)
     assert any(s[0]["done"] == 1 for s in between)                                # still a run, one of two done
     assert seen[-1] == (None, [], {}) and sc.last_run["companies"] == 2
     sc.start([])                                                                  # nothing to scan: no run at all
-    assert sc.batch is None and len(threads) == 1
+    assert sc.batch is None and [f.__name__ for f in threads].count("_run") == 1
 
 
 needs_node = pytest.mark.skipif(not shutil.which("node"), reason="Node.js not installed")

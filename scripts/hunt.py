@@ -607,6 +607,14 @@ def main() -> int:
                               f"{' …' if len(g['companies']) > 8 else ''}; on {', '.join(g['sites'][:4])}). Tell the user in "
                               "one line: these companies are probably on one recruiting system, and one built-in scan "
                               "could read all of them with no AI and no route (as for 北森 and 飞书).")
+                if c == "scan-route" and x.get("needs_page"):
+                    pages = "; ".join(f"{p['url']} ({p['why']})" if p.get("why") else p["url"] for p in x["needs_page"])
+                    print(f"  not done: these pages read only in the browser: {pages}. Every scan then opens them in a "
+                          "browser, which is slow. Find the API the page gets its list from (its network requests) "
+                          "and call it with fetch, returning {postings, total} from the JSON, with no document, "
+                          "DOMParser, XMLHttpRequest or h.waitFor; send the route again. Only when no API gives the "
+                          "list (it is in the page's HTML alone, or every call is signed by the page's code) keep "
+                          "reading the page, and say so to the user in one line.")
                 if c == "scan-route" and x.get("no_total"):
                     print("  not checked: no page of the route says how many roles the site lists. Return "
                           "`{postings, total}` with the number the site itself gives (its \"448 个职位\", or the "

@@ -42,7 +42,7 @@ from core.browser import BrowserError, PageNotOpened
 from core.cdp import CdpError
 from core.i18n import t
 
-from . import alitalent, beisen, feishu, hotjob, iguopin, patience, report, systems
+from . import alitalent, beisen, feishu, hotjob, iguopin, patience, replay, report, systems
 from .postings import Postings
 from .store import Hunt, site_host, site_key
 
@@ -68,6 +68,8 @@ OPEN_TIMEOUT = 90
 RETRY_WAITS = (5, 15)
 CHECK_WAIT = 20 * 60   # longest a check of new sites waits for a scan of the same company to end
 EMPTY_WAIT = 8         # a page that read no roles is read once more after this: its list may still be loading
+WORKERS = 6            # companies scanned at once in a run
+BROWSER_TABS = 2       # pages read in the browser at once
 
 
 def validate_route(data: Any) -> tuple[dict, list[str]]:
@@ -172,6 +174,7 @@ class Scanner:
         self.stop_epoch = 0                    # counts the user's "stop every scan": a run of the AI's ends at it too
         self._local = threading.local()        # the scan this thread works for (its Token)
         self.lock = threading.Lock()
+        self.browser_slots = threading.Semaphore(BROWSER_TABS)
         self._providers: dict[str, str | None] = {}   # url -> career-ops provider id (or None), per run of the app
         self.providers_dir = PROVIDERS
         self.last_run: dict = {}               # the last scan_many: {at, auto, companies, new, closed, failed, reading}
@@ -214,6 +217,10 @@ class Scanner:
             known = {}
         self._providers.update({u: p for u, p in known.items() if isinstance(p, str) and p})
         self._fresh: dict[str, dict] = {}      # company id -> what a route just tried (try_route) read, for its scan
+        # route scripts read with no browser once they have read what the browser reads (jobhunt/replay.py);
+        # None: every route page is read in the browser (STUDIO_REPLAY=off, or no node)
+        self.replay: replay.Known | None = (replay.Known(lambda: self.hunt._load(replay.FILE), lambda d: self.hunt._write(replay.FILE, d))
+                                            if os.environ.get("STUDIO_REPLAY") != "off" and replay.ready() else None)
 
     # ---- which sites, read how ----
     @staticmethod
@@ -502,10 +509,11 @@ class Scanner:
         tab the user or Claude is working in. A browser the scan started closes itself once nothing uses it
         (core/browser.py close_if_idle); one the user opened stays."""
         with self._hold():
-            try:
-                self.browser.ensure()
-            except BrowserError as e:
-                raise RouteFailed(str(e))
+            if not self.no_browser(route.get("pages") or []):   # all read with no browser: none is started
+                try:
+                    self.browser.ensure()
+                except BrowserError as e:
+                    raise RouteFailed(str(e))
             return self._read_route(route, errors, unread, totals)
 
     def _read_route(self, route: dict, errors: list[str] | None = None, unread: list[int] | None = None,
@@ -535,7 +543,7 @@ class Scanner:
                 if attempt:
                     time.sleep(self.retry_waits[attempt - 1])
                     self._check_stop()
-                got = self._read_pages(url, [scripts[i] for i in todo])
+                got = self._read_group(url, [scripts[i] for i in todo])
                 for i, out in zip(todo, got):
                     outs[i] = out
                 todo = [i for i in todo if isinstance(outs[i], PageNotOpened)]
@@ -560,7 +568,7 @@ class Scanner:
                     # there yet (鹏芯微, 2026-11-05: 20 roles one scan, none the next). Read once more, a while later
                     time.sleep(self.empty_wait)
                     self._check_stop()
-                    again = self._read_pages(url, [scripts[i]])[0]
+                    again = self._read_group(url, [scripts[i]])[0]
                     if not isinstance(again, Exception) and not (isinstance(again, dict) and again.get("signed_out")):
                         out = again
                         rows = out.get("postings") if isinstance(out, dict) else out
@@ -588,11 +596,72 @@ class Scanner:
             unread[:] = [missed, len(pages)]
         return found
 
+    def no_browser(self, pages: list[dict]) -> bool:
+        """Every one of these route pages reads with no browser (jobhunt/replay.py)."""
+        return self.replay is not None and bool(pages) and all(
+            self.replay.mode(replay.key(p["url"], p["script"])) == "node" for p in pages)
+
+    def needs_page(self, pages: list[dict]) -> list[dict]:
+        """The route pages found to read only in the browser, with why: [{url, why}]."""
+        if self.replay is None:
+            return []
+        out = []
+        for p in pages:
+            k = replay.key(p["url"], p["script"])
+            if self.replay.mode(k) == "page":
+                out.append({"url": p["url"], "why": self.replay.get(k).get("why") or ""})
+        return out
+
+    def _read_group(self, url: str, scripts: list[str]) -> list[Any]:
+        """_read_pages, each script with no browser when it is known to read the same there (replay.py): one not
+        known yet runs both ways once and is compared; one known that now fails, or reads far fewer roles than
+        last time, is read in the browser this time and checked again."""
+        if self.replay is None:
+            return self._read_pages(url, scripts)
+        keys = [replay.key(url, s) for s in scripts]
+        modes = [self.replay.mode(k) for k in keys]
+        tried = [i for i, m in enumerate(modes) if m != "page"]
+        node: dict[int, Any] = {}
+        if tried:
+            wait = patience.of(url, OPEN_TIMEOUT, 3).timeout
+            try:
+                got = replay.run(url, [scripts[i] for i in tried], timeout=max(120, wait), request_timeout=wait,
+                                 stopping=self._stopping, work_dir=self.hunt.dir)
+            except replay.Stopped:
+                raise Stopped()
+            node = dict(zip(tried, got))
+        out: list[Any] = [None] * len(scripts)
+        browser: list[int] = []
+        for i, m in enumerate(modes):
+            r = node.get(i)
+            rows = None if isinstance(r, Exception) else replay.rows_of(r)
+            if m == "node":
+                last = int(self.replay.get(keys[i]).get("n") or 0)
+                if rows is not None and not (isinstance(r, dict) and r.get("signed_out")) and len(rows) >= last - max(2, last // 50):
+                    out[i] = r
+                    if len(rows) != last:
+                        self.replay.set(keys[i], ok=True, n=len(rows))
+                    continue
+            elif m == "" and isinstance(r, replay.NeedsPage):   # it touches the page: the browser's, without comparing
+                self.replay.set(keys[i], ok=False, why=str(r)[:200])
+                modes[i] = "page"
+            browser.append(i)
+        if browser:
+            got = self._read_pages(url, [scripts[i] for i in browser])
+            for i, g in zip(browser, got):
+                out[i] = g
+                if modes[i] != "page" and not isinstance(g, Exception):
+                    ok = replay.verdict(node.get(i), g)
+                    self.replay.set(keys[i], ok=ok, n=len(replay.rows_of(g) or []),
+                                    **({} if ok else {"why": str(node.get(i))[:200] if isinstance(node.get(i), Exception) else "read differently"}))
+        return out
+
     def _read_pages(self, url: str, scripts: list[str]) -> list[Any]:
         try:
             # 90 s for a page near the user; longer across the Great Firewall or for a site slow before (patience.py)
             wait = patience.of(url, OPEN_TIMEOUT, 3).timeout
-            got = self.browser.read_pages(url, scripts, timeout=max(120, wait), open_timeout=wait)
+            with self.browser_slots:   # a few tabs at a time, whatever the number of companies read at once
+                got = self.browser.read_pages(url, scripts, timeout=max(120, wait), open_timeout=wait)
             # a page that didn't open counts toward more tries next time; its time, all its scripts' together, isn't
             # how long the site took to answer, so isn't kept
             if any(isinstance(x, PageNotOpened) for x in got or []):
@@ -759,7 +828,7 @@ class Scanner:
                     totals[u] = max(totals.get(u, 0), r["total"])
                 hows.append(prov)
         if scripts:
-            if allow_route:
+            if allow_route or self.no_browser(scripts):   # the daily scan reads a route that needs no browser too
                 self.running[c["id"]] = "route"
                 self.publish()
                 try:
@@ -900,6 +969,24 @@ class Scanner:
         self.publish()
         return {"stopped": halted, "dequeued": dropped}
 
+    def _work(self, b: dict, out: list[dict]) -> None:
+        """One of a run's workers: takes the next company off the queue until it is empty or the run is stopped."""
+        while True:
+            with self.lock:
+                if self.batch is not b or not self.queue:
+                    return
+                cid = self.queue.pop(0)
+                auto = b["auto"]
+            try:
+                res = self.scan(cid, allow_route=not auto or self.browser_open())
+            except Exception as e:  # noqa: BLE001  one company's trouble never stops the rest
+                res = {"company": cid, "error": str(e)}
+            with self.lock:
+                out.append(res)
+                if self.batch is b:
+                    b["done"] += 1
+            self.publish()
+
     def _run(self) -> None:
         out: list[dict] = []
         with self.lock:
@@ -907,24 +994,25 @@ class Scanner:
         auto, ended = bool(b and b["auto"]), False
         try:
             with self._hold():
-                while True:
-                    with self.lock:
-                        if b is None or self.batch is not b:   # stopped: the user ended the run
-                            ended = True
-                            break
-                        if not self.queue:
-                            auto = b["auto"]
-                            self.batch, ended = None, True   # in the same lock as the check: a later start begins a new run
-                            break
-                        cid = self.queue.pop(0)
-                        auto = b["auto"]
-                    try:
-                        out.append(self.scan(cid, allow_route=not auto or self.browser_open()))
-                    except Exception as e:  # noqa: BLE001  one company's trouble never stops the rest
-                        out.append({"company": cid, "error": str(e)})
-                    with self.lock:
-                        if self.batch is b:
-                            b["done"] += 1
+                # several companies at once (user, 2026-11-16: "扫描得也太慢了"): most are read over their sites' APIs
+                # and wait on the network, not on this machine; reads in the browser take its tabs one at a time
+                if b is not None:
+                    extra = [threading.Thread(target=self._work, args=(b, out), daemon=True, name=f"hunt-scan-{n}")
+                             for n in range(1, WORKERS)]
+                    for w in extra:
+                        w.start()
+                    self._work(b, out)
+                    for w in extra:
+                        while getattr(w, "is_alive", lambda: False)():
+                            with self.lock:
+                                if self.batch is not b:   # stopped: a worker still letting go of its site isn't waited for
+                                    break
+                            w.join(0.2)
+                with self.lock:
+                    auto = bool(b and b["auto"])
+                    if b is not None and self.batch is b:
+                        self.batch = None   # in the same lock as the check: a later start begins a new run
+                    ended = True
                 stopped = bool(b and b.get("stopped"))
                 if not stopped and (not auto or out):
                     self.postings.mark_all_scanned()

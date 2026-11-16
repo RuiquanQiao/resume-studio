@@ -1736,11 +1736,18 @@ def test_clicking_a_running_scan_stops_it(page, server, monkeypatch):
         pg.click(".hunt-tab[data-tab=companies]")
         pg.click("#hunt-scan-all")
         pg.wait_for_selector("#hunt-scan-all[aria-busy=true]:not([disabled])")
+        # the company is being read (blocked on its site): the window's last repaint of the run has come
+        end = time.time() + 15
+        while "C1" not in hunt.scanner.running and time.time() < end:
+            time.sleep(0.05)
+        pg.wait_for_timeout(600)
         pg.mouse.move(0, 0)
-        w = pg.locator("#hunt-scan-all").bounding_box()["width"]
+        width = "document.querySelector('#hunt-scan-all').getBoundingClientRect().width"
+        w = pg.evaluate(width)
         pg.hover("#hunt-scan-all")
-        assert pg.locator("#hunt-scan-all .ss-stop").is_visible() and "停止扫描" in pg.inner_text("#hunt-scan-all .ss-stop")
-        assert abs(pg.locator("#hunt-scan-all").bounding_box()["width"] - w) < 1          # the same width under the pointer
+        pg.wait_for_function("getComputedStyle(document.querySelector('#hunt-scan-all .ss-stop')).visibility === 'visible'")
+        assert "停止扫描" in pg.inner_text("#hunt-scan-all .ss-stop")
+        assert abs(pg.evaluate(width) - w) < 1                                               # the same width under the pointer
         pg.screenshot(path=str(ART / "hunt-scan-stop-hover.png"), clip=pg.locator("#hunt-scan-all").bounding_box())
         pg.click("#hunt-scan-all")
         pg.wait_for_selector("#toast.show:has-text('已停止扫描')")
