@@ -64,6 +64,15 @@
   --fs-body: 15px;
   --fs-meta: 13.5px;
 }
+/* ...except the chat pane and what opens from it (its menus, cards, tips): a dense side column reads well small, as
+   in every chat app's side panel, so it keeps the Latin sizes in every language (2026-11-17, the user) */
+.pane.left, .from-chat {
+  --fs-title: 21px;
+  --fs-head: 16px;
+  --fs-body: 14px;
+  --fs-meta: 12.5px;
+  font-size: var(--fs-body);   /* what is inherited from <body> was sized before the tiers changed here */
+}
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0e0f12; --panel: #1a1b1f; --panel-2: #212226; --hover: #26272c; --fill: #26272c; --fill-2: #2d2e33;

@@ -89,8 +89,12 @@
   const ownText = (el) => [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join("").trim();
 
   // the type scale (style.css :root): text on screen comes in these sizes and no other
+  // in its own region: the chat pane and what opens from it keep the Latin sizes in every language (2026-11-17)
   const root = getComputedStyle(document.documentElement);
-  const scale = ["--fs-title", "--fs-head", "--fs-body", "--fs-meta"].map((v) => px(root.getPropertyValue(v)));
+  const scaleOf = (s) => ["--fs-title", "--fs-head", "--fs-body", "--fs-meta"].map((v) => px(s.getPropertyValue(v)));
+  const mainScale = scaleOf(root);
+  const chatEl = document.querySelector(".pane.left");
+  const chatScale = chatEl ? scaleOf(getComputedStyle(chatEl)) : mainScale;
   const letterIcon = px(root.getPropertyValue("--icon-letter"));
 
   for (const el of all) {
@@ -101,6 +105,7 @@
     // off-scale: text in a size that is none of the four roles (a number written in the CSS, a browser default
     // such as a button's 13.33px, an em that multiplied). Added 2026-11-15 when sizes had drifted below the scale.
     const typed = ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName);
+    const scale = el.closest(".pane.left, .from-chat") ? chatScale : mainScale;
     if ((text || typed) && scale.every((v) => Math.abs(v - fs) > 0.05)
         && !(el.matches(".ws-mono") && Math.abs(fs - letterIcon) < 0.05))
       report("off-scale", el, `font-size ${fs}px is none of ${scale.join(" / ")}`);

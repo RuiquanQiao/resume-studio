@@ -1496,6 +1496,28 @@ def test_context_card_with_no_usage_windows_has_no_stray_zero(page, server, fake
     pop.screenshot(path=str(ART / "context-at-limit.png"))
 
 
+def test_chinese_is_a_step_larger_in_the_main_area_but_not_in_the_chat(page, server, fake_claude):
+    """2026-11-17, the user: the chat pane reads well small; only the main area needs Chinese a step up."""
+    open_chat_tab(page)
+    fs = "(s) => getComputedStyle(document.querySelector(s)).getPropertyValue('--fs-body').trim()"
+    assert page.evaluate("() => document.documentElement.lang").startswith("zh")
+    assert page.evaluate(fs, ".workspace > .pane:not(.left)") == "15px"
+    assert page.evaluate(fs, "#chat") == "14px"
+    assert page.evaluate("() => getComputedStyle(document.querySelector('#chat-input')).fontSize") == "14px"
+    page.click("#chat-ctx-btn")                       # a card the chat opens is set like the chat
+    page.locator(".float.cx-pop").wait_for()
+    assert page.evaluate(fs, ".float.cx-pop") == "14px"
+    page.keyboard.press("Escape")
+    page.evaluate("() => { const t = document.createElement('div'); document.body.append(t); window.__probe = t; }")
+    assert page.evaluate("() => getComputedStyle(window.__probe).getPropertyValue('--fs-body').trim()") == "15px"
+    page.fill("#chat-input", "TASKS 看看我的简历")
+    page.keyboard.press("Enter")
+    page.wait_for_selector("#chat-stop.hidden", state="attached", timeout=10000)
+    page.set_viewport_size({"width": 2000, "height": 1060})
+    page.wait_for_timeout(300)
+    page.screenshot(path=str(ART / "zh-chat-and-main.png"))
+
+
 def shot_float(pg, name):
     pg.wait_for_selector(".float.in")
     pg.wait_for_timeout(200)                                   # let the fade-in finish

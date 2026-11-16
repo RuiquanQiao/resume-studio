@@ -310,6 +310,7 @@ function showTip(t) {
   if (!Tip.el) { Tip.el = h("div", { class: "tip", role: "tooltip" }); document.body.append(Tip.el); }
   const el = Tip.el;
   el.textContent = text;
+  el.classList.toggle("from-chat", !!t.closest(".pane.left"));
   el.style.left = "0px"; el.style.top = "0px";
   el.classList.add("show");
   const r = t.getBoundingClientRect(), w = el.offsetWidth, ht = el.offsetHeight;
@@ -349,6 +350,7 @@ const Float = { cur: null };
 function openFloat(anchor, panel, { place = "bottom", align = "start", minWidth = 0, onClose = null, focus = null } = {}) {
   closeFloat();
   panel.classList.add("float");
+  panel.classList.toggle("from-chat", !!(anchor.closest && anchor.closest(".pane.left")));   // the chat's type sizes (style.css)
   document.body.append(panel);
   const f = { anchor, panel, place, align, minWidth, onClose };
   Float.cur = f;

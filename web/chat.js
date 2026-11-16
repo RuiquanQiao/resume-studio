@@ -1785,7 +1785,7 @@ function quoteSelection() {
   if (!text || !log.contains(sel.anchorNode) || !log.contains(sel.focusNode) || $("#chat-input").disabled) { hideQuote(); return; }
   const r = sel.getRangeAt(0).getBoundingClientRect(), box = log.getBoundingClientRect();
   if (!quoteBtn) {
-    quoteBtn = h("button", { type: "button", class: "btn sm chat-quote", onpointerdown: (e) => e.preventDefault(), onclick: () => quoteInto(quoteBtn.dataset.text) },
+    quoteBtn = h("button", { type: "button", class: "btn sm chat-quote from-chat", onpointerdown: (e) => e.preventDefault(), onclick: () => quoteInto(quoteBtn.dataset.text) },
       icon("quote"), t("Quote"));
     document.body.append(quoteBtn);
   }
