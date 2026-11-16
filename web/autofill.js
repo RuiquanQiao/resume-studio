@@ -336,14 +336,14 @@ function syncCard(v) {
       h("div", { class: "row" },
         h("button", { class: "btn primary", id: "fill-check", "aria-busy": reading && "true", disabled: !ui.chat.available || reading,
           title: ui.chat.available ? null : missingAgentText(), onclick: checkSite }, icon("sparkle"),
-          reading ? t("The AI is reading…") : t("Read {site}", { site: site.name }))));
+          reading ? t("The AI is reading") : t("Read {site}", { site: site.name }))));
   }
   const c = v.checking;
   const lc = v.last_check || {};
   const r = v.route;
   // while it reads, "Check for updates" spins and says how far it got: one spinner for one piece of work
-  const busyText = c ? (c.pages ? t("Reading {site}: page {n} of {total}…", { site: site.name, n: Math.max(1, c.page), total: c.pages }) : t("Reading {site}…", { site: site.name }))
-    : reading ? t("The AI is reading…") : null;
+  const busyText = c ? (c.pages ? t("Reading {site}: page {n} of {total}", { site: site.name, n: Math.max(1, c.page), total: c.pages }) : t("Reading {site}", { site: site.name }))
+    : reading ? t("The AI is reading") : null;
   const status = busyText ? null
     : lc.error ? h("span", { class: "fs-status bad" }, icon("alert"), lc.signed_out ? t("{site} wants you to sign in.", { site: site.name }) : t("The last check didn't finish."))
     : h("span", { class: "fs-status" }, icon("check"),

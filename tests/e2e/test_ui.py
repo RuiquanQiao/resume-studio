@@ -1767,6 +1767,18 @@ def test_clicking_a_running_scan_stops_it(page, server, monkeypatch):
         pg.mouse.move(0, 0)
         width = "document.querySelector('#hunt-scan-all').getBoundingClientRect().width"
         w = pg.evaluate(width)
+        # user, 2026-11-17: the spinner and the stop square take one place before the words, with no gap left by
+        # a hidden spinner, and a spinning button's words end with no "…"
+        faces = """() => { const b = document.querySelector('#hunt-scan-all');
+          const box = (s) => b.querySelector(s).getBoundingClientRect();
+          const mid = (s) => box(s).left + box(s).width / 2;   // the centre: the spinner turns, and its box with it
+          return { run: b.querySelector('.ss-run').textContent, stop: b.querySelector('.ss-stop').textContent,
+                   before: getComputedStyle(b, '::before').content, spin: mid('.ss-run > .spin'),
+                   square: mid('.ss-stop > svg'), gap: box('.ss-stop').left - b.getBoundingClientRect().left,
+                   right: b.getBoundingClientRect().right - box('.ss-stop').right }; }"""
+        f = pg.evaluate(faces)
+        assert f["run"] == "正在扫描" and f["stop"] == "停止扫描" and f["before"] in ("none", "normal"), f
+        assert abs(f["spin"] - f["square"]) < 1 and abs(f["gap"] - f["right"]) < 2, f   # as much room before as after
         pg.hover("#hunt-scan-all")
         pg.wait_for_function("getComputedStyle(document.querySelector('#hunt-scan-all .ss-stop')).visibility === 'visible'")
         assert "停止扫描" in pg.inner_text("#hunt-scan-all .ss-stop")
@@ -3686,10 +3698,15 @@ def test_postings_probably_over_are_folded_away_with_their_dates(page_all):
 
 
 def test_one_piece_of_work_shows_one_spinner(page_all):
-    """A scan or a read going on spins in its button only: no second "Scanning…" or "Reading…" beside it."""
+    """A scan or a read going on spins in its button only: no second "Scanning" or "Reading" beside it. A spinning
+    button's words end with no "…" (user, 2026-11-17): the spinner says it goes on."""
     pg = page_all
     counts = pg.evaluate("""() => {
-      const busy = (el) => el.querySelectorAll('.spin, [aria-busy="true"]').length;
+      const drawn = (b) => getComputedStyle(b, '::before').content;
+      const busy = (el) => { document.body.append(el);
+        const n = el.querySelectorAll('.spin').length
+          + [...el.querySelectorAll('[aria-busy="true"]')].filter((b) => !['none', 'normal'].includes(drawn(b))).length;
+        el.remove(); return n; };
       const say = (el, word) => (el.textContent.match(new RegExp(word, 'g')) || []).length;
       const scan = postingsCard({company: {id: 'C82', name: 'Test Company'}, scan: {running: true, at: '2026-10-30T00:00:00Z', ok: true}, postings: []});
       F.site = 'linkedin';
@@ -3698,7 +3715,7 @@ def test_one_piece_of_work_shows_one_spinner(page_all):
       const reading = syncCard({synced: true, synced_at: '2026-10-30T00:00:00Z', reading: true, route, last_check: {}});
       return {scan: [busy(scan), say(scan, '…')], checking: [busy(checking), say(checking, '…')], reading: [busy(reading), say(reading, '…')]};
     }""")
-    assert counts == {"scan": [1, 1], "checking": [1, 1], "reading": [1, 1]}, counts
+    assert counts == {"scan": [1, 0], "checking": [1, 0], "reading": [1, 0]}, counts
     pg.evaluate("""() => { const card = postingsCard({company: {id: 'C82', name: 'Test Company'}, scan: {running: true}, postings: []});
       card.id = 'one-spinner'; card.style.cssText = 'position: fixed; top: 16px; left: 16px; width: 900px; z-index: 9999'; document.body.append(card); }""")
     pg.locator("#one-spinner").screenshot(path=str(ART / "hunt-scan-one-spinner.png"))

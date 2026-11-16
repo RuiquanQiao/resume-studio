@@ -17,6 +17,7 @@ import re
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -29,6 +30,7 @@ MAX_PAGES = 120         # 6,000 roles: no 北森 list the tracker has seen comes
 TIMEOUT = 60            # its API answers in 1-25 s, and now and then not at all
 TRIES = 4
 WAITS = (3, 10, 20)
+AT_ONCE = 3             # pages asked at once, each hedged (patience.ask): two at most out per page
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/130.0 Safari/537.36")
 KINDS = {"1": "social", "2": "campus", "3": "intern"}
@@ -188,12 +190,18 @@ def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | N
     first = page(0)
     total = first.get("Count") if isinstance(first.get("Count"), int) else None
     rows += first["Data"]
-    if total is not None:
-        for index in range(1, min(MAX_PAGES, -(-total // PAGE))):
+    if total is not None:   # the rest a few at a time: one after another, 货拉拉's 12 pages took 20 minutes and more
+        def one(index: int) -> list[dict] | ReadFailed:
             try:
-                rows += page(index)["Data"]
+                return page(index)["Data"]
             except ReadFailed as e:
-                failed.append(str(e))
+                return e
+        with ThreadPoolExecutor(AT_ONCE) as pool:
+            for got in pool.map(one, range(1, min(MAX_PAGES, -(-total // PAGE)))):
+                if isinstance(got, ReadFailed):
+                    failed.append(str(got))
+                else:
+                    rows += got
     elif len(first["Data"]) == PAGE:   # no count: page on until a short page; a page that doesn't come ends it
         for index in range(1, MAX_PAGES):
             try:

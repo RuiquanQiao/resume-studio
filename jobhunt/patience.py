@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
 import threading
 import time
@@ -115,27 +116,71 @@ def of(url: str, timeout: float, tries: int, waits: tuple[float, ...] = (), *, c
     return Patience(min(timeout, MAX_WAIT), tries, waits)
 
 
+HEDGE_MIN = 5.0    # a second request is never sent sooner than this
+
+
+def hedge_after(url: str, p: Patience) -> float:
+    """How long a request waits for its answer before the same request is sent once more beside it (a hedged
+    request, "The Tail at Scale", Dean and Barroso 2013): twice the site's usual answer time, or a third of the
+    timeout for a site with no answers kept yet. A site that answers or hangs, never slowly in between, costs the
+    usual time, not the whole timeout: join.huolala.cn answers its list in 3-26 s or not at all, and each page that
+    hung was waited for 97 s before it was asked again, so a scan of its 12 pages ran for 20 minutes and more;
+    hedged, 4 pages at a time, all 561 roles came in 154 s (2026-11-17)."""
+    with _lock:
+        took = sorted((_seen.get(_host(url)) or {}).get("took") or [])
+    usual = took[len(took) // 2] * 2 if len(took) >= 3 else p.timeout / 3
+    return min(p.timeout, max(HEDGE_MIN, usual))
+
+
 def ask(url: str, call: Callable[[float], Any], p: Patience, *, net: tuple[type[BaseException], ...],
         answered: tuple[type[BaseException], ...] = (), answered_is_final: bool = False) -> Any:
     """`call(timeout)` with the site's patience, tried again after a pause when it doesn't answer (`net`). Each answer
     and each miss is kept for the next wait. `answered` (an HTTP error): the site did answer; with
-    `answered_is_final`, that answer stands and isn't asked again."""
-    for attempt in range(p.tries):
+    `answered_is_final`, that answer stands and isn't asked again.
+
+    A request with no answer after `hedge_after` is sent once more beside the first, and whichever answers first is
+    used; the other is left to end by itself. Every caller asks a list, which reading twice changes nothing. A hedge
+    counts as one of the tries, and at most two requests are out at once."""
+    out: queue.Queue = queue.Queue()
+    hedge = hedge_after(url, p)
+
+    def attempt() -> None:
         start = time.time()
         try:
             got = call(p.timeout)
+        except answered as e:
             took(url, time.time() - start)
-            return got
-        except answered:
-            took(url, time.time() - start)
-            if answered_is_final or attempt == p.tries - 1:
-                raise
-        except net:
+            out.put(("answered", e))
+        except net as e:
             missed(url)
-            if attempt == p.tries - 1:
-                raise
-        time.sleep(p.waits[min(attempt, len(p.waits) - 1)] if p.waits else 0)
-    raise ValueError("no tries")
+            out.put(("net", e))
+        except BaseException as e:  # noqa: BLE001  anything else is the caller's, raised as it came
+            out.put(("other", e))
+        else:
+            took(url, time.time() - start)
+            out.put(("ok", got))
+
+    sent, live, failures = 0, 0, 0
+    while True:
+        if live == 0:
+            if sent >= p.tries:
+                raise ValueError("no tries")
+            if failures:
+                time.sleep(p.waits[min(failures - 1, len(p.waits) - 1)] if p.waits else 0)
+            threading.Thread(target=attempt, daemon=True).start()
+            sent, live = sent + 1, live + 1
+        try:
+            kind, value = out.get(timeout=hedge if live == 1 and sent < p.tries else None)
+        except queue.Empty:   # no answer yet: the same request once more, beside it
+            threading.Thread(target=attempt, daemon=True).start()
+            sent, live = sent + 1, live + 1
+            continue
+        live -= 1
+        if kind == "ok":
+            return value
+        if kind == "other" or (kind == "answered" and answered_is_final) or (live == 0 and sent >= p.tries):
+            raise value
+        failures += 1
 
 
 def took(url: str, seconds: float) -> None:

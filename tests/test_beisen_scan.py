@@ -230,6 +230,72 @@ def test_a_beisen_page_that_never_comes_loses_only_itself(hunt, monkeypatch):
         site.close()
 
 
+def test_a_beisen_site_that_hangs_now_and_then_is_read_in_the_time_its_answers_take(hunt, monkeypatch):
+    """货拉拉, 2026-11-17: join.huolala.cn answers a page in 3-26 s or hangs. Its 12 pages were read one after another
+    and each hung page was waited for to its 97 s timeout before it was asked again: a scan ran 20 minutes and more.
+    Now the pages are read a few at a time, and a page with no answer by the site's usual time is asked once more
+    beside the first. Here the first request for every page hangs 1.4 s: one after another, unhedged, that is 10 s."""
+    import time
+    from jobhunt import patience
+    site = BeisenSite([role(i) for i in range(70)])
+    monkeypatch.setattr(beisen, "PAGE", 10)   # seven pages
+    monkeypatch.setattr(beisen, "TIMEOUT", 3)
+    monkeypatch.setattr(beisen, "WAITS", (0, 0, 0))
+    monkeypatch.setattr(patience, "HEDGE_MIN", 0.2, raising=False)   # the site's usual time: a third of its 3 s timeout
+    hung: set[int] = set()
+    answer = site.srv.RequestHandlerClass.do_POST
+
+    def do_post(self):
+        body = self.rfile.read(int(self.headers["Content-Length"]))
+        n = json.loads(body)["PageIndex"]
+        if n not in hung:
+            hung.add(n)
+            time.sleep(1.4)
+        self.rfile = __import__("io").BytesIO(body)
+        answer(self)
+    site.srv.RequestHandlerClass.do_POST = do_post
+    try:
+        start = time.time()
+        got = beisen.read(site.url + "/")
+        took = time.time() - start
+        assert len(got["jobs"]) == 70 and got["total"] == 70 and not got.get("failed")
+        assert took < 5, took
+    finally:
+        site.close()
+
+
+def test_a_request_with_no_answer_yet_is_sent_once_more_beside_it(monkeypatch):
+    """patience.ask: the first answer of two is used; a hedge is one of the tries; every try failing raises the last."""
+    import threading
+    import time
+    from jobhunt import patience
+    monkeypatch.setattr(patience, "HEDGE_MIN", 0.1, raising=False)
+    url, p = "http://127.0.0.1:9/list", patience.Patience(0.6, 3, (0,))
+    hang, calls = threading.Event(), []
+
+    def call(timeout):
+        calls.append(timeout)
+        if len(calls) == 1:
+            hang.wait(5)   # the first request hangs
+            return "late"
+        return "second"
+    start = time.time()
+    assert patience.ask(url, call, p, net=(OSError,)) == "second"
+    assert time.time() - start < 1 and len(calls) == 2
+    hang.set()
+
+    calls.clear()
+
+    def fails(timeout):
+        calls.append(timeout)
+        raise OSError(f"reset {len(calls)}")
+    try:
+        patience.ask(url, fails, p, net=(OSError,))
+        raise AssertionError("no error")
+    except OSError as e:
+        assert str(e) == "reset 3" and len(calls) == 3
+
+
 def test_the_wait_grows_with_distance_and_with_how_slow_a_site_was(tmp_path, monkeypatch):
     """User, 2026-11-11: patience by how far the user is, the Great Firewall above all. Each reader's own numbers
     are what a near site gets; across the firewall, and for a site that answered slowly before, it waits longer,

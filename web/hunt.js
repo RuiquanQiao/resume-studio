@@ -963,10 +963,14 @@ async function stopScan(ids = null) {
 }
 
 // a running scan's button: spinning with its progress, and a click stops it (hover says so). Same width either way
+// The spinner and the stop square take one place, before the words, as a media player's play/pause does; under the
+// pointer the label itself says "Stop scanning", so no tooltip repeats it
 function stoppable(attrs, running, onStop) {
   return h("button", { ...attrs, class: (attrs.class || "btn sm") + " scan-stoppable", "aria-busy": "true",
-    title: t("Click to stop scanning"), onclick: onStop },
-    h("span", { class: "ss-face" }, h("span", { class: "ss-run" }, running, icon("stop")), h("span", { class: "ss-stop" }, icon("stop"), t("Stop scanning"))));
+    "aria-label": t("Click to stop scanning"), onclick: onStop },
+    h("span", { class: "ss-face" },
+      h("span", { class: "ss-run" }, h("span", { class: "spin" }), running),
+      h("span", { class: "ss-stop" }, icon("stop"), t("Stop scanning"))));
 }
 
 // while a run goes on: how far it got, counted the whole time (not only while a company is being read). Only Scan
@@ -975,7 +979,7 @@ function scanAllButton() {
   const sc = scanInfo(), b = sc.batch;
   const busy = !!(b && b.all) || H.starting === "all";
   if (busy) return stoppable({ id: "hunt-scan-all" },
-    b && b.total > 1 ? t("Scanning {n} of {total}…", { n: Math.min(b.done + 1, b.total), total: b.total }) : t("Scanning…"), () => stopScan());
+    b && b.total > 1 ? t("Scanning {n} of {total}", { n: Math.min(b.done + 1, b.total), total: b.total }) : t("Scanning"), () => stopScan());
   const now = H.data.companies.filter((c) => (sc.running || {})[c.id]).map((c) => c.name);
   return h("button", { class: "btn sm", id: "hunt-scan-all",
     title: now.length ? t("Reading {names}", { names: now.join(", ") }) : sc.last_all ? t("Last scanned {when}", { when: huntWhen(sc.last_all) }) : t("Reads every company's careers sites for open roles; a site with no scan route yet needs the AI to learn it first"),
@@ -1490,7 +1494,7 @@ function postingsCard(v) {
     sc.ok && sc.short && h("button", { class: "btn sm", id: "company-fix-short", "data-ai": aiKey("short", [c]), disabled: !ui.chat.available,
       title: t("The AI finds where the rest go missing and fixes the scan route"), onclick: () => askShort(c, sc.short) }, icon("sparkle"), t("Let AI read the rest")),
     !sc.ok && sc.at && sc.how === "route" && h("button", { class: "btn sm", "data-ai": aiKey("learn", [c]), disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Ask AI to record the scan route again")),
-    busy || waiting ? stoppable({ id: "company-scan" }, busy ? t("Scanning…") : t("Waiting…"), () => stopScan([c.id]))
+    busy || waiting ? stoppable({ id: "company-scan" }, busy ? t("Scanning") : t("Waiting"),() => stopScan([c.id]))
       : h("button", { class: "btn sm", id: "company-scan", disabled: sc.needs === "sites",
         title: sc.needs === "sites" ? t("Add a careers site below first") : null,
         onclick: () => scanCompanies([c.id]) }, icon("refresh"), t("Scan"))];
@@ -1623,8 +1627,8 @@ function companyProps() {
     { key: "roles", label: t("Roles"), type: "relation", width: 300, get: (c) => (c.apps || []).map((a) => a.role),
       // a scan going on comes first: the chips after it may be cut off at the cell's edge
       render: (c) => h("div", { class: "role-chips" },
-        scanning(c.id) ? h("span", { class: "scan-chip" }, h("span", { class: "spin" }), t("Scanning…"))
-          : scanQueued(c.id) && h("span", { class: "scan-chip c-muted" }, t("Waiting…")),
+        scanning(c.id) ? h("span", { class: "scan-chip" }, h("span", { class: "spin" }), t("Scanning"))
+          : scanQueued(c.id) && h("span", { class: "scan-chip c-muted" }, t("Waiting")),
         (c.apps || []).map(roleChip), openChip(c), openChip(c) && !scanning(c.id) && scanGap(c),
         !scanning(c.id) && !scanQueued(c.id) && !(c.apps || []).length && !openChip(c) && (scanTrouble(c) || h("span", { class: "c-muted" }, t("none yet")))) },
     placesProp("places", t("Hires in"), (c, v) => cellCompany(c, { places: v })),

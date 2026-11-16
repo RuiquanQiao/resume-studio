@@ -163,7 +163,7 @@ function connectCard(st) {
     missing.length > 0 && !running && h("div", { class: "note-bar warn" }, icon("alert"), h("span", { class: "nb-text" },
       t("{tools} not found on this computer. {name} needs git and Node.js 22 or newer.", { tools: missing.join(", "), name: st.tool.name }))),
     h("div", { class: "connect-acts" },
-      h("button", { class: "btn primary", disabled: running || missing.length > 0, onclick: installTool }, running ? t("Installing…") : t("Install {name}", { name: st.tool.name })),
+      h("button", { class: "btn primary", "aria-busy": running && "true", disabled: running || missing.length > 0, onclick: installTool }, running ? t("Installing") : t("Install {name}", { name: st.tool.name })),
       h("button", { class: "btn", disabled: running, onclick: useToolFolder }, icon("folderOpen"), t("I already have it…"))),
     h("button", { class: "linkish connect-link", onclick: () => api("POST", "/api/open", { url: st.tool.homepage }) }, icon("external"), t("About {name}", { name: st.tool.name })));
 }
