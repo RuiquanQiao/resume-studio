@@ -2465,6 +2465,7 @@
  "Scrolling the page": "正在滚动页面",
  "Sign in to {site} on this page. The AI continues once you choose “I've signed in”.": "请在此页面登录 {site}。登录完成后，请点击「已完成登录」，AI 随后继续。",
  "Sign-in activity detected on this page.": "已在此页面检测到登录请求。",
+ "If the browser offers to save the password, choose Save: from then on Resume Studio signs in to this site by itself.": "如浏览器询问是否保存密码，请选择「保存」。此后 Resume Studio 将自动登录此网站。",
  "Stop the AI's reply. The page stays as it is.": "停止 AI 的本次回复。页面保持当前状态。",
  "Take over": "接管",
  "Taking a screenshot": "正在截图",

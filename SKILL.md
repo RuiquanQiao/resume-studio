@@ -472,6 +472,18 @@ Edge) with a profile of its own in `<skill>/.local/browser/` and drives it over 
   are refused until they choose "I've signed in" (on the page's bar or in the chat), or the site's recorded
   sign-in check (`browser.py sign-in-check`, found with `browser.py requests`) says so. Never type a
   password. `browser.py signed-out <site>` makes the window show its sign-in banner.
+  **Sign-in recipes** (`autofill/autologin.py`): once the user has let Resume Studio's browser save a site's
+  password, signing in again is a few clicks that Resume Studio replays by itself, with no AI and no window
+  (国聘's sign-in lasts 8 hours). On a sign-in page with no recipe recorded (the command's note says so),
+  record one before asking the user: `browser.py sign-in-recipe --stdin` with `{"steps": [{"do": "open",
+  "url": ...}, {"do": "click", "name": "密码登录"}, {"do": "fill", "field": "<account field>"}, {"do": "tick",
+  "field": "<terms box>"}, {"do": "submit", "name": "登录"}]}`. Clicking the account field makes the browser
+  fill the saved account and password; the recipe holds neither and the code reads only whether the password
+  field is filled. It is run at once; without a saved password it is kept for next time and the user signs in
+  (and saves the password when the browser offers). A recipe belongs to the recruiting system (no open step)
+  or the domain, like a sign-in check. It never presses "send code", "register", "forgot password", WeChat or
+  QR-code controls, never solves a captcha, and is not tried again after the site refused the password.
+  Session cookies (北森's `italent-sessionid`) are kept across browser restarts, DPAPI-protected.
   Some sites drop a sign-in from a driven browser (their risk check sees `navigator.webdriver`; Xinghe's
   "send the code" silently never arrives). Then the user can choose "No code arriving?" in the window, which
   reopens the same browser profile without remote control; only the user switches to it. Never try to hide

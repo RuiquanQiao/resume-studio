@@ -2465,6 +2465,7 @@
  "Scrolling the page": "페이지를 스크롤하는 중",
  "Sign in to {site} on this page. The AI continues once you choose “I've signed in”.": "이 페이지에서 {site}에 로그인하십시오. '로그인 완료'를 선택하면 AI가 계속합니다.",
  "Sign-in activity detected on this page.": "이 페이지에서 로그인 요청이 감지되었습니다.",
+ "If the browser offers to save the password, choose Save: from then on Resume Studio signs in to this site by itself.": "브라우저가 비밀번호 저장을 제안하면 「저장」을 선택하십시오. 이후 Resume Studio가 이 사이트에 자동으로 로그인합니다.",
  "Stop the AI's reply. The page stays as it is.": "AI의 이번 응답을 중지합니다. 페이지는 그대로 유지됩니다.",
  "Take over": "직접 조작",
  "Taking a screenshot": "스크린샷을 찍는 중",

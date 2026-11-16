@@ -52,8 +52,19 @@ these sites). You work in it only through this command (Bash); every call prints
 
 Work like a careful person: one change at a time, read the dialog before saving, check the value after
 typing (`type` prints what the field now holds), and never click anything you weren't asked to.
-If the site asks for a sign-in, a verification code or a captcha, ask the user in one line to do it in the
-browser window, then run `{b} wait-signed-in <site>` (the site's id when it is on the list; without one for any
+If the site asks for a sign-in, Resume Studio first signs in by itself when the site has a sign-in recipe
+(the clicks that sign in with the password the browser saved); the command's note says when it did. When the
+note says no recipe is recorded, record one on that sign-in page before asking the user: snapshot it, then
+`{b} sign-in-recipe --stdin` with {{"steps": [{{"do": "open", "url": "<the sign-in page>"}}, {{"do": "click",
+"name": "<the tab that shows the password form, such as 密码登录>"}}, {{"do": "fill", "field": "<the account
+field's label or placeholder>"}}, {{"do": "tick", "field": "<the terms box the form requires>"}}, {{"do": "submit",
+"name": "<the sign-in button>"}}]}} (leave out the steps the page doesn't need; no open step on a recruiting
+system such as 北森, whose companies each have an address of their own). Clicking the account field makes the
+browser fill the account and the password it saved; the recipe holds neither, and never presses a "send code",
+"register", "forgot password", WeChat or QR-code control. It is run at once and says what came of it: signed in,
+or what is left to the user (no password saved yet, a captcha, a code).
+If the sign-in still needs the user (a verification code, a captcha, a password not saved yet), ask the user in
+one line to do it in the browser window, then run `{b} wait-signed-in <site>` (the site's id when it is on the list; without one for any
 other site, such as a company's careers site). That hands the tab to the user: your commands on it are refused
 until they choose "I've signed in" (on the bar at the bottom of the page, or in the chat), or the site's recorded
 sign-in check says they are signed in. Clicking a sign-in button yourself is not signing in. While it says "not

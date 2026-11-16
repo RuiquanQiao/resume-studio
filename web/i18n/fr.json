@@ -2660,6 +2660,7 @@
  "Scrolling the page": "Défilement de la page",
  "Sign in to {site} on this page. The AI continues once you choose “I've signed in”.": "Connectez-vous à {site} sur cette page. L'IA reprend dès que vous choisissez « Connexion effectuée ».",
  "Sign-in activity detected on this page.": "Activité de connexion détectée sur cette page.",
+ "If the browser offers to save the password, choose Save: from then on Resume Studio signs in to this site by itself.": "Si le navigateur propose d’enregistrer le mot de passe, choisissez « Enregistrer ». Resume Studio se connectera ensuite lui-même à ce site.",
  "Stop the AI's reply. The page stays as it is.": "Arrête la réponse de l'IA. La page reste en l'état.",
  "Take over": "Prendre la main",
  "Taking a screenshot": "Capture d'écran en cours",

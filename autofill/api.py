@@ -21,7 +21,7 @@ from resume import model
 from resume import prompts as rp
 from resume.service import Studio
 
-from . import profile, prompts, recipe, route, signin
+from . import autologin, profile, prompts, recipe, route, signin
 from . import sites as sites_mod
 from .service import Autofill
 from .sites import Site
@@ -71,6 +71,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
     hand.cli = prompts.cli(str(studio.store.path))
     checks = signin.Checks(fill.root)
     judge = signin.Judge(browser, checks)   # is the user signed in: the address, the site's own check, the page
+    logins = autologin.Recipes(fill.root)   # how to sign in again with the password the browser saved
 
     def control_changed(key: str | None, c: Control) -> None:
         """The chat says it too, under "Working…": the tab is the user's, with the way to hand it back."""
@@ -323,7 +324,14 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         try:
             with browser.hold(), browser.acting(f"check:{site.id}"):
                 bro(browser.ensure)
-                reading, scope = route.run(browser, site, r, base, progress, judge=judge)
+                try:
+                    reading, scope = route.run(browser, site, r, base, progress, judge=judge)
+                except route.RouteBroken as e:
+                    # signed out: the site's sign-in recipe signs in again by itself (国聘's sign-in lasts 8 hours),
+                    # then the route reads once more; only when it can't is the user asked
+                    if not (e.signed_out and signed_in_by_recipe(site)):
+                        raise
+                    reading, scope = route.run(browser, site, r, base, progress, judge=judge)
             return {"ok": True, **fill.take_reading(site, reading, scope, "route")}
         except route.RouteBroken as e:
             fill.check_failed(site, str(e), e.signed_out, e.sign_in)
@@ -404,7 +412,12 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         publish(site.id)
         st = fill.load(site.id)
         try:
-            said = recipe.push(browser, site, st, change, judge=judge)
+            try:
+                said = recipe.push(browser, site, st, change, judge=judge)
+            except recipe.RecipeFailed as e:
+                if not (e.kind == "signed_out" and not e.saved and signed_in_by_recipe(site)):
+                    raise
+                said = recipe.push(browser, site, fill.load(site.id), change, judge=judge)   # signed in again: once more
         except recipe.RecipeFailed as e:
             fill.report(site, change["id"], "failed", str(e), **failed_note(e))
             fill.recipe_failed(site, change, e)
@@ -652,6 +665,69 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
             fill.save(site.id, signed_out=False)
             publish(site.id)
 
+    # ---- signing in again by the recorded sign-in recipe, with the password the browser saved (autologin.py) ----
+    def confirm_for(url: str, owner: Site | None) -> Callable[[], bool | None]:
+        """Is the user signed in on this work's page now: the site's sign-in check when it can answer there (it may
+        not on the sign-in page, another host of the site), else False while the address is a sign-in page and None
+        (nothing tells) otherwise."""
+        chk = checks.find(url, owner)
+
+        def confirm() -> bool | None:
+            if chk:
+                said = signin.run(browser, str(chk.get("script") or ""))[0]
+                if said is not None:
+                    return said
+            said, _ = judge(owner, str(browser.here().get("url") or ""))
+            return False if said is False else None
+        return confirm
+
+    def auto_sign_in(site: Site | None, url: str = "") -> autologin.Outcome | None:
+        """Sign in by the recipe recorded for this page's site, in this work's tab. None: none is recorded, or the last
+        one failed a moment ago (or the site refused the saved password) and the user hasn't signed in since."""
+        try:
+            url = url or str(browser.here().get("url") or "")
+        except BrowserError:
+            return None
+        if not url.startswith("http"):
+            return None
+        owner = site or owner_of(url)
+        key = signin.key_for(url, owner)
+        rec = logins.get(key)
+        if not autologin.may_try(rec):
+            return None
+        out = autologin.replay(browser, rec or {}, confirm_for(url, owner), owner.name if owner else host_of(url))
+        logins.note(key, out)
+        if out.ok:
+            signed_in_now(owner)
+            browser.keep_session_cookies()
+        return out
+
+    def signed_in_by_recipe(site: Site) -> bool:
+        o = auto_sign_in(site)
+        return o is not None and o.ok
+
+    def after_manual(url: str, owner: Site | None) -> str:
+        """The user signed in by hand: the cookies are kept, a recipe that failed may be tried again (they may have
+        let the browser save the password), and the AI is told what is still to record."""
+        logins.clear_failure(signin.key_for(url, owner))
+        browser.keep_session_cookies()
+        return record_check_text(url, owner)
+
+    def recipe_hint(url: str, owner: Site | None) -> str:
+        """For the AI on a page that asks to sign in: record the site's sign-in recipe first, when it has none."""
+        key = signin.key_for(url, owner)
+        rec = logins.get(key)
+        b = prompts.cli(str(studio.store.path))
+        if rec is None:
+            return (f" No sign-in recipe is recorded for {key[7:]} yet. Before asking the user, record one on this sign-in "
+                    f"page (`{b} sign-in-recipe --stdin`, as SKILL.md says): Resume Studio runs it at once, and when the "
+                    "browser has the password saved it signs in by itself, now and every later time.")
+        last = rec.get("last") or {}
+        if last and not last.get("ok") and last.get("kind") == "broken":
+            return (f" The recorded sign-in recipe for {key[7:]} failed at step {last.get('step')}: {last.get('text')}. "
+                    f"Record it anew on this page (`{b} sign-in-recipe --stdin`) before asking the user.")
+        return ""
+
     @app.route("POST", "/api/autofill/{site}/wait-signed-in")
     def wait_signed_in(req: Request):
         """`browser.py wait-signed-in <site>`: the chat's tab is the user's until they sign in. Back once they choose
@@ -722,12 +798,17 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
                 if plain:   # the user switched back themselves: that is their "I've signed in"
                     signed_in_now(owner)
                     return {"text": f"the user signed in without remote control and switched back; the tab is on {url}. Take "
-                                    "a new snapshot, then go on." + record_check_text(url, owner)}
+                                    "a new snapshot, then go on." + after_manual(url, owner)}
                 rec = checks.find(url, owner)
                 if rec and signin.run(browser, str(rec.get("script") or ""))[0]:
                     signed_in_now(owner)   # the site says they are signed in already: no need to hand the tab over
                     return {"text": f"signed in: {name}'s sign-in check says the user is signed in. Go on with what you "
                                     "were doing (open the page again if this one still shows a sign-in)."}
+                o = auto_sign_in(owner, url)
+                if o is not None and o.ok:
+                    return {"text": f"signed in: Resume Studio signed in to {name} by its recorded sign-in recipe, with the "
+                                    "password the browser saved. Open the page you wanted again (this one may still show "
+                                    "the sign-in), take a new snapshot, then go on."}
                 # the user signs in where they can see it: a windowless browser opens anew with a window now, before
                 # the tab is theirs (opening it later would restart the browser under their typing)
                 if hand.get(browser.current).mode != "signin":   # once: a wait run again doesn't pull the window up again
@@ -764,7 +845,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
                                             f"again; if it still asks to sign in, ask them in one line and run {again(site)}."}
                         signed_in_now(owner)
                         return {"text": "the user signed in without remote control and switched back. Take a new snapshot, "
-                                        "then go on." + record_check_text(url, owner)}
+                                        "then go on." + after_manual(url, owner)}
                     if tid not in browser.pages:
                         return {"text": "the user closed the tab the sign-in was in. Open the page again with `open`; if it "
                                         f"still asks to sign in, ask the user in one line and run {again(site)}."}
@@ -777,11 +858,12 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
                                             "in. Take a snapshot: if the page still asks to sign in, ask them in one line and "
                                             f"run {again(site)} again."}
                         signed_in_now(owner)
+                        logins.clear_failure(signin.key_for(url, owner))
                         if c.back == "check":
                             return {"text": f"signed in: {name}'s sign-in check says the user is signed in. Take a new "
                                             "snapshot, then go on with what you were doing."}
                         return {"text": f"the user handed the tab back: they have signed in to {name}. Take a new snapshot "
-                                        "before anything else (the page may have changed), then go on." + record_check_text(url, owner)}
+                                        "before anything else (the page may have changed), then go on." + after_manual(url, owner)}
                     if rec and time.monotonic() - last_check >= 3:
                         last_check = time.monotonic()
                         if by_check(url, owner):
@@ -871,6 +953,58 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         whose = f"every company on {key[7:]}" if key.startswith("system:") else key[7:]
         return {"text": f"saved: the sign-in check for {whose}. It said true here and false without a sign-in. From now "
                         "on Resume Studio knows by itself when the user has signed in there."}
+
+    @app.route("POST", "/api/browser/sign-in-recipe")
+    def save_sign_in_recipe(req: Request):
+        """`browser.py sign-in-recipe`: the AI's recipe for signing in to the site on the chat's page with the password
+        the browser saved, checked, then run at once on that page (signed out). Kept unless the page isn't as the
+        recipe says; when the browser has no password saved yet, it is kept for the next time."""
+        b = body(req)
+        data = b.get("recipe") if isinstance(b.get("recipe"), dict) else b
+        chat_id = req.headers.get("X-Resume-Studio-Chat") or ""
+        with browser.acting(chat_id or None):
+            url = str(bro(browser.here).get("url") or "")
+            if not url.startswith("http"):
+                raise HttpError(409, "open the site's sign-in page first (signed out), then send the recipe")
+            owner = owner_of(url)
+            key = signin.key_for(url, owner)
+            rec, errs = autologin.validate(data, key)
+            if errs:
+                raise HttpError(400, "the sign-in recipe has problems:\n- " + "\n- ".join(errs))
+            confirm = confirm_for(url, owner)
+            if confirm() is True:
+                raise HttpError(409, "the user is signed in on this page now: a sign-in recipe is recorded and tried while "
+                                     "the site asks to sign in. Record it the next time it does.")
+            name = owner.name if owner else host_of(url)
+            o = autologin.replay(browser, rec, confirm, name)
+        b_cli = prompts.cli(str(studio.store.path))
+        wait = f"`{b_cli} wait-signed-in{' ' + owner.id if owner else ''}`"
+        if o.kind in ("broken", "browser", "user"):
+            more = f" ({o.detail})" if o.detail else ""
+            raise HttpError(409, f"not saved: at step {o.step + 1} ({autologin.describe(rec['steps'][o.step]) if 0 <= o.step < len(rec['steps']) else 'the end'}): "
+                                 f"{o.text}{more}. Take a snapshot, fix the recipe and send it again.")
+        logins.save(key, rec, url, o)
+        whose = f"every company on {key[7:]}" if key.startswith("system:") else key[7:]
+        if o.ok:
+            signed_in_now(owner)
+            browser.keep_session_cookies()
+            return {"text": f"saved: the sign-in recipe for {whose}, and it signed in just now ({o.text}). From now on "
+                            "Resume Studio signs in there by itself whenever the site asks. Open the page you wanted again "
+                            "and go on." + record_check_text(url, owner)}
+        if o.kind == "no_password":
+            return {"text": f"saved: the sign-in recipe for {whose}. It couldn't sign in now: {o.text}. Tell the user in one "
+                            "line to sign in in Resume Studio's browser and to choose Save when the browser offers to save "
+                            f"the password (from then on Resume Studio signs in by itself), then run {wait}."}
+        if o.kind == "verify":
+            return {"text": f"saved: the sign-in recipe for {whose}. It filled the saved password and pressed sign-in, and "
+                            f"{o.text}: that is the user's. Ask them in one line to complete it in Resume Studio's browser, "
+                            f"then run {wait}."}
+        if o.kind == "rejected":
+            return {"text": f"saved: the sign-in recipe for {whose}, but {o.text}. Tell the user in one line to sign in "
+                            "in Resume Studio's browser and to update the saved password when the browser offers, then "
+                            f"run {wait}."}
+        return {"text": f"saved: the sign-in recipe for {whose}, but {o.text}. Take a screenshot: if the page still asks "
+                        f"to sign in, fix the recipe and send it again, or ask the user in one line and run {wait}."}
 
     # ---- the browser itself ----------------------------------------------------------------
     @app.route("GET", "/api/browser")
@@ -1005,12 +1139,19 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
                 here_url = str(r["url"])
                 owner = owner_of(here_url)
                 if on_sign_in(owner, here_url):
-                    if owner:
-                        fill.save(owner.id, signed_out=True)
-                        publish(owner.id)
-                    lead = ("this page asks to sign in. Tell the user in one line to sign in in Resume Studio's browser, then "
-                            f"run `wait-signed-in{' ' + owner.id if owner else ''}` and go on in this same reply once it returns; "
-                            "never type a password or code, and never end your reply to wait.")
+                    o = auto_sign_in(owner, here_url)
+                    if o is not None and o.ok:
+                        lead = ("this page asked to sign in, and Resume Studio signed in by the site's recorded sign-in "
+                                "recipe, with the password the browser saved. Open the page you wanted again and go on.")
+                    else:
+                        if owner:
+                            fill.save(owner.id, signed_out=True)
+                            publish(owner.id)
+                        why = f" The recorded sign-in recipe didn't sign in: {o.text}." if o is not None else ""
+                        lead = ("this page asks to sign in." + why + recipe_hint(here_url, owner) + " Tell the user in "
+                                "one line to sign in in Resume Studio's browser, then "
+                                f"run `wait-signed-in{' ' + owner.id if owner else ''}` and go on in this same reply once it returns; "
+                                "never type a password or code, and never end your reply to wait.")
                     r["note"] = f"{r['note']} {lead}" if r.get("note") else lead
             # time spent queuing is said, so the AI never takes it for the site being slow or unreadable
             waited = {k: v for k, v in browser.take_waited().items() if v >= 2}

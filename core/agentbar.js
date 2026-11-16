@@ -53,6 +53,7 @@
     .bar[data-mode="signin"] .text, .bar[data-mode="user"] .text { white-space: normal; display: -webkit-box;
       -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
     .sub { font-size: 12px; font-weight: 400; color: #a9aec4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar[data-mode="signin"] .sub { white-space: normal; overflow-wrap: anywhere; }
     .sub:empty { display: none; }
     .sub.good { color: #8fe0b0; }
     .acts { display: flex; gap: 6px; flex: none; margin-left: auto; }

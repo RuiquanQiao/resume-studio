@@ -20,6 +20,7 @@
     python scripts/browser.py wait                        # the user took over the tab: wait until they hand it back
     python scripts/browser.py requests [--all]            # the calls the page made (find its "who is signed in" call)
     python scripts/browser.py sign-in-check --stdin <<'JSON' ... JSON   # record how to ask the site who is signed in
+    python scripts/browser.py sign-in-recipe --stdin <<'JSON' ... JSON  # record how to sign in with the saved password
 
 Every command prints what happened. The browser is a real Chrome or Edge with its own profile, which
 the window starts; this script only talks to the window (standard library only, no venv needed).
@@ -153,6 +154,8 @@ def main() -> int:
     p.add_argument("--all", action="store_true"); p.add_argument("--max", type=int, default=60)
     p = sub.add_parser("sign-in-check", help="record the script that asks the site whether the user is signed in")
     p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
+    p = sub.add_parser("sign-in-recipe", help="record the clicks that sign in with the password the browser saved; run at once")
+    p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("recipe", help="save a write recipe for one kind of change (experience.update, basics.about…)")
     p.add_argument("site"); p.add_argument("key"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
     p = sub.add_parser("push", help="make one approved change by its recipe, read it back and report it")
@@ -204,6 +207,13 @@ def main() -> int:
         except ValueError:
             data = {"script": raw}   # the script itself, not wrapped in JSON
         show(call(url, "POST", "/api/browser/sign-in-check", data if isinstance(data, dict) else {"script": raw}))
+        return 0
+    if c == "sign-in-recipe":
+        try:
+            data = json.loads(read_text(args))
+        except ValueError as e:
+            sys.exit(f"error: that isn't valid JSON ({e})")
+        show(call(url, "POST", "/api/browser/sign-in-recipe", {"recipe": data}))
         return 0
     if c == "wait-signed-in":
         # a listed site by its id; any other (a company's careers site, a page the AI found) by the open tab

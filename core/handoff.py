@@ -251,7 +251,8 @@ class Handoff:
         # Stop only where it ends something: a chat's reply (a recipe replaying a change has no reply to stop)
         stop = [{"id": "stop", "label": t("Stop"), "title": t("Stop the AI's reply. The page stays as it is.")}] if can_stop else []
         if c.mode == "signin":
-            sub, good = "", False
+            # the password saved here is what lets Resume Studio sign in again by itself (autofill/autologin.py)
+            sub, good = t("If the browser offers to save the password, choose Save: from then on Resume Studio signs in to this site by itself."), False
             if c.detected == "likely":
                 sub, good = t("Sign-in activity detected on this page."), True
             out = {"mode": "signin", "text": t("Sign in to {site} on this page. The AI continues once you choose “I've signed in”.",

@@ -26,6 +26,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from . import dpapi
 from .cdp import CdpError, Connection, version_info
 from .i18n import t
 
@@ -255,6 +256,14 @@ def _said(target: str) -> str:
 NO_ALT_TAB_FEATURE = "msWindowTabManagerPublic"
 NO_ALT_TAB = "--disable-features=" + NO_ALT_TAB_FEATURE
 HEADLESS_ARGS = ["--headless=new", "--window-size=1280,900", NO_ALT_TAB]
+# Session cookies (no expiry: 北森's italent-sessionid, many sites' JSESSIONID) end when the browser closes, and
+# this browser closes often (a minute after its work, and to open again with a window). Resume Studio keeps them
+# across that, as Chrome does for "continue where you left off": read at every close, set again at the next start,
+# kept with DPAPI (core/dpapi.py) like Chrome's own cookies, never in the clear.
+SESSION_JAR = "Resume Studio session cookies"
+JAR_DAYS = 30
+COOKIE_KEYS = ("name", "value", "domain", "path", "secure", "httpOnly", "sameSite", "priority", "sourceScheme",
+               "sourcePort", "partitionKey")
 
 
 def profile_holder(profile: Path) -> int | None:
@@ -526,6 +535,8 @@ class ManagedBrowser:
                     # (Edge names itself "Edg/…" either way; the user agent says HeadlessChrome)
                     self.shown = "HeadlessChrome" not in str(version_info(port).get("User-Agent", ""))
                 self._connect(port)
+                if started:
+                    self._restore_session_cookies()
             except (BrowserError, CdpError, OSError) as e:
                 self.state, self.error = "error", str(e)
                 self._changed()
@@ -814,6 +825,7 @@ class ManagedBrowser:
                 self._close_signin()
                 return
             if self.conn is not None and not self.conn.closed:
+                self.keep_session_cookies()
                 try:
                     self.conn.send("Browser.close", timeout=5)
                 except CdpError:
@@ -827,6 +839,66 @@ class ManagedBrowser:
                 self.proc = None
             self._lost()
             self._changed()
+
+    # ---- session cookies, kept across a restart ------------------------------------
+    def _jar(self) -> Path:
+        return self.profile_dir(self.kind) / SESSION_JAR
+
+    def keep_session_cookies(self) -> int:
+        """Keep the browser's session cookies for its next start (at every close, and after a sign-in, so a window
+        the user closes themselves loses little). How many were kept; 0 when it couldn't ask."""
+        conn = self.conn
+        if conn is None or conn.closed or not self.kind:
+            return 0
+        try:
+            cookies = conn.send("Storage.getCookies", {}, timeout=3).get("cookies") or []
+        except CdpError:
+            return 0
+        keep = [{k: c[k] for k in COOKIE_KEYS if k in c} for c in cookies if c.get("session")]
+        try:
+            path = self._jar()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(path.name + ".tmp")
+            tmp.write_bytes(dpapi.protect(json.dumps({"at": time.time(), "cookies": keep}).encode("utf-8")))
+            tmp.replace(path)
+        except OSError:
+            return 0
+        return len(keep)
+
+    def _restore_session_cookies(self) -> int:
+        """The session cookies kept at the last close, set again in the browser just started (none it has already).
+        How many were set."""
+        path, conn = self._jar(), self.conn
+        if conn is None:
+            return 0
+        try:
+            data = json.loads(dpapi.unprotect(path.read_bytes()).decode("utf-8"))
+        except (OSError, ValueError):
+            return 0
+        if not isinstance(data, dict) or time.time() - float(data.get("at") or 0) > JAR_DAYS * 86400:
+            path.unlink(missing_ok=True)   # a month old: those sessions have long ended on the sites' side
+            return 0
+        try:
+            have = {(c.get("domain"), c.get("path"), c.get("name"))
+                    for c in conn.send("Storage.getCookies", {}, timeout=5).get("cookies") or []}
+        except CdpError:
+            return 0
+        add = [c for c in data.get("cookies") or [] if isinstance(c, dict)
+               and (c.get("domain"), c.get("path"), c.get("name")) not in have]
+        if not add:
+            return 0
+        try:
+            conn.send("Storage.setCookies", {"cookies": add}, timeout=5)
+            return len(add)
+        except CdpError:   # one this browser version won't take: the others one by one
+            n = 0
+            for c in add:
+                try:
+                    conn.send("Storage.setCookies", {"cookies": [c]}, timeout=5)
+                    n += 1
+                except CdpError:
+                    pass
+            return n
 
     # ---- closing itself when the work is done ----------------------------------
     def claim(self) -> None:

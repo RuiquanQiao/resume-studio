@@ -2465,6 +2465,7 @@
  "Scrolling the page": "ページをスクロールしています",
  "Sign in to {site} on this page. The AI continues once you choose “I've signed in”.": "このページで {site} にサインインしてください。「サインインしました」を選ぶと AI が続行します。",
  "Sign-in activity detected on this page.": "このページでサインインの通信を検出しました。",
+ "If the browser offers to save the password, choose Save: from then on Resume Studio signs in to this site by itself.": "ブラウザーがパスワードの保存を提案した場合は「保存」を選択してください。以後、Resume Studio がこのサイトに自動でサインインします。",
  "Stop the AI's reply. The page stays as it is.": "AI の今回の応答を停止します。ページはそのままです。",
  "Take over": "引き継ぐ",
  "Taking a screenshot": "スクリーンショットを撮っています",
