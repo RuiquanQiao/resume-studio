@@ -1813,7 +1813,6 @@
  "Export your data": "데이터 내보내기",
  "Reading {names}": "읽는 중: {names}",
  "Scanning {n} of {total}…": "스캔 중 {n}/{total}…",
- "Waiting for the companies before it…": "앞의 회사를 기다리는 중…",
  "Waiting…": "대기 중…",
  "{agent} is done; see the chat": "{agent} 작업이 끝났습니다. 채팅을 확인하세요",
  "Archive this chat": "이 대화 보관",
@@ -2497,5 +2496,9 @@
  "no sign-in check is recorded": "기록된 로그인 확인이 없습니다",
  "the sign-in check had no answer": "로그인 확인에서 응답이 없습니다",
  "a password field": "비밀번호 입력란",
- "a “{name}” button": "‘{name}’ 버튼"
+ "a “{name}” button": "‘{name}’ 버튼",
+ "Scanning stopped. Companies already scanned keep their results; the one being read was left as it was.": "스캔을 중지했습니다. 이미 스캔한 회사는 결과가 유지되며, 읽던 회사는 이전 상태 그대로입니다.",
+ "Scan stopped. Its open roles are as the last finished scan left them.": "스캔을 중지했습니다. 이 회사의 채용 직무는 마지막으로 완료된 스캔 결과 그대로입니다.",
+ "Click to stop scanning": "클릭하여 스캔 중지",
+ "Stop scanning": "스캔 중지"
 }

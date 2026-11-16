@@ -100,6 +100,7 @@ def run_summary(out: list[dict], auto: bool) -> dict:
             "new": sum(int(r.get("new") or 0) for r in out),
             "closed": sum(int(r.get("closed") or 0) for r in out),
             "failed": sum(1 for r in out if r.get("error")),
+            "stopped": sum(1 for r in out if r.get("stopped")),
             # counted by site, never by company: a company whose API site reads and whose own site doesn't is one
             # site the AI has to learn, named, not "a company" (user, 2026-11-03)
             "unrouted": [u for r in out if not r.get("error") for u in r.get("unrouted") or []],
@@ -149,11 +150,27 @@ class RouteFailed(Exception):
         self.signed_out = signed_out
 
 
+class Stopped(Exception):
+    """The user stopped this company's scan: nothing it read is kept, nothing of the company's roles changes."""
+
+
+class Token:
+    """One scan of one company; `stopped` once the user stops it (Scanner.stop). Whatever is still reading for it
+    (a page in the browser, a provider's node process, a built-in reader) is let go and its answer thrown away."""
+    __slots__ = ("stopped",)
+
+    def __init__(self) -> None:
+        self.stopped = False
+
+
 class Scanner:
     def __init__(self, hunt: Hunt, postings: Postings, tool: Any, browser: Any, publish: Callable[[], None]):
         self.hunt, self.postings, self.tool, self.browser, self.publish = hunt, postings, tool, browser, publish
         self.running: dict[str, str] = {}      # company id -> what is reading it now
         self.started: dict[str, float] = {}    # company id -> when that reading began
+        self.tokens: dict[str, Token] = {}     # company id -> its scan going on, for the user to stop
+        self.stop_epoch = 0                    # counts the user's "stop every scan": a run of the AI's ends at it too
+        self._local = threading.local()        # the scan this thread works for (its Token)
         self.lock = threading.Lock()
         self._providers: dict[str, str | None] = {}   # url -> career-ops provider id (or None), per run of the app
         self.providers_dir = PROVIDERS
@@ -246,9 +263,30 @@ class Scanner:
         self.hunt.dir.mkdir(parents=True, exist_ok=True)
         tmp.write_text(json.dumps({"entries": entries}, ensure_ascii=False), encoding="utf-8")
         try:
-            proc = subprocess.run([shutil.which("node") or "node", str(BRIDGE), str(self.providers_dir), str(tmp),
-                                   *(["--detect"] if detect else [])], cwd=str(BRIDGE.parent), capture_output=True,
-                                  text=True, encoding="utf-8", errors="replace", timeout=limit, creationflags=_NO_WINDOW)
+            # run so that a stop ends it at once (the node process is killed), never only after its whole read
+            with subprocess.Popen([shutil.which("node") or "node", str(BRIDGE), str(self.providers_dir), str(tmp),
+                                   *(["--detect"] if detect else [])], cwd=str(BRIDGE.parent), stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+                                  creationflags=_NO_WINDOW) as p:
+                outs: dict[str, str] = {}
+                readers = [threading.Thread(target=lambda k, f: outs.__setitem__(k, f.read()), args=(k, f), daemon=True)
+                           for k, f in (("out", p.stdout), ("err", p.stderr))]
+                for r in readers:
+                    r.start()
+                end = time.monotonic() + limit
+                while p.poll() is None:
+                    if self._stopping():
+                        p.kill()
+                        raise Stopped()
+                    if time.monotonic() > end:
+                        p.kill()
+                        raise subprocess.TimeoutExpired(p.args, limit)
+                    time.sleep(0.2)
+                for r in readers:
+                    r.join(5)
+            proc = subprocess.CompletedProcess(p.args, p.returncode, outs.get("out", ""), outs.get("err", ""))
+        except Stopped:
+            raise
         except Exception as e:  # noqa: BLE001  (node missing, too slow)
             return [{"key": x["key"], "url": x["url"], "provider": None, "error": str(e)} for x in entries]
         finally:
@@ -416,9 +454,9 @@ class Scanner:
         return [s["url"] for s in plan if s["how"] == "claude"]
 
     def check_sites(self, ref: str, urls: list[str]) -> list[str]:
-        """Sites were just added to a company: find out at once whether a scan can read them. One that can (a provider,
-        or the route already reads it) is scanned now; one that can't is marked on the company for the AI to learn,
-        so the window says so instead of the next scan quietly reading only the old ones. Returns those."""
+        """Sites were just added to a company: find out at once whether a scan can read them (which recruiting system
+        runs each; no list is read). One that can't is marked on the company for the AI to learn, so the window says
+        so instead of the next scan quietly reading only the old ones. Returns those."""
         cid = self.hunt.company(ref)["id"]
         # a scan of it going on read the sites it had when it began: wait for it, then check the new ones
         # (a site the AI adds while the first scan of a new company runs would otherwise never be read)
@@ -451,8 +489,7 @@ class Scanner:
                 self.running.pop(c["id"], None)
                 self.started.pop(c["id"], None)
             self.publish()
-        if any(s["how"] != "claude" for s in plan if s["url"] in urls):
-            self.start([c["id"]])
+        # only checked, never scanned: a scan starts when the user asks for one (user, 2026-11-16: "不准未经我同意就启动"); the company's page says it hasn't been scanned yet, with its Scan button
         return [u for u in urls if u in missing]
 
     def _hold(self):
@@ -491,11 +528,13 @@ class Scanner:
         empty: list[str] = []
         missed = 0
         for url, scripts in groups:
+            self._check_stop()
             outs: list[Any] = [None] * len(scripts)
             todo = list(range(len(scripts)))
             for attempt in range(len(RETRY_WAITS) + 1):
                 if attempt:
                     time.sleep(self.retry_waits[attempt - 1])
+                    self._check_stop()
                 got = self._read_pages(url, [scripts[i] for i in todo])
                 for i, out in zip(todo, got):
                     outs[i] = out
@@ -520,6 +559,7 @@ class Scanner:
                     # no roles on a page that answered: a list that draws itself after loading may not have been
                     # there yet (鹏芯微, 2026-11-05: 20 roles one scan, none the next). Read once more, a while later
                     time.sleep(self.empty_wait)
+                    self._check_stop()
                     again = self._read_pages(url, [scripts[i]])[0]
                     if not isinstance(again, Exception) and not (isinstance(again, dict) and again.get("signed_out")):
                         out = again
@@ -565,7 +605,7 @@ class Scanner:
         """Read every site of the company that can be read without Claude. Says what needs Claude
         (`needs`: "sites" when none is known, "claude" when a site has no route yet), and keeps that on the scan."""
         res = self._scan(ref, allow_route=allow_route, just_tried=just_tried)
-        if not res.get("busy"):
+        if not res.get("busy") and not res.get("stopped"):
             self.postings.set_scan_state(res["company"], needs=res.get("needs") or "", unrouted=res.get("unrouted") or [])
         return res
 
@@ -592,150 +632,180 @@ class Scanner:
                 "changed": len(st.get("changed") or []), "needs": st.get("needs") or "", "unrouted": st.get("unrouted") or [],
                 "short": st.get("short") or None}
 
+    def _stopping(self) -> bool:
+        tok = getattr(self._local, "token", None)
+        return bool(tok and tok.stopped)
+
+    def _check_stop(self) -> None:
+        if self._stopping():
+            raise Stopped()
+
     def _scan(self, ref: str, *, allow_route: bool = True, just_tried: bool = False) -> dict:
         c = self.hunt.company(ref)
+        tok = Token()
         with self.lock:
             if c["id"] in self.running:
                 return {"company": c["id"], "busy": True, "since": round(time.time() - self.started.get(c["id"], time.time()))}
             self.running[c["id"]] = "scan"
             self.started[c["id"]] = time.time()
+            self.tokens[c["id"]] = tok
+        self._local.token = tok
         self.publish()
         try:
-            plan = self.plan(c)
-            if not plan:
-                return {"company": c["id"], "needs": "sites"}
-            found: list[dict] = []
-            hows, errors, needs, unread = [], [], [], []
-            totals: dict[str, int] = {}
-            routed: list[dict] = []
-            api = [s for s in plan if s["how"] not in ("route", "claude", "unreached")]
-            # a route page on a list a provider reads (a Moka or Workday board the AI recorded a script for) is read
-            # through the provider: the AI's script only for what no provider reads (8 companies, 2026-11-03)
-            route = self.postings.route(c["id"]) or {}
-            scripts = (route.get("pages") or []) if any(s["how"] == "route" for s in plan) else []
-            self.detect([p["url"] for p in scripts], c["name"])
-            via_api = [p["url"] for p in scripts if self._providers.get(p["url"])]
-            scripts = [p for p in scripts if not self._providers.get(p["url"])]
-            # one list read once: two sites fronting the same board (its own page and the board itself) are one read
-            lists = list(dict.fromkeys([*(self.list_of(s) for s in api), *via_api]))
-            # the lists the scan reads itself (北森, Feishu on any domain); the rest through career-ops' providers
-            readers = {beisen.PROVIDER: (beisen.lists, self.beisen_read), feishu.PROVIDER: (feishu.lists, self.feishu_read),
-                       hotjob.PROVIDER: (hotjob.lists, self.hotjob_read),
-                       alitalent.PROVIDER: (alitalent.lists, self.alitalent_read),
-                       iguopin.PROVIDER: (iguopin.lists, self.iguopin_read)}
-            ours = [(prov, u) for prov, (each, _) in readers.items()
-                    for u in each([x for x in lists if self._providers.get(x) == prov])]
-            # which of the company's sites a list stands for: 北森 reads a whole domain as one list, Feishu a portal
-            same = {beisen.PROVIDER: beisen.origin, feishu.PROVIDER: lambda u: (feishu.origin(u), feishu.portal(u)),
-                    hotjob.PROVIDER: hotjob.key, alitalent.PROVIDER: alitalent.key, iguopin.PROVIDER: iguopin.key}
-            missed: dict[str, str] = {}   # site -> "none" (nothing read off it this time) or "part" (some pages)
-
-            def miss(u: str, what: str) -> None:
-                key = same.get(self._providers.get(u) or "", lambda x: x)
-                for s in plan:
-                    if key(self.list_of(s)) == key(u) and missed.get(s["url"]) != "none":
-                        missed[s["url"]] = what
-            # a site that didn't answer whether a system reads it: not read, said, nothing of it closed
-            for s in plan:
-                if s["how"] == "unreached":
-                    missed[s["url"]] = "unreached"
-                    errors.append(f"{s['url']}: didn't answer when asked which recruiting system it runs on; "
-                                  "asked again at the next scan")
-            for r in self._bridge([{"key": u, "name": c["name"], "url": u} for u in lists
-                                   if self._providers.get(u) not in readers]):
-                if r.get("error"):
-                    errors.append(f"{r['url']}: {r['error']}")
-                    miss(r["url"], "none")
-                else:
-                    found += r.get("jobs") or []
-                    hows.append(str(r.get("provider")))
-                    if r.get("partial"):   # read in part (a page failed, a cap hit): what came is kept, nothing closed
-                        errors.append(f"{r['url']}: {r['partial']}")
-                        miss(r["url"], "part")
-            counted: list[dict] = []   # rows read from a list that says its own count: checked against it
-            if ours:
-                keep = self._known_links(c["id"])
-                portals: set[str] = set()
-                # two lists at a time: 小米's four Feishu portals took 4 to 12 minutes each from Australia (2026-11-09)
-                def one(pu: tuple[str, str]) -> dict | Exception:
-                    try:
-                        return readers[pu[0]][1](pu[1])
-                    except Exception as e:  # noqa: BLE001  (ReadFailed, or anything else the site does)
-                        return e
-                with ThreadPoolExecutor(2) as pool:
-                    got = list(pool.map(one, ours))
-                for (prov, u), r in zip(ours, got):
-                    if isinstance(r, Exception):
-                        errors.append(f"{u}: {r}")
-                        miss(u, "none")
-                        continue
-                    # one portal under two addresses (job.imou.com and imou.zhiye.com) is one list: read once
-                    if r.get("portal") and r["portal"] in portals:
-                        continue
-                    portals.add(r.get("portal") or u)
-                    if r.get("failed"):   # read in part: what came is kept, the error said, nothing closed
-                        errors.append(f"{u}: {r['failed']}")
-                        miss(u, "part")
-                    # a role already kept under another spelling of its link (a route the AI wrote linked it
-                    # /campus/jobs?jobAdId=<number>) keeps that link: a role's link is its key
-                    jobs = [{**j, "url": keep.get(j.get("id") or "") or keep.get(j.get("number") or "") or j["url"]}
-                            for j in r.get("jobs") or []]
-                    found += jobs
-                    counted += jobs
-                    if isinstance(r.get("total"), int):
-                        totals[u] = max(totals.get(u, 0), r["total"])
-                    hows.append(prov)
-            if scripts:
-                if allow_route:
-                    self.running[c["id"]] = "route"
-                    self.publish()
-                    try:
-                        fresh = self._fresh.pop(c["id"], None) if just_tried else None
-                        if fresh and fresh["pages"] == scripts:   # the route was tried just now: what it read
-                            routed = fresh["rows"]
-                            errors += fresh["errors"]
-                            unread[:] = fresh["unread"]
-                            totals.update(fresh["totals"])
-                        else:
-                            routed = self.run_route({**route, "pages": scripts}, errors, unread, totals)
-                        found += routed
-                        hows.append("route")
-                    except RouteFailed as e:
-                        if not found:
-                            st = self.postings.failed(c["id"], str(e), how="route", signed_out=e.signed_out)
-                            return {"company": c["id"], "error": str(e), "signed_out": e.signed_out, "scan": st, "route_broken": True}
-                        errors.append(str(e))
-                else:
-                    needs.append("browser")
-            found = same_once(found)
-            missing = self.unrouted(plan)
-            if missing:   # said first: waiting for the browser fixes itself on a scan the user starts, this doesn't
-                needs.insert(0, "claude")
-            if not hows:
-                if errors:
-                    st = self.postings.failed(c["id"], "; ".join(errors), how=",".join(s["how"] for s in api) or "api")
-                    st = self.postings.set_scan_state(c["id"], missed=missed or None)
-                    return {"company": c["id"], "error": "; ".join(errors), "scan": st, "needs": needs[0] if needs else "",
-                            "unrouted": missing}
-                return {"company": c["id"], "needs": needs[0] if needs else "claude", "unrouted": missing}
-            short = short_of(routed + counted, totals)
-            # read in part, by the site's own count: what wasn't read isn't closed (a cheaper model's route that
-            # stopped at page 38 of 45 must never close the roles on pages 39 to 45)
-            complete = not errors and not needs and not short
-            res = self.postings.merge(c["id"], found, how="+".join(dict.fromkeys(hows)), complete=complete)
-            # short: [read, the site says] — kept until a scan reads them all, said wherever the count is shown
-            # missed: the sites this scan read nothing or only some pages of, for their rows and the status to say
-            self.postings.set_scan_state(c["id"], short=short or None, missed=missed or None)
-            if errors:   # unread: how many of the route's pages didn't read, of how many ([17, 20]), for the window to say
-                self.postings.set_scan_state(c["id"], error="; ".join(errors), unread=unread or None)
-            return {"company": c["id"], "found": res["found"], "new": len(res["new"]), "closed": len(res["closed"]),
-                    "changed": len(res["changed"]), "needs": needs[0] if needs else "", "errors": errors, "unrouted": missing,
-                    "short": short or None}
+            return self._scan_body(c, tok, allow_route=allow_route, just_tried=just_tried)
+        except Stopped:
+            # stopped by the user: what was read is thrown away, the company's roles and scan state stay as they were
+            return {"company": c["id"], "stopped": True}
         finally:
+            self._local.token = None
             with self.lock:
-                self.running.pop(c["id"], None)
-                self.started.pop(c["id"], None)
+                if self.tokens.get(c["id"]) is tok:   # not a later scan of it, started once this one was stopped
+                    self.running.pop(c["id"], None)
+                    self.started.pop(c["id"], None)
+                    self.tokens.pop(c["id"], None)
             self.publish()
+
+    def _scan_body(self, c: dict, tok: Token, *, allow_route: bool, just_tried: bool) -> dict:
+        plan = self.plan(c)
+        if not plan:
+            return {"company": c["id"], "needs": "sites"}
+        found: list[dict] = []
+        hows, errors, needs, unread = [], [], [], []
+        totals: dict[str, int] = {}
+        routed: list[dict] = []
+        api = [s for s in plan if s["how"] not in ("route", "claude", "unreached")]
+        # a route page on a list a provider reads (a Moka or Workday board the AI recorded a script for) is read
+        # through the provider: the AI's script only for what no provider reads (8 companies, 2026-11-03)
+        route = self.postings.route(c["id"]) or {}
+        scripts = (route.get("pages") or []) if any(s["how"] == "route" for s in plan) else []
+        self.detect([p["url"] for p in scripts], c["name"])
+        via_api = [p["url"] for p in scripts if self._providers.get(p["url"])]
+        scripts = [p for p in scripts if not self._providers.get(p["url"])]
+        # one list read once: two sites fronting the same board (its own page and the board itself) are one read
+        lists = list(dict.fromkeys([*(self.list_of(s) for s in api), *via_api]))
+        # the lists the scan reads itself (北森, Feishu on any domain); the rest through career-ops' providers
+        readers = {beisen.PROVIDER: (beisen.lists, self.beisen_read), feishu.PROVIDER: (feishu.lists, self.feishu_read),
+                   hotjob.PROVIDER: (hotjob.lists, self.hotjob_read),
+                   alitalent.PROVIDER: (alitalent.lists, self.alitalent_read),
+                   iguopin.PROVIDER: (iguopin.lists, self.iguopin_read)}
+        ours = [(prov, u) for prov, (each, _) in readers.items()
+                for u in each([x for x in lists if self._providers.get(x) == prov])]
+        # which of the company's sites a list stands for: 北森 reads a whole domain as one list, Feishu a portal
+        same = {beisen.PROVIDER: beisen.origin, feishu.PROVIDER: lambda u: (feishu.origin(u), feishu.portal(u)),
+                hotjob.PROVIDER: hotjob.key, alitalent.PROVIDER: alitalent.key, iguopin.PROVIDER: iguopin.key}
+        missed: dict[str, str] = {}   # site -> "none" (nothing read off it this time) or "part" (some pages)
+
+        def miss(u: str, what: str) -> None:
+            key = same.get(self._providers.get(u) or "", lambda x: x)
+            for s in plan:
+                if key(self.list_of(s)) == key(u) and missed.get(s["url"]) != "none":
+                    missed[s["url"]] = what
+        # a site that didn't answer whether a system reads it: not read, said, nothing of it closed
+        for s in plan:
+            if s["how"] == "unreached":
+                missed[s["url"]] = "unreached"
+                errors.append(f"{s['url']}: didn't answer when asked which recruiting system it runs on; "
+                              "asked again at the next scan")
+        for r in self._bridge([{"key": u, "name": c["name"], "url": u} for u in lists
+                               if self._providers.get(u) not in readers]):
+            if r.get("error"):
+                errors.append(f"{r['url']}: {r['error']}")
+                miss(r["url"], "none")
+            else:
+                found += r.get("jobs") or []
+                hows.append(str(r.get("provider")))
+                if r.get("partial"):   # read in part (a page failed, a cap hit): what came is kept, nothing closed
+                    errors.append(f"{r['url']}: {r['partial']}")
+                    miss(r["url"], "part")
+        counted: list[dict] = []   # rows read from a list that says its own count: checked against it
+        if ours:
+            keep = self._known_links(c["id"])
+            portals: set[str] = set()
+            # two lists at a time: 小米's four Feishu portals took 4 to 12 minutes each from Australia (2026-11-09)
+            def one(pu: tuple[str, str]) -> dict | Exception:
+                try:
+                    return readers[pu[0]][1](pu[1])
+                except Exception as e:  # noqa: BLE001  (ReadFailed, or anything else the site does)
+                    return e
+            # waited for in short steps: a stop lets them go at once (their answers are thrown away)
+            pool = ThreadPoolExecutor(2)
+            futs = [pool.submit(one, pu) for pu in ours]
+            try:
+                while not all(f.done() for f in futs):
+                    self._check_stop()
+                    time.sleep(0.2)
+            finally:
+                pool.shutdown(wait=False, cancel_futures=True)
+            got = [f.result() for f in futs]
+            for (prov, u), r in zip(ours, got):
+                if isinstance(r, Exception):
+                    errors.append(f"{u}: {r}")
+                    miss(u, "none")
+                    continue
+                # one portal under two addresses (job.imou.com and imou.zhiye.com) is one list: read once
+                if r.get("portal") and r["portal"] in portals:
+                    continue
+                portals.add(r.get("portal") or u)
+                if r.get("failed"):   # read in part: what came is kept, the error said, nothing closed
+                    errors.append(f"{u}: {r['failed']}")
+                    miss(u, "part")
+                # a role already kept under another spelling of its link (a route the AI wrote linked it
+                # /campus/jobs?jobAdId=<number>) keeps that link: a role's link is its key
+                jobs = [{**j, "url": keep.get(j.get("id") or "") or keep.get(j.get("number") or "") or j["url"]}
+                        for j in r.get("jobs") or []]
+                found += jobs
+                counted += jobs
+                if isinstance(r.get("total"), int):
+                    totals[u] = max(totals.get(u, 0), r["total"])
+                hows.append(prov)
+        if scripts:
+            if allow_route:
+                self.running[c["id"]] = "route"
+                self.publish()
+                try:
+                    fresh = self._fresh.pop(c["id"], None) if just_tried else None
+                    if fresh and fresh["pages"] == scripts:   # the route was tried just now: what it read
+                        routed = fresh["rows"]
+                        errors += fresh["errors"]
+                        unread[:] = fresh["unread"]
+                        totals.update(fresh["totals"])
+                    else:
+                        routed = self.run_route({**route, "pages": scripts}, errors, unread, totals)
+                    found += routed
+                    hows.append("route")
+                except RouteFailed as e:
+                    self._check_stop()
+                    if not found:
+                        st = self.postings.failed(c["id"], str(e), how="route", signed_out=e.signed_out)
+                        return {"company": c["id"], "error": str(e), "signed_out": e.signed_out, "scan": st, "route_broken": True}
+                    errors.append(str(e))
+            else:
+                needs.append("browser")
+        self._check_stop()   # the last moment a stop can come: from here, what was read is kept
+        found = same_once(found)
+        missing = self.unrouted(plan)
+        if missing:   # said first: waiting for the browser fixes itself on a scan the user starts, this doesn't
+            needs.insert(0, "claude")
+        if not hows:
+            if errors:
+                st = self.postings.failed(c["id"], "; ".join(errors), how=",".join(s["how"] for s in api) or "api")
+                st = self.postings.set_scan_state(c["id"], missed=missed or None)
+                return {"company": c["id"], "error": "; ".join(errors), "scan": st, "needs": needs[0] if needs else "",
+                        "unrouted": missing}
+            return {"company": c["id"], "needs": needs[0] if needs else "claude", "unrouted": missing}
+        short = short_of(routed + counted, totals)
+        # read in part, by the site's own count: what wasn't read isn't closed (a cheaper model's route that
+        # stopped at page 38 of 45 must never close the roles on pages 39 to 45)
+        complete = not errors and not needs and not short
+        res = self.postings.merge(c["id"], found, how="+".join(dict.fromkeys(hows)), complete=complete)
+        # short: [read, the site says] — kept until a scan reads them all, said wherever the count is shown
+        # missed: the sites this scan read nothing or only some pages of, for their rows and the status to say
+        self.postings.set_scan_state(c["id"], short=short or None, missed=missed or None)
+        if errors:   # unread: how many of the route's pages didn't read, of how many ([17, 20]), for the window to say
+            self.postings.set_scan_state(c["id"], error="; ".join(errors), unread=unread or None)
+        return {"company": c["id"], "found": res["found"], "new": len(res["new"]), "closed": len(res["closed"]),
+                "changed": len(res["changed"]), "needs": needs[0] if needs else "", "errors": errors, "unrouted": missing,
+                "short": short or None}
 
     def _known_links(self, cid: str) -> dict[str, str]:
         """The links the company's postings are kept under, by the ids in them (a 北森 role's uuid or its number, a
@@ -757,9 +827,13 @@ class Scanner:
         """`auto` (the daily scan when the window opens) never opens the browser by itself: sites read by a route
         wait for a scan the user starts, unless the browser is open already."""
         out = []
+        epoch = self.stop_epoch
         with self._hold():                  # not closed between one company and the next
             routes = not auto or self.browser_open()
             for cid in ids:
+                if self.stop_epoch != epoch:   # the user stopped every scan: the rest isn't read
+                    out.append({"company": cid, "stopped": True})
+                    continue
                 try:
                     out.append(self.scan(cid, allow_route=routes))
                 except Exception as e:  # noqa: BLE001  one company's trouble never stops the rest
@@ -778,50 +852,88 @@ class Scanner:
         except Exception:  # noqa: BLE001  the scan itself is done; reading its roles can wait for the button
             return 0
 
-    def start(self, ids: list[str], *, auto: bool = False) -> None:
+    def start(self, ids: list[str], *, auto: bool = False, every: bool = False) -> None:
         """Scan in the background. While a run goes on, more companies join its queue instead of a second run;
-        one the user starts makes the whole run theirs (routes may open the browser, and it ends with a toast)."""
+        one the user starts makes the whole run theirs (routes may open the browser, and it ends with a toast).
+        `every`: the run is Scan all (the window's Scan all button spins, and stops it, only for that)."""
         with self.lock:
             new = [i for i in dict.fromkeys(ids) if i not in self.queue and i not in self.running]
             if self.batch is not None:
                 self.queue += new
                 self.batch["total"] += len(new)
                 self.batch["auto"] = self.batch["auto"] and auto
+                self.batch["all"] = self.batch["all"] or every
                 joined = True
             elif new:
-                self.queue, self.batch, joined = new, {"total": len(new), "done": 0, "auto": auto}, False
+                self.queue, self.batch, joined = new, {"total": len(new), "done": 0, "auto": auto, "all": every}, False
             else:
                 return
         self.publish()   # the window shows the run at once, before the first company is read
         if not joined:
             threading.Thread(target=self._run, daemon=True, name="hunt-scan").start()
 
+    def stop(self, ids: list[str] | None = None) -> dict:
+        """The user stops scanning: every company (`ids` None: the run, and any scan the AI started) or these.
+        As a download manager stops: a company still waiting is taken off the queue; the one being read is let go
+        at once and nothing it read is kept, so its roles stay as the last finished scan left them (never closed
+        because a list was half read); the companies already scanned keep what they found. Returns what it stopped."""
+        with self.lock:
+            every = ids is None
+            if every:
+                self.stop_epoch += 1
+                dropped, self.queue = list(self.queue), []
+                halted = [cid for cid in self.tokens]
+                if self.batch is not None:
+                    self.batch["stopped"] = True
+                    self.batch = None   # the window shows it ended at once; the run's thread ends by itself
+            else:
+                want = set(ids)
+                dropped = [cid for cid in self.queue if cid in want]
+                self.queue = [cid for cid in self.queue if cid not in want]
+                if self.batch is not None:
+                    self.batch["total"] -= len(dropped)
+                halted = [cid for cid in self.tokens if cid in want]
+            for cid in halted:
+                self.tokens.pop(cid).stopped = True
+                self.running.pop(cid, None)
+                self.started.pop(cid, None)
+        self.publish()
+        return {"stopped": halted, "dequeued": dropped}
+
     def _run(self) -> None:
         out: list[dict] = []
-        auto, ended = True, False
+        with self.lock:
+            b = self.batch   # this run's: a run stopped and started again is another batch, with a thread of its own
+        auto, ended = bool(b and b["auto"]), False
         try:
             with self._hold():
                 while True:
                     with self.lock:
+                        if b is None or self.batch is not b:   # stopped: the user ended the run
+                            ended = True
+                            break
                         if not self.queue:
-                            auto = self.batch["auto"]
+                            auto = b["auto"]
                             self.batch, ended = None, True   # in the same lock as the check: a later start begins a new run
                             break
                         cid = self.queue.pop(0)
-                        auto = self.batch["auto"]
+                        auto = b["auto"]
                     try:
                         out.append(self.scan(cid, allow_route=not auto or self.browser_open()))
                     except Exception as e:  # noqa: BLE001  one company's trouble never stops the rest
                         out.append({"company": cid, "error": str(e)})
                     with self.lock:
-                        if self.batch is not None:
-                            self.batch["done"] += 1
-                if not auto or out:
+                        if self.batch is b:
+                            b["done"] += 1
+                stopped = bool(b and b.get("stopped"))
+                if not stopped and (not auto or out):
                     self.postings.mark_all_scanned()
-                self.last_run = {**run_summary(out, auto), "reading": self._after(out, auto)}
+                # a stopped run starts nothing after it (reading the matching roles' descriptions waits for a scan)
+                self.last_run = {**run_summary(out, auto), "stopped": stopped,
+                                 "reading": 0 if stopped else self._after(out, auto)}
         except BaseException:
             with self.lock:   # never left looking busy
-                if not ended:
+                if not ended and self.batch is b:
                     self.batch, self.queue = None, []
             raise
         finally:

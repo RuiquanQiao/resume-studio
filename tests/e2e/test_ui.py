@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -1691,8 +1692,9 @@ def test_a_scan_started_in_the_window_says_when_it_is_done(page, server, monkeyp
     pg.keyboard.press("Control+3")
     pg.click(".hunt-tab[data-tab=companies]")
     pg.click("#hunt-scan-all")
-    pg.wait_for_selector("#hunt-scan-all[disabled][aria-busy=true]")    # a spinner one can see (drawn by style.css)
+    pg.wait_for_selector("#hunt-scan-all[aria-busy=true]")    # a spinner one can see (drawn by style.css)
     assert pg.evaluate("getComputedStyle(document.querySelector('#hunt-scan-all'), '::before').animationName") == "spin"
+    pg.mouse.move(0, 0)   # at rest: the spinner and its progress, not the "Stop scanning" under the pointer
     pg.screenshot(path=str(ART / "hunt-scan-running.png"), clip=pg.locator("#hunt-scan-all").bounding_box())
     pg.wait_for_selector("#toast.show:has-text('扫描完成')")
     assert "2 个新" in pg.inner_text("#toast") and "0 个已关闭" in pg.inner_text("#toast")
@@ -1701,6 +1703,65 @@ def test_a_scan_started_in_the_window_says_when_it_is_done(page, server, monkeyp
         pg.emulate_media(color_scheme=scheme)
         pg.screenshot(path=str(ART / f"hunt-scan-done-{scheme}.png"))
     pg.emulate_media(color_scheme="light")
+
+
+def test_clicking_a_running_scan_stops_it(page, server, monkeypatch):
+    """User, 2026-11-16: "我点了这个按钮之后再点一下应该有权停止，对于每个公司的扫描按钮也是一样". The running Scan all
+    button says "Stop scanning" under the pointer without changing its width, a click stops the run at once, and
+    the company being read keeps the roles it had (nothing read half-way is merged)."""
+    pg = page
+    hunt = server.inst.hunt
+    hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
+    jobs = "https://careers.xinghe.example/campus/jobs"
+    hunt.scanner.postings.set_scan_state("C1", route={"pages": [{"url": jobs, "script": "async () => ({postings: []})"}]})
+    gate = threading.Event()
+
+    class Browser:
+        def hold(self):
+            import contextlib
+            return contextlib.nullcontext()
+
+        def ensure(self):
+            return True
+
+        def read_pages(self, url, scripts, timeout=60.0, open_timeout=30.0):
+            gate.wait(20)   # a site that takes its time
+            return [{"postings": [{"title": "服务端研发工程师", "url": jobs + "/1"}]}] * len(scripts)
+
+        def status(self):
+            return {"state": "off"}
+    monkeypatch.setattr(hunt.scanner, "browser", Browser())
+    try:
+        pg.keyboard.press("Control+3")
+        pg.click(".hunt-tab[data-tab=companies]")
+        pg.click("#hunt-scan-all")
+        pg.wait_for_selector("#hunt-scan-all[aria-busy=true]:not([disabled])")
+        pg.mouse.move(0, 0)
+        w = pg.locator("#hunt-scan-all").bounding_box()["width"]
+        pg.hover("#hunt-scan-all")
+        assert pg.locator("#hunt-scan-all .ss-stop").is_visible() and "停止扫描" in pg.inner_text("#hunt-scan-all .ss-stop")
+        assert abs(pg.locator("#hunt-scan-all").bounding_box()["width"] - w) < 1          # the same width under the pointer
+        pg.screenshot(path=str(ART / "hunt-scan-stop-hover.png"), clip=pg.locator("#hunt-scan-all").bounding_box())
+        pg.click("#hunt-scan-all")
+        pg.wait_for_selector("#toast.show:has-text('已停止扫描')")
+        pg.wait_for_selector("#hunt-scan-all:not([aria-busy])")
+        assert "全部扫描" in pg.inner_text("#hunt-scan-all")
+        assert hunt.scanner.batch is None and hunt.scanner.running == {}
+    finally:
+        gate.set()
+    time.sleep(0.5)
+    assert [p for p in hunt.scanner.postings.all("C1")] == []                               # nothing read half-way was kept
+    # the company's own Scan button stops that company the same way
+    gate.clear()
+    try:
+        pg.evaluate("openHunt('company', 'C1')")
+        pg.click("#company-scan")
+        pg.wait_for_selector("#company-scan[aria-busy=true]")
+        pg.click("#company-scan")
+        pg.wait_for_selector("#toast.show:has-text('已停止扫描')")
+        pg.wait_for_selector("#company-scan:not([aria-busy])")
+    finally:
+        gate.set()
 
 
 def test_a_link_the_scan_found_is_added_without_the_ai(page, server):

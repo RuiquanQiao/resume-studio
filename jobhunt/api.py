@@ -418,8 +418,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
 
     def sites_changed(cid: str, before: set[str]) -> None:
         """A company's careers sites changed, whoever changed them (the window, the AI's fill or edit, a new company):
-        the new ones are checked and scanned at once, so its roles come in without another click on Scan; one no scan
-        reads is marked for the AI to learn. One gone takes its warning with it."""
+        the new ones are checked (which system reads each; never scanned without the user's click); one no scan reads
+        is marked for the AI to learn. One gone takes its warning with it."""
         now = [s["url"] for s in scanner.sites_of(hunt.company(cid))]
         added = [u for u in now if u not in before]
         if added or before - set(now):
@@ -685,7 +685,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     @app.route("POST", "/api/hunt/scan")
     def scan(req: Request):
         """Scan all (or some) companies' sites in the background; `auto` (the window opening) only once a day,
-        when the daily scan is on. Never starts Claude: what needs Claude is marked on the company."""
+        when the user turned the daily scan on in Settings (off until then). Never starts Claude: what needs
+        Claude is marked on the company."""
         b = body(req)
         if b.get("auto"):
             sc = posts.scans()
@@ -693,8 +694,19 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             if not sc["daily"] or not due or not hunt.companies():
                 return {"started": [], "skipped": True}
         ids = guard(lambda: scan_ids(b))
-        scanner.start(ids, auto=bool(b.get("auto")))
+        every = not (isinstance(b.get("companies"), list) and b["companies"])
+        scanner.start(ids, auto=bool(b.get("auto")), every=every and not b.get("auto"))
         return {"started": ids}
+
+    @app.route("POST", "/api/hunt/scan/stop")
+    def stop_scan(req: Request):
+        """Stop scanning: {} stops every scan (the run and any the AI started), {companies: [...]} those companies.
+        The company being read is let go and nothing it read is kept; the ones already scanned keep their results."""
+        b = body(req)
+        ids = b.get("companies")
+        out = scanner.stop(guard(lambda: scan_ids(b)) if isinstance(ids, list) and ids else None)
+        app.bus.publish("hunt", {})
+        return out
 
     @app.route("GET", "/api/hunt/matches")
     def matches_view(req: Request):
@@ -1181,8 +1193,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 return {**look_at(str(a.get("ref") or "")), "text": "looked"}
             if cmd == "scan":
                 refs = a.get("companies") or []
-                # one being scanned already (the window starts a scan once a company's sites are in) is waited for:
-                # the AI gets its result, never "still being scanned" to end its turn on
+                # one being scanned already (the user clicked Scan) is waited for: the AI gets its result, never
+                # "still being scanned" to end its turn on
                 out = [scanner.wait_scan(x["company"]) if x.get("busy") else x for x in scanner.scan_many(scan_ids({"companies": refs}))]
                 return {"scanned": out, "text": "scanned"}
             if cmd == "scan-route":

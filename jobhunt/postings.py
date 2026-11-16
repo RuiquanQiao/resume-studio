@@ -453,7 +453,12 @@ class Postings:
                 if "国央企" in tr["name"] and tr["natures"] == ["soe", "public"]:
                     tr["natures"] = list(CN_STATE)
             d["migrated"].append("track-natures-cn")
-        d.setdefault("daily", True)
+        if "daily-asked" not in d["migrated"]:
+            # once (2026-11-16): the daily scan was on unless turned off, so it started with nobody asking ("那个全部
+            # 扫描按钮感觉有的时候是自动启动……不准未经我同意就启动"). It is off until the user turns it on in Settings
+            d["daily"] = False
+            d["migrated"].append("daily-asked")
+        d.setdefault("daily", False)
         d.setdefault("last_all", "")
         return d
 

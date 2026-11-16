@@ -915,7 +915,8 @@ function scanDone() {
   const run = scanInfo().last_run || {};
   const seen = H.lastRun;
   H.lastRun = run.at || 0;
-  if (seen === undefined || !run.at || run.at === seen || run.auto) return;
+  // a run the user stopped was said when they stopped it
+  if (seen === undefined || !run.at || run.at === seen || run.auto || run.stopped) return;
   // counts only from sites that were read: a run that read none says why instead of "0 new"
   const parts = run.read === 0 ? [] : [t("{n} new", { n: run.new }), t("{n} closed", { n: run.closed })];
   if (run.failed) parts.push(t("{n} company couldn't be read", { n: run.failed }, "{n} companies couldn't be read"));
@@ -950,15 +951,35 @@ async function scanCompanies(ids = null) {
   finally { if (H.starting) { H.starting = null; paintHunt(); } }
 }
 
-// while a run goes on: how far it got, counted the whole time (not only while a company is being read)
+// a scan the user stops: everything (ids null) or these companies. The company being read is let go and nothing it
+// read is kept; the ones already scanned keep their results (Scanner.stop)
+async function stopScan(ids = null) {
+  try {
+    const r = await api("POST", "/api/hunt/scan/stop", ids ? { companies: ids } : {});
+    if (!ids) toast(t("Scanning stopped. Companies already scanned keep their results; the one being read was left as it was."), { ms: 5000 });
+    else if ((r.stopped || []).length || (r.dequeued || []).length) toast(t("Scan stopped. Its open roles are as the last finished scan left them."), { ms: 4000 });
+    await loadHunt({ quiet: true });
+  } catch (e) { toast(e.message); }
+}
+
+// a running scan's button: spinning with its progress, and a click stops it (hover says so). Same width either way
+function stoppable(attrs, running, onStop) {
+  return h("button", { ...attrs, class: (attrs.class || "btn sm") + " scan-stoppable", "aria-busy": "true",
+    title: t("Click to stop scanning"), onclick: onStop },
+    h("span", { class: "ss-face" }, h("span", { class: "ss-run" }, running, icon("stop")), h("span", { class: "ss-stop" }, icon("stop"), t("Stop scanning"))));
+}
+
+// while a run goes on: how far it got, counted the whole time (not only while a company is being read). Only Scan
+// all's own run makes it spin (one company's Scan, or the AI's scan, is that company's)
 function scanAllButton() {
   const sc = scanInfo(), b = sc.batch;
-  const busy = !!b || H.starting === "all" || Object.keys(sc.running || {}).length > 0;
+  const busy = !!(b && b.all) || H.starting === "all";
+  if (busy) return stoppable({ id: "hunt-scan-all" },
+    b && b.total > 1 ? t("Scanning {n} of {total}…", { n: Math.min(b.done + 1, b.total), total: b.total }) : t("Scanning…"), () => stopScan());
   const now = H.data.companies.filter((c) => (sc.running || {})[c.id]).map((c) => c.name);
-  return h("button", { class: "btn sm", id: "hunt-scan-all", "aria-busy": busy && "true", disabled: busy,
+  return h("button", { class: "btn sm", id: "hunt-scan-all",
     title: now.length ? t("Reading {names}", { names: now.join(", ") }) : sc.last_all ? t("Last scanned {when}", { when: huntWhen(sc.last_all) }) : t("Reads every company's careers sites for open roles; a site with no scan route yet needs the AI to learn it first"),
-    onclick: () => scanCompanies() }, icon("refresh"),
-  !busy ? t("Scan all") : b && b.total > 1 ? t("Scanning {n} of {total}…", { n: Math.min(b.done + 1, b.total), total: b.total }) : t("Scanning…"));
+    onclick: () => scanCompanies() }, icon("refresh"), t("Scan all"));
 }
 
 // what the last day's scans brought, and the sites Claude still has to learn once
@@ -1445,9 +1466,10 @@ function postingsCard(v) {
     sc.ok && sc.short && h("button", { class: "btn sm", id: "company-fix-short", "data-ai": aiKey("short", [c]), disabled: !ui.chat.available,
       title: t("The AI finds where the rest go missing and fixes the scan route"), onclick: () => askShort(c, sc.short) }, icon("sparkle"), t("Let AI read the rest")),
     !sc.ok && sc.at && sc.how === "route" && h("button", { class: "btn sm", "data-ai": aiKey("learn", [c]), disabled: !ui.chat.available, onclick: () => askLearn([c]) }, icon("sparkle"), t("Ask AI to record the scan route again")),
-    h("button", { class: "btn sm", id: "company-scan", "aria-busy": (busy || waiting) && "true", disabled: !!busy || waiting || sc.needs === "sites",
-      title: sc.needs === "sites" ? t("Add a careers site below first") : waiting ? t("Waiting for the companies before it…") : null,
-      onclick: () => scanCompanies([c.id]) }, icon("refresh"), busy ? t("Scanning…") : waiting ? t("Waiting…") : t("Scan"))];
+    busy || waiting ? stoppable({ id: "company-scan" }, busy ? t("Scanning…") : t("Waiting…"), () => stopScan([c.id]))
+      : h("button", { class: "btn sm", id: "company-scan", disabled: sc.needs === "sites",
+        title: sc.needs === "sites" ? t("Add a careers site below first") : null,
+        onclick: () => scanCompanies([c.id]) }, icon("refresh"), t("Scan"))];
   return card(t("Open roles"), "", [
     sc.error && h("div", { class: "note-bar warn" }, icon("alert"), h("span", { class: "nb-text" }, sc.error),
       sc.signed_out && c.site && h("button", { class: "btn sm", onclick: () => signInMode(c.site) }, icon("user"), t("Sign in to {site}", { site: c.name }))),
@@ -2716,7 +2738,7 @@ function trackerField() {
         ? (d.career_ops ? t("Roles you mark as sent also get a row in {name}'s tracker (its pipeline, follow-ups and stats see them).", { name })
           : t("{name} isn't connected yet: roles go into Resume Studio's tracker until it is.", { name }))
         : t("Everything stays in Resume Studio's own tracker, next to your data file. {name} keeps its own rows.", { name })),
-      (() => { const on = pendingDaily ?? ((d.scan || {}).daily !== false);
+      (() => { const on = pendingDaily ?? ((d.scan || {}).daily === true);   // off until the user turns it on
         return h("button", { type: "button", class: "check-row", id: "daily-scan", role: "checkbox", "aria-checked": String(on),
           onclick: () => { pendingDaily = !on; paint(); } }, h("span", { class: "check" + (on ? " on" : "") }),
         h("span", null, t("Scan the companies' sites once a day, when the window opens"), h("span", { class: "hint" }, t("by their providers and recorded routes; never AI, so a site with no scan route is left out")))); })()].filter(Boolean));

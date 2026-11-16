@@ -716,11 +716,11 @@ def test_a_site_added_after_the_route_was_recorded_is_checked_and_handed_to_the_
     hunt.update_company("C1", {"sites": hunt.company("C1")["sites"][:3]})
     assert sc.check_sites("C1", []) == [] and ps.scan_state("C1")["needs"] == "" and ps.scan_state("C1")["unrouted"] == []
     assert started == []                        # nothing new a scan can read, so none was started
-    # one a provider reads (Moka, say) is scanned at once
+    # one a provider reads (Moka, say) is checked, never scanned without the user's click (user, 2026-11-16)
     moka = "https://app.mokahr.example/campus-recruitment/sjtu/1"
     sc._providers[moka] = "moka"
     hunt.update_company("C1", {"sites": [*hunt.company("C1")["sites"], {"url": moka}]})
-    assert sc.check_sites("C1", [moka]) == [] and started == ["C1"]
+    assert sc.check_sites("C1", [moka]) == [] and started == []
 
 
 def test_a_new_companys_sites_are_scanned_at_once_whoever_adds_them(live, data_file, monkeypatch):
@@ -939,11 +939,11 @@ def test_a_check_of_new_sites_waits_for_a_scan_of_the_same_company(hunt, monkeyp
     assert t.is_alive() and started == []                      # waiting, not given up
     sc.running.pop("C1")
     t.join(5)
-    assert not t.is_alive() and started == ["C1"]
+    assert not t.is_alive() and started == []                  # checked, and no scan started by itself
     # it doesn't wait forever
     monkeypatch.setattr("jobhunt.scan.CHECK_WAIT", 0.3)
     sc.running["C1"] = "scan"
-    assert sc.check_sites("C1", [moka]) == [] and started == ["C1"]
+    assert sc.check_sites("C1", [moka]) == [] and started == []
 
 
 def test_a_site_gets_its_kind_only_from_someone_who_looked(hunt):
@@ -1146,7 +1146,7 @@ def test_a_run_shows_how_far_it_got_from_the_click_to_the_end(hunt, monkeypatch)
     threads = []
     monkeypatch.setattr(scan_mod.threading, "Thread", lambda target, **kw: threads.append(target) or type("T", (), {"start": lambda self: None})())
     sc.start(["C1"])
-    assert seen[-1][:2] == ({"total": 1, "done": 0, "auto": False}, ["C1"])     # at once, before anything is read
+    assert seen[-1][:2] == ({"total": 1, "done": 0, "auto": False, "all": False}, ["C1"])     # at once, before anything is read
     sc.start(["C2", "C1"])                                                        # C1 is queued already
     assert len(threads) == 1 and sc.queue == ["C1", "C2"] and sc.batch["total"] == 2
     threads[0]()

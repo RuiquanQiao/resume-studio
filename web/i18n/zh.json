@@ -1813,7 +1813,6 @@
  "Export your data": "导出数据",
  "Reading {names}": "正在读取：{names}",
  "Scanning {n} of {total}…": "正在扫描 {n}/{total}…",
- "Waiting for the companies before it…": "排队中，正在扫描前面的公司…",
  "Waiting…": "排队中…",
  "{agent} is done; see the chat": "{agent} 已完成，请在对话中查看",
  "This entry changed again after the AI finished. Undo was not applied; review the current entry first.": "AI 完成后，这条经历又被修改过。为避免覆盖后续修改，未执行撤销；请先检查当前内容。",
@@ -2497,5 +2496,9 @@
  "no sign-in check is recorded": "尚未记录登录检查",
  "the sign-in check had no answer": "登录检查未返回结果",
  "a password field": "密码输入框",
- "a “{name}” button": "「{name}」按钮"
+ "a “{name}” button": "「{name}」按钮",
+ "Scanning stopped. Companies already scanned keep their results; the one being read was left as it was.": "已停止扫描。已扫描完的公司保留其结果；正在读取的公司维持原状。",
+ "Scan stopped. Its open roles are as the last finished scan left them.": "已停止扫描。此公司的在招岗位保持上一次完整扫描的结果。",
+ "Click to stop scanning": "点击停止扫描",
+ "Stop scanning": "停止扫描"
 }

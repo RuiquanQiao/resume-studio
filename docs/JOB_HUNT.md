@@ -181,8 +181,14 @@ the company (creating and filling it when new), adds the posting with its detail
   `listing-fingerprint.mjs`): new ones are marked **new**, gone ones **closed**, changed deadlines shown. A
   posting kept without a link that a later scan finds with one stays the same posting.
 - **Today's changes**: after a scan the Companies tab says what is new, closed or changed, per company.
-- **Daily**: when the window opens and the last scan is more than a day old, it scans by itself (only routes
-  and APIs, never Claude). Settings can turn this off.
+- **Only when asked** (2026-11-16): a scan starts from Scan all, a company's Scan, or the AI the user asked.
+  A site added to a company is only checked (which system reads it), never scanned by itself. **Daily**: off
+  until the user turns it on in Settings; then the window scans once a day when it opens (routes and APIs,
+  never Claude).
+- **Stop**: a running Scan all, or a company's Scan, stops at a click on the same button. As a download
+  manager stops: the companies still waiting are dropped, the one being read is let go at once (its node
+  process killed, its page reads abandoned) and nothing it read is merged, so no role is closed by a list read
+  half-way; the companies already scanned keep their results.
 
 ### Building it, in order (before steps 2–5 below)
 

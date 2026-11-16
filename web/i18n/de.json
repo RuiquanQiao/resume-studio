@@ -1939,7 +1939,6 @@
  "Export your data": "Daten exportieren",
  "Reading {names}": "Liest gerade {names}",
  "Scanning {n} of {total}…": "Durchsuche {n} von {total}…",
- "Waiting for the companies before it…": "Wartet auf die Firmen davor…",
  "Waiting…": "Wartet…",
  "{agent} is done; see the chat": "{agent} ist fertig; siehe den Chat",
  "Archive this chat": "Diesen Chat archivieren",
@@ -2695,5 +2694,9 @@
  "no sign-in check is recorded": "keine Anmeldeprüfung aufgezeichnet",
  "the sign-in check had no answer": "die Anmeldeprüfung hat nicht geantwortet",
  "a password field": "ein Passwortfeld",
- "a “{name}” button": "eine Schaltfläche „{name}“"
+ "a “{name}” button": "eine Schaltfläche „{name}“",
+ "Scanning stopped. Companies already scanned keep their results; the one being read was left as it was.": "Scan gestoppt. Bereits gescannte Unternehmen behalten ihre Ergebnisse; das gerade gelesene bleibt unverändert.",
+ "Scan stopped. Its open roles are as the last finished scan left them.": "Scan gestoppt. Die offenen Stellen bleiben wie nach dem letzten abgeschlossenen Scan.",
+ "Click to stop scanning": "Klicken, um den Scan zu stoppen",
+ "Stop scanning": "Scan stoppen"
 }

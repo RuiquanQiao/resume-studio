@@ -1313,6 +1313,16 @@ button.fg-title { text-transform: none; letter-spacing: 0; font-size: var(--fs-h
 [aria-busy="true"] > svg.i:first-child { display: none; }
 [aria-busy="true"]::before { content: ""; display: inline-block; flex: none; align-self: center; width: 10px; height: 10px; border-radius: 50%;
   border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
+/* a running scan's button stops it (hunt.js stoppable): progress at rest, "Stop scanning" under the pointer, both in
+   one grid cell so the button keeps its width */
+.scan-stoppable { cursor: pointer; }
+.scan-stoppable .ss-face { display: inline-grid; align-items: center; }
+.scan-stoppable .ss-run, .scan-stoppable .ss-stop { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.scan-stoppable .ss-run svg.i { width: 10px; height: 10px; opacity: .55; }
+.scan-stoppable .ss-stop { visibility: hidden; justify-content: center; }
+.scan-stoppable:hover .ss-run, .scan-stoppable:focus-visible .ss-run { visibility: hidden; }
+.scan-stoppable:hover .ss-stop, .scan-stoppable:focus-visible .ss-stop { visibility: visible; }
+.scan-stoppable:hover::before, .scan-stoppable:focus-visible::before { visibility: hidden; }
 .scan-chip { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-meta); color: var(--text-2); white-space: nowrap; }
 .note-bar > .spin { flex: none; }
 .scan-chip .spin, .fs-status .spin, .fs-status + .spin, .note-bar > .spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--accent); border-right-color: transparent; animation: spin .8s linear infinite; }
