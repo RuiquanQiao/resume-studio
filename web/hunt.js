@@ -1951,7 +1951,7 @@ function formModal({ title, message = "", fields, ok = t("OK"), onOk = null }) {
       inputs[f.key] = h("input", { id: "fm-" + f.key, value: f.value || "", placeholder: f.placeholder || "", spellcheck: "false", autocomplete: "off",
         oninput: reset });
       return h("div", { class: "field" + (f.list && f.list.length ? " fm-combo" : "") }, h("label", { for: "fm-" + f.key }, f.label, f.hint && h("span", { class: "hint" }, f.hint)), inputs[f.key],
-        f.list && f.list.length && suggest(f, inputs[f.key]));
+        f.list && f.list.length > 0 && suggest(f, inputs[f.key]));
     });
     root.replaceChildren(h("div", { class: "modal-back", onmousedown: (e) => { if (e.target === e.currentTarget) close(null); } },
       h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-label": title },

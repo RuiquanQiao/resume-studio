@@ -317,6 +317,11 @@ class ChatRunner:
         return self.hub.info(agent_id) if self.hub else None
 
     def set_limits(self, agent_id: str, limits: dict) -> None:
+        # an update that names no window keeps the windows already known: Codex, on reaching its limit, sends one
+        # with none in it after the full one (2026-11-17: the card lost "5 hours 100% / this week 81%" exactly then)
+        old = self.limits.get(agent_id) or {}
+        if not limits.get("windows") and old.get("windows"):
+            limits = {**limits, "windows": old["windows"]}
         self.limits[agent_id] = limits
         self.bus.publish("claude.limits", {**limits, "agent": agent_id})
 

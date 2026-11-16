@@ -244,8 +244,11 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
         elif info.data is None and not info.loading and agent.installed():
             info.refresh_async(lambda: app.bus.publish("claude.info", {"agent": agent.id}))
         data = info.data or {}
+        # the chat's last report wins, unless it names no window and the agent's own read does
+        live, probed = chats.limits.get(agent.id) or {}, data.get("limits") or {}
+        limits = live if live.get("windows") or not probed.get("windows") else probed
         return {**info.get(), "agent": agent.id, "agents": hub.listing(), "available": agent.installed(),
-                "limits": chats.limits.get(agent.id) or data.get("limits") or {}, "modes": mode_list(agent, data),
+                "limits": limits, "modes": mode_list(agent, data),
                 "defaults": (prefs.load().get("chat_defaults") if prefs else None)}
 
     @app.route("PUT", "/api/chat-defaults")

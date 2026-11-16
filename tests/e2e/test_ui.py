@@ -1473,6 +1473,29 @@ def test_context_ring_and_limits(page, server, fake_claude):
     assert pop.locator(".cx-bar i").first.evaluate("e => e.style.width") == "0%"
 
 
+def test_context_card_with_no_usage_windows_has_no_stray_zero(page, server, fake_claude):
+    """2026-11-17: usage windows came back as {} and the card drew their count, a lone "0", under the context bar."""
+    open_chat_tab(page)
+    page.evaluate("() => { ui.claude = { ...ui.claude, limits: { status: 'allowed', windows: {} } }; }")
+    page.click("#chat-ctx-btn")
+    pop = page.locator(".float.cx-pop")
+    pop.wait_for()
+    loose = pop.evaluate("p => [...p.querySelectorAll('*'), p].flatMap((e) => [...e.childNodes])"
+                         ".filter((n) => n.nodeType === 3 && n.parentElement.classList.contains('cx-pop') && n.textContent.trim()).map((n) => n.textContent)")
+    assert loose == [], loose
+    assert "收到第一条回复后显示套餐额度" in pop.inner_text()
+    pop.screenshot(path=str(ART / "context-no-windows.png"))
+    page.keyboard.press("Escape")
+    # at the limit: both windows, the 5-hour one full, each with its reset time
+    page.evaluate("""() => { ui.claude = { ...ui.claude, limits: { status: 'rejected', windows: {
+        five_hour: { utilization: 1, resetsAt: Date.now() / 1000 + 4 * 3600, minutes: 300 },
+        seven_day: { utilization: 0.81, resetsAt: Date.now() / 1000 + 3 * 86400, minutes: 10080 } } } }; }""")
+    page.click("#chat-ctx-btn")
+    pop.wait_for()
+    assert "100%" in pop.inner_text() and "81%" in pop.inner_text()
+    pop.screenshot(path=str(ART / "context-at-limit.png"))
+
+
 def shot_float(pg, name):
     pg.wait_for_selector(".float.in")
     pg.wait_for_timeout(200)                                   # let the fade-in finish

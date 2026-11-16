@@ -456,6 +456,7 @@ function openContextPanel(anchor = $("#chat-ctx-btn")) {
   const otherWins = Object.entries(lim.windows || {}).filter(([k, w]) => !["five_hour", "seven_day"].includes(k) && w && w.minutes)
     .map(([k, w]) => win(k, w.minutes >= 1440 ? t("Last {n} day", { n: Math.round(w.minutes / 1440) }, "Last {n} days") : t("Last {n} hour", { n: Math.round(w.minutes / 60) }, "Last {n} hours")));
   const isClaude = agentOf().protocol === "claude";
+  const hasWins = Object.keys(lim.windows || {}).length > 0;   // a boolean: `{}`'s count 0 must not render as "0"
   const send = (cmd) => { closeFloat(); sendChat(cmd); };
   const panel = h("div", { class: "cx-pop", role: "dialog", "aria-label": t("Context and usage") },
     h("div", { class: "pk-head" }, t("Context")),
@@ -469,10 +470,10 @@ function openContextPanel(anchor = $("#chat-ctx-btn")) {
     isClaude && h("div", { class: "cx-acts" },   // Claude Code's own slash commands
       h("button", { type: "button", class: "btn sm", disabled: !ui.chat.id || !ui.chat.meta || !ui.chat.meta.session_id, onclick: () => send("/compact") }, icon("compress"), t("Compact context")),
       h("button", { type: "button", class: "btn sm ghost", disabled: !ui.chat.id || !ui.chat.meta || !ui.chat.meta.session_id, onclick: () => send("/context") }, t("Details"))),
-    (lim.windows && Object.keys(lim.windows).length) && h("div", { class: "pk-head" }, t("Plan usage")),
+    hasWins ? h("div", { class: "pk-head" }, t("Plan usage")) : null,
     win("five_hour", t("Last 5 hours")), win("seven_day", t("This week")), ...otherWins,
-    lim.windows || !["claude", "codex"].includes(agentOf().protocol) ? null : h("div", { class: "cx-sub" }, t("Plan usage shows after the first reply.")),
-    acct && acct.plan && h("div", { class: "cx-foot" }, [acct.plan, acct.email].filter(Boolean).join(" · ")));
+    hasWins || !["claude", "codex"].includes(agentOf().protocol) ? null : h("div", { class: "cx-sub" }, t("Plan usage shows after the first reply.")),
+    acct && acct.plan ? h("div", { class: "cx-foot" }, [acct.plan, acct.email].filter(Boolean).join(" · ")) : null);
   openFloat(anchor, panel, { place: "top", align: "end", minWidth: 270, focus: panel.querySelector("button:not(:disabled)") });
 }
 

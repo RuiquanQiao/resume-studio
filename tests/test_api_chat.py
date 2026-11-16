@@ -441,6 +441,12 @@ def test_fork_tasks_context_and_slash_command(server, fake_claude):
                                   {"id": "2", "subject": "改写要点", "active": "", "status": "pending"}]
     assert r["chat"]["context"] == {"used": 40130, "model": "fake-model", "window": 200000}
     assert server.req("GET", "/api/claude")[1]["limits"]["windows"]["seven_day"]["utilization"] == 0.34
+    # a report that names no window shows the agent's own read instead of an empty card (2026-11-17, Codex at its limit)
+    agent = server.req("GET", "/api/claude")[1]["agent"]
+    server.inst.chats.limits[agent] = {"status": "allowed", "windows": {}}
+    server.inst.agents.info(agent).data = {**(server.inst.agents.info(agent).data or {}),
+                                              "limits": {"status": "rejected", "windows": {"five_hour": {"utilization": 1.0}}}}
+    assert server.req("GET", "/api/claude")[1]["limits"]["windows"]["five_hour"]["utilization"] == 1.0
     _send(server, cid, "second")
     server.wait_idle(cid)
     msgs = server.req("GET", f"/api/chats/{cid}")[1]["messages"]

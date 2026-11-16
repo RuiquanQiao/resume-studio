@@ -2214,12 +2214,12 @@ function aiDiff(id) {
   });
   const close = () => keepAi(id);
   return card(changes.length ? t("The AI changed this entry") : t("The AI didn't change this entry"), `${a.action in AI_LABELS ? t(AI_LABELS[a.action]) : ""} · ${t("the chat explains why")}`, [
-    changes.length && h("p", { class: "ai-review-summary" }, t("{n} changed item", { n: changes.length }, "{n} changed items")),
+    changes.length > 0 && h("p", { class: "ai-review-summary" }, t("{n} changed item", { n: changes.length }, "{n} changed items")),
     h("div", { class: "ai-changes" }, rows),
     h("div", { class: "row", style: "margin-top:12px" },
       // keeping is the expected answer; undo is the safe way back, not a destructive one
       h("button", { class: "btn sm primary", onclick: close }, icon("check"), changes.length ? t("Keep") : t("Got it")),
-      changes.length && h("button", { class: "btn sm", onclick: () => undoAi(id) }, icon("undo"), t("Undo, back to before")),
+      changes.length > 0 && h("button", { class: "btn sm", onclick: () => undoAi(id) }, icon("undo"), t("Undo, back to before")),
       h("button", { class: "btn sm ghost", onclick: () => showChat() }, icon("chat"), t("Open the chat"))),
   ], { cls: "diff ai-review" });   // diff: sits flush in its doc card (style.css)
 }
