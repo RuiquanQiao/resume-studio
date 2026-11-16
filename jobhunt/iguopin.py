@@ -25,7 +25,7 @@ import urllib.request
 from typing import Any
 from urllib.parse import urlsplit
 
-from . import patience
+from . import patience, progress
 
 PROVIDER = "iguopin"
 API = "/api/jobs/v1/project-job"
@@ -173,19 +173,27 @@ def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | N
             body["project_id"] = ids
         if company:
             body["company_id_with_sub"] = company
+        progress.pages(url, 1)
         first = ask(API, {**body, "page": 1}, "its job list")
         rows += first.get("list") or []
+        progress.page(url, len(first.get("list") or []))
         count = first.get("total") if isinstance(first.get("total"), int) else 0
         total += count
+        progress.count(url, count)
+        progress.pages(url, max(0, min(MAX_PAGES, -(-count // PAGE)) - 1))
         if not todo and not total and ids and company:
             # every list the menu names is empty: the menu is left on last season's project while this season's roles
             # are open (中储粮, 2026-11-13). Ask with no project: every open role of the company and its branches.
             todo.append([])
         for n in range(2, min(MAX_PAGES, -(-count // PAGE)) + 1):
             try:
-                rows += ask(API, {**body, "page": n}, f"page {n} of its job list").get("list") or []
+                got = ask(API, {**body, "page": n}, f"page {n} of its job list").get("list") or []
             except ReadFailed as e:
+                progress.page(url, 0, failed=True)
                 failed.append(str(e))
+                continue
+            progress.page(url, len(got))
+            rows += got
     prefix = len({str(j.get("company_name") or "") for j in rows if isinstance(j, dict)}) > 1
     jobs: dict[str, dict] = {}
     for j in rows:   # a role listed in two projects, or moved up a page between two reads, once

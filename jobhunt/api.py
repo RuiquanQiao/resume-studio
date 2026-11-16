@@ -124,6 +124,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
     geo = Geo(hunt.dir, cache_dir=studio.store.cache_dir)
     scanner = Scanner(hunt, posts, tool, browser, lambda: app.bus.publish("hunt", {}))
     hunt.scanner = scanner   # the app (and tests) reach the scanner through the tracker
+    scanner.tell_progress = lambda d: app.bus.publish("scan-progress", d)   # how far a scan got, page by page
     descs = Descriptions(hunt, lambda: scanner.browser, lambda: app.bus.publish("hunt", {}))
     hunt.descriptions = descs
     # the roles whose descriptions were read before their skills were worked out get them, once, off the start
@@ -494,6 +495,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                                    key=lambda p: (bool(p.get("closed")), p.get("category") or "", p["title"])),
                 "scan": {k: v for k, v in st.items() if k != "route"} | {"recorded": bool(st.get("route")),
                                                                        "running": scanner.running.get(c["id"]),
+                                                                       "progress": scanner.progress_of(c["id"]),
                                                                        "queued": c["id"] in scanner.queue,
                                                                        "sites": scanner.site_status(c)},
                 "keywords": posts.scans()["keywords"], "tracks": posts.tracks(),
@@ -664,7 +666,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         tb["applications"] = [{**a, **with_track(a, sc["tracks"], nature_of.get(a["company"], ""))} for a in tb["applications"]]
         return {**tb, "platforms": platforms(), "tracker": tracker(), "career_ops": co_on(),
                 "scan": {"keywords": sc["keywords"], "tracks": sc["tracks"], "daily": sc["daily"], "last_all": sc["last_all"],
-                         "running": dict(scanner.running), "providers": scanner.providers_ready(),
+                         "running": dict(scanner.running), "progress": scanner.progress_all(), "providers": scanner.providers_ready(),
                          "last_run": scanner.last_run, "queued": list(scanner.queue), "reading": descs.status(), "read_last": descs.last,
                          "batch": dict(scanner.batch) if scanner.batch else None},
                 "changes": posts.changes(), "geo": located(places), "places": place_names(places), "natures": nature_catalog()}

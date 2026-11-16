@@ -24,6 +24,8 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
+from . import progress
+
 KEEP = 20          # answers kept per site
 MAX_WAIT = 300     # one request never waits longer than this, however slow the site was
 _CN_ZONES = {"China Standard Time", "Asia/Shanghai", "Asia/Chongqing", "Asia/Chungking", "Asia/Harbin", "Asia/Urumqi",
@@ -117,6 +119,7 @@ def of(url: str, timeout: float, tries: int, waits: tuple[float, ...] = (), *, c
 
 
 HEDGE_MIN = 5.0    # a second request is never sent sooner than this
+MAX_OUT = 3        # requests out at once for one ask: the first and two hedges, sent one hedge time apart
 
 
 def hedge_after(url: str, p: Patience) -> float:
@@ -139,8 +142,9 @@ def ask(url: str, call: Callable[[float], Any], p: Patience, *, net: tuple[type[
     `answered_is_final`, that answer stands and isn't asked again.
 
     A request with no answer after `hedge_after` is sent once more beside the first, and whichever answers first is
-    used; the other is left to end by itself. Every caller asks a list, which reading twice changes nothing. A hedge
-    counts as one of the tries, and at most two requests are out at once."""
+    used; the others are left to end by itself. Every caller asks a list, which reading twice changes nothing. A hedge
+    counts as one of the tries, and at most MAX_OUT requests are out at once: with two, both hanging left the page
+    waiting out the 97 s timeout, and join.huolala.cn took 454 s instead of 154 (2026-11-17)."""
     out: queue.Queue = queue.Queue()
     hedge = hedge_after(url, p)
 
@@ -166,19 +170,23 @@ def ask(url: str, call: Callable[[float], Any], p: Patience, *, net: tuple[type[
             if sent >= p.tries:
                 raise ValueError("no tries")
             if failures:
+                progress.again(url, sent + 1)   # the window says the site is slow and is asked again
                 time.sleep(p.waits[min(failures - 1, len(p.waits) - 1)] if p.waits else 0)
             threading.Thread(target=attempt, daemon=True).start()
             sent, live = sent + 1, live + 1
         try:
-            kind, value = out.get(timeout=hedge if live == 1 and sent < p.tries else None)
+            kind, value = out.get(timeout=hedge if live < MAX_OUT and sent < p.tries else None)
         except queue.Empty:   # no answer yet: the same request once more, beside it
+            progress.again(url, sent + 1)
             threading.Thread(target=attempt, daemon=True).start()
             sent, live = sent + 1, live + 1
             continue
         live -= 1
         if kind == "ok":
+            progress.answered(url)
             return value
         if kind == "other" or (kind == "answered" and answered_is_final) or (live == 0 and sent >= p.tries):
+            progress.answered(url)   # given up on: no longer said as being asked again
             raise value
         failures += 1
 

@@ -143,6 +143,7 @@ const ICONS = {
   zoomIn: '<circle cx="11" cy="11" r="7"/><path d="M11 8v6M8 11h6M20 20l-4-4"/>',
   zoomOut: '<circle cx="11" cy="11" r="7"/><path d="M8 11h6M20 20l-4-4"/>',
   check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/>',
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/>',
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   folderOpen: '<path d="M3 8V6a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v2"/><path d="M3 8h17.5a1 1 0 0 1 1 1.2l-1.6 8A1 1 0 0 1 19 18H4.6a1 1 0 0 1-1-.8L2.1 9.2A1 1 0 0 1 3 8z"/>',

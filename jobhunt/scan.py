@@ -42,7 +42,7 @@ from core.browser import BrowserError, PageNotOpened
 from core.cdp import CdpError
 from core.i18n import t
 
-from . import alitalent, beisen, feishu, hotjob, iguopin, patience, replay, report, systems
+from . import alitalent, beisen, feishu, hotjob, iguopin, patience, progress, replay, report, systems
 from .postings import Postings
 from .store import Hunt, site_host, site_key
 
@@ -59,6 +59,7 @@ BRIDGE_TRIES = 2
 BRIDGE_WAITS = (3,)
 CO_MAX_PAGES = 40
 # the providers for systems that run in mainland China, whatever the company's own domain (careers.tencent.com)
+PROGRESS_EVERY = 0.5   # seconds between two "scan-progress" events of one company
 CN_PROVIDERS = {"tencent", "meituan", "alibaba", "mokahr", "feishu-jobs", "bytedance", "zhiye", "hotjob"}
 KNOWN = "providers.json"   # hunt/providers.json  {"<list address>": "beisen"}: the systems found reading each
 MAX_PAGES = 20   # of a recorded route, each with 2 minutes
@@ -185,6 +186,12 @@ class Scanner:
         # can say "3 of 12" from the click to the end, between one company and the next too
         self.queue: list[str] = []
         self.batch: dict | None = None         # {total, done, auto} while a run goes on
+        # how far each company's scan has got (jobhunt/progress.py): the lists it watches, and who to tell; told as
+        # a "scan-progress" event of its own, never a reload of the whole tracker for each page that came
+        self._watching: dict[str, list[str]] = {}
+        self.tell_progress: Callable[[dict], None] | None = None
+        self._told: dict[str, float] = {}
+        self._telling: set[str] = set()
         self.retry_waits = RETRY_WAITS         # seconds before each new try of a page that didn't open
         self.empty_wait = EMPTY_WAIT           # seconds before a page whose script read no roles is read again
         # 北森 sites, read by the scan itself (jobhunt/beisen.py); tests hand in their own
@@ -537,6 +544,7 @@ class Scanner:
         missed = 0
         for url, scripts in groups:
             self._check_stop()
+            before = len(found)
             outs: list[Any] = [None] * len(scripts)
             todo = list(range(len(scripts)))
             for attempt in range(len(RETRY_WAITS) + 1):
@@ -582,6 +590,7 @@ class Scanner:
                 if totals is not None and isinstance(out, dict) and str(out.get("total") or "").strip().isdigit():
                     k = str(out.get("list") or url)
                     totals[k] = max(totals.get(k, 0), int(str(out["total"]).strip()))
+            progress.page(pages[0]["url"], len(found) - before, n=len(scripts))   # the group's pages, read or not
         if not found:
             # said as it is: the pages opened and the scripts ran, and read no roles twice over. Never "the site has
             # changed", which nobody checked (鹏芯微's route read none on a site with 24 roles, 2026-11-05)
@@ -718,6 +727,53 @@ class Scanner:
         if self._stopping():
             raise Stopped()
 
+    def _watch(self, cid: str, url: str, system: str) -> None:
+        with self.lock:
+            if url in self._watching.get(cid, []):
+                return
+            self._watching.setdefault(cid, []).append(url)
+        progress.watch(url, system, lambda: self._progressed(cid))
+
+    def _unwatch(self, cid: str) -> None:
+        with self.lock:
+            urls = self._watching.pop(cid, [])
+        for u in urls:
+            progress.unwatch(u)
+
+    def progress_of(self, cid: str) -> dict | None:
+        """{started, sites: [{url, host, system, pages, done, rows, total, again}]} while the company is scanned."""
+        with self.lock:
+            urls = list(self._watching.get(cid, []))
+            started = self.started.get(cid)
+        if started is None:
+            return None
+        return {"started": started, "sites": progress.snapshot(urls)}
+
+    def progress_all(self) -> dict:
+        with self.lock:
+            ids = list(self.running)
+        return {cid: p for cid in ids if (p := self.progress_of(cid))}
+
+    def _progressed(self, cid: str) -> None:
+        """Told at most every PROGRESS_EVERY seconds per company, the last change never dropped."""
+        if not self.tell_progress:
+            return
+        with self.lock:
+            if cid in self._telling:
+                return
+            wait = PROGRESS_EVERY - (time.time() - self._told.get(cid, 0))
+            self._telling.add(cid)
+
+        def tell() -> None:
+            if wait > 0:
+                time.sleep(wait)
+            with self.lock:
+                self._telling.discard(cid)
+                self._told[cid] = time.time()
+            if self.tell_progress:
+                self.tell_progress({cid: self.progress_of(cid)})
+        threading.Thread(target=tell, daemon=True).start()
+
     def _scan(self, ref: str, *, allow_route: bool = True, just_tried: bool = False) -> dict:
         c = self.hunt.company(ref)
         tok = Token()
@@ -736,11 +792,13 @@ class Scanner:
             return {"company": c["id"], "stopped": True}
         finally:
             self._local.token = None
+            self._unwatch(c["id"])
             with self.lock:
                 if self.tokens.get(c["id"]) is tok:   # not a later scan of it, started once this one was stopped
                     self.running.pop(c["id"], None)
                     self.started.pop(c["id"], None)
                     self.tokens.pop(c["id"], None)
+            self._progressed(c["id"])   # told once more, as over: the window drops its block
             self.publish()
 
     def _scan_body(self, c: dict, tok: Token, *, allow_route: bool, just_tried: bool) -> dict:
@@ -784,8 +842,14 @@ class Scanner:
                 missed[s["url"]] = "unreached"
                 errors.append(f"{s['url']}: didn't answer when asked which recruiting system it runs on; "
                               "asked again at the next scan")
-        for r in self._bridge([{"key": u, "name": c["name"], "url": u} for u in lists
-                               if self._providers.get(u) not in readers]):
+        # what the window says while it reads: each list, the pages it learns of and those that came (progress.py)
+        bridged = [u for u in lists if self._providers.get(u) not in readers]
+        for u in bridged + [u for _, u in ours]:
+            self._watch(c["id"], u, self._providers.get(u) or "")
+        for u in bridged:   # read in one go by career-ops' providers: one step, done when they answer
+            progress.pages(u, 1)
+        for r in self._bridge([{"key": u, "name": c["name"], "url": u} for u in bridged]):
+            progress.page(r["url"], len(r.get("jobs") or []), failed=bool(r.get("error")))
             if r.get("error"):
                 errors.append(f"{r['url']}: {r['error']}")
                 miss(r["url"], "none")
@@ -839,6 +903,8 @@ class Scanner:
         if scripts:
             if allow_route or self.no_browser(scripts):   # the daily scan reads a route that needs no browser too
                 self.running[c["id"]] = "route"
+                self._watch(c["id"], scripts[0]["url"], "route")
+                progress.pages(scripts[0]["url"], len(scripts))
                 self.publish()
                 try:
                     fresh = self._fresh.pop(c["id"], None) if just_tried else None

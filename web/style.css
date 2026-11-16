@@ -1327,6 +1327,21 @@ button.fg-title { text-transform: none; letter-spacing: 0; font-size: var(--fs-h
 .scan-stoppable .ss-stop { visibility: hidden; }
 .scan-stoppable:hover .ss-run, .scan-stoppable:focus-visible .ss-run { visibility: hidden; }
 .scan-stoppable:hover .ss-stop, .scan-stoppable:focus-visible .ss-stop { visibility: visible; }
+/* how far a company's scan has got (hunt.js scanProgressBlock): one quiet panel at the top of its open roles */
+.scan-prog { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; margin-bottom: 12px; border-radius: 10px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: var(--fs-meta); color: var(--text-2); min-width: 0; }
+.scan-prog .sp-site { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* the count of roles read goes under the words when both don't fit on one line, never squeezes them */
+.scan-prog .sp-line { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; row-gap: 2px; min-width: 0; }
+.scan-prog .sp-say { flex: 1 1 auto; min-width: 0; color: var(--text); overflow-wrap: anywhere; }
+.scan-prog .sp-site.over .sp-say { color: var(--text-2); }
+.scan-prog .sp-rows { flex: none; margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }.scan-prog .sp-bar { height: 4px; border-radius: 2px; background: var(--line-strong); overflow: hidden; }
+.scan-prog .sp-fill { height: 100%; border-radius: 2px; background: var(--accent); transition: width .3s ease; }
+.scan-prog .sp-site.over .sp-fill { background: var(--text-3); }
+.scan-prog .sp-slow { display: flex; align-items: center; gap: 6px; color: var(--warn); overflow-wrap: anywhere; }
+.scan-prog .sp-slow svg.i { flex: none; width: 14px; height: 14px; }
+.scan-prog .sp-time { color: var(--text-3); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .scan-prog .sp-fill { transition: none; } }
 .scan-chip { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-meta); color: var(--text-2); white-space: nowrap; }
 .note-bar > .spin { flex: none; }
 .scan-chip .spin, .fs-status .spin, .fs-status + .spin, .note-bar > .spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--accent); border-right-color: transparent; animation: spin .8s linear infinite; }

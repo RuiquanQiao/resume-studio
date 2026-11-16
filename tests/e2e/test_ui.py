@@ -3721,6 +3721,53 @@ def test_one_piece_of_work_shows_one_spinner(page_all):
     pg.locator("#one-spinner").screenshot(path=str(ART / "hunt-scan-one-spinner.png"))
 
 
+def test_a_scan_shows_how_far_it_got(page_all):
+    """User, 2026-11-17: a spinner alone gives no idea how long. A company's open roles say, while it is scanned, the
+    site and page it is on, a bar, the roles read of the list's own count, the time taken and left, and a slow site
+    as slow and asked again. A "scan-progress" event repaints that block only: a search being typed is left alone."""
+    pg = page_all
+    out = pg.evaluate("""() => {
+      const now = Date.now() / 1000;
+      const site = (x) => ({url: 'https://join.huolala.cn/#/', host: 'join.huolala.cn', system: 'beisen', pages: 12, done: 6,
+        rows: 300, total: 561, again: null, started: now - 72, ...x});
+      const prog = {started: now - 75, sites: [site({})]};
+      delete H.progress.C82;
+      const card = postingsCard({company: {id: 'C82', name: '货拉拉'}, scan: {running: 'scan', progress: prog},
+        postings: [{id: 'P1', title: 'Java 后端工程师', url: 'u'}]});
+      card.id = 'scan-progress-card';
+      card.style.cssText = 'position: fixed; top: 16px; left: 16px; width: 360px; z-index: 9999';
+      document.body.append(card);
+      const block = () => card.querySelector('[data-scan-prog]');
+      const first = {say: block().querySelector('.sp-say').textContent, rows: block().querySelector('.sp-rows').textContent,
+        bar: block().querySelector('.sp-fill').style.width, time: block().querySelector('.sp-time').textContent,
+        slow: !!block().querySelector('.sp-slow'),
+        over: [...card.querySelectorAll('.scan-prog *')].filter((e) => e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflow !== 'visible').length
+          + (block().scrollWidth > block().clientWidth + 1 ? 1 : 0)};
+      const input = card.querySelector('input');
+      input.focus(); input.value = 'Java';
+      H.progress.C82 = {...prog, sites: [site({done: 11, rows: 550, again: 3})]};
+      repaintScanProgress();
+      const second = {say: block().querySelector('.sp-say').textContent, slow: (block().querySelector('.sp-slow') || {}).textContent,
+        focus: document.activeElement === input, value: input.value};
+      delete H.progress.C82;
+      return {first, second};
+    }""")
+    assert out["first"] == {"say": "正在读取 join.huolala.cn（北森）：第 7/12 页", "rows": "已读取 300/561 个岗位", "bar": "50%",
+                            "time": "已用时 1 分 15 秒 · 预计还需约 2 分钟", "slow": False, "over": 0}, out
+    assert out["second"] == {"say": "正在读取 join.huolala.cn（北森）：第 12/12 页",
+                             "slow": "join.huolala.cn 响应较慢，已重新发送请求（第 3 次）", "focus": True, "value": "Java"}, out
+    # narrow and wide, light and dark: the count of roles goes under the words when they can't share a line
+    for width, scheme in ((360, "light"), (900, "light"), (900, "dark")):
+        pg.emulate_media(color_scheme=scheme)
+        pg.evaluate(f"document.querySelector('#scan-progress-card').style.width = '{width}px'")
+        lines = pg.evaluate("""() => { const b = document.querySelector('#scan-progress-card [data-scan-prog]');
+          return [b.scrollWidth <= b.clientWidth + 1, b.querySelector('.sp-say').getBoundingClientRect().height]; }""")
+        assert lines[0], (width, lines)
+        pg.locator("#scan-progress-card").screenshot(path=str(ART / f"hunt-scan-progress-{width}-{scheme}.png"))
+    pg.emulate_media(color_scheme="light")
+    pg.evaluate("document.querySelector('#scan-progress-card').remove()")
+
+
 def test_a_failed_read_offers_to_sign_in_first_unless_the_site_says_signed_in(page_all):
     """国聘 (2026-11-16): a read that failed because the sign-in expired was shown as "the site has probably changed"
     with "Record the route anew" as the only way on. Unless the site's sign-in check said the user was signed in, the

@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from urllib.parse import urlsplit
 
-from . import patience
+from . import patience, progress
 
 PROVIDER = "feishu"
 API = "/api/v1/search/job/posts"
@@ -155,15 +155,22 @@ def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | N
 
     def later(n: int) -> list[dict] | ReadFailed:
         try:
-            return page(n)[0]
+            got = page(n)[0]
         except ReadFailed as e:
+            progress.page(url, 0, failed=True)
             return e
+        progress.page(url, len(got))
+        return got
 
+    progress.pages(url, 1)
     rows, total = page(0)
+    progress.count(url, total)
+    progress.page(url, len(rows))
     failed: list[str] = []
     if total is None:   # no count: page on until a short page
         n = 1
         while len(rows) == n * PAGE and n < MAX_PAGES:
+            progress.pages(url, 1)
             got = later(n)
             if isinstance(got, ReadFailed):
                 failed.append(str(got))
@@ -173,6 +180,7 @@ def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | N
     else:
         pages = min(MAX_PAGES, -(-total // PAGE))
         if pages > 1:
+            progress.pages(url, pages - 1)
             with ThreadPoolExecutor(AT_ONCE) as pool:
                 for got in pool.map(later, range(1, pages)):
                     if isinstance(got, ReadFailed):

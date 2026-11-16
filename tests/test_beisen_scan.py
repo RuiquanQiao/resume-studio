@@ -92,7 +92,7 @@ def test_a_beisen_portal_is_read_whole_by_the_scan_itself(hunt, monkeypatch):
         res = sc.scan("鹏芯微")
         assert (res["found"], res["new"], res["needs"], res["short"]) == (25, 25, "", None) and not res["errors"]
         assert browser.opened == []
-        assert [b["PageIndex"] for b in site.asked if b["PageSize"] == 10] == [0, 1, 2]
+        assert sorted(b["PageIndex"] for b in site.asked if b["PageSize"] == 10) == [0, 1, 2]   # read a few at a time
         p = next(x for x in ps.all() if x["title"] == "27届-工程师3(J10603)")
         assert (p["url"], p["location"], p["batch"], p["posted"], p["deadline"]) == \
             (site.url + "/campus/detail?jobAdId=6e5432f5-1cd4-46e8-9ee9-000000000003", "深圳", "campus", "2026-10-27", "")
@@ -262,6 +262,98 @@ def test_a_beisen_site_that_hangs_now_and_then_is_read_in_the_time_its_answers_t
         assert took < 5, took
     finally:
         site.close()
+
+
+def test_a_scan_says_how_far_it_got_page_by_page(hunt, monkeypatch):
+    """User, 2026-11-17: a button that only spins tells the user nothing. While a 北森 list is read, the scan says
+    which site, how many of its pages came, the roles read of the list's own count, and a request sent again; once
+    the scan is over it says so (None), and the window drops what it showed."""
+    import time
+    from jobhunt import patience, progress
+    site = BeisenSite([role(i) for i in range(30)])
+    monkeypatch.setattr(beisen, "PAGE", 10)   # three pages
+    monkeypatch.setattr(beisen, "TIMEOUT", 3)
+    monkeypatch.setattr(beisen, "WAITS", (0, 0, 0))
+    monkeypatch.setattr(patience, "HEDGE_MIN", 0.3)
+    gate, hung = threading.Event(), set()
+    answer = site.srv.RequestHandlerClass.do_POST
+
+    def do_post(self):
+        body = self.rfile.read(int(self.headers["Content-Length"]))
+        n = json.loads(body)["PageIndex"]
+        if n == 2:
+            gate.wait(10)        # the last page waits: the scan is seen half-way
+        elif n == 1 and n not in hung:
+            hung.add(n)
+            time.sleep(2)        # page 2 hangs once: sent again beside it
+        self.rfile = __import__("io").BytesIO(body)
+        answer(self)
+    site.srv.RequestHandlerClass.do_POST = do_post
+    try:
+        ps = Postings(hunt)
+        url = site.url + "/#/"
+        hunt.add_company({"name": "货拉拉", "sites": [{"url": url, "kind": "social", "system": "北森"}]})
+        sc = Scanner(hunt, ps, NoTool(), FakeBrowser({}), lambda: None)
+        sc._providers[url] = "beisen"
+        told: list[dict] = []
+        sc.tell_progress = told.append
+        again: list[int] = []
+        real_again = progress.again
+        monkeypatch.setattr(progress, "again", lambda u, n: (again.append(n), real_again(u, n)))
+        res: list[dict] = []
+        th = threading.Thread(target=lambda: res.append(sc.scan("货拉拉")))
+        th.start()
+        end = time.time() + 10
+        while time.time() < end and not ((sc.progress_of("C1") or {}).get("sites") or [{}])[0].get("done", 0) >= 2:
+            time.sleep(0.05)
+        p = sc.progress_of("C1")
+        s = p["sites"][0]
+        assert (s["host"], s["system"], s["pages"], s["done"], s["rows"], s["total"]) == ("127.0.0.1", "beisen", 3, 2, 20, 30), p
+        assert p["started"] and 2 in again                     # page 2 was asked a second time
+        assert sc.progress_all() == {"C1": p}
+        gate.set()
+        th.join(15)
+        assert res[0]["found"] == 30 and sc.progress_of("C1") is None
+        time.sleep(PROGRESS_WAIT)
+        assert told and told[-1] == {"C1": None}               # told the scan is over
+        assert any((x.get("C1") or {}).get("sites") for x in told)
+    finally:
+        gate.set()
+        site.close()
+
+
+PROGRESS_WAIT = 1.2
+
+
+def test_pages_asked_again_side_by_side_say_the_most_of_them():
+    """join.huolala.cn, 2026-11-17: three pages read side by side each sent their own "asked again", and the window
+    said attempt 6, then 4, then 5. Each request's count is kept apart and the most still waiting is said."""
+    from jobhunt import progress
+    url = "http://127.0.0.1:9/#/"
+    progress.watch(url, "beisen", lambda: None)
+    go = [threading.Event() for _ in range(3)]
+    done = [threading.Event() for _ in range(3)]
+    try:
+        def page(i: int, sent: int) -> None:
+            progress.again(url, sent)
+            done[i].set()
+            go[i].wait(5)
+            progress.answered(url)
+            done[i].clear()
+            done[i].set()
+        for i, sent in enumerate((4, 2, 3)):
+            threading.Thread(target=page, args=(i, sent), daemon=True).start()
+            done[i].wait(5)
+        assert progress.snapshot([url])[0]["again"] == 4
+        done[0].clear(); go[0].set(); done[0].wait(5)
+        assert progress.snapshot([url])[0]["again"] == 3       # page 1 answered: the most of the others
+        for i in (1, 2):
+            done[i].clear(); go[i].set(); done[i].wait(5)
+        assert progress.snapshot([url])[0]["again"] is None and "_slow" not in progress.snapshot([url])[0]
+    finally:
+        for g in go:
+            g.set()
+        progress.unwatch(url)
 
 
 def test_a_request_with_no_answer_yet_is_sent_once_more_beside_it(monkeypatch):

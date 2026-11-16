@@ -173,6 +173,14 @@ async function checkLogo({ token, url }) {
 
 function listenHunt(es) {
   es.addEventListener("logo-check", (m) => checkLogo(JSON.parse(m.data)));
+  // how far a scan has got: only its block is repainted, nothing reloaded
+  es.addEventListener("scan-progress", (m) => {
+    for (const [cid, p] of Object.entries(JSON.parse(m.data || "{}"))) {
+      if (p) H.progress[cid] = p; else delete H.progress[cid];
+    }
+    repaintScanProgress();
+  });
+  if (!H.ticking) H.ticking = setInterval(tickScanTimes, 1000);
   es.addEventListener("hunt", (m) => {
     const d = JSON.parse(m.data || "{}");
     if (d.versions && typeof refresh === "function") refresh();   // a send kept a version of a subset
@@ -1499,6 +1507,7 @@ function postingsCard(v) {
         title: sc.needs === "sites" ? t("Add a careers site below first") : null,
         onclick: () => scanCompanies([c.id]) }, icon("refresh"), t("Scan"))];
   return card(t("Open roles"), "", [
+    busy && scanProgressBlock(c.id, sc.progress),
     sc.error && h("div", { class: "note-bar warn" }, icon("alert"), h("span", { class: "nb-text" }, sc.error),
       sc.signed_out && c.site && h("button", { class: "btn sm", onclick: () => signInMode(c.site) }, icon("user"), t("Sign in to {site}", { site: c.name }))),
     sc.needs === "sites" && h("p", { class: "muted card-p" }, t("No careers site known yet: ask the AI to fill the company in, or type one below.")),
@@ -1522,6 +1531,75 @@ function postingsCard(v) {
       h("div", { class: "post-list" }, stale.slice(0, 200).map(row))),
     closed.length > 0 && h("details", { class: "post-closed" }, h("summary", null, icon("down"), t("{n} closed", { n: closed.length })), h("div", { class: "post-list" }, closed.slice(0, 200).map(row))),
   ], { cls: "postings-card", fold: "company-postings", count: open.length || null, actions: acts });
+}
+
+// ---- how far a company's scan has got (jobhunt/progress.py), as a download or a CI run says it: the step it is on,
+// a bar when the whole is known, the roles read of the list's own count, the time taken and left, and a slow site
+// said as slow and asked again, never a spinner alone (user, 2026-11-17). Its own "scan-progress" event repaints
+// only this block, in place: typing in the page and its scroll are left as they are
+H.progress = {};
+const systemName = (id) => ({ beisen: t("Beisen"), feishu: t("Feishu"), "feishu-jobs": t("Feishu"), hotjob: t("HotJob"),
+  alitalent: t("Alibaba"), alibaba: t("Alibaba"), iguopin: t("Guopin"), mokahr: t("Moka"), tencent: t("Tencent"),
+  bytedance: t("ByteDance"), meituan: t("Meituan") })[id] || "";
+function scanProgressOf(cid, seed) {
+  return cid in H.progress ? H.progress[cid] : seed || ((H.data && H.data.scan.progress) || {})[cid] || null;
+}
+function spanOf(sec) {
+  sec = Math.max(0, Math.round(sec));
+  return sec < 60 ? t("{s} s", { s: sec }) : t("{m} min {s} s", { m: Math.floor(sec / 60), s: sec % 60 });
+}
+function aboutLeft(sec) {   // rounded as a download says it: to ten seconds, then to whole minutes
+  return sec < 60 ? t("{s} s", { s: Math.max(10, Math.ceil(sec / 10) * 10) }) : t("{m} min", { m: Math.ceil(sec / 60) });
+}
+function scanSiteLine(s) {
+  const sys = systemName(s.system);
+  const at = { host: s.host, system: sys, n: Math.min(s.done + 1, s.pages), pages: s.pages };
+  const over = s.pages > 0 && s.done >= s.pages;
+  const say = over ? (sys ? t("Finished reading {host} ({system})", at) : t("Finished reading {host}", at))
+    : s.system === "route" ? (s.pages > 1 ? t("Reading {host} by its recorded route: page {n} of {pages}", at) : t("Reading {host} by its recorded route", at))
+    : !s.pages ? (sys ? t("Connecting to {host} ({system})", at) : t("Connecting to {host}", at))
+    : s.pages > 1 ? (sys ? t("Reading {host} ({system}): page {n} of {pages}", at) : t("Reading {host}: page {n} of {pages}", at))
+    : sys ? t("Reading {host} ({system})", at) : t("Reading {host}", at);
+  const rows = s.total ? t("{n} of {total} roles read", { n: Math.min(s.rows, s.total), total: s.total })
+    : s.rows ? t("{n} role read", { n: s.rows }, "{n} roles read") : "";
+  return h("div", { class: "sp-site" + (over ? " over" : "") },
+    // no spinner of its own: the Scan button spins for this one piece of work
+    h("div", { class: "sp-line" }, h("span", { class: "sp-say" }, say),
+      rows && h("span", { class: "sp-rows" }, rows)),
+    s.pages > 1 && h("div", { class: "sp-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(s.pages), "aria-valuenow": String(s.done) },
+      h("div", { class: "sp-fill", style: `width: ${Math.round((100 * Math.min(s.done, s.pages)) / s.pages)}%` })));
+}
+function scanTimes(p) {
+  const took = Date.now() / 1000 - p.started;
+  const sites = p.sites || [];
+  const pages = sites.reduce((n, s) => n + s.pages, 0), done = sites.reduce((n, s) => n + Math.min(s.done, s.pages), 0);
+  // what is left, only once two pages have come and the pages to read are known: a guess off one page is no guess
+  const first = Math.min(...sites.map((s) => s.started).filter(Boolean), p.started);
+  const left = done >= 2 && pages > done ? ((Date.now() / 1000 - first) / done) * (pages - done) : null;
+  return [t("Elapsed {time}", { time: spanOf(took) }), left != null && t("About {time} left", { time: aboutLeft(left) })].filter(Boolean).join(" · ");
+}
+function scanProgressBlock(cid, seed) {
+  const p = scanProgressOf(cid, seed);
+  const sites = (p && p.sites) || [];
+  const slow = sites.find((s) => s.again && !(s.pages > 0 && s.done >= s.pages));
+  return h("div", { class: "scan-prog", "data-scan-prog": cid, "aria-live": "polite" },
+    sites.length ? sites.map(scanSiteLine)
+      : h("div", { class: "sp-site" }, h("div", { class: "sp-line" }, h("span", { class: "sp-say" }, t("Preparing the scan")))),
+    slow && h("div", { class: "sp-slow" }, icon("clock"), t("{host} is responding slowly; request sent again (attempt {n})", { host: slow.host, n: slow.again })),
+    p && p.started && h("div", { class: "sp-time" }, scanTimes(p)));
+}
+function repaintScanProgress() {
+  for (const el of document.querySelectorAll("[data-scan-prog]")) {
+    const cid = el.getAttribute("data-scan-prog");
+    if (scanProgressOf(cid)) el.replaceWith(scanProgressBlock(cid));
+  }
+}
+// the time taken goes on between two pages: said again each second while a block is on the page
+function tickScanTimes() {
+  for (const el of document.querySelectorAll("[data-scan-prog] .sp-time")) {
+    const p = scanProgressOf(el.closest("[data-scan-prog]").getAttribute("data-scan-prog"));
+    if (p && p.started) el.textContent = scanTimes(p);
+  }
 }
 
 const BATCH_NAMES = { campus: "Campus", intern: "Internship", social: "Experienced", other: "Other" };

@@ -32,7 +32,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
-from . import patience
+from . import patience, progress
 
 PROVIDER = "alitalent"
 API = "/position/search"
@@ -256,9 +256,12 @@ def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | N
     pages_of: list[dict[int, list]] = []
     failed: list[str] = []
     rest: list[tuple[int, int]] = []
+    progress.pages(url, len(plan))
     for i, (body, kind) in enumerate(plan):
         first = ask(API, {**body, "pageIndex": 1, "pageSize": PAGE}, "page 1")
         count = first.get("totalCount") if isinstance(first.get("totalCount"), int) else None
+        progress.page(url, len(first.get("datas") or []))
+        progress.count(url, count)
         counts.append(count)
         pages_of.append({1: first.get("datas") or []})
         pages = min(MAX_PAGES, -(-count // PAGE)) if count else 1
@@ -267,11 +270,15 @@ def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | N
     def later(job: tuple[int, int]) -> tuple[int, int, list] | ReadFailed:
         i, n = job
         try:
-            return i, n, ask(API, {**plan[i][0], "pageIndex": n, "pageSize": PAGE}, f"page {n}").get("datas") or []
+            got = ask(API, {**plan[i][0], "pageIndex": n, "pageSize": PAGE}, f"page {n}").get("datas") or []
         except ReadFailed as e:
+            progress.page(url, 0, failed=True)
             return e
+        progress.page(url, len(got))
+        return i, n, got
 
     if rest:
+        progress.pages(url, len(rest))
         with ThreadPoolExecutor(AT_ONCE) as pool:
             for r in pool.map(later, rest):
                 if isinstance(r, ReadFailed):

@@ -26,7 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from urllib.parse import urlsplit
 
-from . import patience
+from . import patience, progress
 
 PROVIDER = "hotjob"
 API = "/wecruit/positionInfo/listPosition/"
@@ -170,21 +170,28 @@ def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | N
 
     def later(job: tuple[int, int, int]) -> tuple[int, list] | ReadFailed:
         try:
-            return job[0], page(*job).get("pageData") or []
+            got = page(*job).get("pageData") or []
         except ReadFailed as e:
+            progress.page(url, 0, failed=True)
             return e
+        progress.page(url, len(got))
+        return job[0], got
 
     rows: list[tuple[int, dict]] = []
     total, failed, rest = 0, [], []
+    progress.pages(url, len(rtypes))
     for rt in rtypes:
         first = page(rt, 1)
         rows += [(rt, x) for x in first.get("pageData") or []]
+        progress.page(url, len(first.get("pageData") or []))
         count = first.get("dataCount")
         total += count if isinstance(count, int) else 0
+        progress.count(url, count if isinstance(count, int) else None)
         pages = first.get("totalPage") if isinstance(first.get("totalPage"), int) else 1
         size = first.get("pageSize") if isinstance(first.get("pageSize"), int) and first["pageSize"] > 0             else len(first.get("pageData") or []) or PAGE
         rest += [(rt, n, size) for n in range(2, min(MAX_PAGES, pages) + 1)]
     if rest:
+        progress.pages(url, len(rest))
         with ThreadPoolExecutor(AT_ONCE) as pool:
             for got in pool.map(later, rest):
                 if isinstance(got, ReadFailed):

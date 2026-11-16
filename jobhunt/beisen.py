@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from urllib.parse import urlsplit
 
-from . import patience
+from . import patience, progress
 
 PROVIDER = "beisen"
 API = "/api/Jobad/GetJobAdPageList"
@@ -187,28 +187,39 @@ def read(url: str, *, timeout: float | None = None, waits: tuple[float, ...] | N
 
     # the first page says how many roles there are; a later page that doesn't come is skipped, the rest read:
     # 货拉拉's page 6 of 7 timing out lost the 250 roles of pages 1 to 5 with it (2026-11-10)
+    progress.pages(url, 1)
     first = page(0)
     total = first.get("Count") if isinstance(first.get("Count"), int) else None
     rows += first["Data"]
+    progress.count(url, total)
+    progress.page(url, len(first["Data"]))
     if total is not None:   # the rest a few at a time: one after another, 货拉拉's 12 pages took 20 minutes and more
         def one(index: int) -> list[dict] | ReadFailed:
             try:
-                return page(index)["Data"]
+                got = page(index)["Data"]
             except ReadFailed as e:
+                progress.page(url, 0, failed=True)
                 return e
+            progress.page(url, len(got))
+            return got
+        later = range(1, min(MAX_PAGES, -(-total // PAGE)))
+        progress.pages(url, len(later))
         with ThreadPoolExecutor(AT_ONCE) as pool:
-            for got in pool.map(one, range(1, min(MAX_PAGES, -(-total // PAGE)))):
+            for got in pool.map(one, later):
                 if isinstance(got, ReadFailed):
                     failed.append(str(got))
                 else:
                     rows += got
     elif len(first["Data"]) == PAGE:   # no count: page on until a short page; a page that doesn't come ends it
         for index in range(1, MAX_PAGES):
+            progress.pages(url, 1)
             try:
                 got = page(index)["Data"]
             except ReadFailed as e:
+                progress.page(url, 0, failed=True)
                 failed.append(str(e))
                 break
+            progress.page(url, len(got))
             rows += got
             if len(got) < PAGE:
                 break
