@@ -24,7 +24,11 @@ from . import systems
 
 REPO = "https://github.com/RuiquanQiao/resume-studio"
 FILE = "reported.json"    # hunt/reported.json  {"<key>": {"at", "how": "issue" | "copied" | "ignored"}}
-SHARED = 2   # companies whose routes call a path before it is a platform's, and is reported (systems.py builds at 3)
+# companies whose routes call a path before it is a platform's, and is reported: 3, as systems.py builds at. At 2,
+# sister companies on their group's own site were offered as a "system" (网易 and 网易游戏, Shopee and Garena,
+# 2026-11-16): a built-in scan would serve those two companies only
+SHARED = 3
+
 _ABS = re.compile(r"""['"`](https?://[A-Za-z0-9.\-]+(?::\d+)?/[A-Za-z0-9_\-./]*)""")
 def _hosts(script: str) -> dict[str, set[str]]:
     """API path (as systems.paths gives it) -> the hosts the script calls it on, for absolute addresses only."""
@@ -56,6 +60,7 @@ def offers(pages: Iterable[tuple[str, str, str]], skip: Callable[[str, str], boo
                 g["hosts"].setdefault(host, set()).add(company)
     merged: dict[tuple, dict] = {}
     for p, g in by_path.items():
+        # by domain alone a group's own site (*.163.com) can't be told from a hosted system (*.zhiye.com): count only
         if len(g["companies"]) < SHARED:
             continue
         k = tuple(sorted(g["companies"]))
@@ -74,8 +79,8 @@ def offers(pages: Iterable[tuple[str, str, str]], skip: Callable[[str, str], boo
 def text(items: list[dict], ui: str | None = None) -> str:
     """The report, as the user sees it and as it is sent: Markdown in the interface's language, so the user can read
     every word of what goes out (the paths and hosts are what they are in every language)."""
-    lines = [t("Recruiting systems that Resume Studio still reads with routes the AI recorded, one company at a time. "
-               "A built-in scan for one of them would read every company on it with no AI.", ui=ui), ""]
+    lines = [t("Recruiting systems with no built-in scan in Resume Studio: the AI learns how to read each company on them "
+               "one at a time. A built-in scan would read every company on one with no AI to learn it first.", ui=ui), ""]
     for i, x in enumerate(items, 1):
         lines.append("### " + t("System {i}: {companies}, {pages}", ui=ui, i=i,
                                 companies=t("{n} company", "{n} companies", ui=ui, n=x["companies"]),

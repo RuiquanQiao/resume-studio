@@ -657,6 +657,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             c["postings"]["needs"] = st.get("needs") or ""
             c["postings"]["unrouted"] = st.get("unrouted") or []
             c["postings"]["tried"] = st["tried"]
+            c["postings"]["browser"] = scanner.browser_pages(c, scans)   # read in the browser each scan: slow
         sc = scans
         places = every_place(tb)
         nature_of = {c["id"]: c.get("nature") or "" for c in tb["companies"]}

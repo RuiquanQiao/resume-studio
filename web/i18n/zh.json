@@ -2117,7 +2117,6 @@
  "Nothing changes on the site itself. What the AI read there stays saved: keep a copy again to get it back.": "网站本身不会有任何改动。AI 在那里读取的内容仍会保留：再次保存副本即可恢复。",
  "Stop": "停止",
  "Stop keeping a copy of your profile there": "停止保存该网站简历的副本",
- "{n} recruiting system is still read by routes the AI recorded, one company at a time. Reported to the developer, it can get a built-in scan that reads every company on it without AI.": "有 {n} 套招聘系统仍在用 AI 记录的读法逐家扫描。报告给开发者后，可为它做成内置读法，此后该系统上的所有公司都无需 AI 即可扫描。",
  "Review and report": "查看并报告",
  "Ignore": "忽略",
  "Don't offer these systems again": "不再提示这些系统",
@@ -2129,7 +2128,6 @@
  "Report recruiting systems to the developer": "向开发者报告招聘系统",
  "Submit on GitHub": "在 GitHub 上提交",
  "GitHub opened in your browser: submit the issue there": "已在浏览器中打开 GitHub，请在该页面提交",
- "Recruiting systems that Resume Studio still reads with routes the AI recorded, one company at a time. A built-in scan for one of them would read every company on it with no AI.": "以下招聘系统目前仍由 Resume Studio 用 AI 记录的读法逐家读取。为其中任一系统做成内置读法后，该系统上的所有公司都无需 AI 即可读取。",
  "Sent from Resume Studio. No company names, own domains, notes or account details are included.": "由 Resume Studio 发送。不含公司名称、公司自有域名、笔记或账号信息。",
  "System {i}: {companies}, {pages}": "系统 {i}：{companies}，{pages}",
  "{n} company": "{n} 家公司",
@@ -2500,5 +2498,15 @@
  "Scanning stopped. Companies already scanned keep their results; the one being read was left as it was.": "已停止扫描。已扫描完的公司保留其结果；正在读取的公司维持原状。",
  "Scan stopped. Its open roles are as the last finished scan left them.": "已停止扫描。此公司的在招岗位保持上一次完整扫描的结果。",
  "Click to stop scanning": "点击停止扫描",
- "Stop scanning": "停止扫描"
+ "Stop scanning": "停止扫描",
+ "{n} recruiting system has no built-in scan yet: the AI has to learn each company on it one at a time. Reported to the developer, it can get one, and companies on it are then read by code alone, with no AI to learn them first.": "有 {n} 套招聘系统尚无内置读法：此系统上的公司需由 AI 逐家学习读法。报告给开发者并做成内置读法后，此系统上的公司均由代码直接读取，无需 AI 先行学习。",
+ "Recruiting systems with no built-in scan in Resume Studio: the AI learns how to read each company on them one at a time. A built-in scan would read every company on one with no AI to learn it first.": "Resume Studio 尚无内置读法的招聘系统：此类系统上的公司由 AI 逐家学习读法。为其做成内置读法后，此系统上的所有公司均可直接读取，无需 AI 先行学习。",
+ "The scan still opens a browser to read the careers sites of {names}: their recorded routes read the drawn page. Rewritten to call each site's own API, they are read by code alone, with no browser.": "扫描 {names} 的招聘官网时仍需打开浏览器：其已记录的读法读取的是渲染后的页面。改为直接调用各网站自身的接口后，即可仅由代码读取，无需浏览器。",
+ "Let AI switch them to API reads": "由 AI 改为接口读取",
+ "{page} ({why})": "{page}（{why}）",
+ "The careers sites of {names} are read with no browser now": "{names} 的招聘官网现已无需浏览器即可读取",
+ "Still read in the browser: {names}. Its chat says why.": "仍需浏览器读取：{names}。原因请见此对话。",
+ "These pages are still read in the browser: {pages}. Call the API each page gets its list from, or tell me why none can be called.": "以下页面仍需浏览器读取：{pages}。请调用各页面获取列表所用的接口，或说明为何无法调用任何接口。",
+ "The scan reads these companies' recorded routes in a browser, because their scripts read the drawn page:\n{pages}\nFor each page, find the API the page gets its list from (its network requests) and rewrite the script to call it with fetch, returning {postings, total} from the JSON, with no document, DOMParser, XMLHttpRequest or h.waitFor. Send each route again with scan-route; it says which pages still need the browser. Keep a page reading the drawn page only when no API gives the list (it is in the HTML alone, or every call is signed by the page's code), and say so.": "以下公司已记录的读法在扫描时需在浏览器中运行，因为其脚本读取的是渲染后的页面：\n{pages}\n请针对每个页面找出其获取岗位列表所用的接口（查看页面的网络请求），并将脚本改为用 fetch 调用该接口，从 JSON 返回 {postings, total}，不得使用 document、DOMParser、XMLHttpRequest 或 h.waitFor。改好后用 scan-route 重新提交每条读法，其输出会说明哪些页面仍需浏览器。仅当没有任何接口提供列表（列表只存在于 HTML 中，或每次调用都由页面代码签名）时，才可保留读取页面的方式，并说明原因。",
+ "Read {names} with no browser": "无需浏览器读取 {names}"
 }

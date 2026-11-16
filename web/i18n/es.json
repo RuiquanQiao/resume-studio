@@ -2285,10 +2285,6 @@
  "Nothing changes on the site itself. What the AI read there stays saved: keep a copy again to get it back.": "Nada cambia en el propio sitio. Lo que la IA leyó allí queda guardado: guarde de nuevo una copia para recuperarlo.",
  "Stop": "Detener",
  "Stop keeping a copy of your profile there": "Dejar de guardar una copia de su perfil allí",
- "{n} recruiting system is still read by routes the AI recorded, one company at a time. Reported to the developer, it can get a built-in scan that reads every company on it without AI.": [
-  "{n} sistema de selección aún se lee con rutas que la IA grabó, empresa por empresa. Si se lo comunica al desarrollador, puede tener un escaneo integrado que lea sin IA todas las empresas que lo usan.",
-  "{n} sistemas de selección aún se leen con rutas que la IA grabó, empresa por empresa. Si se los comunica al desarrollador, pueden tener un escaneo integrado que lea sin IA todas las empresas que los usan."
- ],
  "Review and report": "Revisar e informar",
  "Ignore": "Ignorar",
  "Don't offer these systems again": "No volver a ofrecer estos sistemas",
@@ -2300,7 +2296,6 @@
  "Report recruiting systems to the developer": "Informar sistemas de selección al desarrollador",
  "Submit on GitHub": "Enviar en GitHub",
  "GitHub opened in your browser: submit the issue there": "GitHub se abrió en su navegador: envíe allí el issue",
- "Recruiting systems that Resume Studio still reads with routes the AI recorded, one company at a time. A built-in scan for one of them would read every company on it with no AI.": "Resume Studio aún lee estos sistemas de selección con rutas que la IA grabó, empresa por empresa. Un escaneo integrado para uno de ellos leería sin IA todas las empresas que lo usan.",
  "Sent from Resume Studio. No company names, own domains, notes or account details are included.": "Enviado desde Resume Studio. Sin nombres de empresas, dominios propios, notas ni datos de cuentas.",
  "System {i}: {companies}, {pages}": "Sistema {i}: {companies}, {pages}",
  "{n} company": [
@@ -2698,5 +2693,18 @@
  "Scanning stopped. Companies already scanned keep their results; the one being read was left as it was.": "Escaneo detenido. Las empresas ya escaneadas conservan sus resultados; la que se estaba leyendo queda como estaba.",
  "Scan stopped. Its open roles are as the last finished scan left them.": "Escaneo detenido. Sus puestos abiertos quedan como los dejó el último escaneo completo.",
  "Click to stop scanning": "Haz clic para detener el escaneo",
- "Stop scanning": "Detener escaneo"
+ "Stop scanning": "Detener escaneo",
+ "{n} recruiting system has no built-in scan yet: the AI has to learn each company on it one at a time. Reported to the developer, it can get one, and companies on it are then read by code alone, with no AI to learn them first.": [
+  "{n} sistema de selección aún no tiene lectura integrada: la IA debe aprender cada empresa que lo usa, una a una. Notificado al desarrollador, puede recibir una, y sus empresas se leen entonces solo con código, sin que la IA deba aprenderlas antes.",
+  "{n} sistemas de selección aún no tienen lectura integrada: la IA debe aprender cada empresa que los usa, una a una. Notificados al desarrollador, pueden recibir una, y sus empresas se leen entonces solo con código, sin que la IA deba aprenderlas antes."
+ ],
+ "Recruiting systems with no built-in scan in Resume Studio: the AI learns how to read each company on them one at a time. A built-in scan would read every company on one with no AI to learn it first.": "Sistemas de selección sin lectura integrada en Resume Studio: la IA aprende a leer cada empresa que los usa, una a una. Una lectura integrada leería todas sus empresas sin que la IA deba aprenderlas antes.",
+ "The scan still opens a browser to read the careers sites of {names}: their recorded routes read the drawn page. Rewritten to call each site's own API, they are read by code alone, with no browser.": "El escaneo aún abre un navegador para leer los sitios de empleo de {names}: sus rutas grabadas leen la página dibujada. Reescritas para llamar a la API de cada sitio, se leen solo con código, sin navegador.",
+ "Let AI switch them to API reads": "Pasar a lectura por API con la IA",
+ "{page} ({why})": "{page} ({why})",
+ "The careers sites of {names} are read with no browser now": "Los sitios de empleo de {names} ya se leen sin navegador",
+ "Still read in the browser: {names}. Its chat says why.": "Aún se leen en el navegador: {names}. El chat indica por qué.",
+ "These pages are still read in the browser: {pages}. Call the API each page gets its list from, or tell me why none can be called.": "Estas páginas aún se leen en el navegador: {pages}. Llama a la API de la que cada página obtiene su lista, o explica por qué no se puede llamar a ninguna.",
+ "The scan reads these companies' recorded routes in a browser, because their scripts read the drawn page:\n{pages}\nFor each page, find the API the page gets its list from (its network requests) and rewrite the script to call it with fetch, returning {postings, total} from the JSON, with no document, DOMParser, XMLHttpRequest or h.waitFor. Send each route again with scan-route; it says which pages still need the browser. Keep a page reading the drawn page only when no API gives the list (it is in the HTML alone, or every call is signed by the page's code), and say so.": "El escaneo lee en un navegador las rutas grabadas de estas empresas, porque sus scripts leen la página dibujada:\n{pages}\nPara cada página, busca la API de la que obtiene su lista (sus solicitudes de red) y reescribe el script para llamarla con fetch, devolviendo {postings, total} desde el JSON, sin document, DOMParser, XMLHttpRequest ni h.waitFor. Vuelve a enviar cada ruta con scan-route; indica qué páginas aún necesitan el navegador. Mantén una página leyendo lo dibujado solo cuando ninguna API dé la lista (está solo en el HTML, o cada llamada la firma el código de la página), y dilo.",
+ "Read {names} with no browser": "Leer {names} sin navegador"
 }

@@ -2285,10 +2285,6 @@
  "Nothing changes on the site itself. What the AI read there stays saved: keep a copy again to get it back.": "Auf der Seite selbst ändert sich nichts. Was die KI dort gelesen hat, bleibt gespeichert: Bewahren Sie wieder eine Kopie auf, um es zurückzuerhalten.",
  "Stop": "Beenden",
  "Stop keeping a copy of your profile there": "Keine Kopie des Profils dort mehr aufbewahren",
- "{n} recruiting system is still read by routes the AI recorded, one company at a time. Reported to the developer, it can get a built-in scan that reads every company on it without AI.": [
-  "{n} Bewerbungssystem wird noch über Routen gelesen, die die KI aufgezeichnet hat, Firma für Firma. Dem Entwickler gemeldet, kann es einen eingebauten Scan bekommen, der jede Firma darauf ohne KI liest.",
-  "{n} Bewerbungssysteme werden noch über Routen gelesen, die die KI aufgezeichnet hat, Firma für Firma. Dem Entwickler gemeldet, können sie einen eingebauten Scan bekommen, der jede Firma darauf ohne KI liest."
- ],
  "Review and report": "Ansehen und melden",
  "Ignore": "Ignorieren",
  "Don't offer these systems again": "Diese Systeme nicht mehr anbieten",
@@ -2300,7 +2296,6 @@
  "Report recruiting systems to the developer": "Bewerbungssysteme an den Entwickler melden",
  "Submit on GitHub": "Auf GitHub einreichen",
  "GitHub opened in your browser: submit the issue there": "GitHub im Browser geöffnet: reichen Sie das Issue dort ein",
- "Recruiting systems that Resume Studio still reads with routes the AI recorded, one company at a time. A built-in scan for one of them would read every company on it with no AI.": "Diese Bewerbungssysteme liest Resume Studio noch über Routen, die die KI aufgezeichnet hat, Firma für Firma. Ein eingebauter Scan für eines davon würde jede Firma darauf ohne KI lesen.",
  "Sent from Resume Studio. No company names, own domains, notes or account details are included.": "Gesendet von Resume Studio. Ohne Firmennamen, eigene Domains der Firmen, Notizen oder Kontodaten.",
  "System {i}: {companies}, {pages}": "System {i}: {companies}, {pages}",
  "{n} company": [
@@ -2698,5 +2693,18 @@
  "Scanning stopped. Companies already scanned keep their results; the one being read was left as it was.": "Scan gestoppt. Bereits gescannte Unternehmen behalten ihre Ergebnisse; das gerade gelesene bleibt unverändert.",
  "Scan stopped. Its open roles are as the last finished scan left them.": "Scan gestoppt. Die offenen Stellen bleiben wie nach dem letzten abgeschlossenen Scan.",
  "Click to stop scanning": "Klicken, um den Scan zu stoppen",
- "Stop scanning": "Scan stoppen"
+ "Stop scanning": "Scan stoppen",
+ "{n} recruiting system has no built-in scan yet: the AI has to learn each company on it one at a time. Reported to the developer, it can get one, and companies on it are then read by code alone, with no AI to learn them first.": [
+  "{n} Bewerbungssystem hat noch keinen eingebauten Scan: Die KI muss jede Firma darauf einzeln lernen. Dem Entwickler gemeldet, kann es einen bekommen; seine Firmen werden dann allein per Code gelesen, ohne dass die KI sie zuerst lernen muss.",
+  "{n} Bewerbungssysteme haben noch keinen eingebauten Scan: Die KI muss jede Firma darauf einzeln lernen. Dem Entwickler gemeldet, können sie einen bekommen; ihre Firmen werden dann allein per Code gelesen, ohne dass die KI sie zuerst lernen muss."
+ ],
+ "Recruiting systems with no built-in scan in Resume Studio: the AI learns how to read each company on them one at a time. A built-in scan would read every company on one with no AI to learn it first.": "Bewerbungssysteme ohne eingebauten Scan in Resume Studio: Die KI lernt jede Firma darauf einzeln zu lesen. Ein eingebauter Scan würde alle ihre Firmen lesen, ohne dass die KI sie zuerst lernen muss.",
+ "The scan still opens a browser to read the careers sites of {names}: their recorded routes read the drawn page. Rewritten to call each site's own API, they are read by code alone, with no browser.": "Der Scan öffnet noch einen Browser, um die Karriereseiten von {names} zu lesen: Ihre aufgezeichneten Routen lesen die gezeichnete Seite. Umgeschrieben auf die eigene API jeder Seite, werden sie allein per Code gelesen, ohne Browser.",
+ "Let AI switch them to API reads": "Von der KI auf API-Lesen umstellen",
+ "{page} ({why})": "{page} ({why})",
+ "The careers sites of {names} are read with no browser now": "Die Karriereseiten von {names} werden jetzt ohne Browser gelesen",
+ "Still read in the browser: {names}. Its chat says why.": "Weiterhin im Browser gelesen: {names}. Der Chat nennt den Grund.",
+ "These pages are still read in the browser: {pages}. Call the API each page gets its list from, or tell me why none can be called.": "Diese Seiten werden noch im Browser gelesen: {pages}. Rufe die API auf, aus der jede Seite ihre Liste holt, oder erkläre, warum keine aufrufbar ist.",
+ "The scan reads these companies' recorded routes in a browser, because their scripts read the drawn page:\n{pages}\nFor each page, find the API the page gets its list from (its network requests) and rewrite the script to call it with fetch, returning {postings, total} from the JSON, with no document, DOMParser, XMLHttpRequest or h.waitFor. Send each route again with scan-route; it says which pages still need the browser. Keep a page reading the drawn page only when no API gives the list (it is in the HTML alone, or every call is signed by the page's code), and say so.": "Der Scan liest die aufgezeichneten Routen dieser Firmen in einem Browser, weil ihre Skripte die gezeichnete Seite lesen:\n{pages}\nFinde für jede Seite die API, aus der sie ihre Liste holt (ihre Netzwerkanfragen), und schreibe das Skript so um, dass es sie mit fetch aufruft und {postings, total} aus dem JSON zurückgibt, ohne document, DOMParser, XMLHttpRequest oder h.waitFor. Sende jede Route erneut mit scan-route; es sagt, welche Seiten noch den Browser brauchen. Lass eine Seite nur dann die gezeichnete Seite lesen, wenn keine API die Liste liefert (sie steht nur im HTML, oder jeder Aufruf wird vom Code der Seite signiert), und sag das.",
+ "Read {names} with no browser": "{names} ohne Browser lesen"
 }

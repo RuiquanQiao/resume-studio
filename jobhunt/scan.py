@@ -612,6 +612,15 @@ class Scanner:
                 out.append({"url": p["url"], "why": self.replay.get(k).get("why") or ""})
         return out
 
+    def browser_pages(self, c: dict, scans: dict | None = None) -> list[dict]:
+        """The pages of the company's route that a scan reads in the browser (a provider reads none of them, and node
+        can't: they read the drawn page), with why: what the AI can rewrite to call the site's API."""
+        route = (self.postings.scan_state(c["id"], scans) or {}).get("route") or {}
+        # a route kept from before a built-in scan read its site isn't read at all (_scan): nothing to rewrite
+        if not any(self.covers(route, s["url"]) and not self._providers.get(self.list_of(s)) for s in self.sites_of(c)):
+            return []
+        return self.needs_page([p for p in route.get("pages") or [] if not self._providers.get(p["url"])])
+
     def _read_group(self, url: str, scripts: list[str]) -> list[Any]:
         """_read_pages, each script with no browser when it is known to read the same there (replay.py): one not
         known yet runs both ways once and is compared; one known that now fails, or reads far fewer roles than

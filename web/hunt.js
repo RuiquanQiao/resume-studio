@@ -988,6 +988,7 @@ function scanNews() {
   const names = Object.fromEntries(d.companies.map((c) => [c.id, c]));
   const learn = d.companies.filter((c) => (c.postings || {}).needs === "claude");
   const noSites = d.companies.filter((c) => (c.postings || {}).needs === "sites");
+  const slow = d.companies.filter((c) => ((c.postings || {}).browser || []).length > 0);
   // "nothing new" beside a scan that didn't work would read as "read fine, found nothing"
   const broke = d.companies.filter((c) => { const sc = (c.postings || {}).scan || {}; return sc.at && sc.ok === false && !scanning(c.id); });
   const readToday = d.companies.some((c) => { const sc = (c.postings || {}).scan || {}; return sc.ok && Date.now() - Date.parse(sc.at) < 864e5; });
@@ -1033,6 +1034,11 @@ function scanNews() {
         h("button", { class: "btn sm", "data-ai": aiKey("learn", learn), title: ui.chat.available ? null : missingAgentText(), disabled: !ui.chat.available, onclick: () => askLearn(learn) },
           icon("sparkle"), first ? t("Let AI learn them") : t("Let AI try again")));
     })(),
+    slow.length > 0 && h("div", { class: "note-bar", id: "hunt-browser-routes" }, icon("bolt"), h("span", { class: "nb-text" },
+      t("The scan still opens a browser to read the careers sites of {names}: their recorded routes read the drawn page. Rewritten to call each site's own API, they are read by code alone, with no browser.",
+        { names: slow.map((c) => c.name).join(t(", ")) })),
+      h("button", { class: "btn sm", "data-ai": aiKey("api", slow), title: ui.chat.available ? null : missingAgentText(), disabled: !ui.chat.available, onclick: () => askApi(slow) },
+        icon("sparkle"), t("Let AI switch them to API reads"))),
     noSites.length > 0 && h("div", { class: "note-bar" }, icon("alert"), h("span", { class: "nb-text" },
       t("{names}: no careers site known yet.", { names: noSites.map((c) => c.name).join(", ") })),
       h("button", { class: "btn sm", "data-ai": aiKey("fill", noSites), title: ui.chat.available ? null : missingAgentText(), disabled: !ui.chat.available, onclick: () => askFill(noSites) }, icon("sparkle"), t("Ask AI to find them"))),
@@ -1125,6 +1131,24 @@ function askShort(c, sh) {
   }, [c.id]);
   aiRun(aiKey("short", [c]), () => sendChat(t("{name}'s scan read {n} of the {all} roles its careers site says it lists. Find where the rest go missing (pages it stops before, a filter, roles kept as one, a page that timed out), fix its scan route and send it again with scan-route, until the counts agree.",
     { name: c.name, n: sh[0], all: sh[1] }), { fresh: true, title: t("Fix the scan of {company}", { company: c.name }) }), check);
+}
+
+// routes that read the drawn page: the AI rewrites each to call the site's own API, so scans need no browser
+// (user, 2026-11-16: "哪怕公司完全用的自己的系统，也应该尽可能建立代码读的管道")
+function askApi(cs) {
+  const ids = cs.map((c) => c.id);
+  const pages = (c) => (c.postings.browser || []).map((p) => p.why ? t("{page} ({why})", { page: p.url, why: p.why }) : p.url).join("; ");
+  const check = huntCheck((d) => {
+    const left = huntOf(d, ids).filter((c) => ((c.postings || {}).browser || []).length);
+    if (!left.length) return { ok: true, say: t("The careers sites of {names} are read with no browser now", { names: huntOf(d, ids).map((c) => c.name).join(t(", ")) }) };
+    const names = left.map((c) => c.name).join(t(", "));
+    return { ok: false, say: t("Still read in the browser: {names}. Its chat says why.", { names }),
+      again: t("These pages are still read in the browser: {pages}. Call the API each page gets its list from, or tell me why none can be called.",
+        { pages: left.map((c) => `${c.name}: ${pages(c)}`).join("\n") }) };
+  }, ids);
+  const ask = t("The scan reads these companies' recorded routes in a browser, because their scripts read the drawn page:\n{pages}\nFor each page, find the API the page gets its list from (its network requests) and rewrite the script to call it with fetch, returning {postings, total} from the JSON, with no document, DOMParser, XMLHttpRequest or h.waitFor. Send each route again with scan-route; it says which pages still need the browser. Keep a page reading the drawn page only when no API gives the list (it is in the HTML alone, or every call is signed by the page's code), and say so.",
+    { pages: cs.map((c) => `- ${c.name}: ${pages(c)}`).join("\n") });
+  aiRun(aiKey("api", cs), () => sendChat(ask, { fresh: true, title: t("Read {names} with no browser", { names: cs.map((c) => c.name).join(t(", ")) }) }), check);
 }
 
 // a role's track: the one it was put in, else the first its title is in ("" none)
@@ -1679,8 +1703,8 @@ function reportBar() {
     paintHunt();
   };
   return h("div", { class: "note-bar", id: "hunt-report" }, icon("bolt"), h("span", { class: "nb-text" },
-    t("{n} recruiting system is still read by routes the AI recorded, one company at a time. Reported to the developer, it can get a built-in scan that reads every company on it without AI.",
-      { n: items.length }, "{n} recruiting systems are still read by routes the AI recorded, one company at a time. Reported to the developer, they can get a built-in scan that reads every company on them without AI.")),
+    t("{n} recruiting system has no built-in scan yet: the AI has to learn each company on it one at a time. Reported to the developer, it can get one, and companies on it are then read by code alone, with no AI to learn them first.",
+      { n: items.length }, "{n} recruiting systems have no built-in scan yet: the AI has to learn each company on them one at a time. Reported to the developer, they can get one, and companies on them are then read by code alone, with no AI to learn them first.")),
     h("button", { class: "btn sm", id: "hunt-report-open", onclick: () => reportModal(items, done) }, t("Review and report")),
     h("button", { class: "btn sm ghost", id: "hunt-report-ignore", title: t("Don't offer these systems again"),
       onclick: async () => { await done("ignored"); toast(t("These systems won't be offered again")); } }, t("Ignore")));

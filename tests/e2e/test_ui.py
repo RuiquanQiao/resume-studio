@@ -1705,6 +1705,29 @@ def test_a_scan_started_in_the_window_says_when_it_is_done(page, server, monkeyp
     pg.emulate_media(color_scheme="light")
 
 
+def test_companies_read_in_the_browser_are_named_with_a_button_to_switch_them_to_api_reads(page, server, monkeypatch):
+    """User, 2026-11-16: "哪怕公司完全用的自己的系统，也应该尽可能建立代码读的管道". A company whose recorded route
+    reads the drawn page is named on the Companies tab, with a button that has the AI rewrite it to call the API."""
+    pg = page
+    hunt = server.inst.hunt
+    hunt.add_company({"name": "星河科技", "site": "https://careers.xinghe.example/campus"})
+    hunt.add_company({"name": "一家名字非常长的公司用来测试换行与溢出情况的有限责任公司", "site": "https://careers.long.example/"})
+    page_url = "https://careers.xinghe.example/campus/jobs"
+    monkeypatch.setattr(hunt.scanner, "browser_pages", lambda c, scans=None: [{"url": page_url, "why": "document.querySelectorAll needs the page drawn"}])
+    pg.keyboard.press("Control+3")
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.wait_for_selector("#hunt-browser-routes")
+    text = pg.inner_text("#hunt-browser-routes")
+    assert "星河科技" in text and "仍需打开浏览器" in text and "由 AI 改为接口读取" in text
+    # inside its box at a narrow width too
+    for w in (1000, 1500):
+        pg.set_viewport_size({"width": w, "height": 900})
+        over = pg.evaluate("""() => { const b = document.querySelector('#hunt-browser-routes'); const r = b.getBoundingClientRect();
+          return [...b.querySelectorAll('*')].filter(e => { const x = e.getBoundingClientRect(); return x.right > r.right + 1 || x.left < r.left - 1; }).length; }""")
+        assert over == 0, w
+    pg.screenshot(path=str(ART / "hunt-browser-routes.png"), clip=pg.locator("#hunt-browser-routes").bounding_box())
+
+
 def test_clicking_a_running_scan_stops_it(page, server, monkeypatch):
     """User, 2026-11-16: "我点了这个按钮之后再点一下应该有权停止，对于每个公司的扫描按钮也是一样". The running Scan all
     button says "Stop scanning" under the pointer without changing its width, a click stops the run at once, and
@@ -1906,7 +1929,7 @@ def test_a_system_the_ai_reads_one_company_at_a_time_is_offered_to_report(page, 
     on GitHub (or copies it), or ignores it; either way the same systems aren't offered again."""
     pg = page
     hunt = server.inst.hunt
-    for name in ("星河科技", "远山能源"):
+    for name in ("星河科技", "远山能源", "云帆航空科技"):   # three: two are no platform yet (report.SHARED)
         c = hunt.add_company({"name": name, "site": f"https://{len(name)}{name[0]}.joinus.example/job"})
         hunt.scanner.postings.set_scan_state(c["id"], route={"pages": [{"url": c["site"],
             "script": "async (h) => { await fetch('https://api.joinus.example/api/v2/job/search'); return {postings: []}; }"}]})
@@ -1918,8 +1941,8 @@ def test_a_system_the_ai_reads_one_company_at_a_time_is_offered_to_report(page, 
     pg.click("#hunt-report-open")
     pg.wait_for_selector(".modal .report-text")
     text = pg.inner_text(".modal .report-text")
-    assert "/api/v2/job/search" in text and "api.joinus.example" in text and "星河" not in text and "远山" not in text
-    assert text.startswith("以下招聘系统")                                     # in the user's language: every word read
+    assert "/api/v2/job/search" in text and "api.joinus.example" in text and "星河" not in text and "远山" not in text and "云帆" not in text
+    assert text.startswith("Resume Studio 尚无内置读法的招聘系统")                                     # in the user's language: every word read
     pg.wait_for_timeout(300)                                                    # past the dialog's fade-in
     for scheme in ("light", "dark"):
         pg.emulate_media(color_scheme=scheme)
@@ -1931,7 +1954,7 @@ def test_a_system_the_ai_reads_one_company_at_a_time_is_offered_to_report(page, 
     done = json.loads((hunt.dir / "reported.json").read_text(encoding="utf-8"))
     assert [v["how"] for v in done.values()] == ["issue"]
     # a new system later is offered again; ignored, it goes for good
-    for name in ("长风集团", "青山制造"):
+    for name in ("长风集团", "青山制造", "白鹭电子"):
         c = hunt.add_company({"name": name, "site": f"https://{len(name)}{name[0]}.hire.example/"})
         hunt.scanner.postings.set_scan_state(c["id"], route={"pages": [{"url": c["site"],
             "script": "async (h) => { await fetch('/rest/hire/jobs/page'); return {postings: []}; }"}]})

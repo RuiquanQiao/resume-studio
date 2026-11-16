@@ -138,3 +138,15 @@ def test_a_script_that_needs_the_page_is_told_to_the_ai(hunt, site):
     assert not errs
     need = sc.needs_page(r["pages"])
     assert [p["url"] for p in need] == [site.url] and "document" in need[0]["why"]
+
+
+def test_a_company_whose_route_reads_the_drawn_page_is_flagged_until_a_built_in_scan_reads_it(hunt, site):
+    ps = Postings(hunt)
+    hunt.add_company({"name": "星河科技", "sites": [{"url": site.url}]})
+    dom = "async (h) => ({postings: [...document.querySelectorAll('.job')].map(e => ({title: e.innerText}))})"
+    sc = Scanner(hunt, ps, NoTool(), FakeBrowser({site.url: {"postings": [{"title": "岗位0", "url": site.url + "/0"}]}}), lambda: None)
+    sc.replay = replay.Known(lambda: hunt._load(replay.FILE), lambda d: hunt._write(replay.FILE, d))
+    assert not sc.save_route("C1", {"pages": [{"url": site.url, "script": dom}]})[1]
+    assert [p["url"] for p in sc.browser_pages(hunt.company("C1"))] == [site.url]
+    sc._providers[site.url] = "beisen"                  # read by a built-in scan since: the route isn't read at all
+    assert sc.browser_pages(hunt.company("C1")) == []

@@ -410,12 +410,12 @@ def sites_the_ai_tried(c):
 
 
 def systems_to_report(c):
-    """Two companies whose AI-recorded routes call one API no built-in scan reads, a long path among them: the
+    """Three companies whose AI-recorded routes call one API no built-in scan reads, a long path among them: the
     companies table offers to report the system to the developer (jobhunt/report.py, 2026-11-12)."""
     filled_companies(c)
     hunt = c.server.inst.hunt
     long = "/api/recruitment-platform/v3/campus-and-experienced/positions/search-with-filters-and-pagination"
-    for cid in ("C1", "C2"):
+    for cid in ("C1", "C2", "C3"):
         hunt.scanner.postings.set_scan_state(cid, route={"pages": [{"url": f"https://{cid.lower()}.joinus.example/job",
             "script": f"async (h) => {{ await fetch('https://api.joinus.example{long}?t=8812{cid[1:]}3456'); "
                       "await fetch('/api/v2/job/search'); return {postings: []}; }"}]})
