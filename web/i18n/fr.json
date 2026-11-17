@@ -1950,6 +1950,7 @@
  "This entry changed again after the AI finished. Undo was not applied; review the current entry first.": "Cette entrée a encore changé après l'IA. L'annulation n'a pas été appliquée ; vérifiez d'abord l'entrée actuelle.",
  "This permanently deletes the agent's session and this app's copy.": "Cela supprime définitivement la session de l'agent et la copie de cette application.",
  "{name} has no way to delete its own copy of a conversation, so it stays in {name}'s history.": "{name} ne permet pas de supprimer sa propre copie d'une conversation : elle reste dans l'historique de {name}.",
+ "{name} is not installed, so its own copy of this conversation was not deleted.": "{name} n'est pas installé : sa propre copie de cette conversation n'a donc pas été supprimée.",
  "{n} changed item": [
   "{n} modification",
   "{n} modifications"

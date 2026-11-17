@@ -143,8 +143,10 @@ def codex():
         if method == "initialize":
             out({"id": rid, "result": {"userAgent": "fake-codex"}})
         elif method in ("thread/archive", "thread/unarchive", "thread/delete"):
-            if p.get("threadId") == "missing":
-                out({"id": rid, "error": {"code": -32600, "message": "no such thread"}})
+            if p.get("threadId") == "missing":   # Codex's own words for a thread with no saved rollout
+                out({"id": rid, "error": {"code": -32600, "message": f"no rollout found for thread id {p['threadId']}"}})
+            elif p.get("threadId") == "broken":
+                out({"id": rid, "error": {"code": -32603, "message": "database is locked"}})
             else:
                 out({"id": rid, "result": {}})
         elif method == "account/read":

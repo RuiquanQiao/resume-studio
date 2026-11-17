@@ -1824,6 +1824,7 @@
  "This entry changed again after the AI finished. Undo was not applied; review the current entry first.": "AI の完了後にこの項目が再び変更されました。元に戻す操作は行っていません。まず現在の内容を確認してください。",
  "This permanently deletes the agent's session and this app's copy.": "エージェント側のセッションとこのアプリのコピーを完全に削除します。",
  "{name} has no way to delete its own copy of a conversation, so it stays in {name}'s history.": "{name} には自分の会話記録を削除する方法がないため、この会話は {name} の履歴に残ります。",
+ "{name} is not installed, so its own copy of this conversation was not deleted.": "{name} がインストールされていないため、{name} 側のこの会話記録は削除されていません。",
  "{n} changed item": "{n} 件の変更",
  "This conversation is open in the Codex app. Close it there, then try again.": "この会話は Codex アプリで開かれています。そちらで閉じてから、もう一度お試しください。",
  "As it is now": "現在の内容",

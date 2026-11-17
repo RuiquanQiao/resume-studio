@@ -23,10 +23,30 @@ def test_codex_archive_restore_delete(server, tmp_path, monkeypatch):
 
 def test_codex_failure_preserves_local_chat(server):
     cid = server.req("POST", "/api/chats", {"agent": "codex"})[1]["id"]
-    server.inst.chats.store.update_meta(cid, session_id="missing")
+    server.inst.chats.store.update_meta(cid, session_id="broken")
     assert server.req("DELETE", f"/api/chats/{cid}")[0] == 409
     assert server.req("POST", f"/api/chats/{cid}/archive")[0] == 409
     assert server.req("GET", f"/api/chats/{cid}")[0] == 200
+
+
+def test_codex_thread_without_rollout_still_archives_and_deletes(server):
+    """A thread Codex never saved ("no rollout found for thread id …") must not leave an undeletable chat."""
+    cid = server.req("POST", "/api/chats", {"agent": "codex"})[1]["id"]
+    server.inst.chats.store.update_meta(cid, session_id="missing")
+    code, result = server.req("POST", f"/api/chats/{cid}/archive")
+    assert code == 200 and result["chat"]["archived"] is True
+    assert server.req("DELETE", f"/api/chats/{cid}")[0] == 200
+    assert server.req("GET", f"/api/chats/{cid}")[0] == 404
+
+
+def test_delete_goes_ahead_when_the_agent_is_not_installed(monkeypatch):
+    from core import agents
+    agent = agents.get("codex")
+    monkeypatch.setattr(type(agent), "command", lambda self: None)
+    note = operate({"agent": "codex", "session_id": "t-x"}, "delete", None)
+    assert note and "Codex" in note
+    with pytest.raises(RuntimeError):
+        operate({"agent": "codex", "session_id": "t-x"}, "archive", None)
 
 
 def test_acp_without_delete_keeps_its_copy_and_says_so(server, tmp_path, monkeypatch):

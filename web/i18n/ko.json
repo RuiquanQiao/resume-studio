@@ -1824,6 +1824,7 @@
  "This entry changed again after the AI finished. Undo was not applied; review the current entry first.": "AI가 끝난 뒤 이 항목이 다시 바뀌었습니다. 되돌리기를 적용하지 않았으니 현재 항목을 먼저 확인하세요.",
  "This permanently deletes the agent's session and this app's copy.": "에이전트의 세션과 이 앱의 사본을 영구히 삭제합니다.",
  "{name} has no way to delete its own copy of a conversation, so it stays in {name}'s history.": "{name}에는 자체 대화 기록을 삭제하는 방법이 없어 이 대화는 {name}의 기록에 남습니다.",
+ "{name} is not installed, so its own copy of this conversation was not deleted.": "{name}이(가) 설치되어 있지 않아 {name} 측의 이 대화 기록은 삭제되지 않았습니다.",
  "{n} changed item": "변경 {n}건",
  "This conversation is open in the Codex app. Close it there, then try again.": "이 대화가 Codex 앱에서 열려 있습니다. 그곳에서 닫은 뒤 다시 시도하세요.",
  "As it is now": "현재 내용",

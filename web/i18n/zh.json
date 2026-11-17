@@ -1824,6 +1824,7 @@
  "Restore this chat before sending a message.": "请先恢复此会话，再发送消息。",
  "This permanently deletes the agent's session and this app's copy.": "这会永久删除智能体的会话和此应用中的副本。",
  "{name} has no way to delete its own copy of a conversation, so it stays in {name}'s history.": "{name} 未提供删除自身会话记录的方法，因此此对话仍保留在 {name} 的历史记录中。",
+ "{name} is not installed, so its own copy of this conversation was not deleted.": "{name} 未安装，因此其自身的此对话记录未被删除。",
  "Question": "问题",
  "This conversation is open in the Codex app. Close it there, then try again.": "此对话正在 Codex 应用中打开。请先在该应用中关闭，再重试。",
  "As it is now": "当前内容",

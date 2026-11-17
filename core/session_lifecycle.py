@@ -51,6 +51,8 @@ def operate(chat: dict, operation: str, cwd: Path) -> str | None:
         return None
     command = agent.command()
     if not command:
+        if operation == "delete":   # the window's copy is never held hostage by an agent that is gone
+            return t("{name} is not installed, so its own copy of this conversation was not deleted.", name=agent.name)
         raise RuntimeError(f"{agent.name} is not installed; its session was not changed.")
     if agent.protocol == "codex":
         try:
@@ -59,10 +61,21 @@ def operate(chat: dict, operation: str, cwd: Path) -> str | None:
         except RuntimeError as e:
             if "active writer" in str(e):   # Codex locks a thread while a window has it open
                 raise RuntimeError(t("This conversation is open in the Codex app. Close it there, then try again.")) from e
-            raise
+            if not _gone(e):
+                raise
         return None
     answers = _rpc_probe(command + agent.args, cwd, 30, [("initialize", {"protocolVersion": 1, "clientCapabilities": {}, "clientInfo": CLIENT})])
     if not (((answers.get("initialize") or {}).get("agentCapabilities") or {}).get("sessionCapabilities") or {}).get("delete"):
         return t("{name} has no way to delete its own copy of a conversation, so it stays in {name}'s history.", name=agent.name)
-    _rpc_probe(command + agent.args, cwd, 30, [("initialize", {"protocolVersion": 1, "clientCapabilities": {}, "clientInfo": CLIENT}),
-                                               ("session/delete", {"sessionId": sid})], strict=True)
+    try:
+        _rpc_probe(command + agent.args, cwd, 30, [("initialize", {"protocolVersion": 1, "clientCapabilities": {}, "clientInfo": CLIENT}),
+                                                   ("session/delete", {"sessionId": sid})], strict=True)
+    except RuntimeError as e:
+        if not _gone(e):
+            raise
+
+
+def _gone(e: Exception) -> bool:
+    """The agent holds no copy of this session (Codex: "no rollout found for thread id …", a thread that never
+    saved a turn, e.g. one stopped by the usage limit): there is nothing of it to change, so the window goes ahead."""
+    return bool(re.search(r"no rollout found|not found|no such (thread|session)", str(e), re.I))
