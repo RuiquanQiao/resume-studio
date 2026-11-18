@@ -7,10 +7,14 @@ from __future__ import annotations
 
 import json
 import threading
+import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import pytest
+
 from core.i18n import t
-from jobhunt import beisen
+from jobhunt import beisen, patience
 from jobhunt.postings import Postings
 from jobhunt.scan import Scanner
 from test_hunt_agent import FakeBrowser, NoTool, hunt  # noqa: F401
@@ -455,6 +459,72 @@ def test_a_site_that_doesnt_answer_the_check_is_never_sent_to_the_ai(hunt):
     sc.beisen_read = lambda u: {"jobs": [beisen.posting("https://join.huolala.example", role(1))], "total": 1}
     res = sc.scan("货拉拉")
     assert res["found"] == 1 and not ps.scan_state("C1").get("missed"), res
+
+
+def test_a_site_that_refuses_the_check_is_asked_once_and_said_as_refused(monkeypatch):
+    """nsbd.cn, 2026-11-18: it answers 405 to every address outside mainland China. The 北森 check took that for no
+    answer, tried it six times and waited 228 s, and the window said the site didn't answer. It is asked once now."""
+    gets = []
+
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            gets.append(self.path)
+            self.send_response(405)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    monkeypatch.setenv("STUDIO_BEISEN_DETECT", "on")
+    monkeypatch.setattr(beisen, "WAITS", (5, 5, 5))   # a retry would be seen as time
+    try:
+        start = time.time()
+        with pytest.raises(patience.Refused) as e:
+            beisen.detect(f"http://127.0.0.1:{srv.server_port}/")
+        assert e.value.code == 405 and len(gets) == 1 and time.time() - start < 4, (gets, time.time() - start)
+    finally:
+        srv.shutdown()
+
+
+def test_a_refusing_site_is_said_as_refused_and_asked_again_next_scan(hunt):
+    """Said as turned away (with its code), not as "didn't answer"; no other system is asked of it or marked as not
+    reading it, so a scan once the site lets the user in (an accelerator turned on) finds what reads it."""
+    ps = Postings(hunt)
+    url = "https://www.nsbd.example/"
+    hunt.add_company({"name": "南水北调中线", "sites": [{"url": url, "kind": "campus"}]})
+    sc = Scanner(hunt, ps, NoTool(), FakeBrowser({}), lambda: None)
+    asked = []
+
+    def refuse(u):
+        raise patience.Refused(u, 405)
+    sc.beisen_detect = refuse
+    sc.feishu_detect = sc.alitalent_detect = lambda u: asked.append(u) or False
+    res = sc.scan("南水北调中线")
+    assert res["needs"] != "claude" and "HTTP 405" in res["error"] and "didn't answer" not in res["error"], res
+    assert asked == [] and sc.live_state(hunt.company("C1"))["missed"] == {url: "refused"}
+    assert sc.site_status(hunt.company("C1")) == {url: ""}
+    sc.beisen_detect = lambda u: True                 # let in next time: read, and nothing is missed
+    sc.beisen_read = lambda u: {"jobs": [beisen.posting("https://www.nsbd.example", role(1))], "total": 1}
+    res = sc.scan("南水北调中线")
+    assert res["found"] == 1 and not ps.scan_state("C1").get("missed"), res
+
+
+def test_each_scan_reads_the_system_proxy_again(hunt, monkeypatch):
+    """urllib reads the proxy once, on its first request: an accelerator into mainland China turned on after the
+    window opened was never used, and nsbd.cn went on refusing the scan (2026-11-18)."""
+    hunt.add_company({"name": "南水北调中线", "sites": [{"url": "https://www.nsbd.example/", "kind": "campus"}]})
+    sc = Scanner(hunt, Postings(hunt), NoTool(), FakeBrowser({}), lambda: None)
+    sc.beisen_detect = sc.feishu_detect = sc.alitalent_detect = lambda u: None
+    old = urllib.request._opener
+    try:
+        monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")   # Windows: names ignore case, so one is enough
+        sc.scan("南水北调中线")
+        proxies = [h.proxies for h in urllib.request._opener.handlers if isinstance(h, urllib.request.ProxyHandler)]
+        assert proxies and proxies[0].get("https") == "http://127.0.0.1:9", proxies
+    finally:
+        urllib.request.install_opener(old)
 
 
 def test_a_route_is_tried_before_it_is_kept(hunt):

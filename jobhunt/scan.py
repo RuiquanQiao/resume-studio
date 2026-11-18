@@ -215,6 +215,9 @@ class Scanner:
         # asked, and the site didn't answer: nobody knows yet whether a system reads it. Never "the AI has to learn
         # it" (join.huolala.cn after every restart, 2026-11-11): said as "didn't connect", asked again next scan
         self._unreached: set[str] = set()
+        # of those, the ones that answered and turned the scan away, with the HTTP code (nsbd.cn's 405 to every
+        # address outside mainland China, 2026-11-18): said as refused, not as "didn't answer"; asked again next scan
+        self._refused: dict[str, int] = {}
         # how long to wait for each site, by how far it is and how it answered before, kept across restarts
         patience.use(hunt.dir / "net.json")
         # the systems found reading each address, kept across restarts: a slow site found on 北森 once stays on it
@@ -360,10 +363,16 @@ class Scanner:
         # 北森 is read by the scan itself (jobhunt/beisen.py), career-ops or not: asked of what career-ops left
         # every address, not only the new ones: career-ops keeps "none reads it" (None) for an address, and one 北森
         # couldn't be asked about (the site didn't answer) is asked again
+        refused: dict[str, int] = {}   # turned away: no other system is asked of it, and none is kept as "not it"
         for u in dict.fromkeys(urls):
             if self._providers.get(u) or u in self._not_beisen:
                 continue
-            got = self.beisen_detect(u)
+            try:
+                got = self.beisen_detect(u)
+            except patience.Refused as e:
+                refused[u] = e.code
+                silent.add(u)
+                continue
             if got:
                 self._providers[u] = beisen.PROVIDER
             elif got is False:   # None: the site didn't answer; asked again at the next scan
@@ -375,7 +384,7 @@ class Scanner:
         # (小米's campus and social portals didn't answer the check in 30 s from Australia, its intern one did)
         on_feishu = lambda u: any(feishu.origin(k) == feishu.origin(u) for k, v in self._providers.items() if v == feishu.PROVIDER)
         for u in dict.fromkeys(urls):
-            if self._providers.get(u) or u in self._not_feishu:
+            if self._providers.get(u) or u in self._not_feishu or u in refused:
                 continue
             got = True if on_feishu(u) else self.feishu_detect(u)
             if got:
@@ -389,7 +398,7 @@ class Scanner:
                 self._providers[u] = feishu.PROVIDER
         # last, 阿里's talent sites: asked of what nothing else reads (one POST, as for Feishu)
         for u in dict.fromkeys(urls):
-            if self._providers.get(u) or u in self._not_alitalent:
+            if self._providers.get(u) or u in self._not_alitalent or u in refused:
                 continue
             got = self.alitalent_detect(u)
             if got:
@@ -400,10 +409,13 @@ class Scanner:
             else:
                 silent.add(u)
         for u in dict.fromkeys(urls):
+            self._refused.pop(u, None)
             if self._providers.get(u) or u not in silent:
                 self._unreached.discard(u)
             else:
                 self._unreached.add(u)
+                if u in refused:
+                    self._refused[u] = refused[u]
         now = {u: p for u, p in self._providers.items() if p}
         if now != had:   # kept for the next run of the app: what was found, never "none" (that is asked again)
             with self.hunt.lock:
@@ -785,6 +797,7 @@ class Scanner:
             self.tokens[c["id"]] = tok
         self._local.token = tok
         self.publish()
+        patience.follow_system_proxy()   # a proxy turned on (or off) since the last scan is used from this one on
         try:
             return self._scan_body(c, tok, allow_route=allow_route, just_tried=just_tried)
         except Stopped:
@@ -838,7 +851,14 @@ class Scanner:
                     missed[s["url"]] = what
         # a site that didn't answer whether a system reads it: not read, said, nothing of it closed
         for s in plan:
-            if s["how"] == "unreached":
+            if s["how"] != "unreached":
+                continue
+            code = self._refused.get(self.list_of(s))
+            if code:   # it answered, and turned the scan away: said as that, never as "didn't answer"
+                missed[s["url"]] = "refused"
+                errors.append(f"{s['url']}: refused the request (HTTP {code}); some sites accept visitors from "
+                              "mainland China only; asked again at the next scan")
+            else:
                 missed[s["url"]] = "unreached"
                 errors.append(f"{s['url']}: didn't answer when asked which recruiting system it runs on; "
                               "asked again at the next scan")

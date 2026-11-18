@@ -86,7 +86,8 @@ def detect(url: str, timeout: float | None = None, waits: tuple[float, ...] | No
     """Whether the site is a 北森 portal whose list answers. A zhiye.com address is, by its name. A company's own
     domain on 北森 (career.pxwsemi.com) is when its page names a portal and the list API gives a count for it; one
     that only looks it (job.vanchen.com, whose API answers 500) is not, and stays with the route that reads it.
-    None: the site didn't answer, so nobody knows yet (asked again next time, never kept as "no").
+    None: the site didn't answer, so nobody knows yet (asked again next time, never kept as "no"). A site that turns
+    the request away (HTTP 403, 405 …) raises patience.Refused at once: nobody knows either, and no wait changes it.
     Asked with the patience a read gets: join.huolala.cn took 19-28 s from Australia, and its 15 s check marked it
     "can't be scanned" after every restart of the window (2026-11-11)."""
     host = (urlsplit(url).hostname or "").lower()
@@ -96,8 +97,16 @@ def detect(url: str, timeout: float | None = None, waits: tuple[float, ...] | No
     if not url.startswith(("http://", "https://")) or os.environ.get("STUDIO_BEISEN_DETECT") == "off":
         return False
     p = wait_for(url, timeout, waits)
+
+    def page_of(t: float) -> str:
+        try:
+            return _get(url, t)
+        except urllib.error.HTTPError as e:
+            if e.code in patience.REFUSING:   # turned away: raised at once, never tried again (patience.Refused)
+                raise patience.Refused(url, e.code) from None
+            raise
     try:
-        page = _asked(url, lambda t: _get(url, t), p)
+        page = _asked(url, page_of, p)
     except NET:
         return None
     if not is_beisen(url, page):

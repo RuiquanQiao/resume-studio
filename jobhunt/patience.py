@@ -19,6 +19,7 @@ import queue
 import re
 import threading
 import time
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -38,6 +39,26 @@ _lock = threading.Lock()
 _path: Path | None = None
 _seen: dict[str, dict] = {}
 _home: str | None = None
+
+
+REFUSING = (401, 403, 405, 407, 451)   # answers that turn the visitor away, not "no such page"
+
+
+class Refused(Exception):
+    """The site answered and turned the request away (HTTP 403, 405 …): nothing a wait or another try changes, so it
+    is never asked again in the same scan. nsbd.cn answers 405 to every address outside mainland China, and the
+    北森 check took it for "no answer", tried it six times and waited 228 s (2026-11-18)."""
+
+    def __init__(self, url: str, code: int):
+        super().__init__(f"HTTP {code}")
+        self.url, self.code = url, code
+
+
+def follow_system_proxy() -> None:
+    """Read the system's proxy again, for the requests from now on. urllib reads it once, on its first request, and
+    keeps it: a proxy turned on after the window opened (a VPN, an accelerator into mainland China) was never used,
+    and the site went on refusing the scan (2026-11-18)."""
+    urllib.request.install_opener(urllib.request.build_opener())
 
 
 @dataclass(frozen=True)

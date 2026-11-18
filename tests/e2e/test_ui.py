@@ -3685,9 +3685,17 @@ def test_a_site_the_scan_missed_is_named_on_the_status_and_its_row(page_all):
       const off = sitesEditor({id: 'C86', sites: sites.map((url) => ({url, kind: 'social'}))},
         {[sites[0]]: '', [sites[1]]: 'api'}, {}, {[sites[0]]: 'unreached'});
       const offRow = [...off.querySelector('.co-site-edit').querySelectorAll('.site-scan')].map((s) => s.textContent);
+      const no = sitesEditor({id: 'C86', sites: sites.map((url) => ({url, kind: 'social'}))},
+        {[sites[0]]: '', [sites[1]]: 'api'}, {}, {[sites[0]]: 'refused'});
+      const noChip = no.querySelector('.co-site-edit .site-missed');
       return {none: say({[sites[0]]: 'none'}), part: say({[sites[0]]: 'part'}), old: say(null), rows,
-              unreached: say({[sites[0]]: 'unreached'}), offRow};
+              unreached: say({[sites[0]]: 'unreached'}), offRow, refused: say({[sites[0]]: 'refused'}),
+              noRow: [...no.querySelector('.co-site-edit').querySelectorAll('.site-scan')].map((s) => s.textContent),
+              noWhy: noChip.dataset.tip || noChip.title};
     }""")
+    # it turned the scan away (nsbd.cn's 405 outside mainland China, 2026-11-18): said as that, never "didn't connect"
+    assert out["refused"].endswith("读取方式：mokahr · join.huolala.example 本次拒绝访问，将在下次扫描时重试"), out
+    assert out["noRow"] == ["未检查", "本次拒绝访问"] and "仅允许中国大陆 IP 访问" in out["noWhy"], out
     # it didn't answer which system it runs on (join.huolala.cn, 2026-11-11): never "the AI has to learn it"
     assert out["unreached"].endswith("读取方式：mokahr · join.huolala.example 本次连接失败，将在下次扫描时重试"), out
     assert out["offRow"] == ["未检查", "本次连接失败"], out
