@@ -13,7 +13,7 @@ import jinja2
 from core.i18n import t
 
 from .. import langs
-from . import fonts
+from . import fonts, tounicode
 from .base import Renderer, RenderResult
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates" / "latex"
@@ -151,6 +151,12 @@ class LatexRenderer(Renderer):
                 errors = [ln for ln in log.splitlines()
                           if ln.startswith("!") or re.match(r".*main\.tex:\d+:", ln)][:8] \
                     or [t("xelatex failed, see main.log")]
+            elif want_pdf:
+                # a recruiting system reads the text layer: give every font one a parser can read
+                try:
+                    tounicode.repair(out)
+                except Exception:  # noqa: BLE001 - a PDF that can't be repaired is still the PDF TeX made
+                    pass
             result = RenderResult(ok=not errors, pages=pages, pdf=out if want_pdf and out.exists() else None,
                                   source=src, seconds=time.time() - t0, errors=errors,
                                   lines=_bullet_lines(log, view))

@@ -30,8 +30,18 @@
 \usepackage{titlesec}
 \usepackage[hidelinks]{hyperref}
 \usepackage{fontawesome5}
+\usepackage{accsupp}
+% Recruiting systems (北森, Moka, Workday…) read the PDF's text layer, not the page. Every run of text
+% carries the characters it was typed with (a hyphen stays U+002D, not the U+2011 the font's glyph maps to),
+% and an icon carries no text, so "+61 400…" is not read as "Ȳ +61 400…".
+\XeTeXgenerateactualtext=1
+% No word is split at a line's end ("Kuber-" / "netes" is two words to a keyword match), not even at its own
+% hyphen ("scikit-" / "learn"); the stretch lets a line that can't break loosen instead of running past the margin.
+\hyphenpenalty=10000
+\exhyphenpenalty=10000
+\emergencystretch=1.5em
 % contact icon: accent-coloured, a thin gap before the text it labels
-\newcommand{\contacticon}[1]{{\color{accent}\faIcon{#1}}\,\,}
+\newcommand{\contacticon}[1]{\BeginAccSupp{method=plain,ActualText={}}{\color{accent}\faIcon{#1}}\EndAccSupp{}\,\,}
 \pagestyle{empty}
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0pt}
