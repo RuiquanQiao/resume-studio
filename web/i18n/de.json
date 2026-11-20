@@ -2733,11 +2733,39 @@
  "Finished reading {host}": "{host} fertig gelesen",
  "Preparing the scan": "Scan wird vorbereitet",
  "{n} of {total} roles read": "{n} von {total} Stellen gelesen",
- "{n} role read": ["{n} Stelle gelesen", "{n} Stellen gelesen"],
+ "{n} role read": [
+  "{n} Stelle gelesen",
+  "{n} Stellen gelesen"
+ ],
  "Elapsed {time}": "Verstrichen: {time}",
  "About {time} left": "Noch etwa {time}",
  "{host} is responding slowly; request sent again (attempt {n})": "{host} antwortet langsam; Anfrage erneut gesendet (Versuch {n})",
  "{s} s": "{s} s",
  "{m} min {s} s": "{m} Min. {s} s",
- "{m} min": "{m} Min."
+ "{m} min": "{m} Min.",
+ "Employer directory": "Unternehmensverzeichnis",
+ "Employers that hire graduates, to add to your companies": "Arbeitgeber, die Absolventen einstellen, zum Hinzufügen zu Ihren Unternehmen",
+ "Employers that hire graduates, from the open campus-employers database: {n} in {k} countries and regions, updated {date}. Adding one puts it in your companies; the others stay here.": "Arbeitgeber, die Absolventen einstellen, aus der offenen Datenbank campus-employers: {n} in {k} Ländern und Regionen, Stand {date}. Hinzugefügte Arbeitgeber kommen zu Ihren Unternehmen; die übrigen bleiben hier.",
+ "Search by name, industry or city": "Nach Name, Branche oder Stadt suchen",
+ "Country or region": "Land oder Region",
+ "All countries and regions": "Alle Länder und Regionen",
+ "All industries": "Alle Branchen",
+ "All types": "Alle Arten",
+ "Unclassified": "Nicht zugeordnet",
+ "Careers site confirmed": "Karriereseite bestätigt",
+ "{n} employer": [
+  "{n} Arbeitgeber",
+  "{n} Arbeitgeber"
+ ],
+ "No matching employers": "Keine passenden Arbeitgeber",
+ "Try other words or fewer filters. A company that is not in the directory can be added from your companies with Add a company.": "Versuchen Sie andere Suchbegriffe oder weniger Filter. Ein Unternehmen, das nicht im Verzeichnis steht, lässt sich unter Ihren Unternehmen mit „Unternehmen hinzufügen“ anlegen.",
+ "Load more ({n} of {total} shown)": "Mehr laden ({n} von {total})",
+ "In your companies": "Hinzugefügt",
+ "Careers site ({system})": "Karriereseite ({system})",
+ "Homepage": "Website",
+ "Headquarters and cities": "Hauptsitz und Städte",
+ "{company} was added to your companies": "{company} wurde Ihren Unternehmen hinzugefügt",
+ "Add “{name}” as another company?": "„{name}“ als weiteres Unternehmen hinzufügen?",
+ "Your companies already have a similar name: {names}.": "Unter Ihren Unternehmen gibt es bereits einen ähnlichen Namen: {names}.",
+ "added from the employer directory": "aus dem Unternehmensverzeichnis hinzugefügt"
 }

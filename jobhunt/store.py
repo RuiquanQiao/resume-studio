@@ -612,7 +612,7 @@ class Hunt:
 
     @staticmethod
     def _company_fields(c: dict, fields: dict) -> None:
-        for k, limit in (("name", 80), ("site", 500), ("industry", 80), ("strength", 160), ("size", 60),
+        for k, limit in (("name", 80), ("site", 500), ("homepage", 500), ("industry", 80), ("strength", 160), ("size", 60),
                          ("account", 120), ("subset", 80)):
             if k in fields:
                 c[k] = _text(fields[k], limit)
@@ -651,9 +651,10 @@ class Hunt:
             c["places"] = _places(fields["places"])
         if not c.get("name"):
             raise ValueError(t("Name the company first"))
-        site = c.get("site") or ""
-        if site and not re.match(r"https?://", site):
-            c["site"] = "https://" + site
+        for k in ("site", "homepage"):   # the homepage is the company's own site, never a careers site the scan reads
+            v = c.get(k) or ""
+            if v and not re.match(r"https?://", v):
+                c[k] = "https://" + v
 
     @staticmethod
     def _sites(v: Any) -> list[dict]:
@@ -722,7 +723,7 @@ class Hunt:
             if close and not fields.get("different"):
                 raise SameCompany(t("“{name}” may be {names}, already on the list. If it's another company, add it with --different",
                                     name=name, names=", ".join(f"{c['name']} ({c['id']})" for c in close)), close=close)
-            c = {"id": f"C{data['next']}", "name": "", "aliases": [], "site": "", "sites": [], "industry": "", "nature": "", "strength": "",
+            c = {"id": f"C{data['next']}", "name": "", "aliases": [], "site": "", "sites": [], "homepage": "", "industry": "", "nature": "", "strength": "",
                  "hq": None, "places": [], "size": "", "logo": "", "sources": {}, "kept": [], "note": "", "account": "",
                  "subset": "", "about": None, "created": _now(), "updated": _now()}
             self._company_fields(c, fields)

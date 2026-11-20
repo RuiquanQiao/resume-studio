@@ -26,10 +26,15 @@ it only through this command (Bash); every call prints what is there now, and th
   goes in (the company's own site with its choice number, a platform, a referral), what was sent, the next thing booked.
 - `{j} show <company>` — a company: details, what is known about it (about), its roles, recent events.
   `{j} show <company>/<role>` (or an id like A3) — one application with its whole timeline.
+- `{j} directory <words> [--country cn|au|sg|hk…] [--careers]` — the employer directory (公司库) shipped with the app:
+  thousands of employers with their nature, headquarters, cities, careers site and recruiting system, and who may
+  apply (citizenship, work rights). Look there first when the user names a company to add: `directory --add <id>`
+  puts it on the list with every fact the directory has (then fill in only what it lacks). Never add employers the
+  user didn't ask for: the list holds the companies they apply to, the directory all the others.
 - `{j} add-company "<name>" [--site <careers url>] [--alias Xinghe]` — refused when the name or an alias is on the
   list already (use that company), and when it is close to one (字节 / 字节跳动有限公司): `--different` only when it
   really is another company. A region's arm (麦当劳中国 next to 麦当劳) counts as another company by itself.
-  · `edit-company <company> [--name|--site|--subset SUB-002|--note|--account ..]`; `--alias A --alias B` sets the
+  · `edit-company <company> [--name|--site|--homepage|--subset SUB-002|--note|--account ..]`; `--alias A --alias B` sets the
   whole list of other names (leave one out to drop it), `--no-aliases` clears it.
   A change names its company or role exactly: its id (C12, A3) or its whole name or alias; a part of one is
   refused with the names it could be.

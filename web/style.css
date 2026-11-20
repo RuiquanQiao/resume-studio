@@ -2378,3 +2378,52 @@ body.skx-dragging, body.skx-dragging * { cursor: grabbing !important; user-selec
 .skx-sug-why { flex: 1 1 200px; min-width: 0; font-size: var(--fs-meta); overflow-wrap: anywhere; }
 .skx-pool { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding-top: 8px; border-top: 1px solid var(--fact-line); }
 .skx-pool .skx-s-k { margin-right: 2px; }
+
+/* ---- the employer directory (web/hunt.js directoryPage): a read-only list apart from the user's companies ---- */
+.dir-page { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.dir-tools .dir-search { width: 300px; }
+.dir-tools .dir-pick { max-width: 240px; }
+.dir-toggle { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--r-sm); border: 1px solid var(--line-strong);
+  background: var(--panel); color: var(--text); font: inherit; font-size: var(--fs-body); cursor: pointer; white-space: nowrap; }
+.dir-toggle:hover { border-color: color-mix(in srgb, var(--text-3) 70%, var(--line-strong)); }
+.dir-toggle.on { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+.dir-toggle .i { width: 14px; height: 14px; }
+.dir-count { color: var(--text-2); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dir-list { container-type: inline-size; background: var(--panel); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
+.dir-row { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 4.4fr) auto; gap: 16px; align-items: center; padding: 11px 16px;
+  font-size: var(--fs-body); }
+.dir-row + .dir-row, [role="list"] > .dir-row:first-child { border-top: 1px solid var(--line); }
+.dir-row:not(.dir-head):hover { background: var(--hover); }
+.dir-head { padding-top: 9px; padding-bottom: 9px; background: var(--panel-2); color: var(--text-3); font-size: var(--fs-meta); font-weight: 600; }
+.dir-facts { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, .9fr); gap: 16px; align-items: center; min-width: 0; }
+.dir-name { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.dir-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.dir-n { font-weight: 500; color: var(--text); overflow-wrap: anywhere; }
+.dir-other { flex: 1 1 0; min-width: 0; color: var(--text-3); font-size: var(--fs-meta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dir-notes { display: flex; align-items: flex-start; gap: 5px; color: var(--warn); font-size: var(--fs-meta); line-height: 1.45; }
+.dir-notes .i { flex: none; width: 13px; height: 13px; margin-top: 2px; }
+.dir-cell { min-width: 0; color: var(--text-2); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.dir-ind { display: flex; flex-direction: column; -webkit-line-clamp: unset; }
+.dir-ind > span:first-child { color: var(--text); }
+.dir-sub { color: var(--text-3); font-size: var(--fs-meta); }
+.dir-site a { color: var(--accent); text-decoration: none; }
+.dir-site a:hover { text-decoration: underline; }
+.dir-site a.dir-home { color: var(--text-2); }
+.dir-act { justify-self: end; }
+.dir-act .btn { min-width: 76px; justify-content: center; }
+.dir-added { color: var(--ok); }
+.dir-added .i { width: 14px; height: 14px; }
+.dir-none { padding: 24px 20px; background: var(--panel); border-radius: var(--r-lg); color: var(--text-2); font-size: var(--fs-body); }
+.dir-none .t { color: var(--text); font-weight: 600; margin-bottom: 4px; }
+.dir-none p { margin: 0; max-width: 640px; }
+.dir-more { display: flex; justify-content: center; padding: 4px 0 8px; }
+/* narrow: the facts go under the name as one wrapped line, and the column heads go */
+@container (max-width: 980px) {
+  .dir-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
+  .dir-head { display: none; }
+  [role="list"] > .dir-row:first-child { border-top: 0; }
+  .dir-row > .dir-facts { grid-column: 1 / -1; grid-row: 2; display: flex; flex-wrap: wrap; gap: 2px 14px; }
+  .dir-facts .dir-cell { font-size: var(--fs-meta); display: block; }
+  .dir-facts .dir-ind { display: flex; flex-direction: row; gap: 6px; }
+  .dir-act { grid-column: 2; grid-row: 1; align-self: start; }
+}

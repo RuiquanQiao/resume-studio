@@ -94,7 +94,12 @@ with the C# compiler that ships with Windows.
     tests), shown on a calendar, a Gantt chart and a world map, and exported as .ics. Each has a timeline.
   - **Companies**: logo, industry, strength, the cities it hires in and open roles, also on a world map. Add one
     by its name or paste a posting's link: Claude fills in every field (with a source for each), finds its
-    careers sites and logo. **Scan all** reads
+    careers sites and logo. Or pick it from the **Employer directory** (公司库), shipped with the app: 8,900+
+    employers that hire graduates in mainland China, Australia, Singapore and Hong Kong (more to come), from the
+    open [campus-employers](https://github.com/RuiquanQiao/campus-employers) database, searched by name, industry
+    or city and filtered by country, type and a confirmed careers site. Adding one brings its nature, cities,
+    careers site with its recruiting system, homepage and who may apply; the rest stay in the directory, never in
+    your list. The app reads a newer copy from GitHub at most once a day. **Scan all** reads
     every company's sites for open roles (career-ops' providers for Moka, Feishu, Tencent, Greenhouse, Lever…;
     a route Claude records once for any other site) and says what is new today. On a company's page: its open
     roles ("Want to apply" adds one to your applications), the roles there in your order of preference

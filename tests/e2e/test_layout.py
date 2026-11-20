@@ -446,6 +446,11 @@ def role_with_fit(c):
         "gaps": ["没有线上推荐系统经验", "没有 Spark / Flink 大数据处理经验", "VeryLongDistributedTrainingFrameworkNameWithNoSpaces", "没有 A/B 实验"]}})
 
 
+def directory_added(c):
+    """A company of the employer directory on the list already: its row says so."""
+    c.server.req("POST", "/api/hunt/companies", {"name": "Commonwealth Bank"})
+
+
 def applying(tab):
     # the tables arrive with the tracker's data: wait for them before a state reaches into DBV
     return then(key("Control+3"), click(f".hunt-tab[data-tab={tab}]"),
@@ -727,6 +732,15 @@ STATES = [
           [".modal .fm-notice-slot .fm-notice", ".modal .fm-notice-hint"], prepare=companies),
     State("applying, an application's page", then(applying("apps"), click(".dbv-title >> nth=0")), ["#app-status"],
           prepare=companies),
+    # the employer directory: its filters, a row already on the list, eligibility notes (long English), and no match
+    State("applying, the employer directory",
+          then(applying("companies"), click("#hunt-directory"), wait("#dir-list [role=list] .dir-row"),
+               lambda pg, c: pg.fill("#dir-search", "Commonwealth"), wait("#dir-list .dir-added"), wait(".dir-notes")),
+          ["#dir-list .dir-added", ".dir-notes", "#dir-careers", "#dir-count"], prepare=directory_added),
+    State("applying, the employer directory with no match",
+          then(applying("companies"), click("#hunt-directory"), wait("#dir-list"),
+               lambda pg, c: pg.fill("#dir-search", "zzqqxx-no-such-employer"), wait("#dir-none")),
+          ["#dir-none"]),
     State("applying, a recruiting system offered to report", then(applying("companies"), wait("#hunt-report")),
           ["#hunt-report", "#hunt-report-open", "#hunt-report-ignore"], prepare=systems_to_report),
     State("applying, the report to the developer", then(applying("companies"), wait("#hunt-report"), click("#hunt-report-open"),

@@ -4135,3 +4135,39 @@ def test_a_scroll_over_a_panel_is_measured_into_the_data_folder(page, server, da
     assert "outline-pop" in rec["panel"] and rec["wheels"] >= 6 and rec["frames"]["n"] > 0
     assert set(rec) >= {"input_to_frame", "dropped", "long_frames", "panel_rebuilt", "outline_redrawn", "dpr"}
     assert "Paper2Exam" not in json.dumps(rec, ensure_ascii=False) and "EXP-" not in json.dumps(rec)   # timings only
+
+
+def test_the_employer_directory_is_searched_and_a_company_added_from_it(page_all, server):
+    """2026-11-20: the employer directory (公司库) is a page of its own under Companies, never rows in the user's
+    list. It opens from the Companies toolbar, is searched as one types, and a row added goes on the list with its
+    facts and shows 已添加, as does a row whose company was on the list before."""
+    pg = page_all
+    server.req("POST", "/api/hunt/companies", {"name": "宁德时代"})
+    pg.keyboard.press("Control+3")
+    pg.click(".hunt-tab[data-tab=companies]")
+    pg.click("#hunt-directory")
+    pg.wait_for_selector("#dir-list [role=list] .dir-row")
+    assert pg.inner_text(".dir-page h1") == "公司库"
+    total = pg.evaluate("() => DIR.data.total")
+    assert total > 8000 and pg.locator("#dir-list [role=list] .dir-row").count() == 50   # one page, not 9,000 rows
+    pg.fill("#dir-search", "宁德时代")
+    pg.wait_for_function("() => DIR.data.total < 20 && DIR.q === '宁德时代'")
+    first = pg.locator("#dir-list [role=list] .dir-row").first
+    assert first.locator(".dir-n").inner_text() == "宁德时代" and first.locator(".dir-added").inner_text() == "已添加"
+    pg.fill("#dir-search", "Commonwealth Bank")
+    pg.wait_for_function("() => DIR.rows.length && DIR.rows[0].name === 'Commonwealth Bank'")
+    assert pg.evaluate("() => document.activeElement.id") == "dir-search"   # typing goes on in the box
+    row = pg.locator("#dir-list [role=list] .dir-row").first
+    row.locator(".dir-add").click()
+    row.locator(".dir-added").wait_for()
+    assert row.locator(".dir-added").inner_text() == "已添加"
+    assert "已将CommonwealthBank添加至公司列表" in pg.inner_text("#toast").replace(" ", "")
+    st, d = server.req("GET", "/api/hunt")
+    c = next(x for x in d["companies"] if x["name"] == "Commonwealth Bank")
+    assert c["homepage"].startswith("https://") and c["note"] and len(c["places"]) >= 2 and "CBA" in c["aliases"]
+    assert len(d["companies"]) == 2                                            # only what was added: no directory dump
+    pg.fill("#dir-search", "zzqqxx")
+    pg.wait_for_selector("#dir-none")
+    assert "暂无匹配的公司" in pg.inner_text("#dir-none")
+    pg.click(".hunt-back")
+    pg.wait_for_selector(".dbv-view[data-table=companies] tbody tr:has-text('Commonwealth Bank')")

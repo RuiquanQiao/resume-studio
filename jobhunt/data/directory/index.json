@@ -1,0 +1,29 @@
+{
+ "updated": "2026-11-20",
+ "countries": [
+  {
+   "code": "cn",
+   "employers": 7750,
+   "careers": 1973,
+   "system": 1074
+  },
+  {
+   "code": "au",
+   "employers": 750,
+   "careers": 0,
+   "system": 0
+  },
+  {
+   "code": "sg",
+   "employers": 333,
+   "careers": 0,
+   "system": 0
+  },
+  {
+   "code": "hk",
+   "employers": 138,
+   "careers": 0,
+   "system": 0
+  }
+ ]
+}

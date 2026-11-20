@@ -5,6 +5,8 @@
     python scripts/hunt.py show 星河科技                      # a company: its details, about, roles, recent events
     python scripts/hunt.py show 星河科技/服务端              # one application (or its id: A3)
     python scripts/hunt.py add-company "星河科技" --site https://careers.xinghe.example/campus --alias Xinghe
+    python scripts/hunt.py directory 宁德时代 [--country cn] [--careers]   # the employer directory (公司库): search it
+    python scripts/hunt.py directory --add cn-12 | --add 宁德时代         # add one to the list, with its facts
     python scripts/hunt.py edit-company 星河科技 --subset SUB-002 --industry 电商
     python scripts/hunt.py fill 星河科技 --stdin <<'JSON'   # Claude's research, every field at once (see `fill --help`)
     python scripts/hunt.py add-role 星河科技 "服务端研发工程师" [--url ...] [--channel site|platform|referral|other]
@@ -228,7 +230,7 @@ def show_company(v: dict) -> None:
     if c.get("short_of"):
         print("  the user can't apply as they are: " + short[c["short_of"]].format(cc=c.get("country") or "?"))
     for k, label in (("industry", "industry"), ("strength", "strength"), ("hq", "headquarters"), ("size", "size"),
-                     ("site", "careers site"), ("account", "account"), ("subset", "filled from")):
+                     ("site", "careers site"), ("homepage", "homepage"), ("account", "account"), ("subset", "filled from")):
         if c.get(k):
             value = place_text(c[k]) if k == "hq" else c[k]
             print(f"  {label}: {value}" + (f" ({c.get('subset_label')})" if k == "subset" and c.get("subset_label") else "")
@@ -368,7 +370,7 @@ def main() -> int:
             p.add_argument("--name")
         else:
             p.add_argument("--different", action="store_true", help="its name is close to one on the list, but it is another company")
-        for opt in ("site", "industry", "nature", "strength", "hq", "size", "account", "subset", "note"):
+        for opt in ("site", "homepage", "industry", "nature", "strength", "hq", "size", "account", "subset", "note"):
             p.add_argument("--" + opt, *(["--location"] if opt == "hq" else []),
                            **({"help": "the city of its headquarters"} if opt == "hq" else
                               {"help": "a nature's id from `fill --help` (cn.central_soe, private…; \"\" to clear)"} if opt == "nature" else {}))
@@ -389,6 +391,16 @@ def main() -> int:
                        "(repeat for each; on edit-role the list replaces the old one)")
         if name == "edit-role":
             p.add_argument("--no-places", action="store_true", help="it no longer says where")
+    p = sub.add_parser("directory", description="The employer directory (公司库) shipped with the app: thousands of employers "
+                       "in China, Australia, Singapore, Hong Kong and more, each with its nature, headquarters, cities, careers "
+                       "site and recruiting system. Search it before adding a company by hand; --add puts one on the user's "
+                       "list with every fact it has (only when the user wants that company).")
+    p.add_argument("words", nargs="*", help="words of its name, another name, industry or city")
+    p.add_argument("--country", help="two letters: cn, au, sg, hk…")
+    p.add_argument("--careers", action="store_true", help="only employers with a confirmed careers site")
+    p.add_argument("--limit", type=int, default=20)
+    p.add_argument("--add", metavar="ID|NAME", help="add this employer (its id, like cn-12, or its whole name) to the list")
+    p.add_argument("--different", action="store_true", help="its name is close to one on the list, but it is another company")
     p = sub.add_parser("status"); p.add_argument("ref"); p.add_argument("status"); p.add_argument("--note", default="")
     p.add_argument("--on", default="")
     p = sub.add_parser("note"); p.add_argument("ref"); p.add_argument("text"); p.add_argument("--on", default="")
@@ -462,8 +474,26 @@ def main() -> int:
         r = call(url, "show", {"ref": args.ref})
         show_company(r["company"]) if "company" in r else show_app(r["app"])
         return 0
+    if c == "directory":
+        if args.add:
+            r = call(url, "directory", {"add": args.add, "different": args.different})
+            print("added from the directory:")
+            show_company(r["company"])
+            return 0
+        r = call(url, "directory", {"q": " ".join(args.words), **pick("country", "limit"), "careers": args.careers})["directory"]
+        for x in r["rows"]:
+            site = x.get("campus_site") or ""
+            facts = [x.get("industry") or "", x.get("hq") or "", natures.label(x["nature"]) if x.get("nature") else "",
+                     (site + (f" ({x['system']})" if x.get("system") else "")) if site else "no careers site known"]
+            print(f"{x['id']}  {x['name']}" + (f" / {x['full_name']}" if x.get("full_name") and x["full_name"] != x["name"] else "")
+                  + "  " + "; ".join(f for f in facts if f)
+                  + (f"  [on the list: {x['added']['name']} ({x['added']['id']})]" if x.get("added") else "")
+                  + (f"\n      who may apply: {x['notes']}" if x.get("notes") else ""))
+        print(f"{r['total']} in the directory" + (f", {len(r['rows'])} shown" if r["total"] > len(r["rows"]) else "")
+              + (": add one with `directory --add <id>`" if r["rows"] else ": none matches; add it by hand with add-company"))
+        return 0
     if c in ("add-company", "edit-company"):
-        a = pick("site", "industry", "nature", "strength", "hq", "size", "account", "subset", "note")
+        a = pick("site", "homepage", "industry", "nature", "strength", "hq", "size", "account", "subset", "note")
         if getattr(args, "nature", None) == "":
             a["nature"] = ""
         if c == "add-company":

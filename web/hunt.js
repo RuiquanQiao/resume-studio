@@ -130,6 +130,7 @@ async function huntFetch() {
 async function loadHuntPage({ quiet = false } = {}) {
   const p = H.page;
   if (!p || p.kind === "platform") return;
+  if (p.kind === "directory") { await loadDirectory({ again: true }); return; }
   try {
     H.view = await api("GET", p.kind === "company" ? `/api/hunt/companies/${encodeURIComponent(p.id)}` : `/api/hunt/apps/${encodeURIComponent(p.id)}`);
   } catch (e) {
@@ -237,7 +238,7 @@ async function openHunt(kind, id, { tab = null } = {}) {
     welcomeAgain();
     return;
   }
-  H.tab = kind === "company" ? "companies" : "apps";
+  H.tab = kind === "company" || kind === "directory" ? "companies" : "apps";
   H.page = { kind, id }; H.view = null; H.editing = null;
   storeHunt();
   huntGo(paintFill);
@@ -314,6 +315,7 @@ function paintHuntNow(el) {
   if (!H.data) body = h("div", { class: "muted" }, t("Loading…"));
   else if (H.page && H.page.kind === "company") body = H.view && H.view.company ? companyPage(H.view) : h("div", { class: "muted" }, t("Loading…"));
   else if (H.page && H.page.kind === "app") body = H.view && H.view.application ? appPage(H.view) : h("div", { class: "muted" }, t("Loading…"));
+  else if (H.page && H.page.kind === "directory") body = directoryPage();
   else body = H.tab === "companies" ? companiesTable() : H.tab === "platforms" ? platformsTable() : H.tab === "picked" ? pickedPage() : appsTable();
   const sc = h("div", { class: "hunt-scroll", "data-page": key }, h("div", { class: "hunt-wrap" + (H.page ? " is-page" : "") }, body));
   if (key.startsWith("table:") && H.data) sc._stamp = huntStamp();
@@ -1747,6 +1749,8 @@ function companiesTable() {
     h("div", { class: "hunt-head" }, h("h1", null, t("Companies")),
       h("p", null, t("What each company is and how it is doing, your notes, and its own careers site: one profile there, several roles in your order of preference."))),
     tableTools(h("button", { class: "btn sm primary", id: "hunt-new-company", onclick: () => newCompany() }, icon("plus"), t("Add a company")), linkButton(),
+      h("button", { class: "btn sm", id: "hunt-directory", title: t("Employers that hire graduates, to add to your companies"),
+        onclick: () => openHunt("directory", "all") }, icon("layers"), t("Employer directory")),
       d.companies.length > 0 && scanAllButton(),
       d.companies.length > 0 && h("button", { class: "btn sm", id: "hunt-history", onclick: () => historyModal() }, icon("history"), t("What the AI changed"))),
     d.companies.length > 0 && scanNews(),
@@ -2003,13 +2007,13 @@ function sameCompany(e, name, m, { label, pick }) {
 // ---- what the AI changed, each undoable (jobhunt/history.py) ----
 const CHANGE_FIELDS = {
   name: "Name", aliases: "Also called", industry: "Industry", nature: "Nature", strength: "Strength", hq: "Headquarters", places: "Hires in",
-  size: "Size", site: "Careers site", sites: "Careers sites", logo_file: "Logo", logo: "Logo", about: "What it is",
+  size: "Size", site: "Careers site", sites: "Careers sites", homepage: "Homepage", logo_file: "Logo", logo: "Logo", about: "What it is",
   sources: "Sources", note: "Notes", account: "Account", subset: "Subset", role: "Role", url: "Link", status: "Status",
   referral: "Referral code", schedule: "Interviews and tests", apply_by: "Apply by", order: "Choice", jd: "JD",
   applied: "Applied on", channel: "How it goes in", platform: "Platform", sent: "Resume sent", batch: "Hiring round",
 };
 const CHANGE_CMDS = {
-  "add-company": "added", "edit-company": "edited", fill: "filled in its details", about: "wrote its description",
+  "add-company": "added", directory: "added from the employer directory", "edit-company": "edited", fill: "filled in its details", about: "wrote its description",
   "add-role": "added the role", "edit-role": "edited the role", status: "changed the status", note: "added a note",
   book: "booked a date", rebook: "moved a date", unbook: "dropped a date",
 };
@@ -2086,6 +2090,126 @@ async function historyModal({ target = "", name = "" } = {}) {
     }));
   };
   paint();
+}
+
+// ---- the employer directory (公司库, jobhunt/directory.py): every employer of the open campus-employers database,
+// read-only and apart from the user's own list, which only gets the ones they add (2026-11-20). The server pages and
+// filters it (9,000 rows and more): the window holds one page at a time, and "Load more" adds the next.
+const DIR = { q: "", country: "", industry: "", nature: "", careers: false, data: null, rows: [], seq: 0, timer: null, busy: new Set() };
+
+async function loadDirectory({ more = false, again = false } = {}) {
+  const seq = ++DIR.seq;
+  const keep = again ? Math.min(200, Math.max(50, DIR.rows.length)) : 50;
+  const q = new URLSearchParams({ q: DIR.q, country: DIR.country, industry: DIR.industry, nature: DIR.nature,
+    careers: DIR.careers ? "1" : "", offset: more ? String(DIR.rows.length) : "0", limit: String(keep) });
+  try {
+    const r = await api("GET", "/api/hunt/directory?" + q.toString());
+    if (seq !== DIR.seq) return;   // a newer search was sent meanwhile: its answer is the one shown
+    DIR.data = r;
+    DIR.rows = more ? [...DIR.rows, ...r.rows] : r.rows;
+  } catch (e) {
+    if (seq !== DIR.seq) return;
+    DIR.data = DIR.data || { error: e.message };
+    toast(e.message, { warn: true });
+  }
+  if (H.page && H.page.kind === "directory") paintHunt();
+}
+
+function directorySet(fields, { now = true } = {}) {
+  Object.assign(DIR, fields);
+  clearTimeout(DIR.timer);
+  if (now) loadDirectory();
+  else DIR.timer = setTimeout(() => loadDirectory(), 160);   // typing: once the word is there
+}
+
+function directoryPage() {
+  const d = DIR.data;
+  if (!d) { loadDirectory(); return [backTo("companies"), h("div", { class: "muted" }, t("Loading…"))]; }
+  if (d.error) return [backTo("companies"), h("div", { class: "muted" }, d.error)];
+  const all = d.countries.reduce((n, c) => n + c.employers, 0);
+  const search = h("input", { class: "hunt-search dir-search", type: "search", id: "dir-search", value: DIR.q, spellcheck: "false",
+    placeholder: t("Search by name, industry or city"), "aria-label": t("Search by name, industry or city"),
+    oninput: (e) => directorySet({ q: e.target.value }, { now: false }) });
+  const country = uiSelect({ id: "dir-country", label: t("Country or region"), value: DIR.country, menuWidth: 260, cls: "dir-pick",
+    options: [{ value: "", label: t("All countries and regions"), hint: String(all) },
+      ...d.countries.map((c) => ({ value: c.code, label: c.name, hint: String(c.employers) }))],
+    onChange: (v) => directorySet({ country: v, industry: "" }) });
+  const industry = uiSelect({ id: "dir-industry", label: t("Industry"), value: DIR.industry, menuWidth: 300, search: true, cls: "dir-pick",
+    options: [{ value: "", label: t("All industries") }, ...d.industries.map(([name, n]) => ({ value: name, label: name, hint: String(n) })),
+      ...(DIR.industry && !d.industries.some(([name]) => name === DIR.industry) ? [{ value: DIR.industry, label: DIR.industry, hint: "0" }] : [])],
+    onChange: (v) => directorySet({ industry: v }) });
+  const nats = Object.entries(d.natures).sort((a, b) => b[1] - a[1]);
+  const nature = uiSelect({ id: "dir-nature", label: t("Nature"), value: DIR.nature, menuWidth: 300, cls: "dir-pick",
+    options: [{ value: "", label: t("All types") }, ...nats.map(([id, n]) => ({ value: id, label: id ? natureName(id) : t("Unclassified"), hint: String(n) }))],
+    onChange: (v) => directorySet({ nature: v }) });
+  const careers = h("button", { type: "button", class: "dir-toggle" + (DIR.careers ? " on" : ""), id: "dir-careers", "aria-pressed": String(DIR.careers),
+    onclick: () => directorySet({ careers: !DIR.careers }) }, DIR.careers ? icon("check") : null, t("Careers site confirmed"));
+  const shown = DIR.rows;
+  return [backTo("companies"), h("div", { class: "dir-page" },
+    h("div", { class: "hunt-head" }, h("h1", null, t("Employer directory")),
+      h("p", null, t("Employers that hire graduates, from the open campus-employers database: {n} in {k} countries and regions, updated {date}. Adding one puts it in your companies; the others stay here.",
+        { n: all.toLocaleString(), k: d.countries.length, date: d.updated || "—" }))),
+    h("div", { class: "hunt-tools dir-tools" }, search, country.el, industry.el, nature.el, careers,
+      h("span", { class: "spacer" }), h("span", { class: "dir-count", id: "dir-count" }, t("{n} employer", { n: d.total.toLocaleString() }, "{n} employers"))),
+    shown.length
+      ? h("div", { class: "dir-list", id: "dir-list" },
+        h("div", { class: "dir-row dir-head", "aria-hidden": "true" }, h("div", null, t("Company")),
+          h("div", { class: "dir-facts" }, h("div", null, t("Industry")), h("div", null, t("Headquarters and cities")), h("div", null, t("Nature")), h("div", null, t("Careers site"))),
+          h("div", null)),
+        h("div", { role: "list" }, shown.map(directoryRow)))
+      : h("div", { class: "dir-none", id: "dir-none" }, h("div", { class: "t" }, t("No matching employers")),
+        h("p", null, t("Try other words or fewer filters. A company that is not in the directory can be added from your companies with Add a company."))),
+    shown.length < d.total && h("div", { class: "dir-more" },
+      h("button", { class: "btn", id: "dir-more", onclick: (e) => { e.currentTarget.disabled = true; loadDirectory({ more: true }); } },
+        t("Load more ({n} of {total} shown)", { n: shown.length.toLocaleString(), total: d.total.toLocaleString() }))))];
+}
+
+function directoryRow(r) {
+  const other = [r.full_name && r.full_name !== r.name ? r.full_name : "", ...(r.aliases || [])].filter(Boolean);
+  const where = [r.hq, ...(r.cities || []).filter((x) => x !== r.hq)].filter(Boolean);
+  const busy = DIR.busy.has(r.id);
+  const act = r.added
+    ? h("button", { class: "btn sm ghost dir-added", "data-added": r.added.id, title: t("Open {company}", { company: r.added.name }),
+      onclick: () => openHunt("company", r.added.id) }, icon("check"), t("In your companies"))
+    : h("button", { class: "btn sm dir-add" + (busy ? " is-busy" : ""), disabled: busy, onclick: () => addFromDirectory(r) },
+      busy ? h("span", { class: "spin" }) : icon("plus"), t("Add"));
+  return h("div", { class: "dir-row" + (r.added ? " is-added" : ""), role: "listitem", "data-id": r.id },
+    h("div", { class: "dir-name" },
+      h("div", { class: "dir-title" }, h("span", { class: "dir-n" }, r.name), other.length > 0 && h("span", { class: "dir-other", title: other.join(", ") }, other.join(", "))),
+      r.notes && h("div", { class: "dir-notes" }, icon("alert"), h("span", null, r.notes))),
+    // side by side in columns when there is room; one wrapped line of facts under the name when there isn't
+    h("div", { class: "dir-facts" },
+      h("div", { class: "dir-cell dir-ind" }, h("span", null, r.industry || "—"), r.sub && h("span", { class: "dir-sub" }, r.sub)),
+      h("div", { class: "dir-cell dir-where", title: where.join(", ") }, where.length ? where.join(", ") : "—"),
+      h("div", { class: "dir-cell dir-nat" }, r.nature ? natureName(r.nature) : t("Unclassified")),
+      h("div", { class: "dir-cell dir-site" }, r.campus_site
+        ? h("a", { href: r.campus_site, "data-ext": "", title: r.campus_site }, r.system ? t("Careers site ({system})", { system: r.system }) : t("Careers site"))
+        : r.website ? h("a", { href: r.website, "data-ext": "", class: "dir-home", title: r.website }, t("Homepage")) : h("span", { class: "dir-sub" }, "—"))),
+    h("div", { class: "dir-act" }, act));
+}
+
+async function addFromDirectory(r, { different = false } = {}) {
+  DIR.busy.add(r.id);
+  paintHunt();
+  try {
+    const got = await api("POST", "/api/hunt/directory/add", { id: r.id, different });
+    r.added = got.company;
+    toast(t("{company} was added to your companies", { company: got.company.name }),
+      { action: { label: t("Open"), fn: () => openHunt("company", got.company.id) } });
+    loadHunt({ quiet: true });
+  } catch (e) {
+    if (e.status === 409 && e.data && e.data.same) r.added = { id: e.data.same.id, name: e.data.same.name };
+    else if (e.status === 409 && e.data && (e.data.close || []).length) {
+      DIR.busy.delete(r.id);
+      paintHunt();
+      const names = e.data.close.map((c) => c.name).join(", ");
+      if (await modal({ title: t("Add “{name}” as another company?", { name: r.name }),
+        message: t("Your companies already have a similar name: {names}.", { names }), ok: t("Add anyway") })) addFromDirectory(r, { different: true });
+      return;
+    } else toast(e.message, { warn: true });
+  }
+  DIR.busy.delete(r.id);
+  paintHunt();
 }
 
 function linkButton() {
@@ -2267,6 +2391,7 @@ function companyPage(v) {
     ], { fold: "company-about" }),
     card(t("Company details"), t("filled by AI, each with its source; what you edit stays yours"), [
       h("div", { class: "grid2" }, hfield(t("Name"), c.name, save("name")), hfield(t("Also called"), (c.aliases || []).join(", "), save("aliases"), { placeholder: "Xinghe, Nebula", hint: keptHint(c, "aliases") || t("The AI knows it by these too") })),
+      hfield(t("Homepage"), c.homepage, save("homepage"), { placeholder: "https://www.example.com", link: true, id: "company-homepage" }),
       // short fields pair up; a field whose height varies (a place picker, a sentence the AI wrote) has a row of its
       // own and wraps: side by side, the taller one pushed its neighbour down and cut long text off (2026-11-11)
       hfield(t("Industry"), c.industry, save("industry"), { hint: keptHint(c, "industry"), multiline: true, rows: 1 }),

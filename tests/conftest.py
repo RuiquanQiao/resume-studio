@@ -122,6 +122,8 @@ os.environ["STUDIO_ALITALENT_DETECT"] = "off"
 os.environ["STUDIO_PROVIDERS"] = "off"
 # and whether a route's scripts read with no browser (jobhunt/replay.py starts node): tests that want it say so
 os.environ["STUDIO_REPLAY"] = "off"
+# and whether GitHub has a newer employer directory (jobhunt/directory.py): tests hand in what it answers
+os.environ["STUDIO_DIRECTORY_UPDATE"] = "off"
 # the user's own Claude Code settings (a model picked there, say) never reach the fake one's answers
 os.environ["CLAUDE_CONFIG_DIR"] = str(ROOT / ".cache" / "claude-config")
 os.environ.pop("ANTHROPIC_MODEL", None)

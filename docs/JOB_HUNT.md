@@ -812,6 +812,25 @@ time. Now each kind of change is pushed by a **write recipe** (`autofill/recipe.
   an edit, an add, a delete, a custom-dropdown pick and an about with no AI call. It also covers a value not on
   a list, a search with no exact suggestion, a save the site drops, a redesign, and a sign-in during the push.
 
+## 2026-11-20: the employer directory (公司库)
+
+- The open campus-employers database (its own public repository) ships with the app: `scripts/sync_directory.py`
+  copies its compact per-country files (`docs/data/index.json`, `<cc>.json`) into `jobhunt/data/directory/`, so a
+  fresh install has every employer offline. At most once a day, off the start and never waited for, the app reads
+  index.json on GitHub raw; when it is newer, the country files that changed (by `sha256` when the index gives
+  one, else all) go into `<data>/.cache/directory/`, and the newer copy is read. A failure goes to
+  `update.log` there, nothing else (`jobhunt/directory.py`).
+- Thousands of employers would bury the few the user applies to, so the directory is a page of its own (Companies
+  toolbar → 公司库), read-only, paged by the server 50 rows at a time, searched by name, alias, industry or city
+  and filtered by country, industry, nature and a confirmed careers site. It replaced the summary-table (xlsx)
+  import, which relied on bought tables the user rejected.
+- 添加 maps a record into `Hunt.add_company`: name, the registered name and other names as aliases, industry,
+  nature in the app's own list (a `<cc>.company` with a parent group is left unclassified for the AI rather than
+  guessed private or foreign), headquarters and cities through the place list, the careers site with its system,
+  the homepage as its own field (`homepage`, never a careers site the scan reads), and the notes (citizenship,
+  work rights). A row whose name or alias is on the list shows 已添加; a close name asks first, as any new company does.
+- The in-app agent: `hunt.py directory <words>` and `directory --add <id|whole name>` (recorded, undoable).
+
 ## Scan state and tracks in the data
 
 - `scans.json` `tracks: [{id, name, keywords, exclude, subset}]`; `keywords` stays as the union for older readers.

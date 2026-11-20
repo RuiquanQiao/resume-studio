@@ -25,7 +25,7 @@ from resume.skills import levels as skill_levels
 from resume.service import Studio
 
 from . import geo as place_list
-from . import ics, logos, natures, reader, visas, writing
+from . import directory, ics, logos, natures, reader, visas, writing
 from .geo import Geo
 from .history import History, describe
 from .logos import fetch_logo, fetch_logo_in_browser
@@ -41,7 +41,7 @@ TRACKERS = ["studio", "career-ops"]
 CHANGES = {"edit-company", "fill", "about", "add-role", "edit-role", "status", "note", "book", "rebook", "unbook",
            "sent", "scan-route", "postings"}
 # the ones kept in the history, each undoable (jobhunt/history.py); a scan's postings and a sent resume aren't
-RECORDED = {"add-company", "edit-company", "fill", "about", "add-role", "edit-role", "status", "note", "book", "rebook", "unbook"}
+RECORDED = {"add-company", "directory", "edit-company", "fill", "about", "add-role", "edit-role", "status", "note", "book", "rebook", "unbook"}
 
 
 def subset_to_send(studio: Studio, subset_id: str | None) -> str:
@@ -121,6 +121,10 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             pass
     threading.Thread(target=warm, name="hunt-warm-postings", daemon=True).start()
     views = Views(hunt.dir)
+    # the employer directory, shipped with the app; a newer copy from GitHub at most once a day, off the start
+    employers = directory.Directory(studio.store.cache_dir)
+    hunt.directory = employers
+    employers.check_later(on_update=lambda: app.bus.publish("hunt", {"directory": True}))
     geo = Geo(hunt.dir, cache_dir=studio.store.cache_dir)
     scanner = Scanner(hunt, posts, tool, browser, lambda: app.bus.publish("hunt", {}))
     hunt.scanner = scanner   # the app (and tests) reach the scanner through the tracker
@@ -928,6 +932,77 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         sites_changed(c["id"], set())   # a careers site given with the name: its roles come in now
         return company_view(c["id"])
 
+    # ---- the employer directory (公司库, jobhunt/directory.py): read-only, apart from the user's list ----
+    def directory_rows(rows: list[dict]) -> list[dict]:
+        """Rows for the window, each saying whether the user's list has it already: by its name or one of its
+        other names, as Hunt.look_alike tells a company on the list (a whole name, any case and spacing)."""
+        mine: dict[str, dict] = {}
+        for c in hunt.companies():
+            for n in [c["name"], *(c.get("aliases") or [])]:
+                k = directory._key(n)
+                if k:
+                    mine.setdefault(k, c)
+        out = []
+        for r in rows:
+            hit = next((mine[k] for k in r["_keys"] if k in mine), None)
+            out.append({**directory.public(r), "nature": directory.nature_of(r.get("nature") or "", r.get("parent") or ""),
+                        "added": {"id": hit["id"], "name": hit["name"]} if hit else None})
+        return out
+
+    @app.route("GET", "/api/hunt/directory")
+    def directory_search(req: Request):
+        q = lambda k: (req.query.get(k) or [""])[0]  # noqa: E731
+        try:
+            offset, limit = int(q("offset") or 0), int(q("limit") or directory.PAGE)
+        except ValueError:
+            offset, limit = 0, directory.PAGE
+        found = employers.search(q("q"), country=q("country"), industry=q("industry"), nature=q("nature"),
+                                 careers=q("careers") in ("1", "true"), offset=offset, limit=limit)
+        idx = employers.index()
+        return {"updated": idx.get("updated") or "", "checking": employers.checking,
+                "countries": [{"code": c["code"], "name": place_list.name("t:" + c["code"].upper()) or c["code"].upper(),
+                               "employers": len(employers.rows(c["code"]))} for c in idx["countries"]],
+                **found, "rows": directory_rows(found["rows"])}
+
+    def directory_add(rid: str, different: bool) -> dict:
+        rec = guard(lambda: employers.get(rid))
+        try:
+            c = directory.add(hunt, rec, different=different)
+        except SameCompany as e:   # the window asks which: the one on the list, or a new one
+            brief = lambda x: {"id": x["id"], "name": x["name"], "aliases": x.get("aliases") or [], "created": x.get("created") or ""}  # noqa: E731
+            raise HttpError(409, str(e), {"same": e.same and brief(e.same), "close": [brief(x) for x in e.close]})
+        except ValueError as e:
+            raise HttpError(400, str(e))
+        want_logos(c["id"])
+        sites_changed(c["id"], set())   # its careers site, with the system behind it: its roles come in now
+        return c
+
+    def directory_cmd(a: dict) -> dict:
+        """hunt.py directory: rows matching a search, or one added to the list by its id or its whole name."""
+        ref = str(a.get("add") or "").strip()
+        if not ref:
+            found = employers.search(str(a.get("q") or ""), country=str(a.get("country") or ""),
+                                     careers=bool(a.get("careers")), limit=int(a.get("limit") or 20))
+            return {"directory": {"total": found["total"], "rows": directory_rows(found["rows"])}, "text": "found"}
+        if ref[:2].isalpha() and ref[2:3] == "-" and ref[3:].isdigit():
+            rid = ref
+        else:
+            hits = [r for r in employers.all_rows() if directory._key(ref) in r["_keys"]]
+            if not hits:
+                raise HttpError(404, f"no employer in the directory is called {ref!r}: search it first (directory <words>)")
+            if len(hits) > 1:
+                raise HttpError(409, f"{ref!r} is more than one employer in the directory: "
+                                     + ", ".join(f"{r['name']} ({r['id']}, {r['country']})" for r in hits[:8]) + "; add one by its id")
+            rid = hits[0]["id"]
+        c = directory_add(rid, bool(a.get("different")))
+        return {"company": company_view(c["id"]), "text": "added"}
+
+    @app.route("POST", "/api/hunt/directory/add")
+    def directory_add_route(req: Request):
+        b = body(req)
+        c = directory_add(str(b.get("id") or ""), bool(b.get("different")))
+        return {"company": {"id": c["id"], "name": c["name"]}}
+
     # ---- what the AI changed, each undoable (jobhunt/history.py) ------------------------
     @app.route("GET", "/api/hunt/history")
     def get_history(req: Request):
@@ -1119,7 +1194,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                     find = hunt.application if "/" in v or (v[:1] == "A" and v[1:].isdigit()) else hunt.company
                     a[key] = guard(lambda: find(v, exact=True)["id"])
         chat = str(b.get("chat") or "")
-        target = str(a.get("ref") or "") if cmd in RECORDED and cmd not in ("add-company", "add-role") else ""
+        target = str(a.get("ref") or "") if cmd in RECORDED and cmd not in ("add-company", "add-role", "directory") else ""
         kind = "application" if target[:1] == "A" else "company"
         before = history.snapshot(kind, target) if target else None
 
@@ -1138,6 +1213,8 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 want_logos(cid)
                 sites_changed(cid, set())
                 return {"company": company_view(cid), "text": "added"}
+            if cmd == "directory":
+                return directory_cmd(a)
             if cmd == "edit-company":
                 ref = str(a.pop("ref", "") or "")
                 if a.get("subset"):
@@ -1253,7 +1330,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             if cmd == "undo":
                 return {**history.undo(str(a.get("change") or ""), by="chat"), "text": "undone"}
             raise HttpError(400, f"unknown command {cmd!r}; one of: list, show, add-company, edit-company, fill, add-role, "
-                                 "edit-role, status, note, book, rebook, unbook, ics, about, sent, scan, scan-route, systems, postings, "
+                                 "edit-role, status, note, book, rebook, unbook, ics, about, sent, directory, scan, scan-route, systems, postings, "
                                  "apply, keywords, tracks, history, undo")
 
         out = guard(run)
