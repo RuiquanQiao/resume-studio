@@ -36,15 +36,19 @@ CATL = row(name="宁德时代", full_name="宁德时代新能源科技股份有�
            campus_site="https://catl.zhiye.com/campus", system="北森")
 
 
-def write_copy(folder: Path, updated: str, countries: dict[str, list[list]], *, sha: bool = False) -> dict:
+def write_copy(folder: Path, updated: str, countries: dict[str, list[list]], *, sha: bool = False, short: bool = False,
+               version: str = "") -> dict:
+    """`sha`: each country's whole sha256; `short`: its first 12 hex as "sha"; `version`: the build time."""
     folder.mkdir(parents=True, exist_ok=True)
-    idx = {"updated": updated, "countries": []}
+    idx = {"updated": updated, "countries": [], **({"version": version} if version else {})}
     for code, rows in countries.items():
         data = json.dumps({"fields": FIELDS, "rows": rows}, ensure_ascii=False).encode("utf-8")
         (folder / f"{code}.json").write_bytes(data)
         entry = {"code": code, "employers": len(rows), "careers": 0, "system": 0}
         if sha:
             entry["sha256"] = hashlib.sha256(data).hexdigest()
+        if short:
+            entry["sha"] = hashlib.sha256(data).hexdigest()[:12]
         idx["countries"].append(entry)
     (folder / "index.json").write_text(json.dumps(idx), encoding="utf-8")
     return idx
@@ -173,6 +177,38 @@ def test_a_newer_index_on_github_brings_the_changed_files_into_the_cache(tmp_pat
     assert d2.index()["updated"] == "2026-12-01" and d2.search()["total"] == 1
 
 
+def test_a_copy_built_later_the_same_day_replaces_the_earlier_one(tmp_path):
+    """2026-11-20: the shipped copy was made while the Australian list was still being written; the finished one,
+    published the same day, said "updated": "2026-11-20" too and looked no newer. The build time decides, and only
+    the countries whose sha differs are downloaded."""
+    bundled = tmp_path / "b"
+    write_copy(bundled, "2026-11-20", {"au": [CBA], "cn": [CATL]})                    # no version: an older index's shape
+    remote = tmp_path / "r"
+    write_copy(remote, "2026-11-20", {"au": [CBA, APS], "cn": [CATL]}, short=True, version="2026-11-20T10:31:00Z")
+    fetch = Remote(remote)
+    d = Directory(tmp_path / "cache", bundled=bundled, fetch=fetch)
+    r = d.check()
+    assert r["updated"] and fetch.asked == ["index.json", "au.json"]                  # cn's sha is the one in hand
+    assert d.search(country="au")["total"] == 2 and d.search(country="cn")["total"] == 1
+    assert directory.version(d.index()) == "2026-11-20T10:31:00Z"
+    # later the same day again: newer by its version alone
+    write_copy(remote, "2026-11-20", {"au": [CBA, APS, MARSH], "cn": [CATL]}, short=True, version="2026-11-20T14:02:00Z")
+    fetch.asked.clear()
+    assert d.check(force=True)["updated"] and fetch.asked == ["index.json", "au.json"]
+    assert d.search(country="au")["total"] == 3
+    # the same build again changes nothing; an earlier build of the day is never taken for a newer one
+    fetch.asked.clear()
+    assert d.check(force=True) == {"checked": True, "updated": False} and fetch.asked == ["index.json"]
+    write_copy(remote, "2026-11-20", {"au": [CBA]}, short=True, version="2026-11-20T09:00:00Z")
+    assert d.check(force=True) == {"checked": True, "updated": False} and d.search(country="au")["total"] == 3
+    # a short sha that doesn't match the file: nothing replaced
+    write_copy(remote, "2026-11-21", {"au": [CBA], "cn": [CATL]}, short=True, version="2026-11-21T08:00:00Z")
+    idx = json.loads((remote / "index.json").read_text(encoding="utf-8"))
+    idx["countries"][0]["sha"] = "000000000000"
+    (remote / "index.json").write_text(json.dumps(idx), encoding="utf-8")
+    assert "sha" in d.check(force=True)["error"] and d.search(country="au")["total"] == 3
+
+
 def test_an_update_that_fails_is_logged_and_changes_nothing(tmp_path):
     bundled = tmp_path / "b"
     write_copy(bundled, "2026-11-20", {"au": [CBA]}, sha=True)
@@ -186,7 +222,7 @@ def test_an_update_that_fails_is_logged_and_changes_nothing(tmp_path):
     idx = write_copy(remote, "2026-11-25", {"au": [CBA, APS]}, sha=True)
     (remote / "au.json").write_text(json.dumps({"fields": FIELDS, "rows": [CBA]}), encoding="utf-8")
     d = Directory(tmp_path / "c2", bundled=bundled, fetch=Remote(remote))
-    assert "sha256" in d.check()["error"] and idx["updated"] != d.index()["updated"]
+    assert "sha" in d.check()["error"] and idx["updated"] != d.index()["updated"]
     assert not (tmp_path / "c2" / "directory" / "index.json").exists()
     # an index in another shape
     (remote / "index.json").write_text("[]", encoding="utf-8")

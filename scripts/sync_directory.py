@@ -14,7 +14,6 @@ scripts/check.py and commit jobhunt/data/directory/.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 import urllib.request
@@ -24,7 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from jobhunt.directory import BUNDLED, REMOTE, valid_country, valid_index  # noqa: E402
+from jobhunt.directory import BUNDLED, REMOTE, matches_sha, sha_of, valid_country, valid_index, version  # noqa: E402
 
 BESIDE = ROOT.parent / "campus-employers"
 
@@ -58,8 +57,8 @@ def main(argv: list[str] | None = None) -> int:
         files = {}
         for c in index["countries"]:
             data = read(src, f"{c['code']}.json", a.download)
-            if c.get("sha256") and hashlib.sha256(data).hexdigest() != c["sha256"]:
-                raise ValueError(f"{c['code']}.json does not match its sha256")
+            if not matches_sha(data, sha_of(c)):
+                raise ValueError(f"{c['code']}.json does not match its sha")
             body = json.loads(data.decode("utf-8"))
             if not valid_country(body):
                 raise ValueError(f"{c['code']}.json is not in the expected shape")
@@ -74,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
         if old.name != "index.json" and old.stem not in files:
             old.unlink()
     (dest / "index.json").write_bytes(index_raw)
-    print(f"directory {index['updated']}: " + ", ".join(f"{c} {n}" for c, (_, n) in files.items()) + f" -> {dest}")
+    print(f"directory {version(index)}: " + ", ".join(f"{c} {n}" for c, (_, n) in files.items()) + f" -> {dest}")
     return 0
 
 

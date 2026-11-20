@@ -817,8 +817,9 @@ time. Now each kind of change is pushed by a **write recipe** (`autofill/recipe.
 - The open campus-employers database (its own public repository) ships with the app: `scripts/sync_directory.py`
   copies its compact per-country files (`docs/data/index.json`, `<cc>.json`) into `jobhunt/data/directory/`, so a
   fresh install has every employer offline. At most once a day, off the start and never waited for, the app reads
-  index.json on GitHub raw; when it is newer, the country files that changed (by `sha256` when the index gives
-  one, else all) go into `<data>/.cache/directory/`, and the newer copy is read. A failure goes to
+  index.json on GitHub raw; when it is newer (by its build time, `version`, else its day, `updated`: two copies
+  built the same day differ only by version), the country files whose `sha` differs from the file in hand (all
+  of them when the index gives none) go into `<data>/.cache/directory/`, and the newer copy is read. A failure goes to
   `update.log` there, nothing else (`jobhunt/directory.py`).
 - Thousands of employers would bury the few the user applies to, so the directory is a page of its own (Companies
   toolbar → 公司库), read-only, paged by the server 50 rows at a time, searched by name, alias, industry or city

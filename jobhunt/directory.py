@@ -3,7 +3,7 @@ kept up to date while it runs (2026-11-20).
 
 The database is its own public repository (github.com/RuiquanQiao/campus-employers). Its compact per-country files,
 `docs/data/<cc>.json` ({"fields": [...], "rows": [[...], ...]}) and `docs/data/index.json` ({"updated", "countries":
-[{code, employers, careers, system, sha256?}]}), are copied into jobhunt/data/directory/ by scripts/sync_directory.py,
+[{code, employers, careers, system, sha}], version}), are copied into jobhunt/data/directory/ by scripts/sync_directory.py,
 so a fresh install has every employer offline. Once a day at most, in the background, the app reads index.json on
 GitHub; when it is newer, the country files that changed go into the data folder's cache (<data>/.cache/directory/).
 The newer of the two copies is the one read, one country at a time.
@@ -42,6 +42,23 @@ def valid_index(v: Any) -> bool:
 def valid_country(v: Any) -> bool:
     return (isinstance(v, dict) and isinstance(v.get("fields"), list) and "name" in v["fields"]
             and isinstance(v.get("rows"), list) and all(isinstance(r, list) for r in v["rows"]))
+
+
+def version(idx: dict | None) -> str:
+    """Which copy is newer: the index's build time ("version", UTC, 2026-11-20T10:31:00Z) when it has one, else its
+    day ("updated"). Two copies built the same day differ only by their version (2026-11-20: a copy synced while
+    the Australian list was still being written said 2026-11-20 like the finished one, and was never replaced).
+    A day alone sorts before any build time of that day, after every one of the day before."""
+    return str((idx or {}).get("version") or (idx or {}).get("updated") or "")
+
+
+def sha_of(entry: dict) -> str:
+    """A country file's hash as its index gives it: "sha" (the first 12 hex of its sha256) or a whole "sha256"."""
+    return str(entry.get("sha") or entry.get("sha256") or "").lower()
+
+
+def matches_sha(data: bytes, sha: str) -> bool:
+    return not sha or hashlib.sha256(data).hexdigest().startswith(sha)
 
 
 def _read_json(p: Path) -> Any:
@@ -177,12 +194,12 @@ class Directory:
         with self.lock:
             if self._index is None:
                 b, c = self._indexes()
-                self._index = c if c and (not b or c["updated"] > b["updated"]) else b or {"updated": "", "countries": []}
+                self._index = c if c and (not b or version(c) > version(b)) else b or {"updated": "", "countries": []}
             return self._index
 
     def _file(self, code: str) -> Path | None:
         b, c = self._indexes()
-        use_cache = c and (not b or c["updated"] > b["updated"])
+        use_cache = c and (not b or version(c) > version(b))
         if use_cache and self.cache and (self.cache / f"{code}.json").exists():
             return self.cache / f"{code}.json"
         p = self.bundled / f"{code}.json"
@@ -282,17 +299,18 @@ class Directory:
             if not valid_index(remote):
                 raise ValueError("index.json is not in the expected shape")
             cur = self.index()
-            if remote["updated"] <= (cur.get("updated") or ""):
+            if version(remote) <= version(cur):
                 return {"checked": True, "updated": False}
             was = {c["code"]: c for c in cur.get("countries") or []}
             got: dict[str, bytes] = {}
             for c in remote["countries"]:
                 old = was.get(c["code"])
-                if old and c.get("sha256") and old.get("sha256") == c["sha256"] and self._file(c["code"]):
-                    continue   # this country's file is the one in hand
+                held = self._file(c["code"])
+                if old and sha_of(c) and held and matches_sha(held.read_bytes(), sha_of(c)):
+                    continue   # this country's file is the one in hand (checked by its bytes, not the old index)
                 data = self.fetch(self.remote + f"{c['code']}.json")
-                if c.get("sha256") and hashlib.sha256(data).hexdigest() != c["sha256"]:
-                    raise ValueError(f"{c['code']}.json does not match its sha256")
+                if not matches_sha(data, sha_of(c)):
+                    raise ValueError(f"{c['code']}.json does not match its sha")
                 if not valid_country(json.loads(data.decode("utf-8"))):
                     raise ValueError(f"{c['code']}.json is not in the expected shape")
                 got[c["code"]] = data

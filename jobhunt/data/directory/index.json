@@ -9,21 +9,21 @@
   },
   {
    "code": "au",
-   "employers": 750,
-   "careers": 0,
-   "system": 0
+   "employers": 1250,
+   "careers": 770,
+   "system": 209
   },
   {
    "code": "sg",
-   "employers": 333,
-   "careers": 0,
-   "system": 0
+   "employers": 588,
+   "careers": 367,
+   "system": 101
   },
   {
    "code": "hk",
-   "employers": 138,
-   "careers": 0,
-   "system": 0
+   "employers": 391,
+   "careers": 180,
+   "system": 45
   }
  ]
 }
