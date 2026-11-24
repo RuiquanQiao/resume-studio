@@ -1304,6 +1304,21 @@ def test_signed_out_claude_explains_how_to_sign_in(page, server, fake_claude):
     assert "Claude Code（命令行）未登录" in text and "/login" in text
     assert help_.locator("code:has-text('claude')").count() >= 1
 
+    # signing in is one click (a terminal window running `claude auth login`), and `/login` typed here does the
+    # same instead of reaching `claude -p` ("/login isn't available in this environment", 2026-11-24)
+    opened = []
+    page.route("**/api/agents/*/login", lambda route: (opened.append(route.request.url),
+                                                       route.fulfill(status=200, content_type="application/json", body='{"ok": true}')))
+    n_calls = len(calls(fake_claude))
+    help_.locator("button:has-text('在终端中登录 Claude Code')").click()
+    page.wait_for_selector(".toast:has-text('已打开终端窗口')")
+    page.fill("#chat-input", "/login")
+    page.keyboard.press("Enter")
+    page.wait_for_function("() => document.querySelector('#chat-input').value === ''")
+    page.wait_for_timeout(500)
+    assert len(opened) == 2 and opened[0].endswith("/api/agents/claude/login")
+    assert len(calls(fake_claude)) == n_calls   # nothing went to the agent
+
 
 def test_a_dialog_that_destroys_opens_on_cancel_and_a_stray_enter_keeps_things(page):
     """Every danger dialog used to focus its Delete button, and Enter anywhere confirmed it."""

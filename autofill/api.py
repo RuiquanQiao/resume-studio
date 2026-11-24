@@ -242,6 +242,11 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         site = site_of(req)
         st = fill.load(site.id)
         url = str((st.get("current") or {}).get("url") or "") or site.home
+        if site.plain_window:
+            # a site whose security check refuses a controlled browser: a plain window on the same profile (signed in
+            # as before), for the user to look around in; the window's own work closes it first (leave_browse)
+            bro(lambda: browser.sign_in(url if site.owns(url) else site.home, purpose="browse"))
+            return {"url": browser.signin_url, "signed_out": bool(st.get("signed_out")), "browser": browser.status()}
         bro(lambda: browser.ensure(window=True))           # opened where the user sees it, not first without a window
         here = bro(lambda: browser.open(url if site.owns(url) else site.home))
         bro(browser.front)
@@ -373,6 +378,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
     def check(req: Request):
         """Check for updates: the route reads the site when one is recorded, else Claude reads it and records one."""
         site, b = site_of(req), body(req)
+        bro(browser.leave_browse)   # the user asked for it: a window opened only to look around closes first
         if fill.load(site.id).get("route"):
             return {"mode": "route", **start_check(site, wait=bool(b.get("wait")))}
         return {"mode": "claude", "chat": learn_chat(site, b)}
@@ -381,6 +387,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
     def learn(req: Request):
         """Claude reads the site and records the route anew (first time, or after the site changed)."""
         site, b = site_of(req), body(req)
+        bro(browser.leave_browse)
         return {"mode": "claude", "chat": learn_chat(site, b, str(fill.load(site.id).get("route_broken") or ""))}
 
     # ---- push the ticked changes: by recorded recipes (no AI), else the AI records them as it goes ----------
@@ -482,6 +489,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
         items = [i for i in view["pending"] if (i["id"] in only if isinstance(only, list) else i["checked"])]
         if not items:
             raise HttpError(409, t("Nothing is ticked"))
+        bro(browser.leave_browse)   # the user asked for it: a window opened only to look around closes first
         over = [i for i in items if any(f.get("over") for f in i["fields"])]
         if over:
             raise HttpError(409, t("Shorten the text that is over {site}'s limit first: {items}", site=site.name,
@@ -1013,6 +1021,7 @@ def register(app: App, studio: Studio, chats: ChatRunner, browser: ManagedBrowse
 
     @app.route("POST", "/api/browser/start")
     def browser_start(req: Request):
+        bro(browser.leave_browse)
         bro(browser.ensure)
         bro(browser.front)
         browser.claim()

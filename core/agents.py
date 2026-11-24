@@ -66,6 +66,9 @@ class Agent:
     login: str = ""      # how to sign in (markdown, English, goes through t())
     fork: bool = False   # a chat can go on from the middle (fork / rewind at a message)
     images: bool = True
+    # what signs it in, run in a terminal window of its own (`claude auth login`); None: there is no command for it
+    # (a key in a file), [] : the tool itself, interactive, where the user signs in by its own menu
+    login_args: list[str] | None = None
 
     def command(self) -> list[str] | None:
         override = os.environ.get(f"STUDIO_{self.id.upper()}_CMD")
@@ -125,13 +128,15 @@ _SIGNED_IN: dict[str, Callable[[], bool]] = {
 
 AGENTS: list[Agent] = [
     Agent("claude", "Claude Code", "Claude", "claude", "claude", install="npm install -g @anthropic-ai/claude-code",
-          login=_t("Open a terminal, run `claude`, type `/login` and finish signing in in the browser."), fork=True),
+          login=_t("Open a terminal, run `claude`, type `/login` and finish signing in in the browser."), fork=True,
+          login_args=["auth", "login"]),
     Agent("codex", "Codex", "Codex", "codex", "codex", args=["app-server"], install="npm install -g @openai/codex",
-          login=_t("Open a terminal and run `codex login` (a ChatGPT account or an API key)."), fork=True),
+          login=_t("Open a terminal and run `codex login` (a ChatGPT account or an API key)."), fork=True,
+          login_args=["login"]),
     Agent("qwen", "Qwen Code", "Qwen", "qwen", "acp", args=["--acp"], install="npm install -g @qwen-code/qwen-code",
-          login=_t("Open a terminal, run `qwen` and pick how to sign in (`/auth`).")),
+          login=_t("Open a terminal, run `qwen` and pick how to sign in (`/auth`)."), login_args=[]),
     Agent("pi", "Pi", "Pi", "pi", "pi", args=["--mode", "rpc"], install="npm install -g @earendil-works/pi-coding-agent",
-          login=_t("Open a terminal, run `pi` and type `/login` (a subscription or an API key).")),
+          login=_t("Open a terminal, run `pi` and type `/login` (a subscription or an API key)."), login_args=[]),
     Agent("dsh", "DeepSeek Harness", "DeepSeek", "dsh", "acp", args=["--profile", "acp"], install="npm install -g @deepseek-ai/dsh",
           login=_t("Set `DEEPSEEK_API_KEY` in your environment, or put it in the `.env` file in DeepSeek Harness's home folder (`DSH_HOME`).")),
 ]
@@ -150,7 +155,34 @@ def valid(agent_id: Any) -> bool:
 def public(agent: Agent) -> dict:
     return {"id": agent.id, "name": agent.name, "short": agent.short, "exe": agent.exe, "installed": agent.installed(),
             "signed_in": agent.signed_in(), "install": agent.install, "login": t(agent.login) if agent.login else "",
-            "fork": agent.fork, "protocol": agent.protocol}
+            "fork": agent.fork, "protocol": agent.protocol, "can_login": agent.login_args is not None}
+
+
+def login_command(agent: Agent) -> list[str]:
+    """The command line that opens a terminal window of its own running the agent's sign-in (`claude auth login`):
+    the chat runs the agent in its machine mode, where `/login` doesn't exist, and the sign-in needs a terminal (a
+    browser to finish in, a menu to pick from). PowerShell with -NoExit, so the window stays to show how it went."""
+    if agent.login_args is None:
+        raise ValueError(f"{agent.name} has no sign-in command")
+    cmd = agent.command()
+    if not cmd:
+        raise FileNotFoundError(agent.exe)
+    if os.name != "nt":
+        return [*cmd, *agent.login_args]
+    quote = lambda s: "'" + str(s).replace("'", "''") + "'"   # noqa: E731  PowerShell's literal string
+    line = "& " + " ".join(quote(p) for p in [*cmd, *agent.login_args])
+    return ["powershell.exe", "-NoLogo", "-NoProfile", "-NoExit", "-Command", line]
+
+
+def open_login(agent: Agent) -> list[str]:
+    """Open that terminal window; the command it runs. Nothing waits for it: the next message shows the sign-in."""
+    import subprocess
+    args = login_command(agent)
+    if os.name == "nt":
+        subprocess.Popen(args, creationflags=subprocess.CREATE_NEW_CONSOLE, cwd=str(HOME))
+    else:   # no terminal of our own to open there: run it where the app's own output goes
+        subprocess.Popen(args, cwd=str(HOME), creationflags=0)
+    return args
 
 
 class AgentInfo:

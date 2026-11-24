@@ -291,6 +291,7 @@ body[data-chat="off"] .workspace { grid-template-columns: minmax(600px, 1fr) 5px
 .msg-help { margin-top: 6px; padding: 8px 12px; border-radius: var(--r); background: var(--warn-soft); font-size: var(--fs-meta); }
 .msg-help .mh-title { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--warn); margin-bottom: 4px; }
 .msg-help .md p { margin: 4px 0 0; }
+.msg-help .mh-acts { display: flex; margin-top: 8px; }
 .msg-note { font-size: var(--fs-meta); color: var(--text-3); }
 .chat-welcome { margin: auto 0; padding: 12px 4px; text-align: center; color: var(--text-2); }
 .chat-welcome .t { font-size: var(--fs-head); font-weight: 600; color: var(--text); margin-bottom: 4px; }

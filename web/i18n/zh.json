@@ -2563,5 +2563,12 @@
  "{company} was added to your companies": "已将{company}添加至公司列表",
  "Add “{name}” as another company?": "是否将“{name}”作为另一家公司添加？",
  "Your companies already have a similar name: {names}.": "公司列表中已有名称相近的公司：{names}。",
- "added from the employer directory": "从公司库添加"
+ "added from the employer directory": "从公司库添加",
+ "A terminal window has opened for signing in to {tool}. After signing in, send the message here again.": "已打开终端窗口，用于登录 {tool}。登录完成后，请在此处重新发送消息。",
+ "Close window": "关闭窗口",
+ "Sign in to the command line tool in a new terminal window": "在新的终端窗口中登录命令行工具",
+ "Sign in to {tool} in a terminal": "在终端中登录 {tool}",
+ "The terminal window could not be opened: {error}": "无法打开终端窗口：{error}",
+ "{site} is open in an ordinary browser window that Resume Studio doesn't control, so the site's security check lets it through. Checking for updates or pushing changes here closes it first.": "{site} 已在普通浏览器窗口中打开。Resume Studio 不控制此窗口，因此可通过该网站的安全校验。在此处检查更新或上传修改时，将先关闭此窗口。",
+ "{tool} has no sign-in command": "{tool} 无登录命令"
 }

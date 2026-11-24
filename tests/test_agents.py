@@ -25,6 +25,47 @@ def test_an_agents_error_output_reads_as_a_terminal_shows_it(monkeypatch):
     assert stderr_text("错误：已用完".encode("utf-8")) == "错误：已用完"
 
 
+def test_login_opens_the_agents_own_sign_in_in_a_terminal_window(monkeypatch):
+    """`/login` typed in the chat reached `claude -p`, which answered "/login isn't available in this environment"
+    (2026-11-24): the sign-in now opens in a terminal window of its own (`claude auth login`), one that stays open."""
+    import subprocess
+    monkeypatch.setattr(agents.Agent, "command", lambda self: [r"C:\Users\o'brien\npm\claude.CMD"])
+    started = []
+    monkeypatch.setattr(subprocess, "Popen", lambda args, **kw: started.append((args, kw)))
+    claude = agents.get("claude")
+    args = agents.open_login(claude)
+    assert started and started[0][0] == args
+    if os.name == "nt":
+        assert args[0] == "powershell.exe" and "-NoExit" in args
+        # an apostrophe in the path is doubled inside PowerShell's literal string
+        assert args[-1] == r"& 'C:\Users\o''brien\npm\claude.CMD' 'auth' 'login'"
+        assert started[0][1]["creationflags"] & subprocess.CREATE_NEW_CONSOLE
+    else:
+        assert args == [r"C:\Users\o'brien\npm\claude.CMD", "auth", "login"]
+    # Codex signs in by `codex login`; Pi and Qwen Code by their own menu, so the tool itself opens
+    assert agents.login_command(agents.get("codex"))[-1].endswith("'login'" if os.name == "nt" else "login")
+    assert not agents.login_command(agents.get("pi"))[-1].endswith("'login'")
+    # a key in a file signs DeepSeek Harness in: no terminal for it
+    with pytest.raises(ValueError):
+        agents.login_command(agents.get("dsh"))
+    assert agents.public(claude)["can_login"] and not agents.public(agents.get("dsh"))["can_login"]
+
+
+def test_login_endpoint_opens_the_terminal_and_says_why_it_cannot(server, monkeypatch):
+    opened = []
+    monkeypatch.setattr(agents, "open_login", lambda a: opened.append(a.id) or ["x"])
+    assert server.req("POST", "/api/agents/claude/login", {}) == (200, {"ok": True})
+    assert opened == ["claude"]
+    st, r = server.req("POST", "/api/agents/dsh/login", {})   # no command signs it in: how to, in words
+    assert st == 409 and "DEEPSEEK_API_KEY" in str(r) and opened == ["claude"]
+
+    def missing(a):
+        raise FileNotFoundError(a.exe)
+    monkeypatch.setattr(agents, "open_login", missing)
+    st, r = server.req("POST", "/api/agents/codex/login", {})
+    assert st == 404 and "codex" in str(r)
+
+
 def test_codex_uses_provider_turn_start_time():
     from types import SimpleNamespace
     from core.chat import Turn

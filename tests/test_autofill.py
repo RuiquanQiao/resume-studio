@@ -859,6 +859,38 @@ def test_sign_in_mode_opens_the_same_profile_without_remote_control(live, data_f
     live.req("POST", "/api/browser/stop", {})
 
 
+def test_open_site_shows_a_site_that_refuses_a_driven_browser_in_a_plain_window(live, data_file, risk_site, monkeypatch):
+    """BOSS直聘 (2026-11-24): "打开 BOSS直聘" opened it in the controlled browser, and its 职位 page went to
+    /web/passport/zp/security.html and back, over and over. A site marked plain_window opens as an ordinary browser
+    on the same profile; checking for updates closes that window first, and closing it never reopens the page
+    under control."""
+    import dataclasses
+    base, seen = risk_site
+    page = base + "/login/risk.html"
+    assert PRESETS["boss"].plain_window and not PRESETS["linkedin"].plain_window
+    monkeypatch.setitem(PRESETS, "linkedin", dataclasses.replace(PRESETS["linkedin"], home=page, domains=["127.0.0.1"],
+                                                               plain_window=True))
+    st, r = live.req("POST", "/api/autofill/linkedin/open", {})
+    assert st == 200 and r["browser"]["state"] == "signin" and r["browser"]["signin_purpose"] == "browse", r
+    wait_for(lambda: "webdriver=false" in seen, "the plain page")   # the site sees an ordinary browser
+    assert "webdriver=true" not in seen
+    # the chat's AI is refused with what to do (it never closes the user's window itself)
+    res = cli(data_file, "snapshot")
+    assert res.returncode != 0 and "plain browser window" in out(res)
+    # "Close window": off, and the page isn't opened again in the controlled browser
+    seen.clear()
+    st = live.req("POST", "/api/browser/sign-in/done", {})[1]
+    assert st["state"] == "off" and st["signin_purpose"] == "", st
+    time.sleep(1.0)
+    assert seen == []
+    # opened again, then the window's own work on the site (check for updates): the plain window closes first
+    live.req("POST", "/api/autofill/linkedin/open", {})
+    wait_for(lambda: "webdriver=false" in seen, "the plain page again")
+    live.req("POST", "/api/autofill/linkedin/check", {})
+    assert live.req("GET", "/api/browser")[1]["state"] != "signin"
+    live.req("POST", "/api/browser/stop", {})
+
+
 FAKE_ROUTE_SCRIPT = """async (h) => ({
   basics: { headline: h.text(h.one('#headline')) },
   items: [

@@ -2563,5 +2563,12 @@
  "{company} was added to your companies": "{company}을(를) 회사 목록에 추가했습니다",
  "Add “{name}” as another company?": "'{name}'을(를) 다른 회사로 추가하시겠습니까?",
  "Your companies already have a similar name: {names}.": "회사 목록에 이름이 비슷한 회사가 있습니다: {names}.",
- "added from the employer directory": "기업 데이터베이스에서 추가"
+ "added from the employer directory": "기업 데이터베이스에서 추가",
+ "A terminal window has opened for signing in to {tool}. After signing in, send the message here again.": "{tool}에 로그인하기 위한 터미널 창을 열었습니다. 로그인한 후 여기에서 메시지를 다시 보내세요.",
+ "Close window": "창 닫기",
+ "Sign in to the command line tool in a new terminal window": "새 터미널 창에서 명령줄 도구에 로그인",
+ "Sign in to {tool} in a terminal": "터미널에서 {tool}에 로그인",
+ "The terminal window could not be opened: {error}": "터미널 창을 열 수 없습니다: {error}",
+ "{site} is open in an ordinary browser window that Resume Studio doesn't control, so the site's security check lets it through. Checking for updates or pushing changes here closes it first.": "{site}이(가) Resume Studio가 제어하지 않는 일반 브라우저 창에서 열려 있어 사이트의 보안 검사를 통과합니다. 여기에서 업데이트를 확인하거나 변경 사항을 올리면 이 창이 먼저 닫힙니다.",
+ "{tool} has no sign-in command": "{tool}에는 로그인 명령이 없습니다"
 }

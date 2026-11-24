@@ -251,6 +251,21 @@ def register(app: App, studio: Studio, chats: ChatRunner, tracker: EvidenceTrack
                 "limits": limits, "modes": mode_list(agent, data),
                 "defaults": (prefs.load().get("chat_defaults") if prefs else None)}
 
+    @app.route("POST", "/api/agents/{aid}/login")
+    def agent_login(req: Request):
+        """`/login` in the chat, or the sign-in button on a signed-out reply: the agent's own sign-in in a terminal
+        window of its own (the chat runs the agent in its machine mode, where `/login` doesn't exist)."""
+        agent = agents.get(req.params["aid"])
+        if agent.login_args is None:
+            raise HttpError(409, t(agent.login) if agent.login else t("{tool} has no sign-in command", tool=agent.name))
+        try:
+            agents.open_login(agent)
+        except FileNotFoundError:
+            raise HttpError(404, t("The {cmd} command was not found", cmd=agent.exe))
+        except OSError as e:
+            raise HttpError(500, t("The terminal window could not be opened: {error}", error=str(e)))
+        return {"ok": True}
+
     @app.route("PUT", "/api/chat-defaults")
     def set_chat_defaults(req: Request):
         """What a new chat starts with: the last agent / model / effort / mode picked in this app. Kept in

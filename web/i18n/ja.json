@@ -2563,5 +2563,12 @@
  "{company} was added to your companies": "{company}を会社一覧に追加しました",
  "Add “{name}” as another company?": "「{name}」を別の会社として追加しますか？",
  "Your companies already have a similar name: {names}.": "会社一覧に似た名前の会社があります：{names}。",
- "added from the employer directory": "企業データベースから追加"
+ "added from the employer directory": "企業データベースから追加",
+ "A terminal window has opened for signing in to {tool}. After signing in, send the message here again.": "{tool} にサインインするためのターミナルウィンドウを開きました。サインイン後、ここでメッセージを再送信してください。",
+ "Close window": "ウィンドウを閉じる",
+ "Sign in to the command line tool in a new terminal window": "新しいターミナルウィンドウでコマンドラインツールにサインイン",
+ "Sign in to {tool} in a terminal": "ターミナルで {tool} にサインイン",
+ "The terminal window could not be opened: {error}": "ターミナルウィンドウを開けませんでした：{error}",
+ "{site} is open in an ordinary browser window that Resume Studio doesn't control, so the site's security check lets it through. Checking for updates or pushing changes here closes it first.": "{site} は Resume Studio が制御しない通常のブラウザーウィンドウで開かれているため、サイトのセキュリティチェックを通過できます。ここで更新の確認や変更のアップロードを行うと、先にこのウィンドウが閉じられます。",
+ "{tool} has no sign-in command": "{tool} にはサインイン用のコマンドがありません"
 }

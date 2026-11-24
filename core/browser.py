@@ -315,6 +315,10 @@ class ManagedBrowser:
         self.state = "off"                    # off | starting | running | error | signin
         self.error = ""
         self.signin_url = ""                  # sign-in mode: the page it opened at
+        # what the plain window is for: "signin" (the user signs in, then switches back to the controlled browser at
+        # that page) or "browse" (a site that refuses a controlled browser, opened for the user to look around in;
+        # closed when work needs the browser, and never opened again at that page under control)
+        self.signin_purpose = "signin"
         self.returning = False                # switching back from sign-in mode (end_sign_in) right now
         # `lock` guards the bookkeeping only (the tabs, which work has which, starting and stopping): held for
         # moments. What a piece of work does on its page holds that work's own lock (`_page`), so two chats, a
@@ -464,6 +468,7 @@ class ManagedBrowser:
         return {"state": self.state, "error": self.error, "browser": NAMES.get(self.kind or (found or ("", ""))[0], ""),
                 "found": bool(found), "url": page.get("url", ""), "title": page.get("title", ""),
                 "tabs": sum(1 for p in self.pages.values() if p.get("type") == "page"), "signin_url": self.signin_url,
+                "signin_purpose": self.signin_purpose if self.state == "signin" else "",
                 "owner": self.owner, "closing": self.closing, "shown": self.shown, "working": self.working}
 
     @property
@@ -505,6 +510,10 @@ class ManagedBrowser:
                     self._reopen_shown()
                     return False
                 return False
+            if self.state == "signin" and self.signin_purpose == "browse":
+                raise BrowserError("The user is looking around a site in a plain browser window, without Resume "
+                                   "Studio's control (the site refuses a controlled browser). Resume Studio's browser "
+                                   "opens again once they close that window, or choose \"Close window\" in Resume Studio.")
             if self.state == "signin":
                 raise BrowserError("The browser is open for signing in, without Resume Studio's control. "
                                    "When the sign-in is done, switch back in the window (or close that browser window).")
@@ -711,10 +720,27 @@ class ManagedBrowser:
     # as a plain browser, with no debugging port, so the user signs in like anywhere else. The
     # sign-in stays in the profile; switching back closes that window normally (so it saves its
     # cookies) and the next command opens the controlled browser again.
-    def sign_in(self, url: str) -> dict:
+    def sign_in(self, url: str, purpose: str = "signin") -> dict:
+        """`purpose` "browse": the same plain window, for a site that refuses a controlled browser (see
+        `signin_purpose`). Opening one while a plain window is up hands the address to it (a new tab there)."""
         if not url.startswith(("http://", "https://")):
             raise BrowserError("only http(s) addresses can be opened")
         with self.lock:
+            # looking around never cuts off a scan's read or a chat's command on the controlled browser (a sign-in
+            # may: the user's "No code arriving?" comes while the AI waits for that very sign-in)
+            if purpose == "browse" and self.working:
+                raise BrowserError("Resume Studio is using its browser right now. Try again when that work is done.")
+            if self.state == "signin" and purpose == "browse" == self.signin_purpose and self.kind and not self.headless \
+                    and profile_holder(self.profile_dir(self.kind)):
+                found = find_browser(self.prefer)
+                if found and found[0] == self.kind:
+                    # the running browser on this profile takes the address and opens it in its window
+                    subprocess.Popen([found[1], f"--user-data-dir={self.profile_dir(self.kind)}", url],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                                     creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0)
+                    self.signin_url = url
+                    self._changed()
+                    return self.status()
             if self.state == "signin":
                 self._close_signin()
             self.stop()
@@ -745,6 +771,7 @@ class ManagedBrowser:
             with open(self.log, "ab") as logf:
                 proc = subprocess.Popen(args, stdout=logf, stderr=logf, stdin=subprocess.DEVNULL, creationflags=flags)
             self.proc, self.state, self.error, self.signin_url = proc, "signin", "", url
+            self.signin_purpose = purpose if purpose in ("signin", "browse") else "signin"
             threading.Thread(target=self._watch_signin, args=(proc,), daemon=True).start()
             self._changed()
             return self.status()
@@ -772,7 +799,8 @@ class ManagedBrowser:
         self.returning = True
         try:
             with self.lock:
-                url = self.signin_url
+                # a site looked around in a plain window refuses the controlled browser: that page isn't opened again
+                url = self.signin_url if self.signin_purpose != "browse" else ""
                 if self.state == "signin":
                     self._close_signin()
             if url:
@@ -785,6 +813,20 @@ class ManagedBrowser:
             return self.status()
         finally:
             self.returning = False
+
+    def leave_browse(self) -> bool:
+        """The user asked, from the window, for work on the browser (check for updates, push changes, show it): a
+        plain window opened only to look around closes first (a normal close, so its cookies are kept). A sign-in
+        window stays: the user may be halfway through a code. True when one was closed."""
+        with self.lock:
+            if self.state != "signin" or self.signin_purpose != "browse":
+                return False
+            self.returning = True
+            try:
+                self._close_signin()
+            finally:
+                self.returning = False
+            return True
 
     def _close_signin(self) -> None:
         profile = self.profile_dir(self.kind)

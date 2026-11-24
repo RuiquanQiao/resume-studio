@@ -52,6 +52,10 @@ class Site:
     # what a recorded write recipe may never press here, on top of NEVER_PRESS (regular expressions, matched against
     # the control's name): the guide says it to Claude in words, this holds the replay to it
     never_press: list[str] = field(default_factory=list)
+    # "Open {site}" shows it in a plain browser window (the same profile, no remote control) instead of Resume Studio's
+    # controlled one: the site's security check sees a driven browser and never lets it through (BOSS直聘, 2026-11-24:
+    # 职位 went to /web/passport/zp/security.html and back, over and over)
+    plain_window: bool = False
 
     def forbids(self, name: str) -> str:
         """The rule a control's name breaks ("" for none): applying, messaging, a job-seeking status, paying."""
@@ -65,7 +69,7 @@ class Site:
         return {"id": self.id, "name": self.name, "home": self.home, "lang": self.lang, "sections": self.sections,
                 "basics": self.basics, "limits": self.limits, "preset": self.preset, "notes": self.notes,
                 "learned": self.learned, "kind": self.kind, "company": self.company, "system": self.system,
-                "learned_from": self.learned_from, "app_store": self.app_store,
+                "learned_from": self.learned_from, "app_store": self.app_store, "plain_window": self.plain_window,
                 "fields": {s: self.fields(s) for s in self.sections if s in FIELDS}}
 
     def owns(self, url: str) -> bool:
@@ -105,7 +109,7 @@ PRESETS: dict[str, Site] = {
     "boss": Site(
         id="boss", name="BOSS直聘", preset="boss", home="https://www.zhipin.com/", domains=["zhipin.com"], lang="zh",
         sections=["experience", "projects", "education"], basics=["about"],
-        login_paths=["/web/user"], app_store="cn:887314963",
+        login_paths=["/web/user"], app_store="cn:887314963", plain_window=True,
         never_press=["沟通", "打招呼", "求职状态", "在职-", "离职-", "到岗"],
         guide="""\
 - The editable online resume (在线简历 / 我的简历) is reached from the signed-in job seeker's menu

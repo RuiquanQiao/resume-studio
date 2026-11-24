@@ -43,6 +43,7 @@ const LOCAL_COMMANDS = [
   { name: "permissions", desc: t("Switch permission mode (or press Shift+Tab)"), hint: "" },
   { name: "clear", desc: t("Start a new chat"), hint: "" },
   { name: "rename", desc: t("Rename this chat"), hint: t("<name>") },
+  { name: "login", desc: t("Sign in to the command line tool in a new terminal window"), hint: "" },
 ];
 // Claude Code's most used built-ins, for languages other than English (the rest keep Claude Code's own description)
 const BUILTIN_DESC = {
@@ -53,7 +54,7 @@ const BUILTIN_DESC = {
 };
 const commandDesc = (c) => (I18N.lang !== "en" && BUILTIN_DESC[c.name] ? t(BUILTIN_DESC[c.name]) : c.desc);
 // commands that only make sense in the terminal's full-screen UI
-const TERMINAL_ONLY = new Set(["doctor", "color", "reload-plugins", "config", "theme", "login", "logout", "terminal-setup",
+const TERMINAL_ONLY = new Set(["doctor", "color", "reload-plugins", "config", "theme", "logout", "terminal-setup",
   "vim", "exit", "quit", "ide", "keybindings", "statusline", "hooks", "install-github-app", "heapdump", "upgrade", "resume"]);
 
 const askEls = new Map();   // ask id -> its card, reused while the reply streams so typed answers survive
@@ -916,12 +917,20 @@ function loginHelpEl() {
     return h("div", { class: "msg-help" },
       h("div", { class: "mh-title" }, icon("alert"), t("{tool} (the command line) isn't signed in", { tool: a.name })),
       h("div", { class: "md", html: md(t("This chat runs the `{cmd}` command, which keeps its own sign-in. It isn't signed in, or its sign-in has expired, so {agent} can't answer until it signs in again.", { cmd: a.exe, agent: a.short })) }),
-      a.login && h("div", { class: "md", html: md(t("To fix it: {how} Then send your message here again.", { how: a.login })) }));
+      a.login && h("div", { class: "md", html: md(t("To fix it: {how} Then send your message here again.", { how: a.login })) }),
+      loginButton(a));
   }
   return h("div", { class: "msg-help" },
     h("div", { class: "mh-title" }, icon("alert"), t("Claude Code (the command line) isn't signed in")),
     h("div", { class: "md", html: md(t("This chat runs the `claude` command, which signs in on its own, separately from the Claude app. Its sign-in has expired (for example after switching accounts or not using it for a while), so Claude can't answer until it signs in again.")) }),
-    h("div", { class: "md", html: md(t("To fix it: open a terminal, run `claude`, type `/login` and finish signing in in the browser. Then send your message here again.")) }));
+    h("div", { class: "md", html: md(t("To fix it: open a terminal, run `claude`, type `/login` and finish signing in in the browser. Then send your message here again.")) }),
+    loginButton(a));
+}
+
+function loginButton(a) {
+  if (!a.can_login) return null;
+  return h("div", { class: "mh-acts" },
+    h("button", { class: "btn sm primary", onclick: (e) => openAgentLogin(e.currentTarget) }, icon("external"), t("Sign in to {tool} in a terminal", { tool: a.name })));
 }
 
 const statusEl = (status) => status === "running" ? h("span", { class: "st running" }) : status === "error" ? h("span", { class: "st error" }, icon("x")) : h("span", { class: "st done" }, icon("check"));
@@ -1498,7 +1507,21 @@ function runLocal(text) {
   if (name === "permissions" || name === "mode") { openModeMenu(); return true; }
   if (name === "clear" || name === "new") { newChat(); return true; }
   if (name === "rename") { renameChat(a); return true; }
+  if (name === "login") { openAgentLogin(); return true; }
   return false;
+}
+
+// The chat runs the agent in its machine mode, where `/login` doesn't exist: its own sign-in opens in a terminal
+// window of its own (`claude auth login`), and the next message here uses it.
+async function openAgentLogin(btn) {
+  const a = agentOf();
+  if (!a.can_login) { toast(a.login || t("{tool} has no sign-in command", { tool: a.name }), { ms: 9000 }); return; }
+  if (btn) btn.disabled = true;
+  try {
+    await api("POST", `/api/agents/${encodeURIComponent(a.id)}/login`, {});
+    toast(t("A terminal window has opened for signing in to {tool}. After signing in, send the message here again.", { tool: a.name }), { ms: 9000 });
+  } catch (e) { toast(e.message, { ms: 9000 }); }
+  if (btn) btn.disabled = false;
 }
 
 // ---------------------------------------------------------------- sending

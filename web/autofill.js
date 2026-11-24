@@ -151,6 +151,7 @@ async function openSite() {
   try {
     const r = await api("POST", `/api/autofill/${F.site}/open`, {});
     F.browser = r.browser;
+    paintSignin();
     if (r.signed_out) toast(t("Sign in to {site} in the browser window; Resume Studio's browser keeps you signed in.", { site: fillSite().name }), { ms: 7000 });
   } catch (e) { toast(e.message, { ms: 7000 }); }
   loadFillSite();
@@ -261,6 +262,13 @@ function paintSignin() {
   let where = b.signin_url || "";
   try { where = new URL(where).hostname.replace(/^www\./, ""); } catch (e) { /* keep it as it is */ }
   el.classList.remove("hidden");
+  if (b.signin_purpose === "browse") {   // a site that refuses a controlled browser, opened to look around in
+    el.replaceChildren(icon("external"),
+      h("span", { class: "nb-text" }, t("{site} is open in an ordinary browser window that Resume Studio doesn't control, so the site's security check lets it through. Checking for updates or pushing changes here closes it first.", { site: where })),
+      h("span", { class: "spacer" }),
+      h("button", { class: "btn sm", id: "signin-done", onclick: (e) => signedIn(e.currentTarget) }, icon("x"), t("Close window")));
+    return;
+  }
   el.replaceChildren(icon("user"),
     h("span", { class: "nb-text" }, t("Sign in to {site} in the browser window that just opened. Resume Studio isn't controlling it, so the site sees an ordinary browser.", { site: where })),
     h("span", { class: "spacer" }),

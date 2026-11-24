@@ -2767,5 +2767,12 @@
  "{company} was added to your companies": "{company} a été ajoutée à vos entreprises",
  "Add “{name}” as another company?": "Ajouter « {name} » comme une autre entreprise ?",
  "Your companies already have a similar name: {names}.": "Vos entreprises comportent déjà un nom proche : {names}.",
- "added from the employer directory": "ajoutée depuis l'annuaire des entreprises"
+ "added from the employer directory": "ajoutée depuis l'annuaire des entreprises",
+ "A terminal window has opened for signing in to {tool}. After signing in, send the message here again.": "Une fenêtre de terminal s'est ouverte pour vous connecter à {tool}. Une fois connecté, renvoyez le message ici.",
+ "Close window": "Fermer la fenêtre",
+ "Sign in to the command line tool in a new terminal window": "Se connecter à l'outil en ligne de commande dans une nouvelle fenêtre de terminal",
+ "Sign in to {tool} in a terminal": "Se connecter à {tool} dans un terminal",
+ "The terminal window could not be opened: {error}": "Impossible d'ouvrir la fenêtre de terminal : {error}",
+ "{site} is open in an ordinary browser window that Resume Studio doesn't control, so the site's security check lets it through. Checking for updates or pushing changes here closes it first.": "{site} est ouvert dans une fenêtre de navigateur ordinaire que Resume Studio ne contrôle pas : la vérification de sécurité du site la laisse donc passer. Rechercher des mises à jour ou envoyer des modifications ici la ferme d'abord.",
+ "{tool} has no sign-in command": "{tool} n'a pas de commande de connexion"
 }
