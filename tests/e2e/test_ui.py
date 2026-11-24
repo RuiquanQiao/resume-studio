@@ -3624,6 +3624,13 @@ def test_every_hunt_ai_button_checks_its_own_result(page_all):
     pg.evaluate("() => AI_WORK.clear()")
     out = pg.evaluate(AI_CHECK, {"run": "askFill([{id: 'C92', name: '星河'}])", "data": {"companies": [full], "applications": []}})
     assert not out["warn"] and out["say"] == "已填写完毕，每项均附出处，岗位已导入：星河", out
+    # 连尚网络 (2026-11-24): a site under another name, with nothing said of whose it is, is not done; and the AI is
+    # told where its proof goes (`no-list`, an owner), the only places this check can see it
+    odd = {**full, "postings": {"needs": "", "unrouted": [], "open": 12, "owner_missing": ["https://cn.wifi.example/jobList.html"]}}
+    pg.evaluate("() => AI_WORK.clear()")
+    out = pg.evaluate(AI_CHECK, {"run": "askFill([{id: 'C92', name: '星河'}])", "data": {"companies": [odd], "applications": []}})
+    assert out["warn"] and out["say"] == "星河：cn.wifi.example/jobList.html 与公司官网不在同一域名，尚未说明其运营方", out
+    assert all("hunt.py no-list" in m and "owner_source" in m for m in out["sent"][1:]), out["sent"]
     # the chat ended while its scan still ran (货拉拉, 2026-11-10): judged then, it had no "can't read" yet and passed.
     # Now the button keeps spinning, and the work is judged once the scan ends, so the site it can't read goes back
     pg.evaluate("() => AI_WORK.clear()")

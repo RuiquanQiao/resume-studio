@@ -44,7 +44,7 @@ from core.i18n import t
 
 from . import alitalent, beisen, feishu, hotjob, iguopin, patience, progress, replay, report, systems
 from .postings import Postings
-from .store import Hunt, site_host, site_key
+from .store import Hunt, no_list_on, site_host, site_key
 
 BRIDGE = Path(__file__).resolve().parent.parent / "jobs" / "co_scan.mjs"
 PROVIDERS = BRIDGE.parent / "vendor" / "career-ops"   # career-ops' providers, copied in (MIT)
@@ -332,7 +332,9 @@ class Scanner:
         for s in sites:
             prov = self._providers.get(self.list_of(s))
             # "unreached": asked whether a system reads it and the site didn't answer: read next scan, never the AI's
+            # "none": the AI showed it lists no roles (Hunt.mark_no_list): nothing to read, nothing to learn
             out.append({**s, "how": prov or ("route" if self.covers(route, s["url"])
+                                             else "none" if no_list_on(s)
                                              else "unreached" if self.list_of(s) in self._unreached else "claude")})
         return out
 
@@ -431,8 +433,8 @@ class Scanner:
         company whose unscannable sites are all gone no longer needs the AI."""
         st = dict(self.postings.scan_state(c["id"], scans))
         was = st.get("unrouted") or []
-        if was:
-            now = {s["url"] for s in self.sites_of(c)}
+        if was:   # a site shown to list no roles has nothing left to learn
+            now = {s["url"] for s in self.sites_of(c) if not no_list_on(s)}
             st["unrouted"] = [u for u in was if u in now]
             if not st["unrouted"] and st.get("needs") == "claude":
                 st["needs"] = ""
@@ -457,7 +459,8 @@ class Scanner:
     def site_status(self, c: dict) -> dict[str, str]:
         """Whether each site is scanned automatically, for the window to say on its row, from what is known without
         asking anything: "api" (a provider reads it), "route" (a recorded route reads it), "no" (a scan can't read
-        it: the AI has to learn it), "" (not checked yet: no scan has looked at it)."""
+        it: the AI has to learn it), "none" (the AI showed it lists no roles), "" (not checked yet: no scan has looked
+        at it)."""
         st = self.live_state(c)
         route, unrouted = st.get("route"), set(st.get("unrouted") or [])
         # a route whose every page a provider reads is read through the provider (_scan): its sites say "api"
@@ -470,6 +473,7 @@ class Scanner:
             url, lst = s["url"], self.list_of(s)
             # a site that didn't answer the check: not known yet, never "can't be scanned" (its row says it didn't connect)
             out[url] = ("no" if url in unrouted else "api" if self._providers.get(lst) else route_how if self.covers(route, url)
+                        else "none" if no_list_on(s)
                         else "" if lst in self._unreached
                         else "" if lst in self._providers or not st.get("at") else "api")
         return out
@@ -822,7 +826,7 @@ class Scanner:
         hows, errors, needs, unread = [], [], [], []
         totals: dict[str, int] = {}
         routed: list[dict] = []
-        api = [s for s in plan if s["how"] not in ("route", "claude", "unreached")]
+        api = [s for s in plan if s["how"] not in ("route", "claude", "unreached", "none")]
         # a route page on a list a provider reads (a Moka or Workday board the AI recorded a script for) is read
         # through the provider: the AI's script only for what no provider reads (8 companies, 2026-11-03)
         route = self.postings.route(c["id"]) or {}
@@ -950,6 +954,12 @@ class Scanner:
         missing = self.unrouted(plan)
         if missing:   # said first: waiting for the browser fixes itself on a scan the user starts, this doesn't
             needs.insert(0, "claude")
+        if not hows and all(s["how"] == "none" for s in plan):
+            # every site was shown to list no roles: the company has none open, and nothing is left for the AI
+            # (closed through merge, as a whole read that found nothing would)
+            res = self.postings.merge(c["id"], [], how="none", complete=True)
+            return {"company": c["id"], "found": 0, "new": 0, "closed": len(res["closed"]), "changed": 0, "needs": "",
+                    "errors": [], "unrouted": [], "short": None}
         if not hows:
             if errors:
                 st = self.postings.failed(c["id"], "; ".join(errors), how=",".join(s["how"] for s in api) or "api")

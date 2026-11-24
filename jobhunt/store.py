@@ -69,6 +69,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
+from core.domains import url_domain
 from core.i18n import t
 
 from . import geo
@@ -309,6 +310,37 @@ def site_key(url: str) -> str:
     """An address as a site's key: no scheme, no www, no trailing slash, any case."""
     u = urlsplit(url if "//" in url else "https://" + url)
     return (site_host(url) + u.path.rstrip("/") + ("?" + u.query if u.query else "")).lower()
+
+
+def _own_site(s: dict) -> bool:
+    """A site said to be the company's own (the window shows it as 公司自建): that is the claim that needs its owner
+    when the domain is another one. A Moka, 北森 or Feishu board is on its system's domain, said or not (a Feishu
+    board under the company's name, xinghe.jobs.feishu.cn, often comes with no system)."""
+    return bool(re.match(r"own site\b", s.get("system") or "", re.I))
+
+
+def owner_missing(c: dict) -> list[str]:
+    """The company's own careers sites under another domain than its own (its homepage's, else its main careers
+    site's) that don't say who runs them: a site under another name reads as another company's (连尚网络's roles on
+    cn.wifi.com, run by 南京尚网网络科技, 2026-11-24), so the AI says how it is the company's, with where it read it."""
+    sites = c.get("sites") or []
+    home = c.get("homepage") or c.get("site") or next((s["url"] for s in sites if _own_site(s)), "")
+    if not home:
+        return []
+    own = url_domain(home)
+    return [s["url"] for s in sites if _own_site(s) and url_domain(s["url"]) != own and not s.get("owner")]
+
+
+NO_LIST_DAYS = 90   # a site shown to list no roles is looked at again after this: a company may put a list up later
+
+
+def no_list_on(s: dict) -> bool:
+    """The AI showed, with evidence, that this site lists no roles, recently enough to still hold."""
+    at = ((s.get("no_list") or {}).get("at") or "")[:10]
+    try:
+        return bool(at) and time.time() - time.mktime(time.strptime(at, "%Y-%m-%d")) < NO_LIST_DAYS * 86400
+    except ValueError:
+        return False
 
 
 
@@ -675,6 +707,16 @@ class Hunt:
             lst = _text(x.get("list"), 500)
             if lst:
                 site["list"] = lst if re.match(r"https?://", lst) else "https://" + lst
+            # owner: who runs a site under another domain than the company's, and how it is the company's (owner_source:
+            # where that was read); no_list: the AI showed the site lists no roles ({at, evidence}): see hunt.py no-list
+            if _text(x.get("owner"), 300):
+                site["owner"] = _text(x.get("owner"), 300)
+                src = _text(x.get("owner_source"), 500)
+                if re.match(r"https?://", src):
+                    site["owner_source"] = src
+            nl = x.get("no_list")
+            if isinstance(nl, dict) and _long(nl.get("evidence"), 3000) and _text(nl.get("at"), 30):
+                site["no_list"] = {"at": _text(nl["at"], 30), "evidence": _long(nl["evidence"], 3000)}
             out.append(site)
         return out[:8]
 
@@ -788,15 +830,50 @@ class Hunt:
                 had = {site_key(x["url"]): x.get("list") for x in c.get("sites") or [] if x.get("list")}
                 take["sites"] = [x if x.get("list") or site_key(x["url"]) not in had else {**x, "list": had[site_key(x["url"])]}
                                  for x in self._sites(take["sites"])]
+            if "sites" in take:   # a fill that leaves a site's owner or no-list mark out keeps the one there
+                had = {site_key(x["url"]): x for x in c.get("sites") or []}
+                take["sites"] = [{**{k: had[site_key(x["url"])][k] for k in ("owner", "owner_source", "no_list")
+                                     if k in had.get(site_key(x["url"]), {}) and k not in x}, **x} for x in take["sites"]]
             if "sites" in kept and "sites" in fields:   # the user's sites stay; only a kind nobody set yet is Claude's
                 said = {site_key(x["url"]): x for x in self._sites(fields["sites"])}
-                mine = [{**x, **{k: said[site_key(x["url"])][k] for k in ("kind", "system", "list")
+                mine = [{**x, **{k: said[site_key(x["url"])][k] for k in ("kind", "system", "list", "owner", "owner_source")
                                  if site_key(x["url"]) in said and not x.get(k) and said[site_key(x["url"])].get(k)}}
                         for x in c.get("sites") or []]
                 if mine != (c.get("sites") or []):
                     take["sites"] = mine
+            if "sites" in take:
+                sent = {site_key(x["url"]) for x in self._sites(fields.get("sites"))}
+                odd = [u for u in owner_missing({**c, **take, "sites": self._sites(take["sites"])}) if site_key(u) in sent]
+                if odd:
+                    raise ValueError(t("Nothing was saved: {sites} is under another domain than the company's own. Say who runs "
+                                       "it and how it is the company's, on that site: \"owner\" (e.g. \"WiFi万能钥匙's site, "
+                                       "run by 南京尚网网络科技, a company of the group: same zenmen.com mail\") and "
+                                       "\"owner_source\", the page that shows it (its footer, the group's own site). Another "
+                                       "company's site, or one you can't tie to it: leave it out", sites=", ".join(odd)))
             c = self.update_company(c["id"], take, source="chat")
         return c, skipped
+
+    def mark_no_list(self, ref: str, url: str, evidence: str) -> dict:
+        """The AI showed a careers site lists no roles: kept on the site with its evidence, so the scan stops asking for
+        a route it can't have and the window says so; `evidence` "" takes the mark off. A recorded route or a provider
+        that reads the site later wins over it (Scanner.plan), and it lapses after NO_LIST_DAYS."""
+        evidence = _long(evidence, 3000)
+        if evidence and (len(evidence) < 60 or not re.search(r"https?://", evidence)):
+            raise ValueError(t("Nothing was saved: the evidence must show it, with each address you tried (https://…), "
+                               "what you sent and what came back, in at least a few sentences"))
+        with self.lock:
+            c = self.company(ref)
+            sites = [dict(s) for s in c.get("sites") or []]
+            s = next((s for s in sites if site_key(s["url"]) == site_key(url)), None)
+            if s is None:
+                raise ValueError(t("{url} isn't one of {company}'s careers sites: {sites}", url=url, company=c["name"],
+                                   sites=", ".join(x["url"] for x in sites) or "-"))
+            if evidence:
+                s["no_list"] = {"at": time.strftime("%Y-%m-%d"), "evidence": evidence}
+            else:
+                s.pop("no_list", None)
+            c = self.update_company(c["id"], {"sites": sites}, source="chat")
+        return c
 
     def logo_path(self, ref: str) -> Path | None:
         c = self.company(ref)

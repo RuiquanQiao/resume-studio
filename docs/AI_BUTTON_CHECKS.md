@@ -35,3 +35,17 @@ site is checked per address, never per company: what a company "needs" is counte
 2. **Fix the stale read error**: a role whose JD got filled (by anyone) drops its read error.
 3. Tests: each check gets a test that fails on today's code (chat ends, data unchanged → the window must not
    say done).
+
+## Proof the check can see (2026-11-24)
+
+A check reads only data, so a reason to stop has to be data too. 连尚网络: the AI proved in the chat that the
+group's careers page lists no roles, and the check, which can't read the chat, sent the same request back. Then
+the AI found the roles on cn.wifi.com ("尚网网络", WiFi万能钥匙's site), which on the company's page read as
+another company's.
+
+- `hunt.py no-list <company> <url> --stdin` keeps the evidence on the site (`no_list: {at, evidence}`): the site
+  leaves `unrouted` at once, the scan leaves it alone for 90 days, and its row shows the evidence with a button to
+  take it back. A provider or a recorded route that reads the site wins over it.
+- A company's own site under another domain than its homepage's (else its main careers site's) needs `owner` and
+  `owner_source` in `fill`, or `fill` refuses it; one without (added by the user, or by an older fill) is named on
+  its row and in the Fill check (`postings.owner_missing`).

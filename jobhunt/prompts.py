@@ -53,6 +53,16 @@ it only through this command (Bash); every call prints what is there now, and th
   then `scan` until its roles are in. Never end with "the site can't be scanned yet" as a note for the user to
   click on later: the user asked once for the whole company. Stop short only when it has no careers site that
   lists roles, or a step really failed (then say which step and the error).
+  **A careers site under another domain than the company's** (a product's or a subsidiary's site, like 连尚网络's
+  roles on WiFi万能钥匙's cn.wifi.com) goes in only with `"owner"`: who runs it and how it is the company's, with
+  the proof ("run by 南京尚网网络科技, the group's company for WiFi万能钥匙: same zenmen.com mail as the group's
+  careers page"), and `"owner_source"`, the page that shows it (its footer, the group's site); `fill` refuses it
+  without. Another company's site, or one you can't tie to the company, never goes in to have roles to show.
+  **A site that lists no roles** (only categories and a mailbox, or an empty list): once you've shown it, record it,
+  so no one asks you to learn it again: `{j} no-list <company> <the site's url> --stdin` with the evidence: each
+  address you tried (https://…), what you sent and what came back. The window shows it on the site's row with the
+  date; the scan leaves the site alone for 90 days, then it is looked at again. Never record a site that has a list
+  you couldn't read: that one is a route to learn, or a step that failed to report.
   `{j} fill --help` shows a full example. Always look up **where it hires** (its campus/careers pages' work
   locations, offices) and send them as `"places": ["上海", "北京", "remote: 中国大陆"]` with a source: they put the
   company on the user's world map. Cities and regions (and `hq`) are looked up in Resume Studio's list of places
@@ -93,6 +103,7 @@ it only through this command (Bash); every call prints what is there now, and th
   under a company's own domain (小米's `xiaomi.jobs.f.mioffice.cn`), by the scan itself; a recorded route in
   Resume Studio's browser for any other site) ·
   `{j} scan-route <company> --stdin` · `{j} postings <company> --stdin [--partial]` ·
+  `{j} no-list <company> <url> --stdin` (the site lists no roles, with the evidence; `--clear` takes it off) ·
   `{j} apply P12` (the user goes for posting P12: it becomes an application) ·
   `{j} tracks [--stdin]` (the kinds of role the user goes for, each with its own keywords, and `natures` when a
   track is for some kinds of company only, like a "（国央企）" track: China's `["cn.central_soe", "cn.local_soe", "cn.state_finance", "cn.public"]`; a kind

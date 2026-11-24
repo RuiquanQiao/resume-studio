@@ -2570,5 +2570,17 @@
  "Sign in to {tool} in a terminal": "ターミナルで {tool} にサインイン",
  "The terminal window could not be opened: {error}": "ターミナルウィンドウを開けませんでした：{error}",
  "{site} is open in an ordinary browser window that Resume Studio doesn't control, so the site's security check lets it through. Checking for updates or pushing changes here closes it first.": "{site} は Resume Studio が制御しない通常のブラウザーウィンドウで開かれているため、サイトのセキュリティチェックを通過できます。ここで更新の確認や変更のアップロードを行うと、先にこのウィンドウが閉じられます。",
- "{tool} has no sign-in command": "{tool} にはサインイン用のコマンドがありません"
+ "{tool} has no sign-in command": "{tool} にはサインイン用のコマンドがありません",
+ "A site shown to list no roles is recorded with `hunt.py no-list` and its evidence; a site under another domain needs \"owner\" and \"owner_source\" in `fill`, or comes out.": "求人一覧がないことを示したサイトは、根拠を添えて `hunt.py no-list` で記録してください。会社と異なるドメインのサイトは、`fill` で \"owner\" と \"owner_source\" を指定するか、削除してください。",
+ "No job list (verified by the AI)": "求人一覧なし（AI 確認済み）",
+ "Nothing was saved: the evidence must show it, with each address you tried (https://…), what you sent and what came back, in at least a few sentences": "保存されませんでした：根拠には、試したすべてのアドレス（https://…）、送信した内容と返ってきた結果を、数文以上で記載してください",
+ "Nothing was saved: {sites} is under another domain than the company's own. Say who runs it and how it is the company's, on that site: \"owner\" (e.g. \"WiFi万能钥匙's site, run by 南京尚网网络科技, a company of the group: same zenmen.com mail\") and \"owner_source\", the page that shows it (its footer, the group's own site). Another company's site, or one you can't tie to it: leave it out": "保存されませんでした：{sites} は会社のドメインと異なります。そのサイトに運営者と会社との関係を記載してください：\"owner\"（例：「WiFi万能钥匙のサイト。グループ会社の南京尚网网络科技が運営。グループと同じ zenmen.com のメールを使用」）と \"owner_source\"（それを示すページ：フッターやグループのサイト）。他社のサイト、または会社との関係を示せないサイトは追加しないでください",
+ "On {date}, the AI verified that this site provides no job list. View the evidence": "{date} に AI が、このサイトに求人一覧がないことを確認しました。根拠を表示",
+ "Operator: {owner}": "運営者：{owner}",
+ "The AI showed this site lists no roles; the evidence is below the site": "AI はこのサイトに求人一覧がないことを示しました。根拠はサイトの下に表示されます",
+ "This site is under another domain than the company's, and its relation to the company has not been stated.": "このサイトは会社のドメインと異なり、会社との関係が記載されていません。",
+ "Withdraw this finding": "この結論を取り消す",
+ "no site lists roles (verified by the AI)": "求人一覧のあるサイトなし（AI 確認済み）",
+ "{company}: not said who runs {sites}, under another domain than the company's": "{company}：会社と異なるドメインの {sites} の運営者が記載されていません",
+ "{url} isn't one of {company}'s careers sites: {sites}": "{url} は {company} の採用サイトではありません：{sites}"
 }

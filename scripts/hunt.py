@@ -30,6 +30,7 @@
     python scripts/hunt.py sent 星河科技/服务端 [--subset SUB-002]
     python scripts/hunt.py scan [星河科技 ...]                # read the companies' sites for open postings now
     python scripts/hunt.py scan-route 星河科技 --stdin <<'JSON' ... JSON   # record how to read its job list, run it once
+    python scripts/hunt.py no-list 星河科技 https://careers.xinghe.example/ --stdin   # it lists no roles: the evidence
     python scripts/hunt.py systems                         # APIs several companies' routes call: one system, to build a scan for
     python scripts/hunt.py postings 星河科技 --stdin [--partial]   # the postings you read yourself (no route possible)
     python scripts/hunt.py apply P12                        # the user goes for posting P12: it becomes an application
@@ -115,7 +116,10 @@ FILL_HELP = """Claude's research on a company, every field at once, as JSON on s
                                                      # OpenStreetMap, else kept as written
    "size": "About 23,000 people (2025 annual report)",
    "sites": [{"url": "https://careers.xinghe.example/campus", "kind": "campus", "system": "own site"},
-             {"url": "https://careers.xinghe.example/intern", "kind": "intern", "system": "own site"}],
+             {"url": "https://careers.xinghe.example/intern", "kind": "intern", "system": "own site"},
+             {"url": "https://jobs.xinghe-games.example/list", "kind": "social", "system": "own site",   # another domain:
+              "owner": "Run by 星河游戏, Xinghe's games arm: its footer names it, and the group's careers page links here",
+              "owner_source": "https://careers.xinghe.example/about"}],   # owner and its source, or fill refuses it
    "logo_url": "https://.../logo.png",                # downloaded once into the data folder
    "sources": {"strength": "https://...", "industry": "https://...", "nature": "https://...", "hq": "https://...", "size": "https://..."},
    "about": {"summary": "...", "points": [{"topic": "...", "text": "...", "sources": ["https://..."]}], "read_at": "2026-10-18"}}
@@ -236,12 +240,22 @@ def show_company(v: dict) -> None:
             print(f"  {label}: {value}" + (f" ({c.get('subset_label')})" if k == "subset" and c.get("subset_label") else "")
                   + (f"  [{src[k]}]" if src.get(k) else "") + ("  (the user's: fill leaves it)" if k in kept else ""))
     reads = {"api": "a provider reads it: leave it to the scan", "route": "the recorded route reads it",
-             "no": "no scan reads it yet: learn it (see the instructions)", "": "not checked by a scan yet"}
+             "no": "no scan reads it yet: learn it (see the instructions)", "": "not checked by a scan yet",
+             "none": "shown to list no roles: the scan leaves it alone"}
+    odd = set(c.get("owner_missing") or [])
     for x in c.get("sites") or []:
         how = ((v.get("scan") or {}).get("sites") or {}).get(x["url"], "")
         print(f"  site ({x['kind'] or 'kind not set yet: say it with `fill` sites once you have seen the site'}"
               f"{', ' + x['system'] if x.get('system') else ''}): {x['url']}"
-              + (f" -> its list: {x['list']}" if x.get("list") else "") + f"  [{reads[how]}]")
+              + (f" -> its list: {x['list']}" if x.get("list") else "") + f"  [{reads.get(how, how)}]")
+        if x.get("owner"):
+            print(f"    whose: {x['owner']}" + (f"  [{x['owner_source']}]" if x.get("owner_source") else ""))
+        elif x["url"] in odd:
+            print("    whose: not said, and it is under another domain than the company's: send it again with `fill` "
+                  "sites, with \"owner\" and \"owner_source\" (who runs it, how it is the company's); not the "
+                  "company's: take it out")
+        if (x.get("no_list") or {}).get("at"):
+            print(f"    lists no roles (recorded {x['no_list']['at']}): {x['no_list']['evidence']}")
     print("  logo: " + ("saved" if c.get("logo") else "none yet") + ("  (the user's)" if "logo" in kept else ""))
     missing = [k for k in ("industry", "nature", "strength", "hq", "site", "logo") if not c.get(k)]
     if missing:
@@ -428,6 +442,12 @@ def main() -> int:
     p = sub.add_parser("sent"); p.add_argument("ref"); p.add_argument("--subset")
     p = sub.add_parser("scan"); p.add_argument("companies", nargs="*")
     p = sub.add_parser("scan-route"); p.add_argument("ref"); p.add_argument("--file"); p.add_argument("--stdin", action="store_true")
+    p = sub.add_parser("no-list", description="A careers site of the company lists no roles (only categories and a mailbox, "
+                       "or an empty list), shown with evidence on stdin: each address you tried (https://…), what you sent "
+                       "and what came back. The scan then leaves the site alone for 90 days and the window says so on its row. "
+                       "Never for a site that has a list you couldn't read: learn that one.")
+    p.add_argument("ref"); p.add_argument("url"); p.add_argument("--stdin", action="store_true"); p.add_argument("--file")
+    p.add_argument("--clear", action="store_true", help="take the mark off: the site is to be learned again")
     sub.add_parser("systems", description="APIs the recorded routes of several companies call: likely one recruiting "
                    "system, which one built-in scan could read for all of them with no AI (as for 北森 and 飞书).")
     p = sub.add_parser("postings"); p.add_argument("ref"); p.add_argument("--file"); p.add_argument("--stdin", action="store_true")
@@ -656,6 +676,14 @@ def main() -> int:
                 print(f"{x['company']}: needs {x.get('needs') or 'claude'} (no site could be read without you)")
         if r.get("company"):
             show_company(r["company"])
+        return 0
+    elif c == "no-list":
+        evidence = "" if args.clear else read_input(args).strip()
+        if not args.clear and not evidence:
+            sys.exit("error: give the evidence with --stdin or --file (or --clear to take the mark off)")
+        r = call(url, c, {"ref": args.ref, "url": args.url, "evidence": evidence})
+        print(("recorded: " if evidence else "taken off: ") + args.url)
+        show_company(r["company"])
         return 0
     elif c == "systems":
         gs = call(url, "systems", {})["systems"]

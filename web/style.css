@@ -1773,6 +1773,19 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-sel
 .site-scan.ok svg.i { color: var(--ok); }
 .site-scan.warn { color: var(--warn); }
 .co-site-edit .select { flex: none; width: 128px; }
+/* under a site's row, lined up with its address: who runs it, and the AI's evidence that it lists no roles */
+.co-site-notes { display: flex; flex-direction: column; gap: 2px; margin: -2px 0 4px 136px; min-width: 0; font-size: var(--fs-meta); }
+.co-site-whose { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 6px; min-width: 0; overflow-wrap: anywhere; }
+.co-site-whose svg.i { flex: none; width: 13px; height: 13px; margin-top: 2px; }
+.co-site-whose > span { flex: 1 1 240px; min-width: 0; }
+.co-site-whose.warn { color: var(--warn); }
+/* the source goes to a line of its own when the operator's text needs the width, never squeezing it */
+.co-site-whose .src-link { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.co-site-proof { color: var(--text-3); min-width: 0; }
+.co-site-proof summary { cursor: pointer; overflow-wrap: anywhere; }
+.co-site-proof-body { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 4px 0 2px 14px; color: var(--text-2);
+  white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 720px) { .co-site-notes { margin-left: 0; } }
 .co-site-input { flex: 1 1 160px; min-width: 0; height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--panel); color: var(--text); font: inherit; font-size: var(--fs-body); }
 .co-site-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 

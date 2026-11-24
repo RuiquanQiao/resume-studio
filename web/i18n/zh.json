@@ -2570,5 +2570,17 @@
  "Sign in to {tool} in a terminal": "在终端中登录 {tool}",
  "The terminal window could not be opened: {error}": "无法打开终端窗口：{error}",
  "{site} is open in an ordinary browser window that Resume Studio doesn't control, so the site's security check lets it through. Checking for updates or pushing changes here closes it first.": "{site} 已在普通浏览器窗口中打开。Resume Studio 不控制此窗口，因此可通过该网站的安全校验。在此处检查更新或上传修改时，将先关闭此窗口。",
- "{tool} has no sign-in command": "{tool} 无登录命令"
+ "{tool} has no sign-in command": "{tool} 无登录命令",
+ "A site shown to list no roles is recorded with `hunt.py no-list` and its evidence; a site under another domain needs \"owner\" and \"owner_source\" in `fill`, or comes out.": "如已证明某网站未提供岗位列表，请使用 `hunt.py no-list` 记录并附证据；与公司域名不同的网站，须在 `fill` 中提供 \"owner\" 和 \"owner_source\"，否则请将其移除。",
+ "No job list (verified by the AI)": "无岗位列表（AI 已核实）",
+ "Nothing was saved: the evidence must show it, with each address you tried (https://…), what you sent and what came back, in at least a few sentences": "未保存：证据须列出已尝试的每个地址（https://…）、发出的请求及得到的结果，且不少于数句。",
+ "Nothing was saved: {sites} is under another domain than the company's own. Say who runs it and how it is the company's, on that site: \"owner\" (e.g. \"WiFi万能钥匙's site, run by 南京尚网网络科技, a company of the group: same zenmen.com mail\") and \"owner_source\", the page that shows it (its footer, the group's own site). Another company's site, or one you can't tie to it: leave it out": "未保存：{sites} 与公司官网不在同一域名。请在该网站上注明其运营方及与本公司的关系：\"owner\"（例如“WiFi万能钥匙官网，由集团旗下南京尚网网络科技运营：与集团同用 zenmen.com 邮箱”）及 \"owner_source\"（可证明此关系的页面，如其页脚或集团官网）。如为其他公司的网站，或无法证明与本公司的关系，请勿添加。",
+ "On {date}, the AI verified that this site provides no job list. View the evidence": "AI 已于 {date} 核实：此网站未提供岗位列表。查看证据",
+ "Operator: {owner}": "运营方：{owner}",
+ "The AI showed this site lists no roles; the evidence is below the site": "AI 已证明此网站未提供岗位列表，证据见网址下方",
+ "This site is under another domain than the company's, and its relation to the company has not been stated.": "此网站与公司官网不在同一域名，尚未说明其与本公司的关系。",
+ "Withdraw this finding": "撤销此结论",
+ "no site lists roles (verified by the AI)": "各网站均未提供岗位列表（AI 已核实）",
+ "{company}: not said who runs {sites}, under another domain than the company's": "{company}：{sites} 与公司官网不在同一域名，尚未说明其运营方",
+ "{url} isn't one of {company}'s careers sites: {sites}": "{url} 不是 {company} 的招聘网站：{sites}"
 }

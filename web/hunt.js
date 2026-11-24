@@ -1668,6 +1668,7 @@ function howName(how) {
   return String(how || "").split("+").map((x) => (x === "route" ? t("its recorded route") : x === "claude" ? t("read by AI")
     : x === "beisen" ? t("北森's job list") : x === "feishu" ? t("Feishu's job list") : x === "hotjob" ? t("HotJob's job list")
     : x === "alitalent" ? t("阿里's talent sites' job list")
+    : x === "none" ? t("no site lists roles (verified by the AI)")
     : x)).join(" + ");
 }
 
@@ -2468,22 +2469,39 @@ function siteScanChip(how, list, tried = "") {
       ? t("Its list is at {list}, read through its recruiting system's public API, no AI", { list: siteName(list) })
       : t("Read through its recruiting system's public API, no AI")]
     : how === "route" ? ["ok", t("Scanned automatically (AI-recorded)"), t("Read the way the AI recorded once, no AI")]
+    : how === "none" ? ["", t("No job list (verified by the AI)"), t("The AI showed this site lists no roles; the evidence is below the site")]
     : how === "no" && tried ? ["warn", t("The AI tried; still can't be scanned"), [t("The AI tried to learn it {when}, and the scan still can't read it", { when: huntWhen(tried) }),
       list && t("Its list is at {list}, but no scan reads that address yet", { list: siteName(list) })].filter(Boolean).join(t("; "))]
     : how === "no" ? ["warn", t("Can't be scanned automatically yet"), list ? t("Its list is at {list}, but no scan reads that address yet", { list: siteName(list) })
       : t("The AI has to read it once and record how")]
     : ["", t("Not checked yet"), t("The next scan finds out whether it can read this site by itself")];
-  return h("span", { class: "site-scan " + cls, title: why }, icon(cls === "ok" ? "check" : cls === "warn" ? "alert" : "history"), say);
+  return h("span", { class: "site-scan " + cls, title: why }, icon(cls === "ok" ? "check" : cls === "warn" ? "alert" : how === "none" ? "minus" : "history"), say);
 }
 
 const SITE_KINDS = { campus: "Campus", intern: "Internships", social: "Experienced", other: "Other" };
+
+// under a site's row: who runs it when it is under another domain than the company's (a name that differs reads as
+// another company's: 连尚网络's roles on cn.wifi.com, 2026-11-24), and the AI's evidence that it lists no roles,
+// which the user can take back (the site is then learned again)
+function siteNotes(c, x, unmark) {
+  const notes = [];
+  if (x.owner) notes.push(h("div", { class: "co-site-whose muted" }, icon("link"), h("span", null, t("Operator: {owner}", { owner: x.owner })),
+    x.owner_source && h("a", { href: x.owner_source, "data-ext": "", class: "src-link", title: x.owner_source }, t("source: {site}", { site: siteName(x.owner_source) }))));
+  else if ((c.owner_missing || []).includes(x.url)) notes.push(h("div", { class: "co-site-whose warn" }, icon("alert"),
+    h("span", null, t("This site is under another domain than the company's, and its relation to the company has not been stated."))));
+  if (x.no_list) notes.push(h("details", { class: "co-site-proof" },
+    h("summary", null, t("On {date}, the AI verified that this site provides no job list. View the evidence", { date: x.no_list.at })),
+    h("div", { class: "co-site-proof-body" }, x.no_list.evidence,
+      h("button", { class: "btn sm", onclick: unmark }, t("Withdraw this finding")))));
+  return notes.length ? h("div", { class: "co-site-notes" }, notes) : null;
+}
 
 // the company's careers sites, each one changeable: its kind, its address (emptied, it goes), or gone; and more
 function sitesEditor(c, scans = {}, tried = {}, missed = {}) {
   const sites = (c.sites || []).map((x) => ({ ...x }));
   const save = () => editCompany(c.id, { sites });
   const kinds = Object.entries(SITE_KINDS).map(([value, label]) => ({ value, label: t(label) }));
-  const rows = sites.map((x, i) => h("div", { class: "co-site co-site-edit" },
+  const rows = sites.map((x, i) => [h("div", { class: "co-site co-site-edit" },
     uiSelect({ label: t("Kind"), menuWidth: 170, value: x.kind || null, cls: "sm", options: kinds, placeholder: t("Kind not set"),
       onChange: (v) => { x.kind = v; save(); } }).el,
     h("input", { class: "co-site-input", value: x.url, spellcheck: "false", "aria-label": t("Address"),
@@ -2501,7 +2519,9 @@ function sitesEditor(c, scans = {}, tried = {}, missed = {}) {
         : missed[x.url] === "unreached" ? t("Didn't connect this time")
         : missed[x.url] === "none" ? t("Nothing read this time") : t("Not all read this time")),
     h("button", { class: "btn icon sm ghost", title: t("Open it in your everyday browser"), "aria-label": t("Open it in your everyday browser"), onclick: () => openInBrowser(x.url) }, icon("external")),
-    h("button", { class: "btn icon sm ghost", title: t("Remove this site"), "aria-label": t("Remove this site"), onclick: () => { sites.splice(i, 1); save(); } }, icon("x"))));
+    h("button", { class: "btn icon sm ghost", title: t("Remove this site"), "aria-label": t("Remove this site"), onclick: () => { sites.splice(i, 1); save(); } }, icon("x"))),
+    // taken back through the same command the AI records it with: the site is at once one to learn again
+    siteNotes(c, x, () => api("POST", "/api/hunt/do", { cmd: "no-list", args: { ref: c.id, url: x.url, evidence: "" } }).catch((e) => toast(e.message)))]);
   const add = h("input", { class: "su-add-input", id: "company-add-site", spellcheck: "false", placeholder: t("Add a careers site: paste its address and press Enter"),
     onkeydown: (e) => {
       if (e.key !== "Enter" || e.isComposing) return;
@@ -2622,11 +2642,17 @@ function askFill(cs, { adding = false } = {}) {
         u.unsourced.length && t("{company}: no source for {fields}", { company: c.name, fields: u.unsourced.join(", ") }),
         ps.needs === "claude" && t("{company}: its roles aren't in: the scan still can't read {sites}",
           { company: c.name, sites: (ps.unrouted || []).map(siteName).join(", ") || t("a careers site") }),
-        ps.needs === "sites" && t("{company}: no careers site to bring its roles in from", { company: c.name })].filter(Boolean);
+        ps.needs === "sites" && t("{company}: no careers site to bring its roles in from", { company: c.name }),
+        // a site under another name with nothing said of whose it is: it may be another company's (2026-11-24)
+        (ps.owner_missing || []).length && t("{company}: not said who runs {sites}, under another domain than the company's",
+          { company: c.name, sites: ps.owner_missing.map(siteName).join(", ") })].filter(Boolean);
     });
     if (!gaps.length) return { ok: true, say: t("Filled in, each with a source, and its roles brought in: {names}", { names: huntOf(d, ids).map((c) => c.name).join(", ") }) };
+    // the proof that a site lists no roles is kept with `no-list`, the only place this check can see it: written in
+    // the chat alone, the same request came back (连尚网络, 2026-11-24)
     return { ok: false, say: gaps.join("\n"),
-      again: t("Some of it is still not done. {gaps}. Fill each field in with a source and bring its roles in (learn every site the scan can't read), or tell me which step failed and the error you got.", { gaps: gaps.join("; ") }) };
+      again: t("Some of it is still not done. {gaps}. Fill each field in with a source and bring its roles in (learn every site the scan can't read), or tell me which step failed and the error you got.", { gaps: gaps.join("; ") })
+        + " " + t("A site shown to list no roles is recorded with `hunt.py no-list` and its evidence; a site under another domain needs \"owner\" and \"owner_source\" in `fill`, or comes out.") };
   }, ids);
   // one click does the whole company (user, 2026-11-04: "getting a company's information must never take two
   // clicks"): its fields, its careers sites, every site the scan can't read learnt, and its roles brought in

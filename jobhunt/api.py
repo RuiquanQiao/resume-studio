@@ -33,15 +33,16 @@ from .postings import held_back, tracks_of, Postings, same_link, stale
 from .rank import Descriptions, fit
 from . import skills as role_skills
 from .scan import Scanner
-from .store import LOGO_TYPES, STATE_IDS, Hunt, SameCompany
+from .store import LOGO_TYPES, STATE_IDS, Hunt, SameCompany, owner_missing, site_key
 from .views import Views
 
 TRACKERS = ["studio", "career-ops"]
 # the chat's commands that change a company or an application (scan and apply name theirs by id or list)
 CHANGES = {"edit-company", "fill", "about", "add-role", "edit-role", "status", "note", "book", "rebook", "unbook",
-           "sent", "scan-route", "postings"}
+           "sent", "scan-route", "postings", "no-list"}
 # the ones kept in the history, each undoable (jobhunt/history.py); a scan's postings and a sent resume aren't
-RECORDED = {"add-company", "directory", "edit-company", "fill", "about", "add-role", "edit-role", "status", "note", "book", "rebook", "unbook"}
+RECORDED = {"add-company", "directory", "edit-company", "fill", "about", "add-role", "edit-role", "status", "note", "book", "rebook",
+            "unbook", "no-list"}
 
 
 def subset_to_send(studio: Studio, subset_id: str | None) -> str:
@@ -492,7 +493,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
         st = scanner.live_state(c)
         trs = posts.tracks()
         return {"company": {**c, **employer(c, work()), "logo_url": logo_url(c), "subset_label": subset_label(doc, c.get("subset") or ""),
-                            "research": research(c, apps, resume_langs(doc)),
+                            "research": research(c, apps, resume_langs(doc)), "owner_missing": owner_missing(c),
                             "subset_exists": bool(c.get("subset")) and model.get_item(doc, "subset", c["subset"]) is not None},
                 "applications": apps, "events": evs,
                 "postings": sorted(({**p, "stale": stale(p), "tracks": tracks_of(p["title"], trs, c.get("nature") or "")} for p in posts.all(c["id"])),
@@ -663,6 +664,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             c["postings"]["needs"] = st.get("needs") or ""
             c["postings"]["unrouted"] = st.get("unrouted") or []
             c["postings"]["tried"] = st["tried"]
+            c["postings"]["owner_missing"] = owner_missing(c)   # own sites under another domain that don't say whose
             c["postings"]["browser"] = scanner.browser_pages(c, scans)   # read in the browser each scan: slow
         sc = scans
         places = every_place(tb)
@@ -1295,6 +1297,21 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
                 # and every later scan reads it with no browser and no AI (user, 2026-11-16)
                 res["needs_page"] = scanner.needs_page(r.get("pages") or [])
                 return {"scanned": [res], "company": company_view(c["id"]), "text": "route saved and run"}
+            if cmd == "no-list":
+                c = hunt.mark_no_list(str(a.get("ref") or ""), str(a.get("url") or ""), str(a.get("evidence") or ""))
+                # the site leaves what the AI still has to learn at once, not at the next scan; taken off, it is one
+                # to learn again. Never through plan(): that asks each site which system it runs on, over the network
+                st = scanner.live_state(c)
+                missing = st.get("unrouted") or []
+                if not a.get("evidence"):
+                    s = next((s for s in scanner.sites_of(c) if site_key(s["url"]) == site_key(str(a.get("url") or ""))), None)
+                    read = s and (scanner._providers.get(scanner.list_of(s)) or scanner.covers(st.get("route"), s["url"]))
+                    if s and not read and s["url"] not in missing:
+                        missing = [*missing, s["url"]]
+                posts.set_scan_state(c["id"], unrouted=missing,
+                                     needs="claude" if missing else "" if st.get("needs") == "claude" else st.get("needs") or "")
+                scanner.publish()
+                return {"company": company_view(c["id"]), "text": "marked" if a.get("evidence") else "unmarked"}
             if cmd == "systems":
                 return {"systems": scanner.shared_systems(), "text": "systems"}
             if cmd == "postings":
@@ -1330,7 +1347,7 @@ def register(app: App, studio: Studio, tool: JobTool, prefs: Any, *, platforms: 
             if cmd == "undo":
                 return {**history.undo(str(a.get("change") or ""), by="chat"), "text": "undone"}
             raise HttpError(400, f"unknown command {cmd!r}; one of: list, show, add-company, edit-company, fill, add-role, "
-                                 "edit-role, status, note, book, rebook, unbook, ics, about, sent, directory, scan, scan-route, systems, postings, "
+                                 "edit-role, status, note, book, rebook, unbook, ics, about, sent, directory, scan, scan-route, no-list, systems, postings, "
                                  "apply, keywords, tracks, history, undo")
 
         out = guard(run)

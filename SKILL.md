@@ -372,6 +372,7 @@ python scripts/hunt.py fill 星河科技 --stdin <<'JSON' ... JSON    # research
 python scripts/hunt.py sent 星河科技                         # the user submitted the sign-up on its site
 python scripts/hunt.py scan [星河科技]                        # read the companies' sites for open postings
 python scripts/hunt.py scan-route 星河科技 --stdin <<'JSON' ... JSON   # record how to read a site's job list (once)
+python scripts/hunt.py no-list 星河科技 <its url> --stdin   # a site shown to list no roles, with the evidence
 python scripts/hunt.py apply P12                          # the user goes for posting P12
 ```
 

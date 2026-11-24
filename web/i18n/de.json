@@ -2774,5 +2774,17 @@
  "Sign in to {tool} in a terminal": "Im Terminal bei {tool} anmelden",
  "The terminal window could not be opened: {error}": "Das Terminalfenster konnte nicht geöffnet werden: {error}",
  "{site} is open in an ordinary browser window that Resume Studio doesn't control, so the site's security check lets it through. Checking for updates or pushing changes here closes it first.": "{site} ist in einem gewöhnlichen Browserfenster geöffnet, das Resume Studio nicht steuert, daher besteht es die Sicherheitsprüfung der Website. Wenn Sie hier nach Aktualisierungen suchen oder Änderungen hochladen, wird es zuerst geschlossen.",
- "{tool} has no sign-in command": "{tool} hat keinen Anmeldebefehl"
+ "{tool} has no sign-in command": "{tool} hat keinen Anmeldebefehl",
+ "A site shown to list no roles is recorded with `hunt.py no-list` and its evidence; a site under another domain needs \"owner\" and \"owner_source\" in `fill`, or comes out.": "Eine Website, für die nachgewiesen wurde, dass sie keine Stellen auflistet, wird mit `hunt.py no-list` und dem Nachweis erfasst; eine Website unter einer anderen Domain benötigt \"owner\" und \"owner_source\" in `fill` oder wird entfernt.",
+ "No job list (verified by the AI)": "Keine Stellenliste (von der KI geprüft)",
+ "Nothing was saved: the evidence must show it, with each address you tried (https://…), what you sent and what came back, in at least a few sentences": "Nicht gespeichert: Der Nachweis muss jede versuchte Adresse (https://…), die gesendete Anfrage und die erhaltene Antwort in mindestens einigen Sätzen nennen",
+ "Nothing was saved: {sites} is under another domain than the company's own. Say who runs it and how it is the company's, on that site: \"owner\" (e.g. \"WiFi万能钥匙's site, run by 南京尚网网络科技, a company of the group: same zenmen.com mail\") and \"owner_source\", the page that shows it (its footer, the group's own site). Another company's site, or one you can't tie to it: leave it out": "Nicht gespeichert: {sites} liegt unter einer anderen Domain als der des Unternehmens. Geben Sie auf dieser Website an, wer sie betreibt und wie sie zum Unternehmen gehört: \"owner\" (z. B. „Website von WiFi万能钥匙, betrieben von 南京尚网网络科技, einem Unternehmen der Gruppe: dieselbe zenmen.com-E-Mail“) und \"owner_source\", die Seite, die dies belegt (ihre Fußzeile, die Website der Gruppe). Die Website eines anderen Unternehmens oder eine, die sich nicht zuordnen lässt: nicht aufnehmen",
+ "On {date}, the AI verified that this site provides no job list. View the evidence": "Am {date} hat die KI geprüft, dass diese Website keine Stellenliste bietet. Nachweis anzeigen",
+ "Operator: {owner}": "Betreiber: {owner}",
+ "The AI showed this site lists no roles; the evidence is below the site": "Die KI hat nachgewiesen, dass diese Website keine Stellen auflistet; der Nachweis steht unter der Website",
+ "This site is under another domain than the company's, and its relation to the company has not been stated.": "Diese Website liegt unter einer anderen Domain als der des Unternehmens; ihre Beziehung zum Unternehmen ist nicht angegeben.",
+ "Withdraw this finding": "Diese Feststellung zurückziehen",
+ "no site lists roles (verified by the AI)": "keine Website listet Stellen (von der KI geprüft)",
+ "{company}: not said who runs {sites}, under another domain than the company's": "{company}: Betreiber von {sites} nicht angegeben, unter einer anderen Domain als der des Unternehmens",
+ "{url} isn't one of {company}'s careers sites: {sites}": "{url} ist keine Karriereseite von {company}: {sites}"
 }

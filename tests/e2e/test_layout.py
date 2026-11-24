@@ -409,6 +409,21 @@ def sites_the_ai_tried(c):
     hunt.scanner.postings.set_scan_state("C1", needs="claude", unrouted=[intern, long], tried={intern: "2026-11-04T11:44:12"})
 
 
+def sites_with_proof(c):
+    """连尚网络 (2026-11-24): a site the AI showed lists no roles (its evidence, long, opened), one under another domain
+    with who runs it (long), and one under another domain with nothing said."""
+    filled_companies(c)
+    hunt = c.server.inst.hunt
+    own = hunt.company("C1")["sites"]
+    proof = ("Opened https://careers.xinghe.example/campus: only job categories and the mailbox hr@xinghe.example.\n"
+             "GET https://careers.xinghe.example/api/jobs/list-every-open-position-with-its-details?page=1 returned 404. " * 2)
+    hunt.update_company("C1", {"sites": [{**own[0], "no_list": {"at": time.strftime("%Y-%m-%d"), "evidence": proof}}, *own[1:],
+        {"url": "https://jobs.xinghe-games-very-long-subsidiary-domain.example/list/" + "g" * 60, "kind": "social", "system": "own site",
+         "owner": "星河游戏官网，由集团旗下星河互动娱乐（上海）有限公司运营：页脚注明运营主体，集团招聘页链接至此，二者使用同一招聘邮箱域名",
+         "owner_source": "https://careers.xinghe.example/about/our-group-companies-and-their-careers-sites"},
+        {"url": "https://other-domain.example/jobs", "kind": "social", "system": "own site"}]})
+
+
 def systems_to_report(c):
     """Three companies whose AI-recorded routes call one API no built-in scan reads, a long path among them: the
     companies table offers to report the system to the developer (jobhunt/report.py, 2026-11-12)."""
@@ -799,6 +814,11 @@ STATES = [
           [".htable .role-chip.open-chip", ".htable .scan-gap", ".scan-news .note-bar"], prepare=sites_the_ai_tried),
     State("applying, a company with a site the AI tried and one it didn't", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
           ["#company-no-route", ".co-sites .site-scan.warn", ".post-row"], prepare=sites_the_ai_tried),
+    State("applying, a company's sites with who runs them and a site that lists no roles",
+          then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title"),
+               lambda pg, c: pg.wait_for_selector(".co-site-proof"),
+               lambda pg, c: pg.evaluate("() => { const d = document.querySelector('.co-site-proof'); d.open = true; d.scrollIntoView({block: 'center'}); }")),
+          [".co-site-whose.warn", ".co-site-whose.muted", ".co-site-proof-body button"], prepare=sites_with_proof),
     State("applying, a company whose scan read only some pages", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),
           [".card-acts .fs-status.warn", ".note-bar.warn", ".post-row"], prepare=scan_read_in_part),
     State("applying, a company whose scan read nothing off one site", then(applying("companies"), click(".dbv-view tr[data-id='C1'] .dbv-title")),

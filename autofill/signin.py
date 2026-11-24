@@ -22,6 +22,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from core.browser import BrowserError, ManagedBrowser
+from core.domains import base_domain  # noqa: F401  (autologin.py imports it from here)
 from core.i18n import t
 
 from .sites import Site
@@ -33,16 +34,6 @@ SESSION_COOKIE = re.compile(r"(sess|token|auth|ticket|jwt|login|passport|sid\b|_
 # cookies every visitor gets: never a sign of a sign-in
 VISITOR_COOKIE = re.compile(r"^(_ga|_gid|_gat|hm_|hmaccount|_clck|_clsk|__utm|acw_|cna|isg|tfstk|l$|__cf|cf_|_fbp|lang|locale)", re.I)
 
-
-def base_domain(host: str) -> str:
-    """The site a host belongs to: leapmotor.zhiye.com -> zhiye.com, a.b.com.cn -> b.com.cn."""
-    host = (host or "").lower().strip(".")
-    if re.fullmatch(r"[\d.]+|\[.*\]", host):
-        return host
-    labels = host.split(".")
-    if len(labels) >= 3 and labels[-2] in ("com", "net", "org", "gov", "edu", "ac", "co") and len(labels[-1]) == 2:
-        return ".".join(labels[-3:])
-    return ".".join(labels[-2:])
 
 
 def key_for(url: str, site: Site | None) -> str:

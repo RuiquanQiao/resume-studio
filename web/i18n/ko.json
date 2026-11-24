@@ -2570,5 +2570,17 @@
  "Sign in to {tool} in a terminal": "터미널에서 {tool}에 로그인",
  "The terminal window could not be opened: {error}": "터미널 창을 열 수 없습니다: {error}",
  "{site} is open in an ordinary browser window that Resume Studio doesn't control, so the site's security check lets it through. Checking for updates or pushing changes here closes it first.": "{site}이(가) Resume Studio가 제어하지 않는 일반 브라우저 창에서 열려 있어 사이트의 보안 검사를 통과합니다. 여기에서 업데이트를 확인하거나 변경 사항을 올리면 이 창이 먼저 닫힙니다.",
- "{tool} has no sign-in command": "{tool}에는 로그인 명령이 없습니다"
+ "{tool} has no sign-in command": "{tool}에는 로그인 명령이 없습니다",
+ "A site shown to list no roles is recorded with `hunt.py no-list` and its evidence; a site under another domain needs \"owner\" and \"owner_source\" in `fill`, or comes out.": "채용 목록이 없음을 입증한 사이트는 근거와 함께 `hunt.py no-list`로 기록하십시오. 회사와 다른 도메인의 사이트는 `fill`에 \"owner\"와 \"owner_source\"를 지정하거나 삭제하십시오.",
+ "No job list (verified by the AI)": "채용 목록 없음(AI 확인)",
+ "Nothing was saved: the evidence must show it, with each address you tried (https://…), what you sent and what came back, in at least a few sentences": "저장되지 않았습니다. 근거에는 시도한 모든 주소(https://…), 보낸 요청과 받은 결과를 몇 문장 이상으로 기재해야 합니다",
+ "Nothing was saved: {sites} is under another domain than the company's own. Say who runs it and how it is the company's, on that site: \"owner\" (e.g. \"WiFi万能钥匙's site, run by 南京尚网网络科技, a company of the group: same zenmen.com mail\") and \"owner_source\", the page that shows it (its footer, the group's own site). Another company's site, or one you can't tie to it: leave it out": "저장되지 않았습니다. {sites}은(는) 회사 도메인과 다릅니다. 해당 사이트에 운영 주체와 회사와의 관계를 기재하십시오: \"owner\"(예: \"WiFi万能钥匙 사이트, 그룹 계열사 南京尚网网络科技 운영: 그룹과 동일한 zenmen.com 메일 사용\")와 \"owner_source\"(이를 보여 주는 페이지: 푸터, 그룹 사이트). 다른 회사의 사이트이거나 회사와의 관계를 입증할 수 없는 사이트는 추가하지 마십시오",
+ "On {date}, the AI verified that this site provides no job list. View the evidence": "{date}에 AI가 이 사이트에 채용 목록이 없음을 확인했습니다. 근거 보기",
+ "Operator: {owner}": "운영 주체: {owner}",
+ "The AI showed this site lists no roles; the evidence is below the site": "AI가 이 사이트에 채용 목록이 없음을 입증했습니다. 근거는 사이트 아래에 표시됩니다",
+ "This site is under another domain than the company's, and its relation to the company has not been stated.": "이 사이트는 회사 도메인과 다르며, 회사와의 관계가 기재되지 않았습니다.",
+ "Withdraw this finding": "이 결론 철회",
+ "no site lists roles (verified by the AI)": "채용 목록을 제공하는 사이트 없음(AI 확인)",
+ "{company}: not said who runs {sites}, under another domain than the company's": "{company}: 회사와 다른 도메인인 {sites}의 운영 주체가 기재되지 않았습니다",
+ "{url} isn't one of {company}'s careers sites: {sites}": "{url}은(는) {company}의 채용 사이트가 아닙니다: {sites}"
 }
