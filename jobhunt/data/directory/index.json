@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-26",
- "version": "2026-11-26T11:56:18Z",
+ "updated": "2026-11-27",
+ "version": "2026-11-27T04:58:15Z",
  "countries": [
   {
    "code": "cn",
@@ -33,9 +33,9 @@
   {
    "code": "us",
    "employers": 5234,
-   "careers": 3415,
+   "careers": 4358,
    "system": 1334,
-   "sha": "64ab0f4b4ef7"
+   "sha": "183d2061756a"
   }
  ]
 }
