@@ -1,29 +1,41 @@
 {
- "updated": "2026-11-20",
+ "updated": "2026-11-26",
+ "version": "2026-11-26T11:56:18Z",
  "countries": [
   {
    "code": "cn",
    "employers": 7750,
    "careers": 1973,
-   "system": 1074
+   "system": 1074,
+   "sha": "cb3c80b044af"
   },
   {
    "code": "au",
-   "employers": 1250,
-   "careers": 770,
-   "system": 209
+   "employers": 3822,
+   "careers": 2182,
+   "system": 449,
+   "sha": "813ca27ef7cc"
   },
   {
    "code": "sg",
    "employers": 588,
    "careers": 367,
-   "system": 101
+   "system": 101,
+   "sha": "e2ebc0e9eebc"
   },
   {
    "code": "hk",
    "employers": 391,
    "careers": 180,
-   "system": 45
+   "system": 45,
+   "sha": "bc4ff2bdd1db"
+  },
+  {
+   "code": "us",
+   "employers": 5234,
+   "careers": 3415,
+   "system": 1334,
+   "sha": "64ab0f4b4ef7"
   }
  ]
 }
